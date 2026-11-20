@@ -1,4 +1,4 @@
-use memchr::{memchr, memchr_iter, memmem::Finder};
+use memchr::{memchr, memmem::Finder};
 use smallvec::SmallVec;
 
 #[cfg(test)]
@@ -140,10 +140,9 @@ struct Marker {
 
 // NOTE(2026-11-17): RFC 8259 §7 limits JSON escapes to strings. A bracket outside a string can therefore anchor every spelling of a marker.
 struct Anchor {
-    byte: u8,
+    literal: Finder<'static>,
     index: usize,
     run_start: usize,
-    reach: usize,
 }
 
 impl Anchor {
@@ -157,13 +156,9 @@ impl Anchor {
             .rposition(|&is_content| is_content)
             .map_or(0, |content| content + 1);
         Some(Self {
-            byte: marker[index],
+            literal: Finder::new(&marker[run_start..=index]).into_owned(),
             index,
             run_start,
-            reach: content[..run_start]
-                .iter()
-                .map(|&is_content| if is_content { 6 } else { 1 })
-                .sum(),
         })
     }
 }
@@ -201,19 +196,23 @@ impl Marker {
 
     fn spelled_at_anchor(&self, line: &[u8], anchor: &Anchor) -> bool {
         let marker = self.finder.needle();
-        let run = &marker[anchor.run_start..anchor.index];
-        for at in memchr_iter(anchor.byte, line) {
-            let Some(run_at) = at.checked_sub(run.len()) else {
-                continue;
-            };
-            if !line[run_at..at].iter().eq(run) || !self.matches_at(anchor.index, &line[at..]) {
+        let mut first_backslash = None;
+        let mut from = 0;
+        while let Some(found) = anchor.literal.find(&line[from..]) {
+            let run_at = from + found;
+            from = run_at + 1;
+            let after = run_at + anchor.index - anchor.run_start + 1;
+            if anchor.index + 1 < marker.len() && !self.matches_at(anchor.index + 1, &line[after..])
+            {
                 continue;
             }
             let verbatim = run_at
                 .checked_sub(anchor.run_start)
                 .is_some_and(|start| line[start..run_at].iter().eq(&marker[..anchor.run_start]));
             if verbatim
-                || line[run_at.saturating_sub(anchor.reach)..run_at].contains(&b'\\')
+                || first_backslash
+                    .get_or_insert_with(|| memchr(b'\\', line))
+                    .is_some_and(|backslash| backslash < run_at)
                     && self.spelled_before(line, anchor.run_start, run_at)
             {
                 return true;

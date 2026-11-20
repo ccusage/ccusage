@@ -78,7 +78,7 @@ impl PricingMap {
             Lookup::Pricing,
             live,
         )
-        .map(|(_, found, _)| found.row.pricing.rates())
+        .map(|(_, found, _)| found.row.rates())
     }
 
     fn context_limit_with_live<'a>(

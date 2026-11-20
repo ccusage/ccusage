@@ -94,7 +94,7 @@ pub(crate) enum Rejection {
 pub(crate) fn deserialize_usage_line<T: DeserializeOwned>(
     line: &[u8],
 ) -> std::result::Result<T, Rejection> {
-    ccusage_adapter_common::jsonl::parse(line).map_err(|_| Rejection::Malformed)
+    ccusage_adapter_common::json::parse(line).map_err(|_| Rejection::Malformed)
 }
 
 pub(crate) type Nullable<T> = Option<Option<T>>;

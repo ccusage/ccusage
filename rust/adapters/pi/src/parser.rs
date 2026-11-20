@@ -16,7 +16,7 @@ use crate::{
     LoadedEntry, TokenUsageRaw, apply_total_token_fallback, cli::CostMode, date_at,
     fast::LinePrefilter, stored_cost_for_mode,
 };
-use ccusage_adapter_common::{jsonl, units::UnitError};
+use ccusage_adapter_common::{json, jsonl, units::UnitError};
 use ccusage_core::{Diagnostics, Skip, SkipKind};
 
 mod replay;
@@ -370,7 +370,7 @@ fn read_session_file_data_with_context(
 }
 
 fn parse_session_header(line: &[u8]) -> Option<PiSessionHeader> {
-    let header = jsonl::parse::<PiHeaderLine>(line).ok()?;
+    let header = json::parse::<PiHeaderLine>(line).ok()?;
     (header.r#type.as_deref() == Some("session")).then(|| PiSessionHeader {
         parent_session: header.parent_session,
         timestamp: header

@@ -16,7 +16,7 @@ use crate::{
 };
 use ccusage_adapter_common::{
     jsonl::{self, ReadPolicy},
-    visit_usage_files as visit_usage_files_in,
+    read_discovered_paths, visit_usage_files as visit_usage_files_in,
 };
 
 pub(crate) fn claude_paths() -> Result<Vec<PathBuf>> {
@@ -39,6 +39,7 @@ pub(crate) fn claude_paths() -> Result<Vec<PathBuf>> {
     Ok(paths)
 }
 
+#[cfg(test)]
 pub(crate) fn usage_files(
     paths: &[PathBuf],
     project_filter: Option<&str>,
@@ -51,7 +52,7 @@ pub(crate) fn usage_files(
         &mut |path| files.push(path),
         diagnostics,
     );
-    files.sort_by_cached_key(|path| usage_file_order(path));
+    files.sort_by(|left, right| usage_file_order(left, right));
     files
 }
 
@@ -82,33 +83,32 @@ pub(crate) fn visit_usage_files(
     }
 }
 
-pub(crate) fn usage_file_order(path: &Path) -> String {
-    path.to_string_lossy().into_owned()
+pub(crate) fn usage_file_order(left: &Path, right: &Path) -> std::cmp::Ordering {
+    left.as_os_str().cmp(right.as_os_str())
 }
 
 const MTIME_PRUNE_MARGIN_MS: i64 = MILLIS_PER_DAY;
 
-pub(super) struct SinceFiles {
-    pub(super) kept: Vec<PathBuf>,
+pub(super) struct SinceFiles<T> {
+    pub(super) kept: Vec<(PathBuf, T)>,
     pub(super) pruned: Vec<PathBuf>,
 }
 
 // NOTE(2026-09-25, #1794): Claude Code appends session JSONL, and a transcript can record a session ID different from its directory. Keep related transcripts together when pruning by mtime so a replay still has its parent.
-pub(super) fn usage_files_before_since(
+pub(super) fn read_usage_files_since<T: Send>(
     paths: &[PathBuf],
     project_filter: Option<&str>,
     diagnostics: &Diagnostics,
     shared: &SharedArgs,
     now: TimestampMs,
-) -> SinceFiles {
-    let files = usage_files(paths, project_filter, diagnostics);
-    let Some(threshold) = prune_threshold(shared, now) else {
-        return SinceFiles {
-            kept: files,
-            pruned: Vec::new(),
-        };
-    };
-    split_files(files, threshold)
+    read: impl Fn(&PathBuf) -> T + Sync,
+) -> SinceFiles<T> {
+    read_files_since(
+        shared.single_thread,
+        prune_threshold(shared, now),
+        |visit| visit_usage_files(paths, project_filter, visit, diagnostics),
+        read,
+    )
 }
 
 fn prune_threshold(shared: &SharedArgs, now: TimestampMs) -> Option<i64> {
@@ -119,56 +119,71 @@ fn prune_threshold(shared: &SharedArgs, now: TimestampMs) -> Option<i64> {
         .map(|since| since.saturating_sub(MTIME_PRUNE_MARGIN_MS))
 }
 
-fn split_files(files: Vec<PathBuf>, threshold: i64) -> SinceFiles {
-    let live = files
-        .iter()
-        .map(|file| file_modified_millis(file).is_none_or(|modified| modified >= threshold))
-        .collect::<Vec<_>>();
-    if live.iter().all(|&live| live) {
+fn read_files_since<T: Send>(
+    single_thread: bool,
+    threshold: Option<i64>,
+    discover: impl FnMut(&mut dyn FnMut(PathBuf)),
+    read: impl Fn(&PathBuf) -> T + Sync,
+) -> SinceFiles<T> {
+    let Some(threshold) = threshold else {
         return SinceFiles {
-            kept: files,
+            kept: read_discovered_paths(single_thread, discover, read),
             pruned: Vec::new(),
         };
-    }
-    if live.iter().all(|&live| !live) {
+    };
+    // NOTE(2026-11-20, #2355): Stat'ing and probing from the parallel readers contends in the kernel. The walker checks each mtime before queuing, and probes run serially after parsing.
+    let mut discovered = Vec::new();
+    let mut discover = discover;
+    let mut kept = read_discovered_paths(
+        single_thread,
+        |visit| {
+            discover(&mut |file| {
+                let live = file_modified_millis(&file).is_none_or(|modified| modified >= threshold);
+                if live {
+                    visit(file.clone());
+                }
+                discovered.push((file, live));
+            });
+        },
+        &read,
+    );
+    if kept.is_empty() || kept.len() == discovered.len() {
         return SinceFiles {
-            kept: Vec::new(),
-            pruned: files,
+            kept,
+            pruned: discovered
+                .into_iter()
+                .filter_map(|(file, live)| (!live).then_some(file))
+                .collect(),
         };
     }
 
     let mut sessions = SessionGroups::default();
-    let file_groups = files
-        .iter()
-        .map(|file| {
-            let (path_session, _) = extract_session_parts(file);
-            let group = sessions.id(&path_session);
-            if let Some(recorded) = first_recorded_session_id(file) {
-                let recorded = sessions.id(&recorded);
-                sessions.union(group, recorded);
-            }
-            group
+    let groups = discovered
+        .into_iter()
+        .map(|(file, live)| {
+            let group = sessions.file(&file, first_recorded_session_id(&file).as_deref());
+            (file, live, group)
         })
         .collect::<Vec<_>>();
-    let live_groups = live
-        .into_iter()
-        .zip(&file_groups)
-        .filter(|(live, _)| *live)
-        .map(|(_, &group)| sessions.root(group))
+    let live_groups = groups
+        .iter()
+        .filter(|(_, live, _)| *live)
+        .map(|&(_, _, group)| sessions.root(group))
         .collect::<FxHashSet<_>>();
-
-    let mut split = SinceFiles {
-        kept: Vec::new(),
-        pruned: Vec::new(),
-    };
-    for (file, group) in files.into_iter().zip(file_groups) {
-        if live_groups.contains(&sessions.root(group)) {
-            split.kept.push(file);
-        } else {
-            split.pruned.push(file);
-        }
+    let (mut revived, pruned) = groups
+        .into_iter()
+        .filter(|(_, live, _)| !live)
+        .map(|(file, _, group)| (file, group))
+        .partition::<Vec<_>, _>(|(_, group)| live_groups.contains(&sessions.root(*group)));
+    kept.extend(read_discovered_paths(
+        single_thread,
+        |visit| revived.drain(..).for_each(|(file, _)| visit(file)),
+        read,
+    ));
+    SinceFiles {
+        kept,
+        pruned: pruned.into_iter().map(|(file, _)| file).collect(),
     }
-    split
 }
 
 #[derive(Default)]
@@ -178,6 +193,16 @@ struct SessionGroups {
 }
 
 impl SessionGroups {
+    fn file(&mut self, file: &Path, recorded: Option<&str>) -> usize {
+        let (path_session, _) = extract_session_parts(file);
+        let group = self.id(&path_session);
+        if let Some(recorded) = recorded {
+            let recorded = self.id(recorded);
+            self.union(group, recorded);
+        }
+        group
+    }
+
     fn id(&mut self, session: &str) -> usize {
         if let Some(&id) = self.ids.get(session) {
             return id;

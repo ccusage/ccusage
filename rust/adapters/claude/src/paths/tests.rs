@@ -2,18 +2,27 @@ use crate::{MILLIS_PER_DAY, TimestampMs, cli::SharedArgs};
 use ccusage_test_support::{fs_fixture, instant, read_fixture_dir, set_modified};
 use std::path::{Path, PathBuf};
 
-fn split_files_before_since(
-    files: Vec<PathBuf>,
-    shared: &SharedArgs,
-    now: TimestampMs,
-) -> super::SinceFiles {
-    let Some(threshold) = super::prune_threshold(shared, now) else {
-        return super::SinceFiles {
-            kept: files,
-            pruned: Vec::new(),
-        };
+struct Split {
+    kept: Vec<PathBuf>,
+    pruned: Vec<PathBuf>,
+}
+
+fn split_files_before_since(files: Vec<PathBuf>, shared: &SharedArgs, now: TimestampMs) -> Split {
+    let in_input_order = |mut split: Vec<PathBuf>| {
+        split.sort_by_key(|file| files.iter().position(|input| input == file));
+        split
     };
-    super::split_files(files, threshold)
+    let split = super::read_files_since(
+        shared.single_thread,
+        super::prune_threshold(shared, now),
+        |visit| files.iter().cloned().for_each(visit),
+        |file| file.clone(),
+    );
+    assert!(split.kept.iter().all(|(file, read)| file == read));
+    Split {
+        kept: in_input_order(split.kept.into_iter().map(|(file, _)| file).collect()),
+        pruned: in_input_order(split.pruned),
+    }
 }
 
 fn shared_since(since: Option<&str>) -> SharedArgs {
@@ -302,4 +311,48 @@ fn reads_the_recorded_session_id_past_long_leading_lines() {
             .as_deref(),
         Some("parent")
     );
+}
+
+#[test]
+fn keeps_a_stale_transcript_whose_recorded_session_links_it_after_its_live_sibling() {
+    let fixture = fs_fixture!({
+        "a/projects/p/live.jsonl": "{}",
+        "b/projects/p/live.jsonl": r#"{"sessionId":"resumed"}"#,
+        "b/projects/p/resumed.jsonl": "{}",
+    });
+    let root = fixture.root();
+    let live = root.join("a/projects/p/live.jsonl");
+    let stale_copy = root.join("b/projects/p/live.jsonl");
+    let stale_resumed = root.join("b/projects/p/resumed.jsonl");
+    set_modified(&live, instant("2026-09-21T12:00:00Z"));
+    set_modified(&stale_copy, instant("2026-09-01T12:00:00Z"));
+    set_modified(&stale_resumed, instant("2026-09-01T12:00:00Z"));
+
+    let split = split_files_before_since(
+        vec![live.clone(), stale_copy.clone(), stale_resumed.clone()],
+        &shared_since(Some("20260920")),
+        TimestampMs::from_millis(instant("2026-09-24T00:00:00Z").millis()),
+    );
+
+    assert_eq!(split.kept, [live, stale_copy, stale_resumed]);
+    assert!(split.pruned.is_empty());
+}
+
+#[test]
+fn splits_a_window_that_keeps_or_prunes_every_file() {
+    let fixture = fs_fixture!({
+        "projects/p/old.jsonl": "{}",
+        "projects/p/margin.jsonl": "{}",
+        "projects/p/fresh.jsonl": "{}",
+    });
+    let files = fixture_files(fixture.root());
+    let now = TimestampMs::from_millis(instant("2026-09-24T00:00:00Z").millis());
+
+    let keep_all = split_files_before_since(files.clone(), &shared_since(Some("20260918")), now);
+    let prune_all = split_files_before_since(files.clone(), &shared_since(Some("20260923")), now);
+
+    assert_eq!(keep_all.kept, files);
+    assert!(keep_all.pruned.is_empty());
+    assert!(prune_all.kept.is_empty());
+    assert_eq!(prune_all.pruned, files);
 }

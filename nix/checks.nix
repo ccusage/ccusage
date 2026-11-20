@@ -137,6 +137,7 @@ in
               nu .github/scripts/pricing-lock.test.nu
               nu .github/scripts/upsert-pr-comment.test.nu
               nu .github/scripts/check-links.test.nu
+              nu .github/scripts/profile-instructions.test.nu
               nu .github/scripts/workflow-shell.test.nu
               nu .github/scripts/install.test.nu
             '';

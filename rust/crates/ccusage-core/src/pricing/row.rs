@@ -1,8 +1,14 @@
-use std::{num::NonZeroUsize, sync::Arc};
+use std::{
+    num::NonZeroUsize,
+    sync::{Arc, OnceLock},
+};
 
 use rustc_hash::FxHashMap;
 
-use super::{CacheDefaults, LongContext, Pricing, PricingSchedule, data, normalized_pricing_key};
+use super::{
+    CacheDefaults, LongContext, Pricing, PricingSchedule, SpeedMultipliers, data,
+    normalized_pricing_key, speed::PublishedSpeed,
+};
 
 #[derive(Clone, Debug)]
 pub(super) struct Row {
@@ -31,7 +37,7 @@ impl Default for Row {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub(super) struct RowPricing {
     input: f64,
     output: f64,
@@ -39,15 +45,60 @@ pub(super) struct RowPricing {
     pub(super) cache_read: Option<f64>,
     cache_create_1h: Option<f64>,
     pub(super) long_context: Option<Arc<LongContext>>,
+    published: Published,
+    explicit_fields: u16,
+}
+
+#[derive(Clone, Debug)]
+enum Published {
+    Known(PublishedRates),
+    ByKey {
+        speed: PublishedSpeed,
+        cache_fallback: &'static CacheDefaults,
+        resolved: OnceLock<PublishedRates>,
+    },
+}
+
+#[derive(Clone, Copy, Debug)]
+struct PublishedRates {
     fast_multiplier: f64,
     ultrafast_multiplier: f64,
     flex_multiplier: f64,
     cache_defaults: &'static CacheDefaults,
-    explicit_fields: u16,
 }
 
 impl From<Pricing> for RowPricing {
     fn from(rates: Pricing) -> Self {
+        Self::with_published(
+            rates,
+            Published::Known(PublishedRates {
+                fast_multiplier: rates.fast_multiplier,
+                ultrafast_multiplier: rates.ultrafast_multiplier,
+                flex_multiplier: rates.flex_multiplier,
+                cache_defaults: rates.cache_defaults,
+            }),
+        )
+    }
+}
+
+impl RowPricing {
+    // NOTE(2026-11-20, #2342): A catalogue holds thousands of rows and a report prices only a few. Derive speed multipliers and cache defaults from the key when a row is first priced, not while loading.
+    pub(super) fn by_key(
+        rates: Pricing,
+        speed: PublishedSpeed,
+        cache_fallback: &'static CacheDefaults,
+    ) -> Self {
+        Self::with_published(
+            rates,
+            Published::ByKey {
+                speed,
+                cache_fallback,
+                resolved: OnceLock::new(),
+            },
+        )
+    }
+
+    fn with_published(rates: Pricing, published: Published) -> Self {
         Self {
             input: rates.input,
             output: rates.output,
@@ -55,17 +106,28 @@ impl From<Pricing> for RowPricing {
             cache_read: rates.cache_read,
             cache_create_1h: rates.cache_create_1h,
             long_context: rates.long_context.map(Arc::new),
-            fast_multiplier: rates.fast_multiplier,
-            ultrafast_multiplier: rates.ultrafast_multiplier,
-            flex_multiplier: rates.flex_multiplier,
-            cache_defaults: rates.cache_defaults,
+            published,
             explicit_fields: rates.explicit_fields,
         }
     }
-}
 
-impl RowPricing {
-    pub(super) fn rates(&self) -> Pricing {
+    fn rates(&self, key: &str) -> Pricing {
+        let published = match &self.published {
+            Published::Known(published) => *published,
+            Published::ByKey {
+                speed,
+                cache_fallback,
+                resolved,
+            } => *resolved.get_or_init(|| {
+                let speed = speed.or(SpeedMultipliers::get().for_model(key));
+                PublishedRates {
+                    fast_multiplier: speed.fast.unwrap_or(1.0),
+                    ultrafast_multiplier: speed.ultrafast.unwrap_or(1.0),
+                    flex_multiplier: speed.flex.unwrap_or(1.0),
+                    cache_defaults: model_cache_defaults(key).unwrap_or(cache_fallback),
+                }
+            }),
+        };
         Pricing {
             input: self.input,
             output: self.output,
@@ -73,10 +135,10 @@ impl RowPricing {
             cache_read: self.cache_read,
             cache_create_1h: self.cache_create_1h,
             long_context: self.long_context.as_deref().copied(),
-            fast_multiplier: self.fast_multiplier,
-            ultrafast_multiplier: self.ultrafast_multiplier,
-            flex_multiplier: self.flex_multiplier,
-            cache_defaults: self.cache_defaults,
+            fast_multiplier: published.fast_multiplier,
+            ultrafast_multiplier: published.ultrafast_multiplier,
+            flex_multiplier: published.flex_multiplier,
+            cache_defaults: published.cache_defaults,
             explicit_fields: self.explicit_fields,
         }
     }
@@ -97,6 +159,10 @@ pub(super) enum Scope {
 }
 
 impl Row {
+    pub(super) fn rates(&self) -> Pricing {
+        self.pricing.rates(&self.key)
+    }
+
     pub(super) fn is_free(&self) -> bool {
         self.source != Source::Override && self.pricing.input == 0.0 && self.pricing.output == 0.0
     }
@@ -133,29 +199,48 @@ pub(super) fn vendor_start(key: &str, vendor_id: &str) -> Option<NonZeroUsize> {
 }
 
 pub(super) fn cache_defaults(model: &str, provider: Option<&str>) -> &'static CacheDefaults {
-    use data::{
-        CACHE_DEFAULTS_BY_PROVIDER, CACHE_DEFAULTS_BY_SEGMENT, CACHE_DEFAULTS_BY_SEGMENT_PREFIX,
-    };
+    model_cache_defaults(model).unwrap_or(provider_cache_defaults(provider))
+}
+
+fn model_cache_defaults(model: &str) -> Option<&'static CacheDefaults> {
+    use data::{CACHE_DEFAULTS_BY_SEGMENT, CACHE_DEFAULTS_BY_SEGMENT_PREFIX};
     model
-        .split(['/', '.'])
-        .filter_map(|segment| {
+        .split('/')
+        .flat_map(|part| {
+            std::iter::once(part)
+                .chain(part.match_indices('.').map(|(index, _)| &part[index + 1..]))
+        })
+        .filter_map(|suffix| {
+            let suffix = normalized_pricing_key(suffix);
+            let suffix = suffix.as_bytes();
             CACHE_DEFAULTS_BY_SEGMENT_PREFIX
                 .iter()
-                .find(|(prefix, _)| segment.starts_with(prefix))
+                .find(|(prefix, _)| {
+                    suffix
+                        .get(..prefix.len())
+                        .is_some_and(|head| head.eq_ignore_ascii_case(prefix.as_bytes()))
+                })
                 .or_else(|| {
                     CACHE_DEFAULTS_BY_SEGMENT
                         .iter()
-                        .find(|(key, _)| segment == *key)
+                        .find(|(key, _)| suffix.eq_ignore_ascii_case(key.as_bytes()))
                 })
-                .map(|(_, defaults)| *defaults)
+                .map(|(key, defaults)| (key.len(), *defaults))
         })
-        .min_by(|left, right| left.write_x.total_cmp(&right.write_x))
-        .or_else(|| {
-            CACHE_DEFAULTS_BY_PROVIDER
-                .iter()
-                .find(|(key, _)| Some(*key) == provider)
-                .map(|(_, defaults)| *defaults)
+        .min_by(|(left_len, left), (right_len, right)| {
+            left.write_x
+                .total_cmp(&right.write_x)
+                .then_with(|| right_len.cmp(left_len))
         })
+        .map(|(_, defaults)| defaults)
+}
+
+pub(super) fn provider_cache_defaults(provider: Option<&str>) -> &'static CacheDefaults {
+    data::CACHE_DEFAULTS_BY_PROVIDER
+        .iter()
+        .find(|(key, _)| Some(*key) == provider)
+        .map(|(_, defaults)| *defaults)
+        // NOTE(2026-11-20, #2258): No vendor documents rates for an unidentified model. Agents report cache writes mostly through Anthropic-compatible APIs, so Anthropic's multipliers are the estimate.
         .unwrap_or(&data::WRITES_SURCHARGED)
 }
 

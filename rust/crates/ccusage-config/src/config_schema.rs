@@ -208,6 +208,8 @@ pub(crate) struct CodexOptions {
 pub(crate) struct PiOptions {
     /// Path or comma-separated paths to pi-agent sessions directories.
     pub(crate) pi_path: Option<String>,
+    /// Path or comma-separated paths to pi agent directories; ccusage reads each directory's `sessions` store.
+    pub(crate) pi_agent_dir: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]

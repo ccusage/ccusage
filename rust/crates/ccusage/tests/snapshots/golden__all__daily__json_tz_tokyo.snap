@@ -331,7 +331,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 1200,
-          "cost": 0.006875000000000001,
+          "cost": 0.006995000000000001,
           "inputTokens": 3000,
           "modelName": "qwen3-coder-plus",
           "outputTokens": 601
@@ -339,7 +339,7 @@ exit: 0
         {
           "cacheCreationTokens": 50,
           "cacheReadTokens": 4500,
-          "cost": 0.006625,
+          "cost": 0.0066,
           "inputTokens": 1000,
           "modelName": "gemini-3-pro",
           "outputTokens": 200
@@ -432,14 +432,14 @@ exit: 0
       ],
       "outputTokens": 7549,
       "period": "2025-12-30",
-      "totalCost": 5.43494755,
+      "totalCost": 5.43504255,
       "totalTokens": 138371
     },
     {
       "agent": "all",
       "cacheCreationTokens": 160,
       "cacheReadTokens": 28080,
-      "inputTokens": 23332,
+      "inputTokens": 41108,
       "metadata": {
         "agents": [
           "antigravity",
@@ -480,10 +480,10 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 2980,
-          "cost": 0.05544875,
-          "inputTokens": 3705,
+          "cost": 0.07543875,
+          "inputTokens": 21481,
           "modelName": "gpt-5",
-          "outputTokens": 889,
+          "outputTokens": 2665,
           "storedCost": 0.05
         },
         {
@@ -532,7 +532,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 1500,
-          "cost": 0.00415,
+          "cost": 0.0043,
           "inputTokens": 2000,
           "modelName": "qwen3-coder-plus",
           "outputTokens": 300
@@ -634,16 +634,16 @@ exit: 0
         "qwen3-coder-plus",
         "unknown"
       ],
-      "outputTokens": 4159,
+      "outputTokens": 5935,
       "period": "2025-12-31",
-      "totalCost": 0.46954550999999994,
-      "totalTokens": 55941
+      "totalCost": 0.48968551000000005,
+      "totalTokens": 75493
     },
     {
       "agent": "all",
       "cacheCreationTokens": 8841,
-      "cacheReadTokens": 655514,
-      "inputTokens": 1152218,
+      "cacheReadTokens": 655814,
+      "inputTokens": 1152618,
       "metadata": {
         "agents": [
           "amp",
@@ -735,7 +735,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 100100,
-          "cost": 0.32144100000000003,
+          "cost": 0.331451,
           "inputTokens": 300531,
           "modelName": "qwen3-coder-plus",
           "outputTokens": 2113
@@ -850,6 +850,14 @@ exit: 0
           "outputTokens": 562
         },
         {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 1000,
+          "cost": 0.00735,
+          "inputTokens": 1400,
+          "modelName": "gpt-5.5",
+          "outputTokens": 240
+        },
+        {
           "cacheCreationTokens": 400,
           "cacheReadTokens": 1200,
           "cost": 0.006872,
@@ -873,14 +881,6 @@ exit: 0
           "inputTokens": 19000,
           "modelName": "deepseek-flash",
           "outputTokens": 800
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 700,
-          "cost": 0.0052250000000000005,
-          "inputTokens": 1000,
-          "modelName": "gpt-5.5",
-          "outputTokens": 170
         },
         {
           "cacheCreationTokens": 0,
@@ -1260,10 +1260,10 @@ exit: 0
         "unknown",
         "zcode-mystery-1"
       ],
-      "outputTokens": 33490,
+      "outputTokens": 33560,
       "period": "2026-01-01",
-      "totalCost": 15.130993165,
-      "totalTokens": 1851510
+      "totalCost": 15.143128165,
+      "totalTokens": 1852280
     },
     {
       "agent": "all",
@@ -1700,11 +1700,11 @@ exit: 0
   ],
   "totals": {
     "cacheCreationTokens": 17765,
-    "cacheReadTokens": 1309967,
-    "inputTokens": 1347424,
-    "outputTokens": 58720,
-    "totalCost": 28.147088425,
-    "totalTokens": 2737293,
+    "cacheReadTokens": 1310267,
+    "inputTokens": 1365600,
+    "outputTokens": 60566,
+    "totalCost": 28.179458425,
+    "totalTokens": 2757615,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",

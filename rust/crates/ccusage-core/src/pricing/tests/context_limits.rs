@@ -5,7 +5,13 @@ fn reads_embedded_model_context_limits() {
     crate::test_support::install_pricing_snapshots();
     let pricing = PricingMap::load_embedded();
 
-    let _ = pricing.context_limit("anthropic.claude-3-5-sonnet-20240620-v1:0");
+    assert_eq!(
+        pricing.context_limit_entry(
+            "anthropic.claude-3-5-sonnet-20240620-v1:0",
+            MatchKind::Exact
+        ),
+        Some(200_000)
+    );
 }
 
 #[test]

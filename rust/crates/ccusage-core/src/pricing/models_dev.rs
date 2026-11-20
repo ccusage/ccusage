@@ -6,9 +6,9 @@ use serde_json::Value;
 use crate::fast::FxHashMap;
 
 use super::{
-    LongContext, LongContextMode, LongContextRates, Pricing, PricingMap, Row, Scope, Source,
-    cache_defaults, embedded::build_time_models_dev_json, model_without_date_suffix, pricing_alias,
-    speed::SpeedMultipliers,
+    LongContext, LongContextMode, LongContextRates, Pricing, PricingMap, Row, RowPricing, Scope,
+    Source, embedded::build_time_models_dev_json, model_without_date_suffix, pricing_alias,
+    provider_cache_defaults, speed::PublishedSpeed,
 };
 
 mod catalog;
@@ -184,7 +184,6 @@ impl PricingMap {
         derive_exact_only: bool,
         claims: &mut FxHashMap<String, ModelsDevClaimSlot>,
     ) -> usize {
-        let speed = SpeedMultipliers::get();
         let rules = models_dev_catalog_rules();
         let mut loaded_count = 0;
         let mut sources: Vec<_> = models.into_iter().collect();
@@ -239,19 +238,15 @@ impl PricingMap {
             {
                 self.rows_mut().entries.remove(&previous.stored_id);
             }
-            let input = input / 1_000_000.0;
-            let output = output / 1_000_000.0;
-
             self.rows_mut().entries.insert(
                 model_id.clone(),
                 Row {
-                    pricing: speed
-                        .for_model(&model_id)
-                        .applied_to(Pricing {
-                            input,
-                            output,
-                            cache_create: cost.cache_write.map(|value| value / 1_000_000.0),
-                            cache_read: cost.cache_read.map(|value| value / 1_000_000.0),
+                    pricing: RowPricing::by_key(
+                        Pricing {
+                            input: per_token(input),
+                            output: per_token(output),
+                            cache_create: cost.cache_write.map(per_token),
+                            cache_read: cost.cache_read.map(per_token),
                             long_context: long_context.map(|rates| LongContext {
                                 threshold: rates.threshold,
                                 mode: LongContextMode::WholeRequest,
@@ -263,10 +258,11 @@ impl PricingMap {
                                     cache_create_1h: None,
                                 },
                             }),
-                            cache_defaults: cache_defaults(&model_id, None),
                             ..Pricing::empty()
-                        })
-                        .into(),
+                        },
+                        PublishedSpeed::default(),
+                        provider_cache_defaults(None),
+                    ),
                     exact_only,
                     context_limit,
                     key: Arc::default(),
@@ -315,10 +311,7 @@ impl PricingMap {
             {
                 continue;
             }
-            let Some(mut context) = tiers
-                .long_context_pricing(model)
-                .and_then(|source| source.long_context)
-            else {
+            let Some(mut context) = tiers.long_context_pricing(model) else {
                 continue;
             };
             context.rates.cache_create_1h = previous.cache_create_1h;
@@ -327,7 +320,7 @@ impl PricingMap {
         self.clear_find_cache();
     }
 
-    fn long_context_pricing(&self, model: &str) -> Option<Pricing> {
+    fn long_context_pricing(&self, model: &str) -> Option<LongContext> {
         let base = model_without_date_suffix(model);
         let resolved = pricing_alias(base).unwrap_or(base);
         std::iter::once(resolved)
@@ -340,8 +333,9 @@ impl PricingMap {
                         let exact_only = self.rows.exact_only_id(key)?;
                         self.rows.entries.get(exact_only)
                     })
-                    .map(|row| row.pricing.rates())
+                    .map(|row| row.pricing.long_context.as_deref().copied())
             })
+            .flatten()
     }
 }
 

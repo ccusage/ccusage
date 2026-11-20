@@ -1,4 +1,4 @@
-use ccusage_adapter_common::jsonl;
+use ccusage_adapter_common::{json::JsonText, jsonl};
 use std::{
     collections::{HashMap, HashSet},
     ops::ControlFlow,
@@ -20,10 +20,14 @@ use super::{
 pub(super) struct CodexReplayPlan {
     parent_by_child: HashMap<PathBuf, ParentReplay>,
     usage_by_parent: HashMap<PathBuf, ParentUsage>,
+    lineage_edges: Vec<(String, String)>,
 }
 
 struct ParentReplay {
     path: Option<PathBuf>,
+    parent_id: String,
+    child_id: Option<String>,
+    unreadable: bool,
     forked_at: Option<TimestampMs>,
     spawned: bool,
 }
@@ -96,6 +100,7 @@ impl CodexReplayPlan {
             return Self {
                 parent_by_child: HashMap::new(),
                 usage_by_parent: HashMap::new(),
+                lineage_edges: Vec::new(),
             };
         }
         let mut metadata = files
@@ -144,8 +149,9 @@ impl CodexReplayPlan {
             .filter_map(|file| {
                 let parent_id = file.metadata.parent_id.as_deref()?;
                 let path = first_non_child_path(&files_by_session_id, parent_id, &file.path);
-                if path.is_none() && selection.is_some_and(|(_, failed)| failed.contains(parent_id))
-                {
+                let unreadable = path.is_none()
+                    && selection.is_some_and(|(_, failed)| failed.contains(parent_id));
+                if unreadable {
                     diagnostics.record(Skip::unit(
                         &file.path,
                         SkipKind::UnreadableForkParent,
@@ -156,6 +162,13 @@ impl CodexReplayPlan {
                     file.path.clone(),
                     ParentReplay {
                         path,
+                        parent_id: parent_id.to_string(),
+                        child_id: file
+                            .metadata
+                            .session_id
+                            .clone()
+                            .filter(|id| !id.trim().is_empty()),
+                        unreadable,
                         forked_at: file.metadata.timestamp,
                         spawned: file.metadata.spawned,
                     },
@@ -174,13 +187,21 @@ impl CodexReplayPlan {
         Self {
             usage_by_parent: read_parent_usage(&parents, single_thread, diagnostics),
             parent_by_child,
+            lineage_edges: files.iter().filter_map(lineage_edge).collect(),
         }
+    }
+
+    pub(super) fn lineage_edges(&self) -> &[(String, String)] {
+        &self.lineage_edges
     }
 
     pub(super) fn fork_replay(&self, child: &Path) -> Option<CodexForkReplay<'_>> {
         let parent = self.parent_by_child.get(child)?;
         Some(CodexForkReplay {
-            prefix: self.replay_prefix(parent),
+            parent_usage: self.replay_prefix(parent),
+            missing_parent: (parent.path.is_none() && !parent.unreadable)
+                .then_some(parent.parent_id.as_str()),
+            child_id: parent.child_id.as_deref(),
             ends_at_usage_record: parent.spawned,
         })
     }
@@ -248,6 +269,23 @@ fn collect_replay_files<'a>(
 }
 
 pub(super) type ReplayProbe<'a> = (PathBuf, &'a Path, Option<CodexSessionMetadata>);
+
+fn lineage_edge(file: &CodexReplayFile<'_>) -> Option<(String, String)> {
+    Some((
+        file.metadata.session_id.clone()?,
+        file.metadata.lineage_parent_id.clone()?,
+    ))
+}
+
+pub(super) fn read_lineage_edges(
+    files: &[(PathBuf, &Path)],
+    single_thread: bool,
+) -> Vec<(String, String)> {
+    read_replay_files(files, single_thread, None, &mut HashSet::new())
+        .iter()
+        .filter_map(lineage_edge)
+        .collect()
+}
 
 fn read_replay_files<'a>(
     files: &[(PathBuf, &'a Path)],
@@ -356,13 +394,22 @@ pub(super) struct CodexSessionMetadata {
     pub(super) is_session_meta: bool,
     session_id: Option<String>,
     parent_id: Option<String>,
-    pub(super) timestamp: Option<TimestampMs>,
+    lineage_parent_id: Option<String>,
+    timestamp: Option<TimestampMs>,
     spawned: bool,
 }
 
 impl CodexSessionMetadata {
     pub(super) fn is_fork(&self) -> bool {
         self.parent_id.is_some()
+    }
+
+    pub(super) fn session_id(&self) -> Option<&str> {
+        self.session_id.as_deref()
+    }
+
+    pub(super) fn lineage_parent_id(&self) -> Option<&str> {
+        self.lineage_parent_id.as_deref()
     }
 }
 
@@ -381,7 +428,8 @@ fn read_codex_session_metadata(
 }
 
 pub(super) fn session_metadata_from_line(path: &Path, line: &[u8]) -> CodexSessionMetadata {
-    let Ok(value) = jsonl::parse::<CodexSessionMeta<'_>>(line) else {
+    let text = JsonText::new(line);
+    let Ok(value) = text.parse::<CodexSessionMeta<'_>>() else {
         return CodexSessionMetadata::default();
     };
     let payload = (value.entry_type.as_deref() == Some("session_meta"))
@@ -394,15 +442,15 @@ pub(super) fn session_metadata_from_line(path: &Path, line: &[u8]) -> CodexSessi
         .and_then(|spawn| spawn.parent_thread_id.as_deref())
         .filter(|id| !id.is_empty());
     let session_id = payload.and_then(|payload| payload.id.as_deref());
-    let parent_id = payload
-        .filter(|payload| payload.history_base.is_none())
-        .and_then(|payload| {
-            payload
-                .forked_from_id
-                .as_deref()
-                .filter(|id| !id.is_empty())
-                .or(spawn_parent_id)
-        })
+    let lineage_parent_id = payload.and_then(|payload| {
+        payload
+            .forked_from_id
+            .as_deref()
+            .filter(|id| !id.is_empty())
+            .or(spawn_parent_id)
+    });
+    let parent_id = lineage_parent_id
+        .filter(|_| payload.is_some_and(|payload| payload.history_base.is_none()))
         .filter(|_| {
             !path
                 .file_name()
@@ -416,6 +464,7 @@ pub(super) fn session_metadata_from_line(path: &Path, line: &[u8]) -> CodexSessi
         timestamp: codex_timestamp_instant(value.timestamp.as_ref()),
         session_id: session_id.map(str::to_string),
         parent_id,
+        lineage_parent_id: lineage_parent_id.map(str::to_string),
         spawned: spawn_parent_id.is_some(),
     }
 }
@@ -549,7 +598,7 @@ mod tests {
     }
 
     #[test]
-    fn bounded_forks_warn_only_when_a_failed_probe_can_hide_the_parent() {
+    fn bounded_forks_warn_when_the_parent_is_unreadable_or_missing() {
         ccusage_test_support::Environment::with_var("LOG_LEVEL", "1").run(|| {
         let usage = |timestamp: &str| {
             serde_json::json!({"timestamp":timestamp,"type":"event_msg","payload":{
@@ -579,10 +628,10 @@ mod tests {
                     fixture.path("parent.jsonl.zst"),
                 ],
                 150,
-                false,
+                None,
             ),
-            (vec![fixture.path("parent.jsonl.zst")], 300, true),
-            (vec![], 300, false),
+            (vec![fixture.path("parent.jsonl.zst")], 300, Some(("read", "unreadable"))),
+            (vec![], 300, Some(("find", "missing"))),
         ] {
             let mut available = vec![child.clone(), fixture.path("other.jsonl.zst")];
             available.extend(parents);
@@ -603,20 +652,20 @@ mod tests {
                     &diagnostics,
                 );
                 assert_eq!(tokens, expected_tokens);
-                let warning = "WARN  codex: could not read the parent rollout for 1 forked session. Replayed usage may be counted twice.";
                 let default_warnings = diagnostics.warnings(&crate::cli::SharedArgs::default());
                 let debug_warnings = diagnostics.warnings(&crate::cli::SharedArgs {
                     debug: true,
                     ..Default::default()
                 });
-                if expected_warning {
-                    assert_eq!(default_warnings, [warning]);
+                if let Some((verb, label)) = expected_warning {
+                    let warning = format!("WARN  codex: could not {verb} the parent rollout for 1 forked session. Replayed usage may be counted twice.");
+                    assert_eq!(default_warnings, std::slice::from_ref(&warning));
                     assert_eq!(
                         debug_warnings,
                         [
-                            warning.to_string(),
+                            warning,
                             format!(
-                                "codex: unreadable fork parent: {}: parent session parent",
+                                "codex: {label} fork parent: {}: parent session parent",
                                 child.display()
                             ),
                         ]

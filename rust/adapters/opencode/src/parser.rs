@@ -12,7 +12,7 @@ use crate::{
     LoadedEntry, TokenUsageRaw, apply_total_token_fallback, cli::CostMode, cost::EntryPricing,
     date_at, pricing::MatchKind, stored_cost_for_mode,
 };
-use ccusage_adapter_common::{billing::price_entry_for_provider, jsonl};
+use ccusage_adapter_common::{billing::price_entry_for_provider, json::JsonText, jsonl};
 
 #[derive(Debug, Default, Deserialize)]
 pub(crate) struct OpenCodeMessage {
@@ -122,7 +122,10 @@ impl<'de> Visitor<'de> for TimeField<'_> {
 pub(crate) fn message_time_created(data: &[u8]) -> Option<i64> {
     let mut time = None;
     // NOTE(2026-11-19, #2242): Reading stops at the payload's top-level time, so serde_json reports the unread rest as an error. Whether the record is valid stays the typed reader's decision.
-    let _ = serde_json::Deserializer::from_slice(data).deserialize_map(TimeField(&mut time));
+    let _ = JsonText::new(data).parse_with(|text| {
+        time = None;
+        serde_json::Deserializer::from_str(text).deserialize_map(TimeField(&mut time))
+    });
     time?.created.filter(|millis| *millis > 0)
 }
 

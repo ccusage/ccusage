@@ -18,7 +18,7 @@ exit: 0
         {
           "cacheCreationTokens": 100,
           "cacheReadTokens": 51900,
-          "cost": 0.8568199999999999,
+          "cost": 0.8567699999999999,
           "inputTokens": 204000,
           "modelName": "grok-4.5-build",
           "outputTokens": 2000
@@ -57,7 +57,7 @@ exit: 0
       ],
       "outputTokens": 2230,
       "period": "sess-alpha",
-      "totalCost": 0.8572199999999999,
+      "totalCost": 0.8571699999999999,
       "totalTokens": 259330
     },
     {
@@ -103,7 +103,7 @@ exit: 0
         {
           "cacheCreationTokens": 50,
           "cacheReadTokens": 4500,
-          "cost": 0.007745,
+          "cost": 0.00772,
           "inputTokens": 1500,
           "modelName": "gemini-3-pro",
           "outputTokens": 210
@@ -142,7 +142,7 @@ exit: 0
       ],
       "outputTokens": 1460,
       "period": "session-alpha",
-      "totalCost": 0.68138575,
+      "totalCost": 0.6813607500000001,
       "totalTokens": 364451
     },
     {
@@ -193,7 +193,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 101500,
-          "cost": 0.32415,
+          "cost": 0.33430000000000004,
           "inputTokens": 302000,
           "modelName": "qwen3-coder-plus",
           "outputTokens": 2300
@@ -232,7 +232,7 @@ exit: 0
       ],
       "outputTokens": 2626,
       "period": "sess-b",
-      "totalCost": 0.3318937,
+      "totalCost": 0.34204370000000006,
       "totalTokens": 410249
     },
     {
@@ -942,6 +942,33 @@ exit: 0
       "period": "p-opus-padded",
       "totalCost": 0.021937500000000002,
       "totalTokens": 3750
+    },
+    {
+      "agent": "codex",
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 50,
+      "inputTokens": 18076,
+      "metadata": {
+        "lastActivity": "2025-12-30T20:00:10.000Z",
+        "reasoningOutputTokens": 0
+      },
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 50,
+          "cost": 0.020355625000000002,
+          "inputTokens": 18076,
+          "modelName": "gpt-5",
+          "outputTokens": 1811
+        }
+      ],
+      "modelsUsed": [
+        "gpt-5"
+      ],
+      "outputTokens": 1811,
+      "period": "rollout-2025-12-30T20-00-00-55555555-5555-4555-8555-555555555555",
+      "totalCost": 0.020355625000000002,
+      "totalTokens": 19937
     },
     {
       "agent": "copilot",
@@ -1659,7 +1686,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 1200,
-          "cost": 0.007536000000000001,
+          "cost": 0.007656000000000001,
           "inputTokens": 3111,
           "modelName": "qwen3-coder-plus",
           "outputTokens": 644
@@ -1698,7 +1725,7 @@ exit: 0
       ],
       "outputTokens": 1478,
       "period": "sess-a",
-      "totalCost": 0.010992000000000002,
+      "totalCost": 0.011112000000000002,
       "totalTokens": 6886
     },
     {
@@ -2063,7 +2090,7 @@ exit: 0
         {
           "cacheCreationTokens": 50,
           "cacheReadTokens": 700,
-          "cost": 0.0008315000000000001,
+          "cost": 0.0008290000000000001,
           "inputTokens": 650,
           "modelName": "grok-code-fast-1",
           "outputTokens": 450
@@ -2075,7 +2102,7 @@ exit: 0
       ],
       "outputTokens": 750,
       "period": "summary-session-beta",
-      "totalCost": 0.0079865,
+      "totalCost": 0.007984000000000002,
       "totalTokens": 2950
     },
     {
@@ -3129,33 +3156,6 @@ exit: 0
       "totalTokens": 9590
     },
     {
-      "agent": "codex",
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 400,
-      "inputTokens": 600,
-      "metadata": {
-        "lastActivity": "2025-12-31T16:00:10.000Z",
-        "reasoningOutputTokens": 0
-      },
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 400,
-          "cost": 0.0018,
-          "inputTokens": 600,
-          "modelName": "gpt-5-codex",
-          "outputTokens": 100
-        }
-      ],
-      "modelsUsed": [
-        "gpt-5-codex"
-      ],
-      "outputTokens": 100,
-      "period": "rollout-2025-12-31T16-00-00-dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-      "totalCost": 0.0018,
-      "totalTokens": 1100
-    },
-    {
       "agent": "kimi",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 0,
@@ -3746,7 +3746,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 100,
-          "cost": 0.0007800000000000001,
+          "cost": 0.0007900000000000001,
           "inputTokens": 420,
           "modelName": "qwen3-coder-plus",
           "outputTokens": 70
@@ -3757,7 +3757,7 @@ exit: 0
       ],
       "outputTokens": 70,
       "period": "sess-e",
-      "totalCost": 0.0007800000000000001,
+      "totalCost": 0.0007900000000000001,
       "totalTokens": 590
     },
     {
@@ -3934,33 +3934,6 @@ exit: 0
       "period": "dddd4444-camel",
       "totalCost": 0.00037,
       "totalTokens": 500
-    },
-    {
-      "agent": "codex",
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 50,
-      "inputTokens": 300,
-      "metadata": {
-        "lastActivity": "2025-12-30T20:00:10.000Z",
-        "reasoningOutputTokens": 0
-      },
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 50,
-          "cost": 0.00036562500000000006,
-          "inputTokens": 300,
-          "modelName": "gpt-5",
-          "outputTokens": 35
-        }
-      ],
-      "modelsUsed": [
-        "gpt-5"
-      ],
-      "outputTokens": 35,
-      "period": "rollout-2025-12-30T20-00-00-55555555-5555-4555-8555-555555555555",
-      "totalCost": 0.00036562500000000006,
-      "totalTokens": 385
     },
     {
       "agent": "opencode",
@@ -5453,11 +5426,11 @@ exit: 0
   ],
   "totals": {
     "cacheCreationTokens": 17825,
-    "cacheReadTokens": 1311537,
-    "inputTokens": 1348039,
-    "outputTokens": 58872,
-    "totalCost": 4.794384925000006,
-    "totalTokens": 2739710,
+    "cacheReadTokens": 1311137,
+    "inputTokens": 1365215,
+    "outputTokens": 60548,
+    "totalCost": 4.822777425000007,
+    "totalTokens": 2758162,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",
