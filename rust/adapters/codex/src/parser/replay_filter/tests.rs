@@ -75,10 +75,7 @@ fn parent_usage(parent: Parent) -> Vec<CodexRawUsage> {
     }
 }
 
-/// Input tokens of each count line, in order: the `n`-th plain count
-/// replays the parent's `n`-th usage when the parent is replayed as a
-/// prefix, and every other count is unique.
-fn values(lines: &[Line], parent: Parent) -> Vec<u64> {
+fn count_values(lines: &[Line], parent: Parent) -> Vec<u64> {
     let mut plain = 0;
     let mut values = Vec::new();
     for (index, line) in lines.iter().enumerate() {
@@ -108,7 +105,7 @@ fn run(lines: &[Line], case: Case) -> (Vec<u64>, bool) {
         child_id: case.child_known.then_some(CHILD),
         ends_at_usage_record: case.spawned,
     }));
-    let mut values = values(lines, case.parent).into_iter();
+    let mut values = count_values(lines, case.parent).into_iter();
     let mut emitted = Vec::new();
     let mut warned = false;
     let mut visit = |event: CodexTokenUsageEvent| emitted.push(event.input_tokens);
@@ -145,10 +142,8 @@ fn run(lines: &[Line], case: Case) -> (Vec<u64>, bool) {
     (emitted, warned)
 }
 
-/// The rule as `rust/adapters/codex/src/README.md` states it, written
-/// over whole lines rather than the filter's streaming state.
-fn expected(lines: &[Line], case: Case) -> (Vec<u64>, bool) {
-    let values = values(lines, case.parent);
+fn documented_outcome(lines: &[Line], case: Case) -> (Vec<u64>, bool) {
+    let values = count_values(lines, case.parent);
     let is_own =
         |line: &Line| case.child_known && matches!(line, Line::OwnSettings | Line::OwnRecord);
     let resolution = lines
@@ -227,7 +222,7 @@ fn filter_follows_the_documented_fork_rule_for_every_short_rollout() {
                         parent,
                     };
                     let actual = run(&lines, case);
-                    let expected = expected(&lines, case);
+                    let expected = documented_outcome(&lines, case);
                     if actual != expected {
                         failures.push(format!(
                             "{lines:?} {case:?}: got {actual:?}, documented {expected:?}"
