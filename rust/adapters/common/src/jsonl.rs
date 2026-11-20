@@ -85,7 +85,7 @@ pub enum Interruption {
     Reject(UnitError),
     KeepUnit(UnitError),
     KeepRecords(SkipKind, &'static str),
-    RejectRecords(SkipKind, &'static str, UnitError),
+    RejectRecords(UnitError),
 }
 
 struct Opened<'a> {
@@ -172,9 +172,9 @@ fn finish(
                     error.record(path, diagnostics);
                 }
             }
-            Interruption::RejectRecords(kind, detail, error) => {
+            Interruption::RejectRecords(error) => {
                 if let Some(diagnostics) = diagnostics {
-                    diagnostics.record(Skip::unit(path, kind, detail));
+                    error.clone().record(path, diagnostics);
                 }
                 return Err(error);
             }

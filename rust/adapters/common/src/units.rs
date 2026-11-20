@@ -16,7 +16,7 @@ const SQLITE_CORRUPT: isize = 11;
 const SQLITE_SCHEMA: isize = 17;
 const SQLITE_NOTADB: isize = 26;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct UnitError {
     fault: Fault,
     detail: String,
