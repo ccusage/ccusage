@@ -159,12 +159,6 @@ pub(super) fn price_antigravity(
     } else {
         MatchKind::Fuzzy
     };
-    // NOTE(2026-11-20, #2236): Antigravity's thinking mode runs the same model at its own rates, as the `… thinking` display-name arms above already fold it. The resolver cannot treat `-thinking` as price-neutral because catalogues list separate thinking models, so the base id only prices records whose full id no catalogue row names.
-    let thinking_base = model
-        .strip_suffix("-thinking")
-        .into_iter()
-        .flat_map(|base| model_candidates(base, provider))
-        .map(|name| (name, MatchKind::Fallback));
     let candidates: Vec<_> = model_candidates(model, provider)
         .into_iter()
         .flat_map(|name| {
@@ -172,7 +166,6 @@ pub(super) fn price_antigravity(
             let extra = (exact && alias != name).then_some((alias, MatchKind::Exact));
             std::iter::once((name, kind)).chain(extra)
         })
-        .chain(thinking_base)
         .collect();
     let candidates: Vec<_> = logged_model
         .map(|name| (name, MatchKind::Exact))
