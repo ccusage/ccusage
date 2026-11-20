@@ -780,7 +780,7 @@ fn is_valid_usage_record(data: &ClaudeUsageRecord) -> bool {
     true
 }
 
-pub(crate) fn is_semver_prefix(value: &str) -> bool {
+fn is_semver_prefix(value: &str) -> bool {
     let bytes = value.as_bytes();
     let mut index = 0;
     if !consume_ascii_digits(bytes, &mut index) || bytes.get(index) != Some(&b'.') {
