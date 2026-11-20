@@ -140,7 +140,7 @@ fn read_files_since<T: Send>(
         single_thread,
         |visit| {
             discover(&mut |file| {
-                // NOTE(2026-11-20, #2376): A restored or imported transcript can carry an mtime older than its records, so a stale mtime is confirmed against the latest record in the file's tail before pruning.
+                // NOTE(2026-11-20, #2376): A restored or imported transcript can keep an mtime older than its records. Pruning on mtime alone silently drops in-window usage, so the latest timestamp in the tail must also be stale.
                 let live = file_modified_millis(&file).is_none_or(|modified| modified >= threshold)
                     || latest_tail_timestamp(&file).is_none_or(|latest| latest >= threshold);
                 if live {
