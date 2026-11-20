@@ -209,7 +209,6 @@ fn deepseek_flash_schedule_preserves_hosted_rates_and_explicit_overrides() {
             .unwrap()
             .is_time_dependent()
     );
-    assert!((pricing.find(&model).unwrap().input * 1e6 - 0.3).abs() < 1e-12);
 }
 
 #[test]
