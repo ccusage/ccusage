@@ -250,7 +250,7 @@ pub(super) fn push_deduped_entry<E: DedupEntry>(
                         let existing = &deduped[dedupe_index.index];
                         (existing.message_id() == Some(message_id)
                             && existing.session_id() == entry.session_id()
-                            && existing.request() == entry.request())
+                            && existing.request_id().is_none())
                         .then_some(dedupe_index.index)
                     })
             })
@@ -324,6 +324,12 @@ pub(super) fn push_deduped_entry<E: DedupEntry>(
             }
             previous
         } else {
+            // NOTE(2026-11-20, #2255): A requestless rewrite at the same timestamp can open a response of its own. Its later blocks carry that response's key, so the key also leads to the surviving entry.
+            if let Some(response_hash) = requestless_response_hash(&entry)
+                && requestless_response_hash(&deduped[index]) != Some(response_hash)
+            {
+                push_deduped_index(deduped_indexes, response_hash, index);
+            }
             entry
         };
         return Some((index, discarded));

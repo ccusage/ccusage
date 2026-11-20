@@ -894,6 +894,25 @@ pub(crate) fn requestless_response_cases() -> Vec<(&'static str, Vec<String>, us
             2,
         ),
         (
+            "later block of a discarded same-timestamp rewrite",
+            vec![
+                chained_assistant("a1", None, FIRST_BLOCK, "gateway-7f3a", 100, None),
+                chained_assistant("a1-rewrite", None, FIRST_BLOCK, "gateway-7f3a", 100, None),
+                chained_assistant("a2", Some("a1-rewrite"), LATER_BLOCK, "gateway-7f3a", 100, None),
+            ],
+            1,
+        ),
+        (
+            "later block of the original after a surviving same-timestamp rewrite",
+            vec![
+                chained_assistant("a1", None, FIRST_BLOCK, "gateway-7f3a", 100, None),
+                chained_assistant("a1-rewrite", None, FIRST_BLOCK, "gateway-7f3a", 100, None)
+                    .replace(r#""output_tokens":25"#, r#""output_tokens":250"#),
+                chained_assistant("a2", Some("a1"), LATER_BLOCK, "gateway-7f3a", 100, None),
+            ],
+            1,
+        ),
+        (
             "blocks without transcript links",
             vec![
                 format!(
