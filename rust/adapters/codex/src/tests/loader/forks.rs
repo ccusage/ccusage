@@ -170,26 +170,6 @@ fn counts_spawned_responses_once_across_duplicate_snapshot_controls() {
 }
 
 #[test]
-fn skips_a_rewritten_burst_that_straddles_a_second_boundary() {
-    let fixture = fs_fixture!({
-        "child.jsonl": [
-            replay_metadata("2026-07-10T09:00:00.985Z", "child", Some("missing-parent")),
-            replay_token_count("2026-07-10T09:00:00.986Z", 100),
-            replay_token_count("2026-07-10T09:00:00.999Z", 200),
-            replay_token_count("2026-07-10T09:00:01.000Z", 300),
-            replay_token_count("2026-07-10T09:00:01.009Z", 400),
-            replay_token_count("2026-07-10T09:00:08.000Z", 500),
-        ]
-        .join("\n"),
-    });
-
-    assert_eq!(
-        replay_input_tokens_by_session(fixture.root()),
-        [("child".to_string(), 500)]
-    );
-}
-
-#[test]
 fn counts_spawned_child_requests_stamped_with_the_fork_instant() {
     let at_fork = "2026-11-01T09:42:09.923Z";
     let usage = |input: u64, cached: u64, output: u64| {
@@ -217,6 +197,7 @@ fn counts_spawned_child_requests_stamped_with_the_fork_instant() {
             "timestamp": at_fork,
             "type": "token_usage_record",
             "payload": {
+                "thread_id": "child",
                 "response_id": response_id,
                 "usage": usage,
             },
@@ -237,7 +218,6 @@ fn counts_spawned_child_requests_stamped_with_the_fork_instant() {
             .to_string(),
             json!({"timestamp": at_fork, "type": "compacted", "payload": {"message": "", "replacement_history": []}}).to_string(),
             json!({"timestamp": at_fork, "type": "turn_context", "payload": {"model": "gpt-5.2"}}).to_string(),
-            token_count(usage(990_000, 0, 10_000), usage(990_000, 0, 10_000)),
             usage_record("resp_child_1", usage(10_000, 2_000, 100)),
             token_count(
                 usage(10_000, 2_000, 100),
@@ -304,18 +284,32 @@ fn keeps_own_usage_a_spawned_child_wrote_before_its_first_usage_record() {
 }
 
 #[test]
-fn skips_usage_records_copied_into_a_rewritten_user_fork_burst() {
+fn skips_usage_records_copied_into_a_user_fork_before_its_own_settings() {
+    let usage_record = |timestamp: &str, thread_id: &str, response_id: &str, input: u64| {
+        json!({
+            "timestamp": timestamp,
+            "type": "token_usage_record",
+            "payload": {
+                "thread_id": thread_id,
+                "response_id": response_id,
+                "usage": {"input_tokens": input, "output_tokens": 1, "total_tokens": input + 1},
+            },
+        })
+        .to_string()
+    };
     let fixture = fs_fixture!({
         "child.jsonl": [
             replay_metadata("2026-11-01T09:00:00.000Z", "child", Some("missing-parent")),
             replay_token_count("2026-11-01T09:00:00.100Z", 100),
+            usage_record("2026-11-01T09:00:00.150Z", "missing-parent", "resp_parent", 200),
+            replay_token_count("2026-11-01T09:00:00.200Z", 200),
             json!({
-                "timestamp": "2026-11-01T09:00:00.150Z",
-                "type": "token_usage_record",
-                "payload": {"response_id": "resp_parent", "usage": {"input_tokens": 200, "output_tokens": 1}},
+                "timestamp": "2026-11-01T09:00:00.200Z",
+                "type": "event_msg",
+                "payload": {"type": "thread_settings_applied", "thread_id": "child", "thread_settings": {}},
             })
             .to_string(),
-            replay_token_count("2026-11-01T09:00:00.200Z", 200),
+            usage_record("2026-11-01T09:00:08.000Z", "child", "resp_child", 500),
             replay_token_count("2026-11-01T09:00:08.000Z", 500),
         ]
         .join("\n"),
@@ -324,30 +318,6 @@ fn skips_usage_records_copied_into_a_rewritten_user_fork_burst() {
     assert_eq!(
         replay_input_tokens_by_session(fixture.root()),
         [("child".to_string(), 500)]
-    );
-}
-
-#[test]
-fn keeps_fork_local_usage_recorded_after_a_rewritten_burst() {
-    let fixture = fs_fixture!({
-        "child.jsonl": [
-            replay_metadata("2026-07-10T09:00:00.000Z", "child", Some("missing-parent")),
-            replay_token_count("2026-07-10T09:00:00.100Z", 100),
-            replay_token_count("2026-07-10T09:00:00.200Z", 200),
-            replay_token_count("2026-07-10T09:00:30.000Z", 300),
-            replay_token_count("2026-07-10T09:01:00.000Z", 400),
-            replay_token_count("2026-07-10T09:01:30.000Z", 500),
-        ]
-        .join("\n"),
-    });
-
-    assert_eq!(
-        replay_input_tokens_by_session(fixture.root()),
-        [
-            ("child".to_string(), 300),
-            ("child".to_string(), 400),
-            ("child".to_string(), 500),
-        ]
     );
 }
 
@@ -405,6 +375,8 @@ fn keeps_full_parent_stream_when_the_parent_itself_replayed_a_missing_session() 
     assert_eq!(
         replay_input_tokens_by_session(fixture.root()),
         [
+            ("01-parent".to_string(), 100),
+            ("01-parent".to_string(), 200),
             ("01-parent".to_string(), 300),
             ("01-parent".to_string(), 400),
             ("02-child".to_string(), 500),
@@ -438,97 +410,6 @@ fn keeps_usage_of_a_session_that_lists_itself_as_its_own_parent() {
             "single_thread={single_thread}"
         );
     }
-}
-
-#[test]
-fn skips_missing_parent_replay_when_duplicate_snapshot_is_suppressed() {
-    fn token_count(timestamp: &str, input: u64, total_input: u64) -> String {
-        json!({
-            "timestamp": timestamp,
-            "type": "event_msg",
-            "payload": {
-                "type": "token_count",
-                "info": {
-                    "last_token_usage": {
-                        "input_tokens": input,
-                        "output_tokens": 1,
-                        "total_tokens": input + 1,
-                    },
-                    "total_token_usage": {
-                        "input_tokens": total_input,
-                        "output_tokens": 1,
-                        "total_tokens": total_input + 1,
-                    },
-                    "model": "gpt-5.5",
-                },
-            },
-        })
-        .to_string()
-    }
-
-    let fixture = fs_fixture!({
-        "child.jsonl": [
-            json!({
-                "type": "session_meta",
-                "payload": {"id": "child", "forked_from_id": "missing-parent"},
-            })
-            .to_string(),
-            token_count("2026-07-10T08:00:00.100Z", 100, 100),
-            token_count("2026-07-10T08:00:00.200Z", 100, 100),
-            token_count("2026-07-10T08:00:08.000Z", 50, 50),
-        ]
-        .join("\n"),
-    });
-
-    let events = crate::test_support::rollout_events(fixture.root());
-
-    assert_eq!(events.len(), 1);
-    assert_eq!(events[0].input_tokens, 50);
-}
-
-#[test]
-fn skips_missing_parent_duplicate_only_replay_at_known_session_start() {
-    let token_count = |timestamp: &str, input_tokens: u64| {
-        json!({
-            "timestamp": timestamp,
-            "type": "event_msg",
-            "payload": {
-                "type": "token_count",
-                "info": {
-                    "last_token_usage": {
-                        "input_tokens": input_tokens,
-                        "output_tokens": 1,
-                        "total_tokens": input_tokens + 1,
-                    },
-                    "total_token_usage": {
-                        "input_tokens": input_tokens,
-                        "output_tokens": 1,
-                        "total_tokens": input_tokens + 1,
-                    },
-                },
-            },
-        })
-        .to_string()
-    };
-
-    let fixture = fs_fixture!({
-        "child.jsonl": [
-            replay_metadata(
-                "2026-07-10T08:00:00.000Z",
-                "child",
-                Some("missing-parent"),
-            ),
-            token_count("2026-07-10T08:00:00.100Z", 100),
-            token_count("2026-07-10T08:00:00.200Z", 100),
-            token_count("2026-07-10T08:00:08.000Z", 50),
-        ]
-        .join("\n"),
-    });
-
-    let events = crate::test_support::rollout_events(fixture.root());
-
-    assert_eq!(events.len(), 1);
-    assert_eq!(events[0].input_tokens, 50);
 }
 
 #[test]
@@ -575,53 +456,6 @@ fn keeps_first_child_response_after_zero_usage_initialization() {
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].input_tokens, 50);
     assert_eq!(events[0].output_tokens, 1);
-}
-
-#[test]
-fn skips_missing_parent_replay_with_duplicate_snapshots_and_advancing_usage() {
-    fn token_count(timestamp: &str, input: u64, total_input: u64) -> String {
-        json!({
-            "timestamp": timestamp,
-            "type": "event_msg",
-            "payload": {
-                "type": "token_count",
-                "info": {
-                    "last_token_usage": {
-                        "input_tokens": input,
-                        "output_tokens": 1,
-                        "total_tokens": input + 1,
-                    },
-                    "total_token_usage": {
-                        "input_tokens": total_input,
-                        "output_tokens": 1,
-                        "total_tokens": total_input + 1,
-                    },
-                    "model": "gpt-5.5",
-                },
-            },
-        })
-        .to_string()
-    }
-
-    let fixture = fs_fixture!({
-        "child.jsonl": [
-            json!({
-                "type": "session_meta",
-                "payload": {"id": "child", "forked_from_id": "missing-parent"},
-            })
-            .to_string(),
-            token_count("2026-07-10T08:00:00.100Z", 100, 100),
-            token_count("2026-07-10T08:00:00.200Z", 100, 100),
-            token_count("2026-07-10T08:00:00.300Z", 200, 300),
-            token_count("2026-07-10T08:00:08.000Z", 50, 50),
-        ]
-        .join("\n"),
-    });
-
-    let events = crate::test_support::rollout_events(fixture.root());
-
-    assert_eq!(events.len(), 1);
-    assert_eq!(events[0].input_tokens, 50);
 }
 
 #[test]

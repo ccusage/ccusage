@@ -14,6 +14,7 @@ use crate::{
 mod archived;
 mod auto_review;
 mod bounded;
+mod fork_boundary;
 mod forks;
 mod records;
 mod replay;

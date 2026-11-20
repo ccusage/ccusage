@@ -24,6 +24,9 @@ pub(super) struct CodexReplayPlan {
 
 struct ParentReplay {
     path: Option<PathBuf>,
+    parent_id: String,
+    child_id: Option<String>,
+    unreadable: bool,
     forked_at: Option<TimestampMs>,
     spawned: bool,
 }
@@ -144,8 +147,9 @@ impl CodexReplayPlan {
             .filter_map(|file| {
                 let parent_id = file.metadata.parent_id.as_deref()?;
                 let path = first_non_child_path(&files_by_session_id, parent_id, &file.path);
-                if path.is_none() && selection.is_some_and(|(_, failed)| failed.contains(parent_id))
-                {
+                let unreadable = path.is_none()
+                    && selection.is_some_and(|(_, failed)| failed.contains(parent_id));
+                if unreadable {
                     diagnostics.record(Skip::unit(
                         &file.path,
                         SkipKind::UnreadableForkParent,
@@ -156,6 +160,9 @@ impl CodexReplayPlan {
                     file.path.clone(),
                     ParentReplay {
                         path,
+                        parent_id: parent_id.to_string(),
+                        child_id: file.metadata.session_id.clone(),
+                        unreadable,
                         forked_at: file.metadata.timestamp,
                         spawned: file.metadata.spawned,
                     },
@@ -180,7 +187,10 @@ impl CodexReplayPlan {
     pub(super) fn fork_replay(&self, child: &Path) -> Option<CodexForkReplay<'_>> {
         let parent = self.parent_by_child.get(child)?;
         Some(CodexForkReplay {
-            prefix: self.replay_prefix(parent),
+            parent_usage: self.replay_prefix(parent),
+            missing_parent: (parent.path.is_none() && !parent.unreadable)
+                .then_some(parent.parent_id.as_str()),
+            child_id: parent.child_id.as_deref(),
             ends_at_usage_record: parent.spawned,
         })
     }
@@ -356,7 +366,7 @@ pub(super) struct CodexSessionMetadata {
     pub(super) is_session_meta: bool,
     session_id: Option<String>,
     parent_id: Option<String>,
-    pub(super) timestamp: Option<TimestampMs>,
+    timestamp: Option<TimestampMs>,
     spawned: bool,
 }
 
@@ -549,7 +559,7 @@ mod tests {
     }
 
     #[test]
-    fn bounded_forks_warn_only_when_a_failed_probe_can_hide_the_parent() {
+    fn bounded_forks_warn_when_the_parent_is_unreadable_or_missing() {
         ccusage_test_support::Environment::with_var("LOG_LEVEL", "1").run(|| {
         let usage = |timestamp: &str| {
             serde_json::json!({"timestamp":timestamp,"type":"event_msg","payload":{
@@ -579,10 +589,10 @@ mod tests {
                     fixture.path("parent.jsonl.zst"),
                 ],
                 150,
-                false,
+                None,
             ),
-            (vec![fixture.path("parent.jsonl.zst")], 300, true),
-            (vec![], 300, false),
+            (vec![fixture.path("parent.jsonl.zst")], 300, Some(("read", "unreadable"))),
+            (vec![], 300, Some(("find", "missing"))),
         ] {
             let mut available = vec![child.clone(), fixture.path("other.jsonl.zst")];
             available.extend(parents);
@@ -603,20 +613,20 @@ mod tests {
                     &diagnostics,
                 );
                 assert_eq!(tokens, expected_tokens);
-                let warning = "WARN  codex: could not read the parent rollout for 1 forked session. Replayed usage may be counted twice.";
                 let default_warnings = diagnostics.warnings(&crate::cli::SharedArgs::default());
                 let debug_warnings = diagnostics.warnings(&crate::cli::SharedArgs {
                     debug: true,
                     ..Default::default()
                 });
-                if expected_warning {
-                    assert_eq!(default_warnings, [warning]);
+                if let Some((verb, label)) = expected_warning {
+                    let warning = format!("WARN  codex: could not {verb} the parent rollout for 1 forked session. Replayed usage may be counted twice.");
+                    assert_eq!(default_warnings, std::slice::from_ref(&warning));
                     assert_eq!(
                         debug_warnings,
                         [
-                            warning.to_string(),
+                            warning,
                             format!(
-                                "codex: unreadable fork parent: {}: parent session parent",
+                                "codex: {label} fork parent: {}: parent session parent",
                                 child.display()
                             ),
                         ]

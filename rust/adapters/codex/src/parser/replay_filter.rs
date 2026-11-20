@@ -1,100 +1,81 @@
-use crate::{CodexRawUsage, CodexTokenUsageEvent, TimestampMs};
+use crate::{CodexRawUsage, CodexTokenUsageEvent};
 
-use super::normalize_codex_raw_usage;
+use super::CodexForkReplay;
 
-pub(super) enum CodexReplayState<'a> {
-    MatchingParent {
-        prefix: &'a [CodexRawUsage],
-        index: usize,
-    },
-    SkippingRewrittenBurst(TimestampMs),
-    Done,
-}
-
-// NOTE(2026-07-27, #1501): Codex rewrites replay timestamps near the fork instant. Observed bursts spanned 10–40 ms, crossed second boundaries, and preceded a 5.8–15.3 s pause before the child's own usage.
-const CODEX_REWRITTEN_BURST_PAUSE_MS: i64 = 1_000;
-
-#[derive(Default)]
-pub(super) struct CodexBurst {
-    pub(super) session_start: Option<TimestampMs>,
-    first: Option<TimestampMs>,
-    decision: Option<Option<TimestampMs>>,
-}
-
-impl CodexBurst {
-    fn observe(&mut self, timestamp: TimestampMs) {
-        if self.decision.is_some() {
-            return;
-        }
-        let Some(first) = self.first else {
-            self.first = Some(timestamp);
-            return;
-        };
-        let is_dense = (0..=CODEX_REWRITTEN_BURST_PAUSE_MS)
-            .contains(&(timestamp.as_millis() - first.as_millis()));
-        // NOTE(2026-10-26, #1971): A child's first request can produce a dense pair after the fork instant. Density alone can mistake it for replay.
-        let starts_at_fork = self.session_start.is_none_or(|start| {
-            first.as_millis().abs_diff(start.as_millis())
-                <= CODEX_REWRITTEN_BURST_PAUSE_MS.unsigned_abs()
-        });
-        self.decision = Some((is_dense && starts_at_fork).then_some(first));
-    }
-}
-
-pub(super) enum CodexPendingReplay {
-    Event(CodexTokenUsageEvent),
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum CodexOwnershipMarker {
     UsageRecord,
+    ThreadSettings,
+}
+
+pub(super) enum CodexReplayResolution<'a> {
+    Deterministic,
+    MissingParent(&'a str),
 }
 
 pub(super) struct CodexReplayFilter<'a> {
-    pub(super) state: CodexReplayState<'a>,
-    pub(super) ends_at_usage_record: bool,
-    pub(super) burst: CodexBurst,
-    pub(super) pending: Vec<CodexPendingReplay>,
+    fork: Option<CodexForkReplay<'a>>,
+    pending: Vec<CodexTokenUsageEvent>,
+    own_start: Option<usize>,
+    foreign_before_own: bool,
 }
 
-impl CodexReplayFilter<'_> {
-    pub(super) fn observe_usage_record(&mut self) {
-        if self.ends_at_usage_record {
-            if self.burst.decision.is_none() && !self.pending.is_empty() {
-                self.pending.push(CodexPendingReplay::UsageRecord);
-            } else {
-                self.state = CodexReplayState::Done;
-            }
+impl<'a> CodexReplayFilter<'a> {
+    pub(super) fn new(fork: Option<CodexForkReplay<'a>>) -> Self {
+        Self {
+            fork,
+            pending: Vec::new(),
+            own_start: None,
+            foreign_before_own: false,
         }
     }
 
-    pub(super) fn observe_token_count(
+    pub(super) fn is_done(&self) -> bool {
+        self.fork.is_none()
+    }
+
+    pub(super) fn observe_marker(
         &mut self,
-        timestamp: Option<TimestampMs>,
-        usage: Option<CodexRawUsage>,
+        marker: CodexOwnershipMarker,
+        thread_id: Option<&str>,
         visit: &mut impl FnMut(CodexTokenUsageEvent),
-    ) {
-        if matches!(self.state, CodexReplayState::Done) && self.pending.is_empty() {
-            return;
+    ) -> Option<CodexReplayResolution<'a>> {
+        let fork = self.fork?;
+        let is_own = thread_id.is_some() && thread_id == fork.child_id;
+        if is_own {
+            self.own_start.get_or_insert(self.pending.len());
+            if marker == CodexOwnershipMarker::UsageRecord {
+                self.resolve_by_ownership(visit);
+                return Some(CodexReplayResolution::Deterministic);
+            }
+            return None;
         }
-        if usage.is_some_and(|usage| !normalize_codex_raw_usage(usage).is_empty())
-            && let Some(timestamp) = timestamp
+        if marker == CodexOwnershipMarker::UsageRecord
+            && thread_id.is_none()
+            && fork.ends_at_usage_record
         {
-            self.burst.observe(timestamp);
-            if self.burst.decision.is_some() {
-                self.flush(visit);
-            }
+            return Some(self.resolve_by_parent(visit));
         }
+        let is_foreign = match marker {
+            CodexOwnershipMarker::UsageRecord => thread_id.is_some(),
+            CodexOwnershipMarker::ThreadSettings => true,
+        };
+        if is_foreign && self.own_start.is_none() {
+            self.foreign_before_own = true;
+        }
+        None
     }
 
-    fn flush(&mut self, visit: &mut impl FnMut(CodexTokenUsageEvent)) {
-        for pending in std::mem::take(&mut self.pending) {
-            match pending {
-                CodexPendingReplay::Event(event) => self.visit(event, visit),
-                CodexPendingReplay::UsageRecord => self.observe_usage_record(),
-            }
+    pub(super) fn finish(
+        &mut self,
+        visit: &mut impl FnMut(CodexTokenUsageEvent),
+    ) -> Option<CodexReplayResolution<'a>> {
+        self.fork?;
+        if self.own_start.is_some() {
+            self.resolve_by_ownership(visit);
+            return Some(CodexReplayResolution::Deterministic);
         }
-    }
-
-    pub(super) fn finish(&mut self, visit: &mut impl FnMut(CodexTokenUsageEvent)) {
-        self.burst.decision.get_or_insert(None);
-        self.flush(visit);
+        Some(self.resolve_by_parent(visit))
     }
 
     pub(super) fn visit(
@@ -102,52 +83,101 @@ impl CodexReplayFilter<'_> {
         event: CodexTokenUsageEvent,
         visit: &mut impl FnMut(CodexTokenUsageEvent),
     ) {
-        if self.burst.decision.is_none() && !self.pending.is_empty() {
-            self.pending.push(CodexPendingReplay::Event(event));
-            return;
-        }
-        if event.response_id.is_some() {
+        if self.fork.is_none() {
             visit(event);
             return;
         }
-        loop {
-            match self.state {
-                CodexReplayState::MatchingParent { prefix, index } => {
-                    if prefix.get(index) == Some(&event.raw_usage()) {
-                        self.state = CodexReplayState::MatchingParent {
-                            prefix,
-                            index: index + 1,
-                        };
-                        return;
-                    }
-                    if index == 0 {
-                        let Some(burst) = self.burst.decision else {
-                            self.pending.push(CodexPendingReplay::Event(event));
-                            return;
-                        };
-                        self.state = burst.map_or(
-                            CodexReplayState::Done,
-                            CodexReplayState::SkippingRewrittenBurst,
-                        );
-                    } else {
-                        self.state = CodexReplayState::Done;
-                    }
-                }
-                CodexReplayState::SkippingRewrittenBurst(previous) => {
-                    let timestamp = event.timestamp;
-                    if (0..=CODEX_REWRITTEN_BURST_PAUSE_MS)
-                        .contains(&(timestamp.as_millis() - previous.as_millis()))
-                    {
-                        self.state = CodexReplayState::SkippingRewrittenBurst(timestamp);
-                        return;
-                    }
-                    self.state = CodexReplayState::Done;
-                }
-                CodexReplayState::Done => {
-                    visit(event);
-                    return;
-                }
+        self.pending.push(event);
+    }
+
+    fn resolve_by_ownership(&mut self, visit: &mut impl FnMut(CodexTokenUsageEvent)) {
+        let inherited = if self.foreign_before_own {
+            self.pending[..self.own_start.unwrap_or(0)]
+                .iter()
+                .filter(|event| is_replayable(event))
+                .count()
+        } else {
+            0
+        };
+        self.emit_after(inherited, visit);
+    }
+
+    fn resolve_by_parent(
+        &mut self,
+        visit: &mut impl FnMut(CodexTokenUsageEvent),
+    ) -> CodexReplayResolution<'a> {
+        let Some(fork) = self.fork else {
+            return CodexReplayResolution::Deterministic;
+        };
+        let resolution = match fork.missing_parent {
+            Some(parent_id) if !self.pending.is_empty() => {
+                CodexReplayResolution::MissingParent(parent_id)
+            }
+            _ => CodexReplayResolution::Deterministic,
+        };
+        let leading = self
+            .pending
+            .iter()
+            .filter(|event| is_replayable(event))
+            .map(CodexTokenUsageEvent::raw_usage)
+            .collect::<Vec<_>>();
+        let inherited = replayed_parent_len(fork.parent_usage, &leading);
+        self.emit_after(inherited, visit);
+        resolution
+    }
+
+    fn emit_after(&mut self, mut inherited: usize, visit: &mut impl FnMut(CodexTokenUsageEvent)) {
+        self.fork = None;
+        for event in std::mem::take(&mut self.pending) {
+            if inherited > 0 && is_replayable(&event) {
+                inherited -= 1;
+            } else {
+                visit(event);
             }
         }
     }
+}
+
+fn is_replayable(event: &CodexTokenUsageEvent) -> bool {
+    event.response_id.is_none()
+}
+
+fn replayed_parent_len(parent: &[CodexRawUsage], child: &[CodexRawUsage]) -> usize {
+    let prefix = parent
+        .iter()
+        .zip(child)
+        .take_while(|(parent, child)| parent == child)
+        .count();
+    prefix.max(longest_parent_suffix_prefix(parent, child))
+}
+
+fn longest_parent_suffix_prefix(parent: &[CodexRawUsage], child: &[CodexRawUsage]) -> usize {
+    let pattern = &child[..child.len().min(parent.len())];
+    if pattern.is_empty() {
+        return 0;
+    }
+    let mut failure = vec![0; pattern.len()];
+    let mut matched = 0;
+    for index in 1..pattern.len() {
+        while matched > 0 && pattern[index] != pattern[matched] {
+            matched = failure[matched - 1];
+        }
+        if pattern[index] == pattern[matched] {
+            matched += 1;
+        }
+        failure[index] = matched;
+    }
+    matched = 0;
+    for usage in &parent[parent.len() - pattern.len()..] {
+        while matched > 0 && *usage != pattern[matched] {
+            matched = failure[matched - 1];
+        }
+        if *usage == pattern[matched] {
+            matched += 1;
+            if matched == pattern.len() {
+                return matched;
+            }
+        }
+    }
+    matched
 }
