@@ -165,10 +165,7 @@ in
           rustfmt.priority = 9;
           schema-gen = {
             command = lib.getExe schemaGen;
-            # NOTE(2026-11-20, #2361): the generated schema also depends on the
-            # option structs in `config_schema` and the agent specs and CLI types
-            # in `ccusage-cli`. The includes are listed by hand because treefmt
-            # cannot derive the Rust module graph.
+            # NOTE(2026-11-20, #2361): the schema also depends on the option structs in `config_schema` and the `ccusage-cli` agent specs. The includes are listed by hand because treefmt cannot derive the Rust module graph.
             includes = [
               "apps/ccusage/config-schema.json"
               "rust/crates/ccusage-cli/src/*.rs"
