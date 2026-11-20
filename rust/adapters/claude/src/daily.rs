@@ -11,7 +11,7 @@ use super::{
     MainThreadSessions, UsageLoadContext,
     dedupe::{DedupEntry, DedupKey, dedupe_files},
     main_thread_sessions,
-    paths::{claude_paths, usage_files_before_since, visit_usage_files},
+    paths::{claude_paths, read_usage_files, usage_files_before_since},
     read_discovered_paths,
 };
 
@@ -51,6 +51,14 @@ pub(super) fn load_daily_entries(
 ) -> Result<DailyEntries> {
     let paths = claude_paths()?;
     let context = UsageLoadContext::new(shared);
+    let read = |file: &PathBuf| {
+        read_daily_usage_file_with_diagnostics(
+            file,
+            context.window().timezone(),
+            context.table(),
+            diagnostics,
+        )
+    };
     let mut pruned = Vec::new();
     let deduped = if shared.since.is_some() {
         let since_files = usage_files_before_since(
@@ -62,17 +70,19 @@ pub(super) fn load_daily_entries(
         );
         pruned = since_files.pruned;
         let mut kept = since_files.kept;
-        load_deduped_daily_entries(
+        dedupe_loaded_files(read_discovered_paths(
+            context.shared.single_thread,
             |visit| std::mem::take(&mut kept).into_iter().for_each(visit),
-            &context,
-            diagnostics,
-        )
+            read,
+        ))
     } else {
-        load_deduped_daily_entries(
-            |visit| visit_usage_files(&paths, project_filter, visit, diagnostics),
-            &context,
+        dedupe_loaded_files(read_usage_files(
+            context.shared.single_thread,
+            &paths,
+            project_filter,
             diagnostics,
-        )
+            read,
+        ))
     };
     let mut deduped = deduped.unwrap_or(DedupedDailyEntries {
         entries: Vec::new(),
@@ -112,19 +122,9 @@ fn sessions(deduped: &DedupedDailyEntries) -> MainThreadSessions {
     )
 }
 
-fn load_deduped_daily_entries(
-    discover: impl FnMut(&mut dyn FnMut(PathBuf)),
-    context: &UsageLoadContext<'_>,
-    diagnostics: &Diagnostics,
+fn dedupe_loaded_files(
+    loaded_files: Vec<(PathBuf, Vec<ClaudeEntry>)>,
 ) -> Option<DedupedDailyEntries> {
-    let loaded_files = read_discovered_paths(context.shared.single_thread, discover, |file| {
-        read_daily_usage_file_with_diagnostics(
-            file,
-            context.window().timezone(),
-            context.table(),
-            diagnostics,
-        )
-    });
     if loaded_files.is_empty() {
         return None;
     }

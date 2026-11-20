@@ -16,7 +16,8 @@ use crate::{
 };
 use ccusage_adapter_common::{
     jsonl::{self, ReadPolicy},
-    visit_usage_files as visit_usage_files_in,
+    read_discovered_paths, read_paths_discovered_in_parallel,
+    visit_usage_files as visit_usage_files_in, visit_usage_files_in_parallel,
 };
 
 pub(crate) fn claude_paths() -> Result<Vec<PathBuf>> {
@@ -55,7 +56,7 @@ pub(crate) fn usage_files(
     files
 }
 
-pub(crate) fn visit_usage_files(
+fn visit_usage_files(
     paths: &[PathBuf],
     project_filter: Option<&str>,
     visit: &mut dyn FnMut(PathBuf),
@@ -67,18 +68,52 @@ pub(crate) fn visit_usage_files(
         }
     };
     for path in paths {
-        let projects_dir = path.join("projects");
-        if let Some(project_filter) =
-            project_filter.filter(|filter| is_project_path_segment(filter))
-        {
-            visit_usage_files_in(
-                &projects_dir.join(project_filter),
-                &mut filtered_visit,
-                diagnostics,
-            );
-        } else {
-            visit_usage_files_in(&projects_dir, &mut filtered_visit, diagnostics);
-        }
+        visit_usage_files_in(
+            &projects_dir(path, project_filter),
+            &mut filtered_visit,
+            diagnostics,
+        );
+    }
+}
+
+pub(crate) fn read_usage_files<T: Send>(
+    single_thread: bool,
+    paths: &[PathBuf],
+    project_filter: Option<&str>,
+    diagnostics: &Diagnostics,
+    read: impl Fn(&PathBuf) -> T + Sync,
+) -> Vec<(PathBuf, T)> {
+    if single_thread {
+        return read_discovered_paths(
+            true,
+            |visit| visit_usage_files(paths, project_filter, visit, diagnostics),
+            read,
+        );
+    }
+    read_paths_discovered_in_parallel(
+        |visit| {
+            let filtered_visit = |path: PathBuf| {
+                if project_filter.is_none_or(|filter| extract_project(&path) == filter) {
+                    visit(path);
+                }
+            };
+            for path in paths {
+                visit_usage_files_in_parallel(
+                    &projects_dir(path, project_filter),
+                    &filtered_visit,
+                    diagnostics,
+                );
+            }
+        },
+        read,
+    )
+}
+
+fn projects_dir(path: &Path, project_filter: Option<&str>) -> PathBuf {
+    let projects_dir = path.join("projects");
+    match project_filter.filter(|filter| is_project_path_segment(filter)) {
+        Some(project_filter) => projects_dir.join(project_filter),
+        None => projects_dir,
     }
 }
 
