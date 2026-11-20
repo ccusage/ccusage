@@ -1,4 +1,4 @@
-use std::sync::LazyLock;
+use std::{cell::Cell, sync::LazyLock};
 
 use memchr::{memchr, memchr2, memchr2_iter, memmem::Finder, memrchr_iter};
 use smallvec::SmallVec;
@@ -77,7 +77,7 @@ impl<'a> Cursor<'a> {
         }
     }
 
-    fn link(&mut self) -> Option<Option<&'a [u8]>> {
+    fn plain(&mut self) -> Option<Option<&'a [u8]>> {
         let link = self.nullable_string()?;
         if link.is_some_and(|link| memchr(b'\\', link).is_some()) {
             return None;
@@ -182,13 +182,13 @@ impl<'a> Cursor<'a> {
                 b"tool_use_id" => &mut block.tool_use_id,
                 _ => return Some(Step::Skip),
             };
-            *slot = cursor.nullable_string()?;
+            *slot = cursor.plain()?;
             Some(Step::Read)
         })?;
         Some(block)
     }
 
-    fn message(&mut self, skim: &mut Skim<'a>) -> Option<()> {
+    fn message(&mut self, skim: &mut Skim<'a>, rejected: &Cell<bool>) -> Option<()> {
         if self.peek()? != b'{' {
             return self.skip_value();
         }
@@ -203,6 +203,7 @@ impl<'a> Cursor<'a> {
                     skim.blocks = Some(blocks);
                     Some(Step::Read)
                 } else if skim.kind == Some(b"user") {
+                    rejected.set(true);
                     None
                 } else {
                     skim.blocks = None;
@@ -219,67 +220,88 @@ impl<'a> Cursor<'a> {
 }
 
 impl Skim<'_> {
-    fn complete(&self, want: Want) -> bool {
+    fn complete(&self, want: Want, rest: &[u8]) -> bool {
         self.seen_uuid
             && self.seen_parent
             && self.seen_kind
             && match want {
                 Want::Block => self.seen_message,
-                Want::Link => self.seen_message || self.kind.is_some_and(|kind| kind != b"user"),
+                Want::Link => {
+                    self.seen_message
+                        || (self.kind.is_some_and(|kind| kind != b"user") && lacks(rest, &USAGE))
+                }
             }
     }
+}
+
+pub(super) enum Scan<T> {
+    Read(T),
+    Skip,
+    Unsure,
+}
+
+static USAGE: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(b"usage"));
+static UNICODE_ESCAPE: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(br"\u00"));
+
+// NOTE(2026-11-20, #2255): RFC 8259 lets a JSON string escape an ASCII letter only as `\u00XX`, and whitespace cannot split a name or value. Bytes that hold neither the letters nor such an escape cannot spell that name or value anywhere, so the scanner may stop reading there.
+pub(super) fn lacks(rest: &[u8], letters: &Finder<'_>) -> bool {
+    letters.find(rest).is_none() && UNICODE_ESCAPE.find(rest).is_none()
 }
 
 pub(super) fn skim<'a>(
     line: &'a [u8],
     want: Want,
     keep_parent: impl Fn(Option<&[u8]>) -> bool,
-) -> Option<Skim<'a>> {
+) -> Scan<Skim<'a>> {
     let mut cursor = Cursor { line, at: 0 };
     let mut skim = Skim::default();
-    cursor.object(|key, cursor| {
+    let rejected = Cell::new(false);
+    let read = cursor.object(|key, cursor| {
         match key {
             b"type" => {
-                skim.kind = cursor.nullable_string()?;
+                skim.kind = cursor.plain()?;
                 skim.seen_kind = true;
             }
             b"uuid" => {
-                skim.uuid = cursor.link()?;
+                skim.uuid = cursor.plain()?;
                 skim.seen_uuid = true;
             }
             b"parentUuid" => {
-                skim.parent = cursor.link()?;
+                skim.parent = cursor.plain()?;
                 if !keep_parent(skim.parent) {
+                    rejected.set(true);
                     return None;
                 }
                 skim.seen_parent = true;
             }
             b"message" => {
-                cursor.message(&mut skim)?;
+                cursor.message(&mut skim, &rejected)?;
                 skim.seen_message = true;
             }
             _ => return Some(Step::Skip),
         }
-        Some(if skim.complete(want) {
+        Some(if skim.complete(want, &cursor.line[cursor.at..]) {
             Step::Stop
         } else {
             Step::Read
         })
-    })?;
-    if !skim.seen_parent && !keep_parent(None) {
-        return None;
+    });
+    match read {
+        Some(()) if skim.seen_parent || keep_parent(None) => Scan::Read(skim),
+        Some(()) => Scan::Skip,
+        None if rejected.get() => Scan::Skip,
+        None => Scan::Unsure,
     }
-    Some(skim)
 }
 
 #[derive(Default)]
-pub(super) struct BlockLinks<'a> {
+pub(super) struct RawLinks<'a> {
     pub(super) uuid: Option<&'a [u8]>,
     pub(super) parent: Option<&'a [u8]>,
     pub(super) tool_uses: SmallVec<[&'a [u8]; 2]>,
 }
 
-static TOOL_USE: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(br#""type":"tool_use""#));
+static TOOL_USE: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(b"tool_use"));
 const UUID_MEMBER: &[u8] = br#","uuid":""#;
 
 impl<'a> Cursor<'a> {
@@ -307,11 +329,10 @@ impl<'a> Cursor<'a> {
         }
     }
 
-    // NOTE(2026-11-20, #2255): A JSON string cannot hold `"type":"tool_use"` unescaped. Once no such bytes remain, the rest of the content holds no tool use block and is not read.
     fn content_tool_uses(&mut self, tool_uses: &mut SmallVec<[&'a [u8]; 2]>) -> Option<()> {
         self.eat(b'[')?;
         loop {
-            if TOOL_USE.find(self.line.get(self.at..)?).is_none() {
+            if lacks(self.line.get(self.at..)?, &TOOL_USE) {
                 return Some(());
             }
             match self.peek()? {
@@ -358,7 +379,7 @@ fn top_level_uuid(line: &[u8]) -> Option<&[u8]> {
         line,
         at: at + UUID_MEMBER.len() - 1,
     };
-    let uuid = cursor.link()??;
+    let uuid = cursor.plain()??;
     let rest = &line[cursor.at..];
     let closes_only_the_line =
         memchr2(b'{', b'[', rest).is_none() && memchr2_iter(b'}', b']', rest).nth(1).is_none();
@@ -368,18 +389,18 @@ fn top_level_uuid(line: &[u8]) -> Option<&[u8]> {
     Some(uuid)
 }
 
-pub(super) fn block_links(line: &[u8]) -> Option<BlockLinks<'_>> {
+pub(super) fn block_links(line: &[u8]) -> Option<RawLinks<'_>> {
     let mut cursor = Cursor { line, at: 0 };
-    let mut links = BlockLinks::default();
+    let mut links = RawLinks::default();
     let (mut seen_uuid, mut seen_parent) = (false, false);
     cursor.object(|key, cursor| {
         match key {
             b"uuid" => {
-                links.uuid = cursor.link()?;
+                links.uuid = cursor.plain()?;
                 seen_uuid = true;
             }
             b"parentUuid" => {
-                links.parent = cursor.link()?;
+                links.parent = cursor.plain()?;
                 seen_parent = true;
             }
             b"message" => {

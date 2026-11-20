@@ -1,17 +1,19 @@
 use std::{
     hash::{Hash, Hasher},
     num::NonZeroU64,
+    sync::LazyLock,
 };
 
 use ccusage_core::{TokenUsageRaw, fast::FxHashMap};
+use memchr::memmem::Finder;
 use rustc_hash::FxHasher;
 use smallvec::SmallVec;
 
 mod skim;
 
-use super::record::parse_links;
+use super::record::{parse_block_links, parse_line_links};
 
-use skim::{Skim, Want, block_links, skim};
+use skim::{Scan, Skim, Want, block_links, skim};
 
 enum Node {
     Link { parent: u64, owner: Option<u32> },
@@ -31,10 +33,17 @@ pub(super) struct ResponseChains {
     tool_use_owners: FxHashMap<u64, u32>,
 }
 
-#[derive(Debug)]
-pub(super) struct Links {
+pub(super) struct BlockLinks {
     pub(super) uuid: Option<u64>,
     pub(super) parent: Option<u64>,
+    pub(super) tool_uses: SmallVec<[u64; 2]>,
+}
+
+pub(super) struct LineLinks {
+    pub(super) uuid: u64,
+    pub(super) parent: u64,
+    pub(super) has_usage: bool,
+    pub(super) answers: Option<SmallVec<[u64; 2]>>,
 }
 
 pub(super) fn key(value: &[u8]) -> u64 {
@@ -44,6 +53,25 @@ pub(super) fn key(value: &[u8]) -> u64 {
 }
 
 impl<'a> Skim<'a> {
+    fn line_links(&self) -> Option<LineLinks> {
+        let answers = if self.kind? == b"user" {
+            Some(
+                self.tool_result_answers()?
+                    .iter()
+                    .map(|answer| key(answer))
+                    .collect(),
+            )
+        } else {
+            None
+        };
+        Some(LineLinks {
+            uuid: key(self.uuid?),
+            parent: key(self.parent?),
+            has_usage: self.has_usage,
+            answers,
+        })
+    }
+
     fn tool_result_answers(&self) -> Option<SmallVec<[&'a [u8]; 2]>> {
         let blocks = self.blocks.as_ref().filter(|blocks| !blocks.is_empty())?;
         blocks
@@ -71,10 +99,11 @@ impl ResponseChains {
         !self.responses.is_empty()
     }
 
-    // NOTE(2026-11-20, #2255): Claude Code writes `parentUuid` first on every line of the conversation chain, and parents precede children, so a line whose parent is not yet tracked can never lead a later block back to a response. Rejecting lines at that first key keeps requestless transcripts from paying for a full parse of every line; a chain line written another way only keeps its response from merging.
+    // NOTE(2026-11-20, #2255): Parents precede children, so a line whose parent is not yet tracked can never lead a later block back to a response, and the scanner rejects it at `parentUuid`. A line the scanner cannot read for certain takes a full parse instead.
     #[inline(never)]
     pub(super) fn link(&mut self, line: &[u8], may_carry_usage: bool) {
-        if !line.starts_with(br#"{"parentUuid":""#) {
+        static PARENT: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(b"parentUuid"));
+        if !line.starts_with(br#"{"parentUuid":""#) && skim::lacks(line, &PARENT) {
             return;
         }
         let want = if may_carry_usage {
@@ -83,37 +112,41 @@ impl ResponseChains {
             Want::Link
         };
         let nodes = &self.nodes;
-        let Some(parsed) = skim(line, want, |parent| {
+        let links = match skim(line, want, |parent| {
             parent.is_some_and(|parent| nodes.contains_key(&key(parent)))
-        }) else {
+        }) {
+            Scan::Read(parsed) => parsed.line_links(),
+            Scan::Skip => return,
+            Scan::Unsure => parse_line_links(line),
+        };
+        let Some(links) = links.filter(|links| !links.has_usage) else {
             return;
         };
-        let (Some(uuid), Some(parent), Some(kind)) = (parsed.uuid, parsed.parent, parsed.kind)
-        else {
-            return;
-        };
-        if parsed.has_usage {
+        if !self.nodes.contains_key(&links.parent) {
             return;
         }
-        let parent = key(parent);
-        let owner = if kind == b"user" {
-            let Some(answers) = parsed.tool_result_answers() else {
-                return;
-            };
-            let Some(owner) = self.response_of(parent) else {
-                return;
-            };
-            if !answers
-                .iter()
-                .all(|answer| self.tool_use_owners.get(&key(answer)) == Some(&owner))
-            {
-                return;
+        let owner = match &links.answers {
+            Some(answers) => {
+                let Some(owner) = self.response_of(links.parent) else {
+                    return;
+                };
+                if !answers
+                    .iter()
+                    .all(|answer| self.tool_use_owners.get(answer) == Some(&owner))
+                {
+                    return;
+                }
+                Some(owner)
             }
-            Some(owner)
-        } else {
-            None
+            None => None,
         };
-        self.nodes.insert(key(uuid), Node::Link { parent, owner });
+        self.nodes.insert(
+            links.uuid,
+            Node::Link {
+                parent: links.parent,
+                owner,
+            },
+        );
     }
 
     #[inline(never)]
@@ -123,14 +156,13 @@ impl ResponseChains {
         message_id: &str,
         usage: &TokenUsageRaw,
     ) -> Option<NonZeroU64> {
-        let skimmed = block_links(line);
-        let links = skimmed
-            .as_ref()
-            .map(|skimmed| Links {
-                uuid: skimmed.uuid.map(key),
-                parent: skimmed.parent.map(key),
+        let links = block_links(line)
+            .map(|raw| BlockLinks {
+                uuid: raw.uuid.map(key),
+                parent: raw.parent.map(key),
+                tool_uses: raw.tool_uses.iter().map(|id| key(id)).collect(),
             })
-            .or_else(|| parse_links(line))?;
+            .or_else(|| parse_block_links(line))?;
         let signature = signature(message_id, usage);
         let joined = links
             .parent
@@ -146,8 +178,8 @@ impl ResponseChains {
                 index
             }
         };
-        for tool_use in skimmed.iter().flat_map(|skimmed| &skimmed.tool_uses) {
-            self.tool_use_owners.insert(key(tool_use), index);
+        for &tool_use in &links.tool_uses {
+            self.tool_use_owners.insert(tool_use, index);
         }
         if let Some(uuid) = links.uuid {
             self.nodes.insert(uuid, Node::Block(index));

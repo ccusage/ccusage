@@ -12,7 +12,7 @@ use crate::{
 
 mod links;
 
-pub(super) use links::parse_links;
+pub(super) use links::{parse_block_links, parse_line_links};
 
 #[derive(Debug)]
 pub(super) struct ClaudeEntry {

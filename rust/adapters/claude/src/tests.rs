@@ -913,6 +913,27 @@ pub(crate) fn requestless_response_cases() -> Vec<(&'static str, Vec<String>, us
             1,
         ),
         (
+            "reused id after a user prompt whose type is escaped",
+            vec![
+                chained_assistant("a1", None, FIRST_BLOCK, "gateway-7f3a", 100, None),
+                chained_user("u1", "a1", r#""next question""#).replace(r#""type":"user""#, r#""type":"\u0075ser""#),
+                chained_assistant("a2", Some("u1"), LATER_BLOCK, "gateway-7f3a", 100, None),
+            ],
+            2,
+        ),
+        (
+            "blocks around a tool result for a tool whose input holds usage",
+            vec![
+                with_tool_input(
+                    chained_assistant("a1", None, FIRST_BLOCK, "gateway-7f3a", 100, Some("toolu_1")),
+                    r#"{"usage":{"window":"7d"}}"#,
+                ),
+                chained_user("u1", "a1", &tool_result("toolu_1")),
+                chained_assistant("a2", Some("u1"), LATER_BLOCK, "gateway-7f3a", 100, None),
+            ],
+            1,
+        ),
+        (
             "blocks without transcript links",
             vec![
                 format!(
