@@ -844,6 +844,18 @@ pub(crate) fn requestless_response_cases() -> Vec<(&'static str, Vec<String>, us
             2,
         ),
         (
+            "reused id after a tool result for an id named only in tool input",
+            vec![
+                with_tool_input(
+                    chained_assistant("a1", None, FIRST_BLOCK, "gateway-7f3a", 100, Some("toolu_own")),
+                    r#"{"id":"toolu_foreign"}"#,
+                ),
+                chained_user("u1", "a1", &tool_result("toolu_foreign")),
+                chained_assistant("a2", Some("u1"), LATER_BLOCK, "gateway-7f3a", 100, None),
+            ],
+            2,
+        ),
+        (
             "blocks without transcript links",
             vec![
                 format!(

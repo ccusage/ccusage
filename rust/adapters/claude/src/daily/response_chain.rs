@@ -1,11 +1,9 @@
 use std::{
-    collections::VecDeque,
     hash::{Hash, Hasher},
     num::NonZeroU64,
 };
 
 use ccusage_core::{TokenUsageRaw, fast::FxHashMap};
-use memchr::memmem;
 use rustc_hash::FxHasher;
 use smallvec::SmallVec;
 
@@ -25,19 +23,12 @@ struct Response {
     signature: u64,
 }
 
-struct RecentBlock {
-    response: u32,
-    line: Vec<u8>,
-}
-
-const RECENT_BLOCKS: usize = 64;
-
 // NOTE(2026-11-20, #2255): With parallel tool use, Claude Code writes the tool results of one response between its content blocks. A chain may pass through those, but a prompt or a result for another response's tool starts a new response.
 #[derive(Default)]
 pub(super) struct ResponseChains {
     nodes: FxHashMap<u64, Node>,
     responses: Vec<Response>,
-    recent: VecDeque<RecentBlock>,
+    tool_use_owners: FxHashMap<u64, u32>,
 }
 
 #[derive(Debug)]
@@ -53,6 +44,14 @@ pub(super) fn key(value: &[u8]) -> u64 {
 }
 
 impl<'a> Skim<'a> {
+    fn tool_uses(&self) -> impl Iterator<Item = u64> + '_ {
+        self.blocks
+            .iter()
+            .flatten()
+            .filter(|block| block.kind == Some(b"tool_use"))
+            .filter_map(|block| block.id.map(key))
+    }
+
     fn tool_result_answers(&self) -> Option<SmallVec<[&'a [u8]; 2]>> {
         let blocks = self.blocks.as_ref().filter(|blocks| !blocks.is_empty())?;
         blocks
@@ -110,7 +109,10 @@ impl ResponseChains {
             let Some(owner) = self.response_of(parent) else {
                 return;
             };
-            if !answers.iter().all(|answer| self.emitted(owner, answer)) {
+            if !answers
+                .iter()
+                .all(|answer| self.tool_use_owners.get(&key(answer)) == Some(&owner))
+            {
                 return;
             }
             Some(owner)
@@ -120,26 +122,15 @@ impl ResponseChains {
         self.nodes.insert(key(uuid), Node::Link { parent, owner });
     }
 
-    // NOTE(2026-11-20, #2255): A tool result arrives right after the blocks of the response that asked for it, so the most recent block lines are searched for the tool use id instead of decoding the tool uses of every requestless block. A response with more blocks than are kept only fails to merge.
-    fn emitted(&self, response: u32, tool_use_id: &[u8]) -> bool {
-        let mut needle = Vec::with_capacity(tool_use_id.len() + 8);
-        needle.extend_from_slice(br#""id":""#);
-        needle.extend_from_slice(tool_use_id);
-        needle.push(b'"');
-        let finder = memmem::Finder::new(&needle);
-        self.recent
-            .iter()
-            .filter(|block| block.response == response)
-            .any(|block| finder.find(&block.line).is_some())
-    }
-
     pub(super) fn response_key(
         &mut self,
         line: &[u8],
         message_id: &str,
         usage: &TokenUsageRaw,
     ) -> Option<NonZeroU64> {
-        let links = skim(line, Want::Block, |_| true)
+        let skimmed = skim(line, Want::Block, |_| true);
+        let links = skimmed
+            .as_ref()
             .map(|skimmed| Links {
                 uuid: skimmed.uuid.map(key),
                 parent: skimmed.parent.map(key),
@@ -160,27 +151,13 @@ impl ResponseChains {
                 index
             }
         };
-        self.remember(index, line);
+        for tool_use in skimmed.iter().flat_map(Skim::tool_uses) {
+            self.tool_use_owners.insert(tool_use, index);
+        }
         if let Some(uuid) = links.uuid {
             self.nodes.insert(uuid, Node::Block(index));
         }
         Some(self.responses[index as usize].key)
-    }
-
-    fn remember(&mut self, response: u32, line: &[u8]) {
-        let mut block = if self.recent.len() == RECENT_BLOCKS {
-            self.recent.pop_front()
-        } else {
-            None
-        }
-        .unwrap_or_else(|| RecentBlock {
-            response,
-            line: Vec::new(),
-        });
-        block.response = response;
-        block.line.clear();
-        block.line.extend_from_slice(line);
-        self.recent.push_back(block);
     }
 
     fn response_of(&self, mut current: u64) -> Option<u32> {

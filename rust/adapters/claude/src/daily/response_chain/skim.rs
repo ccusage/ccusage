@@ -23,6 +23,7 @@ pub(super) struct Skim<'a> {
 #[derive(Default)]
 pub(super) struct Block<'a> {
     pub(super) kind: Option<&'a [u8]>,
+    pub(super) id: Option<&'a [u8]>,
     pub(super) tool_use_id: Option<&'a [u8]>,
 }
 
@@ -175,6 +176,7 @@ impl<'a> Cursor<'a> {
         self.object(|key, cursor| {
             let slot = match key {
                 b"type" => &mut block.kind,
+                b"id" => &mut block.id,
                 b"tool_use_id" => &mut block.tool_use_id,
                 _ => return Some(Step::Skip),
             };
