@@ -29,6 +29,7 @@ fn read_usage_file_with_diagnostics(
     LoadedFile {
         entries: super::load::read_usage_file_with_diagnostics(
             path,
+            crate::paths::fixture_projects_root(path).as_deref(),
             tz,
             pricing.map_or(ccusage_core::cost::PriceTable::Display, |map| {
                 ccusage_core::cost::PriceTable::for_map(mode, map)
@@ -296,9 +297,10 @@ fn rejects_dot_segments_as_project_path_segments() {
 
 #[test]
 fn extracts_file_session_from_modern_claude_project_path() {
-    let (session_id, project_path) = extract_session_parts(Path::new(
-        "/home/me/.claude/projects/project-a/session-a.jsonl",
-    ));
+    let (session_id, project_path) = extract_session_parts(
+        Path::new("/home/me/.claude/projects/project-a/session-a.jsonl"),
+        Some(Path::new("/home/me/.claude/projects")),
+    );
 
     assert_eq!(session_id, "session-a");
     assert_eq!(project_path, "project-a");
@@ -306,9 +308,10 @@ fn extracts_file_session_from_modern_claude_project_path() {
 
 #[test]
 fn extracts_parent_session_from_nested_claude_project_path() {
-    let (session_id, project_path) = extract_session_parts(Path::new(
-        "/home/me/.claude/projects/project-a/session-a/chat.jsonl",
-    ));
+    let (session_id, project_path) = extract_session_parts(
+        Path::new("/home/me/.claude/projects/project-a/session-a/chat.jsonl"),
+        Some(Path::new("/home/me/.claude/projects")),
+    );
 
     assert_eq!(session_id, "session-a");
     assert_eq!(project_path, "project-a");
@@ -316,9 +319,10 @@ fn extracts_parent_session_from_nested_claude_project_path() {
 
 #[test]
 fn extracts_parent_session_from_claude_subagent_path() {
-    let (session_id, project_path) = extract_session_parts(Path::new(
-        "/home/me/.claude/projects/project-a/session-a/subagents/worker.jsonl",
-    ));
+    let (session_id, project_path) = extract_session_parts(
+        Path::new("/home/me/.claude/projects/project-a/session-a/subagents/worker.jsonl"),
+        Some(Path::new("/home/me/.claude/projects")),
+    );
 
     assert_eq!(session_id, "session-a");
     assert_eq!(project_path, "project-a");
@@ -326,13 +330,92 @@ fn extracts_parent_session_from_claude_subagent_path() {
 
 #[test]
 fn extracts_parent_session_from_claude_workflow_run_path() {
-    let (session, project) = extract_session_parts(Path::new(
-        "/home/user/.claude/projects/project-a/session-a/subagents/workflows/wf_1/agent-a.jsonl",
-    ));
+    let (session, project) = extract_session_parts(
+        Path::new(
+            "/home/user/.claude/projects/project-a/session-a/subagents/workflows/wf_1/agent-a.jsonl",
+        ),
+        Some(Path::new("/home/user/.claude/projects")),
+    );
     assert_eq!(
         (session.as_str(), project.as_str()),
         ("session-a", "project-a")
     );
+}
+
+#[test]
+fn extracts_the_project_relative_to_a_config_directory_under_projects() {
+    let root = Path::new("/tmp/x/projects/cfg/projects");
+    let transcript = Path::new("/tmp/x/projects/cfg/projects/myproj/session-a.jsonl");
+
+    assert_eq!(
+        super::paths::extract_project(transcript, Some(root)),
+        "myproj"
+    );
+    assert_eq!(
+        extract_session_parts(transcript, Some(root)),
+        ("session-a".to_string(), "myproj".to_string())
+    );
+}
+
+#[test]
+fn reports_unknown_parts_without_a_projects_root() {
+    assert_eq!(
+        super::paths::extract_project(Path::new("s.jsonl"), None),
+        "unknown"
+    );
+    assert_eq!(
+        extract_session_parts(Path::new("s.jsonl"), None),
+        ("unknown".to_string(), "Unknown Project".to_string())
+    );
+}
+
+#[test]
+fn reports_the_project_and_session_below_a_config_directory_under_projects() {
+    ccusage_test_support::install_pricing_snapshots();
+    let fixture = fs_fixture!({
+        "projects/cfg/projects/myproj/session-1.jsonl": r#"{"timestamp":"2026-01-02T10:00:00Z","sessionId":"session-1","requestId":"req-1","message":{"id":"msg-1","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":1}}}"#,
+    });
+    Environment::with_var("CLAUDE_CONFIG_DIR", fixture.path("projects/cfg")).run(|| {
+        let shared = SharedArgs {
+            single_thread: true,
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+            ..SharedArgs::default()
+        };
+
+        let loaded = crate::load::load_deduped_entries(&shared, None).unwrap();
+        assert_eq!(loaded.entries.len(), 1);
+        let entry = &loaded.entries[0];
+        assert_eq!(entry.project.as_ref(), "myproj");
+        assert_eq!(entry.project_path.as_ref(), "myproj");
+        assert_eq!(entry.session_id.as_ref(), "session-1");
+
+        let daily = crate::load::load_daily_summaries(&shared, None, true).unwrap();
+        assert_eq!(daily.len(), 1);
+        assert_eq!(daily[0].project.as_deref(), Some("myproj"));
+    })
+}
+
+#[test]
+fn filters_the_project_relative_to_the_discovered_projects_root() {
+    let fixture = fs_fixture!({
+        "projects/cfg/projects/myproj/session-1.jsonl": "{}",
+        "projects/cfg/projects/other/session-2.jsonl": "{}",
+    });
+    Environment::with_var("CLAUDE_CONFIG_DIR", fixture.path("projects/cfg")).run(|| {
+        let paths = super::claude_paths().unwrap();
+        let mut matching = Vec::new();
+        super::visit_usage_files(
+            &paths,
+            Some("myproj"),
+            &mut |path| matching.push(path),
+            &Diagnostics::new("claude"),
+        );
+
+        assert_eq!(
+            matching,
+            [fixture.path("projects/cfg/projects/myproj/session-1.jsonl")]
+        );
+    })
 }
 
 #[test]

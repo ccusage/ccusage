@@ -88,13 +88,19 @@ pub(super) fn admit(line: &[u8]) -> std::result::Result<Admitted, Refusal> {
 
 pub(super) fn read_daily_usage_file_with_diagnostics(
     path: &Path,
+    projects_root: Option<&Path>,
     tz: &JiffTimeZone,
     pricing: PriceTable<'_>,
     diagnostics: &Diagnostics,
 ) -> Vec<ClaudeEntry> {
-    read_usage_file(path, tz, pricing, diagnostics, |parsed, _| {
-        parsed.into_daily()
-    })
+    read_usage_file(
+        path,
+        projects_root,
+        tz,
+        pricing,
+        diagnostics,
+        |parsed, _| parsed.into_daily(),
+    )
 }
 
 struct FilePricing<'a> {
@@ -132,13 +138,14 @@ impl FilePricing<'_> {
 
 pub(crate) fn read_usage_file<E>(
     path: &Path,
+    projects_root: Option<&Path>,
     tz: &JiffTimeZone,
     pricing: PriceTable<'_>,
     diagnostics: &Diagnostics,
     build: impl Fn(ParsedUsage, &[u8]) -> E,
 ) -> Vec<E> {
-    let project: Arc<str> = Arc::from(extract_project(path));
-    let (path_session_id, _) = crate::paths::extract_session_parts(path);
+    let project: Arc<str> = Arc::from(extract_project(path, projects_root));
+    let (path_session_id, _) = crate::paths::extract_session_parts(path, projects_root);
     let path_session_id: Arc<str> = Arc::from(path_session_id);
     let mut recorded_session_id = Arc::clone(&path_session_id);
     let mut entries = Vec::new();

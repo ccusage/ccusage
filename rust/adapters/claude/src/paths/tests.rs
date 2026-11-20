@@ -12,9 +12,14 @@ fn split_files_before_since(files: Vec<PathBuf>, shared: &SharedArgs, now: Times
         split.sort_by_key(|file| files.iter().position(|input| input == file));
         split
     };
+    let roots = files
+        .iter()
+        .filter_map(|file| super::fixture_projects_root(file))
+        .collect::<Vec<_>>();
     let split = super::read_files_since(
         shared.single_thread,
         super::prune_threshold(shared, now),
+        &roots,
         |visit| files.iter().cloned().for_each(visit),
         |file| file.clone(),
     );
@@ -145,6 +150,22 @@ fn prunes_files_last_written_before_the_since_margin() {
     .kept;
 
     assert_eq!(file_names(&kept), ["fresh.jsonl", "margin.jsonl"]);
+}
+
+#[test]
+fn picks_the_deepest_projects_root_for_a_nested_config_directory() {
+    let roots = [
+        PathBuf::from("/tmp/x/projects"),
+        PathBuf::from("/tmp/x/projects/cfg/projects"),
+    ];
+
+    assert_eq!(
+        super::containing_projects_root(
+            Path::new("/tmp/x/projects/cfg/projects/myproj/s.jsonl"),
+            &roots,
+        ),
+        Some(Path::new("/tmp/x/projects/cfg/projects"))
+    );
 }
 
 #[test]

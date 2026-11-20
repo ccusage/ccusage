@@ -62,13 +62,15 @@ pub(crate) fn visit_usage_files(
     visit: &mut dyn FnMut(PathBuf),
     diagnostics: &Diagnostics,
 ) {
-    let mut filtered_visit = |path: PathBuf| {
-        if project_filter.is_none_or(|filter| extract_project(&path) == filter) {
-            visit(path);
+    let roots = projects_roots(paths);
+    let mut filtered_visit = |file: PathBuf| {
+        if project_filter.is_none_or(|filter| {
+            extract_project(&file, containing_projects_root(&file, &roots)) == filter
+        }) {
+            visit(file);
         }
     };
-    for path in paths {
-        let projects_dir = path.join("projects");
+    for projects_dir in &roots {
         if let Some(project_filter) =
             project_filter.filter(|filter| is_project_path_segment(filter))
         {
@@ -78,9 +80,37 @@ pub(crate) fn visit_usage_files(
                 diagnostics,
             );
         } else {
-            visit_usage_files_in(&projects_dir, &mut filtered_visit, diagnostics);
+            visit_usage_files_in(projects_dir, &mut filtered_visit, diagnostics);
         }
     }
+}
+
+/// The `<config dir>/projects` roots that hold the discovered transcripts.
+pub(crate) fn projects_roots(config_dirs: &[PathBuf]) -> Vec<PathBuf> {
+    config_dirs
+        .iter()
+        .map(|config_dir| config_dir.join("projects"))
+        .collect()
+}
+
+/// The deepest projects root containing `file`, so a config directory nested under another one resolves to its own root.
+pub(crate) fn containing_projects_root<'a>(
+    file: &Path,
+    projects_roots: &'a [PathBuf],
+) -> Option<&'a Path> {
+    projects_roots
+        .iter()
+        .map(PathBuf::as_path)
+        .filter(|root| file.starts_with(root))
+        .max_by_key(|root| root.components().count())
+}
+
+/// The `projects` ancestor of a fixture transcript, so tests do not have to thread a config directory.
+#[cfg(test)]
+pub(crate) fn fixture_projects_root(path: &Path) -> Option<PathBuf> {
+    path.ancestors()
+        .find(|ancestor| ancestor.file_name().is_some_and(|name| name == "projects"))
+        .map(Path::to_path_buf)
 }
 
 pub(crate) fn usage_file_order(left: &Path, right: &Path) -> std::cmp::Ordering {
@@ -106,6 +136,7 @@ pub(super) fn read_usage_files_since<T: Send>(
     read_files_since(
         shared.single_thread,
         prune_threshold(shared, now),
+        &projects_roots(paths),
         |visit| visit_usage_files(paths, project_filter, visit, diagnostics),
         read,
     )
@@ -122,6 +153,7 @@ fn prune_threshold(shared: &SharedArgs, now: TimestampMs) -> Option<i64> {
 fn read_files_since<T: Send>(
     single_thread: bool,
     threshold: Option<i64>,
+    projects_roots: &[PathBuf],
     discover: impl FnMut(&mut dyn FnMut(PathBuf)),
     read: impl Fn(&PathBuf) -> T + Sync,
 ) -> SinceFiles<T> {
@@ -161,7 +193,11 @@ fn read_files_since<T: Send>(
     let groups = discovered
         .into_iter()
         .map(|(file, live)| {
-            let group = sessions.file(&file, first_recorded_session_id(&file).as_deref());
+            let group = sessions.file(
+                &file,
+                first_recorded_session_id(&file).as_deref(),
+                projects_roots,
+            );
             (file, live, group)
         })
         .collect::<Vec<_>>();
@@ -193,8 +229,9 @@ struct SessionGroups {
 }
 
 impl SessionGroups {
-    fn file(&mut self, file: &Path, recorded: Option<&str>) -> usize {
-        let (path_session, _) = extract_session_parts(file);
+    fn file(&mut self, file: &Path, recorded: Option<&str>, projects_roots: &[PathBuf]) -> usize {
+        let (path_session, _) =
+            extract_session_parts(file, containing_projects_root(file, projects_roots));
         let group = self.id(&path_session);
         if let Some(recorded) = recorded {
             let recorded = self.id(recorded);
@@ -269,36 +306,37 @@ pub(super) fn is_project_path_segment(value: &str) -> bool {
         && !value.contains('\\')
 }
 
-pub(crate) fn extract_project(path: &Path) -> String {
-    let mut saw_projects = false;
-    for part in path
-        .components()
-        .filter_map(|component| component.as_os_str().to_str())
-    {
-        if saw_projects {
-            return if part.trim().is_empty() {
-                "unknown"
-            } else {
-                part
-            }
-            .to_string();
-        }
-        if part == "projects" {
-            saw_projects = true;
-        }
-    }
-    "unknown".to_string()
+/// Path components below the projects root, or `None` when the file is not under a known root.
+fn below_projects<'a>(path: &'a Path, projects_root: Option<&Path>) -> Option<Vec<&'a str>> {
+    let relative = path.strip_prefix(projects_root?).ok()?;
+    Some(
+        relative
+            .components()
+            .filter_map(|component| component.as_os_str().to_str())
+            .collect(),
+    )
 }
 
-pub(crate) fn extract_session_parts(path: &Path) -> (String, String) {
-    let parts = path
-        .components()
-        .filter_map(|component| component.as_os_str().to_str())
-        .collect::<Vec<_>>();
-    let projects_index = parts.iter().position(|part| *part == "projects");
-    let relative = projects_index
-        .map(|index| &parts[index + 1..])
-        .unwrap_or(&parts);
+pub(crate) fn extract_project(path: &Path, projects_root: Option<&Path>) -> String {
+    below_projects(path, projects_root)
+        .and_then(|parts| parts.first().copied())
+        .map_or_else(
+            || "unknown".to_string(),
+            |part| {
+                if part.trim().is_empty() {
+                    "unknown"
+                } else {
+                    part
+                }
+                .to_string()
+            },
+        )
+}
+
+pub(crate) fn extract_session_parts(path: &Path, projects_root: Option<&Path>) -> (String, String) {
+    let Some(relative) = below_projects(path, projects_root) else {
+        return ("unknown".to_string(), "Unknown Project".to_string());
+    };
     let file_session_id = relative
         .last()
         .and_then(|file_name| file_name.strip_suffix(".jsonl"))
