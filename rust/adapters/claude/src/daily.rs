@@ -11,8 +11,7 @@ use super::{
     MainThreadSessions, UsageLoadContext,
     dedupe::{DedupEntry, DedupKey, dedupe_files},
     main_thread_sessions,
-    paths::{claude_paths, read_usage_files, usage_files_before_since},
-    read_discovered_paths,
+    paths::{claude_paths, read_usage_files, read_usage_files_since},
 };
 
 mod accumulate;
@@ -51,6 +50,7 @@ pub(super) fn load_daily_entries(
 ) -> Result<DailyEntries> {
     let paths = claude_paths()?;
     let context = UsageLoadContext::new(shared);
+    let mut pruned = Vec::new();
     let read = |file: &PathBuf| {
         read_daily_usage_file_with_diagnostics(
             file,
@@ -59,31 +59,30 @@ pub(super) fn load_daily_entries(
             diagnostics,
         )
     };
-    let mut pruned = Vec::new();
-    let deduped = if shared.since.is_some() {
-        let since_files = usage_files_before_since(
+    let loaded_files = if shared.since.is_some() {
+        let since_files = read_usage_files_since(
             &paths,
             project_filter,
             diagnostics,
             shared,
             shared.clock.now().into(),
+            read,
         );
         pruned = since_files.pruned;
-        let mut kept = since_files.kept;
-        dedupe_loaded_files(read_discovered_paths(
-            context.shared.single_thread,
-            |visit| std::mem::take(&mut kept).into_iter().for_each(visit),
-            read,
-        ))
+        since_files.kept
     } else {
-        dedupe_loaded_files(read_usage_files(
-            context.shared.single_thread,
+        read_usage_files(
+            shared.single_thread,
             &paths,
             project_filter,
             diagnostics,
             read,
-        ))
+        )
     };
+    let deduped = (!loaded_files.is_empty()).then(|| {
+        let (entries, copies) = dedupe_files(loaded_files);
+        DedupedDailyEntries { entries, copies }
+    });
     let mut deduped = deduped.unwrap_or(DedupedDailyEntries {
         entries: Vec::new(),
         copies: Vec::new(),
@@ -120,16 +119,6 @@ fn sessions(deduped: &DedupedDailyEntries) -> MainThreadSessions {
             )
             .map(|(session_id, survivor)| (session_id.as_ref(), survivor.is_sidechain())),
     )
-}
-
-fn dedupe_loaded_files(
-    loaded_files: Vec<(PathBuf, Vec<ClaudeEntry>)>,
-) -> Option<DedupedDailyEntries> {
-    if loaded_files.is_empty() {
-        return None;
-    }
-    let (entries, copies) = dedupe_files(loaded_files);
-    Some(DedupedDailyEntries { entries, copies })
 }
 
 pub(super) struct ParsedUsage {

@@ -1,4 +1,4 @@
-use ccusage_adapter_common::{read_discovered_paths, source::UsageLoadContext};
+use ccusage_adapter_common::source::UsageLoadContext;
 use ccusage_core::{
     Diagnostics, MILLIS_PER_DAY, ModelBreakdown, ReportWindow, Result, Speed, TimestampMs,
     TokenCounts, TokenUsageRaw, UsageSummary, cli, cli_error, cost, date_at, date_range_bounds_ms,
@@ -33,7 +33,7 @@ use usage_wire::{
 };
 
 pub(crate) use paths::{
-    claude_paths, extract_session_parts, read_usage_files, usage_files_before_since,
+    claude_paths, extract_session_parts, read_usage_files, read_usage_files_since,
 };
 
 #[cfg(test)]
