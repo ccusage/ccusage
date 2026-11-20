@@ -1243,6 +1243,31 @@ fn dedupes_copied_transcripts_with_the_same_serialized_session_id() {
 }
 
 #[test]
+fn skips_and_diagnoses_copied_transcripts_whose_token_buckets_exceed_a_u64() {
+    let line = r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","message":{"id":"huge","model":"claude-sonnet-4-20250514","usage":{"input_tokens":18446744073709551615,"output_tokens":50}}}"#;
+    let fixture = fs_fixture!({
+        "projects/project-a/session-a/chat.jsonl": [line, line].join("\n"),
+    });
+    let diagnostics = Diagnostics::new("claude");
+    let mut deduped_indexes = Default::default();
+    let mut deduped = Vec::new();
+
+    let loaded = read_usage_file_with_diagnostics(
+        &fixture.path("projects/project-a/session-a/chat.jsonl"),
+        &JiffTimeZone::UTC,
+        CostMode::Display,
+        None,
+        &diagnostics,
+    );
+    for entry in loaded.entries {
+        push_deduped_entry(entry, &mut deduped_indexes, &mut deduped);
+    }
+
+    assert!(deduped.is_empty());
+    assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 2);
+}
+
+#[test]
 fn dedupes_copied_transcripts_with_the_same_request_id_across_sessions() {
     let fixture = fs_fixture!({
         "projects/project-a/session-a/chat.jsonl": r#"{"timestamp":"2026-05-22T02:34:40.000Z","sessionId":"session-a","requestId":"req-shared","message":{"id":"msg-shared","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":1}}}"#,
