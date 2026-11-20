@@ -25,7 +25,7 @@ pub(super) struct Skim<'a> {
 #[derive(Default)]
 pub(super) struct Block<'a> {
     pub(super) kind: Option<&'a [u8]>,
-    pub(super) id: Option<&'a [u8]>,
+    id: Option<&'a [u8]>,
     pub(super) tool_use_id: Option<&'a [u8]>,
 }
 
