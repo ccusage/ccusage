@@ -93,7 +93,7 @@
 072-hermes|glm-5p3|F:glm-5p3|a:0.00781|S6|accounts/fireworks/models/glm-5p3|
 075-hermes/anthropic|claude-opus-4-8-fast|E:anthropic/claude-opus-4-8-fast,F:claude-opus-4-8-fast|10/50|S4|anthropic/claude-opus-4.8-fast|
 075-droid|claude-opus-4-8-fast|F:claude-opus-4-8-fast,F:anthropic/claude-opus-4-8-fast,F:openrouter/anthropic/claude-opus-4-8-fast|10/50|S4|anthropic/claude-opus-4.8-fast|
-076-kilo|claude-opus-4-8-fast|F:claude-opus-4-8-fast|5/25|S5|claude-opus-4-8|
+076-kilo|claude-opus-4-8-fast|F:claude-opus-4-8-fast|10/50|S6|anthropic/claude-opus-4.8-fast|
 077-droid|grok-4-1|F:grok-4-1,F:xai/grok-4-1,F:openrouter/x-ai/grok-4-1|2/10|S4|grok-4.1|
 078-droid|qwen3-7-max|F:qwen3-7-max|2.5/7.5|S4|qwen3.7-max|
 079-dsh/openrouter|kimi-k2-turbo-preview|F:openrouter/kimi-k2-turbo-preview,F:kimi-k2-turbo-preview|0.15/8|S4|kimi-k2-turbo-preview|
@@ -109,7 +109,7 @@
 085-claude|qwen3-coder-plus|F:qwen3-coder-plus|1/5|S4|qwen3-coder-plus|
 085-claude|claude-sonnet-4|F:claude-sonnet-4|3/15|S2|claude-sonnet-4|
 086-claude|kimi-k2.7-code-highspeed|F:kimi-k2.7-code-highspeed|7/8|S1|kimi-k2-7-code-highspeed|kimi-k2-7-code-highspeed:7/
-087-hermes|deepseek-v4-flash-0812|F:deepseek-v4-flash-0812|0.3/1.2|S5|deepseek-v4-flash|
+087-hermes|deepseek-v4-flash-20260812|F:deepseek-v4-flash-20260812|0.3/1.2|S5|deepseek-v4-flash|
 088-claude|aihubmix/deepseek-v4-flash|F:aihubmix/deepseek-v4-flash|0.3/1.2|S3|deepseek-v4-flash|
 089-claude|aiand/deepseek-ai/deepseek-v4-pro|F:aiand/deepseek-ai/deepseek-v4-pro|1.32/3.96|S3|deepseek-v4-pro|
 092-statusline|claude-opus-4-8|F:claude-opus-4-8|50/50+1000000|S1|claude-opus-4-8|claude-opus-4-8:50/50
@@ -126,4 +126,6 @@
 102-claude|deepinfra/meta-llama/Llama-3.3-70B-Instruct-Turbo|F:deepinfra/meta-llama/Llama-3.3-70B-Instruct-Turbo|0.76176/2.383674|S4|meta-llama/Llama-3.3-70B-Instruct-Turbo|
 106-droid|gpt-5-3-spark|F:gpt-5-3-spark,F:openai/gpt-5-3-spark,F:openrouter/openai/gpt-5-3-spark|1.75/14+128000|S4|gpt-5.3-codex-spark|
 109-opencode|gpt-6-luna-decisions|F:gpt-6-luna-decisions|o:0|S5|openrouter/openai/gpt-6-luna-decisions|
-112-kilo|claude-opus-4-8-fast|F:claude-opus-4-8-fast|5/25|S5|claude-opus-4-8|
+112-kilo|claude-opus-4-8-fast|F:claude-opus-4-8-fast|10/50|S6|anthropic/claude-opus-4.8-fast|
+113-fallback|claude-opus-5-5-fast|F:claude-opus-5-5-fast,B:claude-opus-5-5|8/40|S4|claude-opus-5-5-fast|
+114-fallback|claude-opus-5-5-unlisted|F:claude-opus-5-5-unlisted,B:claude-opus-5-5|4/20|S2|claude-opus-5-5|

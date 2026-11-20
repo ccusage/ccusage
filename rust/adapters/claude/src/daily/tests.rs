@@ -1,6 +1,7 @@
 use std::{fmt::Write, path::Path, sync::Arc};
 
-use super::{ClaudeEntry, push_deduped_entry, read_daily_usage_file_with_diagnostics};
+use super::{ClaudeEntry, read_daily_usage_file_with_diagnostics};
+use crate::dedupe::push_deduped_entry;
 use ccusage_core::cost::PriceTable;
 use ccusage_core::{
     Diagnostics, PricingMap, TimestampMs, TokenUsageRaw,
@@ -9,7 +10,7 @@ use ccusage_core::{
 use ccusage_test_support::{Environment, fs_fixture};
 use jiff::tz::TimeZone as JiffTimeZone;
 
-fn load_daily(shared: &SharedArgs, diagnostics: &Diagnostics) -> crate::DailySummaries {
+fn load_daily(shared: &SharedArgs, diagnostics: &Diagnostics) -> crate::load::DailySummaries {
     crate::load_daily_summaries_with_detection_progress(
         shared,
         None,
@@ -64,7 +65,10 @@ fn usage_prefilter_matches_the_original_marker_on_generated_lines() {
                 for end in 0..=bytes.len() {
                     let prefix = &bytes[..end];
                     assert_eq!(
-                        !matches!(super::admit(prefix), Err(super::Refusal::NotUsage)),
+                        !matches!(
+                            super::read::admit(prefix),
+                            Err(super::read::Refusal::NotUsage)
+                        ),
                         original.matches(prefix),
                         "prefilter decision for {:?}",
                         &line[..end],
@@ -125,10 +129,10 @@ fn usage_prefilter_preserves_typed_record_admission() {
     ];
     for (fields, expected) in cases {
         let line = format!("{{{fields}}}");
-        let actual = match super::admit(line.as_bytes()) {
+        let actual = match super::read::admit(line.as_bytes()) {
             Ok(admitted) => Accepted(admitted.record.message.usage.usage.input_tokens),
-            Err(super::Refusal::NotUsage) => NoMarker,
-            Err(super::Refusal::Rejected(crate::Rejection::Malformed)) => Malformed,
+            Err(super::read::Refusal::NotUsage) => NoMarker,
+            Err(super::read::Refusal::Rejected(crate::Rejection::Malformed)) => Malformed,
             Err(_) => panic!("unexpected refusal for {line}"),
         };
         assert_eq!(actual, expected, "{line}");
@@ -139,7 +143,7 @@ fn usage_prefilter_preserves_typed_record_admission() {
 fn usage_prefilter_reads_a_marker_across_the_buffer_boundary() {
     let prefix = r#"{"timestamp":"2026-01-02T10:00:00Z","message":{"content":""#;
     let separator = r#"","#;
-    let padding_len = super::READ_POLICY.capacity - prefix.len() - separator.len() - 4;
+    let padding_len = super::read::READ_POLICY.capacity - prefix.len() - separator.len() - 4;
     let line = format!(
         "{prefix}{}{separator}{}",
         "x".repeat(padding_len),
@@ -827,20 +831,20 @@ fn daily_advisor_gate_preserves_the_previous_extraction() {
         ] {
             let (_, lookup) = super::parse_usage_line(line.as_bytes()).unwrap();
             let reference = format!(r#"{{"message":{message}}}"#);
-            let previous = super::advisor_usages_from_line(reference.as_bytes()).unwrap();
+            let previous = crate::advisor::advisor_usages_from_line(reference.as_bytes()).unwrap();
             let actual = lookup.usages(line.as_bytes()).unwrap();
             match lookup {
-                super::AdvisorLookup::AskLine => {
+                crate::advisor::AdvisorLookup::AskLine => {
                     retained += 1;
                     assert_eq!(actual.usages.len(), previous.usages.len(), "{line}");
                     assert_eq!(actual.malformed, previous.malformed, "{line}");
                 }
-                super::AdvisorLookup::AskProgress => {
+                crate::advisor::AdvisorLookup::AskProgress => {
                     retained += 1;
                     assert_eq!(actual.usages.len(), previous.usages.len(), "{line}");
                     assert_eq!(actual.malformed, previous.malformed, "{line}");
                 }
-                super::AdvisorLookup::RuledOut => {
+                crate::advisor::AdvisorLookup::RuledOut => {
                     skipped += 1;
                     assert!(previous.usages.is_empty(), "{line}");
                     assert!(actual.usages.is_empty(), "{line}");
