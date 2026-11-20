@@ -18,7 +18,9 @@ skipped. A request found in more than one root is counted once.
 DeepSeek Harness keeps earlier log generations beside the newest one after a session migrates,
 so the adapter reads only the highest `v<N>` generation in each session directory.
 `session.jsonl` is generation zero. Compressed logs are appended one zstd frame per write batch,
-so a torn final frame keeps the records before it and reports the rest as skipped input.
+so a torn final frame keeps the records before it. When the log does not change during the read,
+the torn tail is reported as skipped input; a log that is still being written is only noted at
+debug level.
 
 ## Record shape
 
@@ -71,8 +73,9 @@ pricing, the entry stays visible with the resolved model in the missing-pricing 
 
 - A forked session copies its parent log up to an inherited `session/end-seed` marker. A fork can
   carry more than one inherited marker, so usage before the last one is discarded and only
-  requests after it are counted. A fork whose log ends before any inherited marker is read as its
-  parent's usage and dropped with a debug note.
+  requests after it are counted. When the header sets `isSeeded` and the log ends before any
+  inherited marker, the log is read as its parent's usage and dropped with a debug note; a log
+  without `isSeeded` keeps its entries.
 - Entries are deduplicated by session ID and `seq`. Events without `seq` fall back to the full
   timestamp, model and token tuple.
 - Session rows use the session ID from the log header. The project path is the header `cwd`, or
