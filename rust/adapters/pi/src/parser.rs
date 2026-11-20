@@ -14,8 +14,8 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
-    LoadedEntry, TokenUsageRaw, apply_total_token_fallback, cli::CostMode, fast::LinePrefilter,
-    format_date_tz, stored_cost_for_mode,
+    LoadedEntry, TokenUsageRaw, apply_total_token_fallback, cli::CostMode, date_at,
+    fast::LinePrefilter, stored_cost_for_mode,
 };
 use ccusage_adapter_common::{jsonl, units::UnitError};
 use ccusage_core::{Diagnostics, Skip, SkipKind};
@@ -338,7 +338,7 @@ fn read_session_file_data_with_context(
         entries.push(PiLoadedEntry {
             source_timestamp: timestamp_text,
             entry: LoadedEntry {
-                date: format_date_tz(timestamp, tz),
+                date: date_at(timestamp, tz),
                 timestamp,
                 project: Arc::from(project.as_str()),
                 session_id: Arc::from(session_id.as_str()),

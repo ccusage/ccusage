@@ -12,8 +12,8 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
-    LoadedEntry, TimestampMs, TokenUsageRaw, apply_total_token_fallback, cli::CostMode,
-    fast::LinePrefilter, format_date_tz, stored_cost_for_mode,
+    LoadedEntry, TimestampMs, TokenUsageRaw, apply_total_token_fallback, cli::CostMode, date_at,
+    fast::LinePrefilter, stored_cost_for_mode,
 };
 
 #[derive(Debug, Default, Deserialize)]
@@ -412,7 +412,7 @@ pub(super) fn entry_to_loaded(
         .then(|| crate::model_aliases::resolve_model_name(&entry.model).into_owned());
     let stored_cost = stored_cost_for_mode(entry.cost, mode);
     LoadedEntry {
-        date: format_date_tz(entry.timestamp, tz),
+        date: date_at(entry.timestamp, tz),
         timestamp: entry.timestamp,
         project: Arc::from("openclaw"),
         session_id: Arc::from(entry.session_id),

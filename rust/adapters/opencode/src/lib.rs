@@ -1,7 +1,7 @@
 use ccusage_adapter_common::{collect_files_with_extension, filter_loaded_entries_by_date};
 use ccusage_core::{
     LoadedEntry, Result, TimestampMs, TokenUsageRaw, UsageSummary, apply_total_token_fallback, cli,
-    cost, date_range_bounds_ms, debug_log, format_date_tz, pricing, print_json_or_jq, progress,
+    cost, date_at, date_range_bounds_ms, debug_log, pricing, print_json_or_jq, progress,
     sort_summaries, stored_cost_for_mode, summary_period, wants_json,
 };
 

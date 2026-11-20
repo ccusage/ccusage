@@ -11,7 +11,7 @@ use ccusage_adapter_common::{
     dedupe::dedupe_last_wins, source::LoadContext, units::read_units_flat,
 };
 
-use crate::{LoadedEntry, Result, format_date_tz};
+use crate::{LoadedEntry, Result, date_at};
 
 pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let pricing = cx.pricing.table(cx.shared.mode);
@@ -35,7 +35,7 @@ pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<Load
 fn to_loaded_entry(entry: DroidEntry, tz: &JiffTimeZone, pricing: PriceTable<'_>) -> LoadedEntry {
     let (cost, missing_pricing_model) = price_droid(&entry, pricing);
     LoadedEntry {
-        date: format_date_tz(entry.timestamp, tz),
+        date: date_at(entry.timestamp, tz),
         timestamp: entry.timestamp,
         project: Arc::from("droid"),
         session_id: Arc::from(entry.session_id.as_str()),
@@ -166,7 +166,7 @@ mod tests {
             .unwrap();
 
             assert_eq!(entries.len(), 1);
-            assert_eq!(entries[0].date, "2026-05-01");
+            assert_eq!(entries[0].date.to_string(), "2026-05-01");
             assert_eq!(entries[0].session_id.as_ref(), "session-a");
             assert_eq!(entries[0].model.as_deref(), Some("claude-sonnet-4"));
             assert_eq!(entries[0].usage.input_tokens, 100);
@@ -315,7 +315,7 @@ mod tests {
             version: None,
             recorded_cost: None,
             timestamp: parse_ts_timestamp("2026-05-01T01:02:03.000Z").unwrap(),
-            date: "2026-05-01".to_string(),
+            date: ccusage_core::cli::IsoDate::parse("2026-05-01").unwrap(),
             project: Arc::from("droid"),
             session_id: Arc::from("session-a"),
             project_path: Arc::from("Droid"),

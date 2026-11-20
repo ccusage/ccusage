@@ -10,7 +10,7 @@ use ccusage_core::{Diagnostics, Skip, SkipKind};
 use serde_json::Value;
 
 use crate::{
-    LoadedEntry, TimestampMs, TokenUsageRaw, cli::CostMode, format_date_tz, stored_cost_for_mode,
+    LoadedEntry, TimestampMs, TokenUsageRaw, cli::CostMode, date_at, stored_cost_for_mode,
 };
 
 use super::paths::{SourceFile, SourceKind};
@@ -223,7 +223,7 @@ fn loaded_entry(
         .missing_pricing
         .then(|| ccusage_core::model_aliases::resolve_model_name(&model).into_owned());
     LoadedEntry {
-        date: format_date_tz(timestamp, timezone),
+        date: date_at(timestamp, timezone),
         timestamp,
         project: Arc::from("cline"),
         session_id: Arc::from(session_id),
@@ -802,7 +802,7 @@ mod tests {
         );
 
         assert_eq!(entries.len(), 2);
-        assert_eq!(entries[0].date, "2026-10-01");
+        assert_eq!(entries[0].date.to_string(), "2026-10-01");
         assert_eq!(entries[0].usage.input_tokens, 0);
         assert_eq!(entries[0].usage.output_tokens, 30);
         assert_eq!(entries[0].usage.cache_read_input_tokens, 80);

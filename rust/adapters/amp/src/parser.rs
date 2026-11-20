@@ -15,7 +15,7 @@ use serde_json::Value;
 
 use crate::{
     Diagnostics, LoadedEntry, Skip, SkipKind, TimestampMs, TokenUsageRaw,
-    apply_total_token_fallback, format_date_tz,
+    apply_total_token_fallback, date_at,
 };
 
 #[derive(Debug, Default, Deserialize)]
@@ -396,7 +396,7 @@ fn amp_entry(
         .missing_pricing
         .then(|| crate::model_aliases::resolve_model_name(&record.model).into_owned());
     LoadedEntry {
-        date: format_date_tz(record.timestamp, tz),
+        date: date_at(record.timestamp, tz),
         timestamp: record.timestamp,
         project: Arc::from("amp"),
         session_id: Arc::from(thread_id),
@@ -613,7 +613,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].date, "2026-05-01");
+        assert_eq!(entries[0].date.to_string(), "2026-05-01");
         assert_eq!(entries[0].session_id.as_ref(), "thread-a");
         assert_eq!(
             entries[0].model.as_deref(),

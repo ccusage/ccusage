@@ -20,7 +20,7 @@ mod tests {
             version: None,
             recorded_cost: None,
             timestamp: TimestampMs::from_millis(millis),
-            date: date.to_string(),
+            date: ccusage_core::cli::IsoDate::parse(date).unwrap(),
             project: Arc::from("antigravity"),
             session_id: Arc::from(session_id),
             project_path: Arc::from(project_path),

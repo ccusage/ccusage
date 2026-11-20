@@ -10,7 +10,7 @@ use jiff::tz::TimeZone as JiffTimeZone;
 use ccusage_adapter_common::{SqliteStage, UnitError};
 use ccusage_core::{Diagnostics, Skip, SkipKind};
 
-use crate::{LoadedEntry, TimestampMs, TokenUsageRaw, format_date_tz};
+use crate::{LoadedEntry, TimestampMs, TokenUsageRaw, date_at};
 
 const DEFAULT_MODEL: &str = "gemini-internal-model";
 const PROVIDER_PREFIXES: [&str; 4] = ["google", "gemini", "vertex_ai", "openrouter/google"];
@@ -1069,7 +1069,7 @@ pub(super) fn event_to_loaded(
         pricing,
     );
     LoadedEntry {
-        date: format_date_tz(event.timestamp, timezone),
+        date: date_at(event.timestamp, timezone),
         timestamp: event.timestamp,
         project: Arc::from("antigravity"),
         session_id: Arc::from(event.session_id),

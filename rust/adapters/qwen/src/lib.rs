@@ -5,7 +5,7 @@ use ccusage_core::{
     Diagnostics, LoadedEntry, Result, TimestampMs, TokenUsageRaw, UsageSummary,
     apply_total_token_fallback, cli,
     cli::{AgentCommandArgs, AgentReportKind},
-    fast, format_date_tz, parse_ts_timestamp,
+    date_at, fast, parse_ts_timestamp,
 };
 
 mod loader;
@@ -85,7 +85,7 @@ mod tests {
             .unwrap();
 
             assert_eq!(entries.len(), 1);
-            assert_eq!(entries[0].date, "2026-02-23");
+            assert_eq!(entries[0].date.to_string(), "2026-02-23");
             assert_eq!(entries[0].session_id.as_ref(), "session-json");
             assert_eq!(entries[0].project_path.as_ref(), "myProject");
             assert_eq!(entries[0].model.as_deref(), Some("qwen3-coder-plus"));

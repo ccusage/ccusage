@@ -13,7 +13,7 @@ use serde::{
 };
 use serde_json::{Map, Value};
 
-use crate::{LoadedEntry, TimestampMs, TokenUsageRaw, apply_total_token_fallback, format_date_tz};
+use crate::{LoadedEntry, TimestampMs, TokenUsageRaw, apply_total_token_fallback, date_at};
 
 const DEFAULT_MODEL: &str = "unknown";
 const PROVIDER_PREFIXES: [&str; 4] = ["google", "gemini", "vertex_ai", "openrouter/google"];
@@ -589,7 +589,7 @@ pub(super) fn event_to_loaded(
         .missing_pricing
         .then(|| crate::model_aliases::resolve_model_name(&event.model).into_owned());
     LoadedEntry {
-        date: format_date_tz(event.timestamp, tz),
+        date: date_at(event.timestamp, tz),
         timestamp: event.timestamp,
         project: Arc::from("gemini"),
         session_id: Arc::from(event.session_id),

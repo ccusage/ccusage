@@ -167,7 +167,7 @@ pub struct LoadedEntry {
     pub version: Option<String>,
     pub recorded_cost: Option<f64>,
     pub timestamp: TimestampMs,
-    pub date: String,
+    pub date: crate::cli::IsoDate,
     pub project: Arc<str>,
     pub session_id: Arc<str>,
     pub project_path: Arc<str>,

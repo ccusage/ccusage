@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{cmp::Ordering, fmt};
 
 use jiff::civil::Date as JiffDate;
 
@@ -13,6 +13,39 @@ pub struct IsoDate {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct DateBound(IsoDate);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DayLabel(IsoDate);
+
+impl DayLabel {
+    pub fn day(self) -> IsoDate {
+        self.0
+    }
+}
+
+impl From<IsoDate> for DayLabel {
+    fn from(day: IsoDate) -> Self {
+        Self(day)
+    }
+}
+
+impl Ord for DayLabel {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // NOTE(2026-11-20, #2247): Years outside 0000-9999 print with a sign or a fifth digit, so their labels do not sort by date. Report rows keep label order.
+        let four_digit = |day: IsoDate| (0..=9999).contains(&day.year);
+        if four_digit(self.0) && four_digit(other.0) {
+            self.0.cmp(&other.0)
+        } else {
+            self.0.to_string().cmp(&other.0.to_string())
+        }
+    }
+}
+
+impl PartialOrd for DayLabel {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
 
 impl DateBound {
     pub fn parse(value: &str) -> Option<Self> {

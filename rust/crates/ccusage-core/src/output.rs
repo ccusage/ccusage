@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 
 use crate::{
     Color, ColumnKind, ModelBreakdown, Result, SimpleTable, Totals, USAGE_COMPACT_WIDTH_THRESHOLD,
-    UsageSummary, cli::SharedArgs, cli_error, color, format_breakdown_model_label, format_date_tz,
+    UsageSummary, cli::SharedArgs, cli_error, color, date_at, format_breakdown_model_label,
     format_project_name, parse_project_aliases, parse_ts_timestamp, print_box_title, resolve_tz,
     short_model_name, terminal_width,
 };
@@ -475,7 +475,7 @@ pub fn strip_cost_json(value: &mut Value) {
 fn format_last_activity_date(value: &str, timezone: &JiffTimeZone) -> String {
     parse_ts_timestamp(value).map_or_else(
         || value.get(..10).unwrap_or(value).to_string(),
-        |timestamp| format_date_tz(timestamp, timezone),
+        |timestamp| date_at(timestamp, timezone).to_string(),
     )
 }
 

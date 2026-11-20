@@ -21,7 +21,7 @@ mod tests {
             version: None,
             recorded_cost: None,
             timestamp: crate::parse_ts_timestamp("2026-05-01T01:02:03.000Z").unwrap(),
-            date: "2026-05-01".to_string(),
+            date: ccusage_core::cli::IsoDate::parse("2026-05-01").unwrap(),
             project: Arc::from("goose"),
             session_id: Arc::from("session-a"),
             project_path: Arc::from("Goose"),

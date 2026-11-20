@@ -25,8 +25,7 @@ use ccusage_adapter_common::{
 use ccusage_core::Diagnostics;
 
 use crate::{
-    LoadedEntry, Result, TimestampMs, TokenUsageRaw, cli::CostMode, format_date_tz,
-    stored_cost_for_mode,
+    LoadedEntry, Result, TimestampMs, TokenUsageRaw, cli::CostMode, date_at, stored_cost_for_mode,
 };
 
 pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
@@ -665,7 +664,7 @@ fn usage_entry_to_loaded(
         .then(|| crate::model_aliases::resolve_model_name(&entry.model).into_owned());
     let stored_cost = stored_cost_for_mode(cost_usd, mode);
     LoadedEntry {
-        date: format_date_tz(entry.timestamp, tz),
+        date: date_at(entry.timestamp, tz),
         timestamp: entry.timestamp,
         project: Arc::from("copilot"),
         session_id: Arc::from(entry.session_id),
@@ -1811,11 +1810,11 @@ mod tests {
             .unwrap();
 
             assert_eq!(entries.len(), 2);
-            assert_eq!(entries[0].date, "2026-01-02");
+            assert_eq!(entries[0].date.to_string(), "2026-01-02");
             assert_eq!(entries[0].usage.input_tokens, 70);
             assert_eq!(entries[0].usage.output_tokens, 50);
             assert_eq!(entries[0].message_count, Some(1));
-            assert_eq!(entries[1].date, "2026-01-03");
+            assert_eq!(entries[1].date.to_string(), "2026-01-03");
             assert_eq!(entries[1].usage.input_tokens, 80);
             assert_eq!(entries[1].usage.output_tokens, 30);
             assert_eq!(entries[1].message_count, Some(2));
@@ -1868,7 +1867,7 @@ mod tests {
             .unwrap();
 
             assert_eq!(entries.len(), 1);
-            assert_eq!(entries[0].date, "2026-01-02");
+            assert_eq!(entries[0].date.to_string(), "2026-01-02");
             assert_eq!(entries[0].usage.input_tokens, 100);
             assert_eq!(entries[0].usage.output_tokens, 50);
             assert_eq!(entries[0].message_count, Some(1));
@@ -1953,7 +1952,7 @@ mod tests {
             .iter()
             .map(|entry| {
                 (
-                    entry.date.clone(),
+                    entry.date.to_string(),
                     entry.model.clone().unwrap_or_default(),
                     crate::total_usage_tokens(entry.usage),
                     (entry.cost * 100.0).round() as u64,

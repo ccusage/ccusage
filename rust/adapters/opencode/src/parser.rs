@@ -12,7 +12,7 @@ use crate::{
     LoadedEntry, TokenUsageRaw, apply_total_token_fallback,
     cli::CostMode,
     cost::{EntryPricing, price_entry},
-    format_date_tz,
+    date_at,
     pricing::MatchKind,
     stored_cost_for_mode,
 };
@@ -380,7 +380,7 @@ impl OpenCodeUsage {
         let stored_cost = stored_cost_for_mode(recorded_cost, mode);
         let loaded_session_id = self.session_id.unwrap_or_else(|| "unknown".to_string());
         Ok(Some(LoadedEntry {
-            date: format_date_tz(timestamp, tz),
+            date: date_at(timestamp, tz),
             timestamp,
             project: Arc::from("opencode"),
             session_id: Arc::from(loaded_session_id),
@@ -650,7 +650,7 @@ mod tests {
 
     fn entry_snapshot(entry: &LoadedEntry) -> serde_json::Value {
         json!({
-            "date": entry.date,
+            "date": entry.date.to_string(),
             "timestamp": entry.timestamp.as_millis(),
             "sessionId": entry.session_id.as_ref(),
             "project": entry.project.as_ref(),

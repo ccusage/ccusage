@@ -136,7 +136,7 @@ mod tests {
             .unwrap();
 
             assert_eq!(entries.len(), 1);
-            assert_eq!(entries[0].date, "2026-01-02");
+            assert_eq!(entries[0].date.to_string(), "2026-01-02");
             assert_eq!(entries[0].session_id.as_ref(), "session-a");
             assert_eq!(
                 entries[0].model.as_deref(),

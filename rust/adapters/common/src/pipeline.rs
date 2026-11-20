@@ -122,7 +122,7 @@ pub(crate) fn retain_entries_in(entries: &mut Vec<LoadedEntry>, window: &ReportW
     if window.is_unbounded() {
         return;
     }
-    entries.retain(|entry| window.contains_date(&entry.date));
+    entries.retain(|entry| window.contains_entry_date(entry.date));
 }
 
 fn retain_sessions_last_active_in(rows: &mut Vec<UsageSummary>, window: &ReportWindow) {

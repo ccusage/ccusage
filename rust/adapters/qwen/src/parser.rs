@@ -13,8 +13,8 @@ use ccusage_adapter_common::{jsonl, units::UnitError};
 
 use super::paths;
 use crate::{
-    Diagnostics, LoadedEntry, TimestampMs, TokenUsageRaw, apply_total_token_fallback,
-    fast::LinePrefilter, format_date_tz, parse_ts_timestamp,
+    Diagnostics, LoadedEntry, TimestampMs, TokenUsageRaw, apply_total_token_fallback, date_at,
+    fast::LinePrefilter, parse_ts_timestamp,
 };
 
 const DEFAULT_QWEN_MODEL: &str = "unknown";
@@ -161,7 +161,7 @@ fn parse_line(
             version: None,
             recorded_cost: None,
             timestamp,
-            date: format_date_tz(timestamp, tz),
+            date: date_at(timestamp, tz),
             project: Arc::from("qwen"),
             session_id: Arc::from(session_id),
             project_path: Arc::from(project),
@@ -336,7 +336,7 @@ mod tests {
                 version: None,
                 recorded_cost: None,
                 timestamp: TimestampMs::UNIX_EPOCH,
-                date: "2026-01-02".to_string(),
+                date: ccusage_core::cli::IsoDate::parse("2026-01-02").unwrap(),
                 project: Arc::from("qwen"),
                 session_id: Arc::from("session:1"),
                 project_path: Arc::from("project"),
