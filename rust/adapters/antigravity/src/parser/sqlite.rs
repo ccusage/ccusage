@@ -289,12 +289,5 @@ fn read_trajectory_timestamp(
 }
 
 fn table_exists(connection: &sqlite::Connection, table: &str) -> DatabaseResult<bool> {
-    let mut statement = connection
-        .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1 LIMIT 1")
-        .map_err(sqlite_failure)?;
-    statement.bind((1, table)).map_err(sqlite_failure)?;
-    Ok(matches!(
-        statement.next().map_err(sqlite_failure)?,
-        sqlite::State::Row
-    ))
+    ccusage_adapter_common::sqlite::table_exists(connection, table).map_err(sqlite_failure)
 }
