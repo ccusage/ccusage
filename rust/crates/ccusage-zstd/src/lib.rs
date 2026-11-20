@@ -16,6 +16,13 @@
 //! `ptr::copy`. It never creates a `&mut` slice of them, which would invalidate the pointers
 //! libzstd keeps under Rust's aliasing rules.
 //!
+//! A frame whose header understates its window is outside the zstd format, and libzstd bounds
+//! back-references only by the history it can reach, not by the declared window. The ring
+//! usually keeps more history than the streaming decoder's buffer, so for such a frame the two can
+//! disagree. Whenever the streaming decoder recovers the original data, this decoder returns the
+//! same lines, and it accepts some frames the streaming decoder rejects. Without a frame
+//! checksum, either decoder can return wrong bytes for such a frame without an error.
+//!
 //! If libzstd ever breaks one of its documented guarantees, the reader replays the file with the
 //! `zstd` crate's streaming decoder and continues after the lines already returned.
 

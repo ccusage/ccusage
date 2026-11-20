@@ -297,3 +297,44 @@ fn a_replay_that_ends_before_the_returned_lines_is_an_error() {
         "zstd replay ended before the lines already returned"
     );
 }
+
+#[test]
+fn a_frame_that_understates_its_window_decodes_at_least_what_the_streaming_decoder_recovers() {
+    let fixture = Fixture::new();
+    let mut random = Random(0x5EED_0001);
+    let mut accepted_beyond_the_streaming_decoder = 0;
+    for round in 0..60 {
+        let lines = 300 + random.below(1500);
+        let data = text(&mut random, lines, 0);
+        let checksum = round % 2 == 0;
+        let mut compressor = zstd::bulk::Compressor::new(3).unwrap();
+        compressor.set_parameter(CParameter::WindowLog(20)).unwrap();
+        compressor
+            .set_parameter(CParameter::ContentSizeFlag(round % 3 != 0))
+            .unwrap();
+        compressor
+            .set_parameter(CParameter::ChecksumFlag(checksum))
+            .unwrap();
+        let mut stream = compressor.compress(&data).unwrap();
+        if stream[4] & 0x20 != 0 {
+            continue;
+        }
+        stream[5] = (random.below(9) as u8) << 3;
+        let path = write(&fixture, "understated.zst", &stream);
+        for capacity in CAPACITIES {
+            let expected = reference(&path, capacity);
+            let (actual, _) = direct(&path, capacity, None);
+            let context = format!("round {round} capacity {capacity}");
+            if expected.error.is_none() && expected.lines.concat() == data {
+                assert_eq!(actual, expected, "{context}");
+            }
+            if checksum && actual.error.is_none() {
+                assert_eq!(actual.lines.concat(), data, "{context}");
+            }
+            if actual.error.is_none() && expected.error.is_some() {
+                accepted_beyond_the_streaming_decoder += 1;
+            }
+        }
+    }
+    assert!(accepted_beyond_the_streaming_decoder > 0);
+}
