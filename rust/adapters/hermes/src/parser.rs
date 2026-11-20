@@ -1,5 +1,8 @@
 use ccusage_core::cost::PriceTable;
-use ccusage_core::{cost::EntryPricing, pricing::MatchKind};
+use ccusage_core::{
+    cost::{EntryPricing, UsageGranularity},
+    pricing::MatchKind,
+};
 use std::sync::Arc;
 
 use ccusage_adapter_common::{
@@ -185,6 +188,7 @@ fn price_hermes(entry: &HermesEntry, pricing: PriceTable<'_>) -> (f64, Option<St
         .collect();
     // NOTE(2026-11-20, #2364): Hermes reads `reasoning_tokens` from the output token details and bills only `output_tokens` (NousResearch/hermes-agent `agent/usage_pricing.py`). Reasoning is a subset of output, so it is neither priced nor totaled again.
     let entry_pricing = EntryPricing {
+        granularity: UsageGranularity::Aggregate,
         usage: entry.usage,
         reasoning_tokens: 0,
         residual_tokens: 0,
@@ -288,6 +292,31 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn a_session_total_is_priced_at_the_base_tier_not_the_long_context_tier() {
+        ccusage_test_support::install_pricing_snapshots();
+        let mut pricing = ccusage_core::PricingMap::default();
+        pricing.load_json(
+            r#"{"gemini-2.5-pro":{"litellm_provider":"gemini","input_cost_per_token":1.25e-6,"output_cost_per_token":1e-5,"input_cost_per_token_above_200k_tokens":2.5e-6,"output_cost_per_token_above_200k_tokens":1.5e-5}}"#,
+        );
+        let fixture = ccusage_test_support::Fixture::new();
+        let connection = sqlite::open(fixture.path("row.db")).unwrap();
+        let mut statement = connection
+            .prepare("SELECT 's1', 'gemini-2.5-pro', 'google', 1767312000, 1, 5000000, 0, 0, 0, 0, NULL, NULL")
+            .unwrap();
+        assert_eq!(statement.next().unwrap(), sqlite::State::Row);
+        let entry = read_session_row(&statement).unwrap().unwrap();
+
+        let loaded = to_loaded_entry(
+            entry,
+            &JiffTimeZone::UTC,
+            CostMode::Calculate,
+            PriceTable::Calculate(&pricing),
+        );
+
+        assert!((loaded.cost - 6.25).abs() < 1e-9, "{}", loaded.cost);
+    }
 
     #[test]
     fn reasoning_tokens_are_part_of_output_and_not_counted_again() {

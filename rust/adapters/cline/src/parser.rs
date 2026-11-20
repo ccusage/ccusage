@@ -1,5 +1,8 @@
 use ccusage_core::cost::PriceTable;
-use ccusage_core::{cost::EntryPricing, pricing::MatchKind};
+use ccusage_core::{
+    cost::{EntryPricing, UsageGranularity},
+    pricing::MatchKind,
+};
 use std::sync::Arc;
 
 use ccusage_adapter_common::{UnitError, billing::price_entry_for_provider, units::read_json};
@@ -204,6 +207,7 @@ fn loaded_entry(
         .map(|name| (name, MatchKind::Fuzzy))
         .collect();
     let entry_pricing = EntryPricing {
+        granularity: UsageGranularity::Request,
         usage,
         reasoning_tokens: 0,
         residual_tokens: 0,

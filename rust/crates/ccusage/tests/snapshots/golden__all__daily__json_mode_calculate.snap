@@ -855,7 +855,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 50000,
-          "cost": 0.842,
+          "cost": 0.421,
           "inputTokens": 200000,
           "modelName": "grok-4.5-build",
           "outputTokens": 1000
@@ -1329,7 +1329,7 @@ exit: 0
       ],
       "outputTokens": 17537,
       "period": "2026-01-01",
-      "totalCost": 2.751119814999999,
+      "totalCost": 2.3301198149999993,
       "totalTokens": 1508705
     },
     {
@@ -1707,7 +1707,7 @@ exit: 0
     "cacheReadTokens": 1308270,
     "inputTokens": 1261097,
     "outputTokens": 60446,
-    "totalCost": 4.711742424999999,
+    "totalCost": 4.290742424999999,
     "totalTokens": 2650838,
     "unpricedModels": [
       "GLM-5.3",

@@ -1,6 +1,6 @@
 use ccusage_core::cost::PriceTable;
 use ccusage_core::{
-    cost::{EntryPricing, price_entry},
+    cost::{EntryPricing, UsageGranularity, price_entry},
     pricing::MatchKind,
 };
 use std::{collections::HashMap, path::Path, sync::Arc};
@@ -378,6 +378,7 @@ fn amp_entry(
     let candidates = [(record.model.as_str(), MatchKind::Fuzzy)];
     let priced = price_entry(
         EntryPricing {
+            granularity: UsageGranularity::Request,
             usage: TokenUsageRaw {
                 cache_creation: None,
                 ..record.usage

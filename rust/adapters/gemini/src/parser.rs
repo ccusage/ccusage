@@ -1,6 +1,6 @@
 use ccusage_core::cost::PriceTable;
 use ccusage_core::{
-    cost::{EntryPricing, price_entry},
+    cost::{EntryPricing, UsageGranularity, price_entry},
     pricing::MatchKind,
 };
 use std::{collections::HashMap, fmt, path::Path, sync::Arc};
@@ -574,6 +574,7 @@ pub(super) fn event_to_loaded(
         .collect();
     let priced = price_entry(
         EntryPricing {
+            granularity: UsageGranularity::Request,
             usage,
             reasoning_tokens: event.reasoning_tokens,
             residual_tokens: 0,
