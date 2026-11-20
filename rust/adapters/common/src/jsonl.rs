@@ -18,6 +18,7 @@ use ccusage_zstd::ZstdLines;
 
 use crate::{
     UnitError,
+    json::{self, JsonText},
     units::{Completion, FileStamp},
 };
 
@@ -252,9 +253,11 @@ fn read_with(
     let failure = loop {
         match reader.next_line() {
             Ok(Some(raw)) => {
+                let json = JsonText::new(raw.strip_suffix(b"\n").unwrap_or(raw));
                 let line = Line {
                     index,
                     raw,
+                    json: &json,
                     opened: &opened,
                 };
                 if visit(line, &opened.path, local).is_break() {
@@ -265,9 +268,11 @@ fn read_with(
             Err(error) => {
                 let tail = reader.rest();
                 if !tail.is_empty() && (policy.keep_interrupted_tail)(error.kind()) {
+                    let json = JsonText::new(tail.strip_suffix(b"\n").unwrap_or(tail));
                     let line = Line {
                         index,
                         raw: tail,
+                        json: &json,
                         opened: &opened,
                     };
                     let _ = visit(line, &opened.path, local);
@@ -406,6 +411,7 @@ impl<'a> ReverseLine<'a> {
 pub struct Line<'a> {
     pub index: usize,
     pub raw: &'a [u8],
+    json: &'a JsonText<'a>,
     opened: &'a Opened<'a>,
 }
 
@@ -420,7 +426,7 @@ impl Ending<'_> {
 impl<'a> Line<'a> {
     #[inline]
     pub fn bytes(self) -> &'a [u8] {
-        self.raw.strip_suffix(b"\n").unwrap_or(self.raw)
+        self.json.bytes()
     }
 
     pub fn unterminated(self) -> bool {
@@ -445,7 +451,7 @@ impl<'a> Line<'a> {
 
     #[inline]
     pub fn decode<T: Deserialize<'a>>(self) -> serde_json::Result<T> {
-        parse(self.bytes())
+        self.json.parse()
     }
 
     pub fn record<T: Deserialize<'a>>(
@@ -470,11 +476,6 @@ impl<'a> Line<'a> {
             }
         }
     }
-}
-
-#[inline]
-pub fn parse<'a, T: Deserialize<'a>>(bytes: &'a [u8]) -> serde_json::Result<T> {
-    serde_json::from_slice(bytes)
 }
 
 pub fn read_records<T: DeserializeOwned>(
@@ -523,7 +524,7 @@ pub fn decode_record<T: DeserializeOwned>(
     diagnostics: &Diagnostics,
     is_usage: Option<fn(&serde_json::Value) -> bool>,
 ) -> Option<T> {
-    match serde_json::from_slice(content) {
+    match json::parse(content) {
         Ok(record) => Some(record),
         Err(error) => {
             record_decode_error(
@@ -577,8 +578,7 @@ pub fn record_decode_error(
         Category::Eof => (SkipKind::InvalidData, "EOF"),
         Category::Data => {
             let confirmed = is_usage.is_some_and(|confirm| {
-                serde_json::from_slice::<serde_json::Value>(record)
-                    .is_ok_and(|value| confirm(&value))
+                json::parse::<serde_json::Value>(record).is_ok_and(|value| confirm(&value))
             });
             (
                 if confirmed {

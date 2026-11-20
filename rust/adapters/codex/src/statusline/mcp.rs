@@ -25,7 +25,7 @@ pub(super) fn serve(args: CodexStatuslineArgs) -> Result<()> {
         if line.len() as u64 > MAX_MESSAGE_BYTES {
             return Err(cli_error("MCP message exceeds 1 MiB"));
         }
-        let reply = match serde_json::from_slice::<Value>(&line) {
+        let reply = match ccusage_adapter_common::json::parse::<Value>(&line) {
             Ok(request) => dispatch(&request, &args, &mut reader),
             Err(_) => Some(error(Value::Null, -32700, "Parse error")),
         };

@@ -1,6 +1,6 @@
 use std::{borrow::Cow, ops::ControlFlow, path::Path};
 
-use ccusage_adapter_common::jsonl;
+use ccusage_adapter_common::{json::JsonText, jsonl};
 use ccusage_core::{
     Color,
     cli::{SharedArgs, StatuslineArgs},
@@ -105,7 +105,8 @@ fn context_usage(bytes: &[u8]) -> Option<TranscriptContextUsage> {
     {
         return None;
     }
-    let record = serde_json::from_slice::<ContextRecord<'_>>(&bytes[start..end]).ok()?;
+    let text = JsonText::new(&bytes[start..end]);
+    let record = text.parse::<ContextRecord<'_>>().ok()?;
     let usage = record.message.usage;
     (record.kind == "assistant" && usage.input_tokens.is_some()).then_some(usage)
 }

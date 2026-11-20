@@ -49,6 +49,7 @@ jiff = { version = "0.2.46", default-features = false, features = [
 	"tzdb-bundle-platform",
 ] }
 memchr = "2.8.3"
+simdutf8 = "0.1.5"
 miniz_oxide = { version = "0.9.1", default-features = false, features = ["with-alloc"] }
 mimalloc = "0.1.52"
 minreq = { version = "3.0.0", default-features = false, features = ["https-rustls"] }
