@@ -384,9 +384,16 @@ fn transcript(rng: &mut Rng) -> Vec<String> {
             }
         }
         if let Some(at) = replayed_at.filter(|_| rng.chance(50)) {
+            let output = if rng.chance(50) { 500 } else { 2 };
             t.lines.push(format!(
-                r#"{{"type":"assistant","timestamp":"{at}","sessionId":"session-a","message":{{"id":"{message_id}","usage":{{"input_tokens":{input},"output_tokens":2}}}}}}"#
+                r#"{{"type":"assistant","timestamp":"{at}","sessionId":"session-a","message":{{"id":"{message_id}","usage":{{"input_tokens":{input},"output_tokens":{output}}}}}}}"#
             ));
+            if rng.chance(70) {
+                let again = t.timestamp();
+                t.lines.push(format!(
+                    r#"{{"type":"assistant","timestamp":"{again}","sessionId":"session-a","requestId":"req_{response}","message":{{"id":"{message_id}","usage":{{"input_tokens":{input},"output_tokens":3}}}}}}"#
+                ));
+            }
         }
         if rng.chance(40) {
             let uuid = t.uuid();
@@ -560,7 +567,7 @@ fn reference_keys(lines: &[String]) -> Vec<Option<NonZeroU64>> {
     keys
 }
 
-// NOTE(2026-11-20, #2255): A sidechain replay matches any record of its message and session only while it survives its slot, which a union of records cannot express. The generator gives a replayed response no requestless rewrites or unlinked records, so this rule holds for every transcript it writes.
+// NOTE(2026-11-20, #2255): A sidechain replay matches any record of its message and session only while it survives its slot, which a union of records cannot express. The generator gives a replayed response no requestless rewrites or unlinked records other than records at the replay's own timestamp, so this rule holds for every transcript it writes.
 struct Grouped {
     identity: u64,
     response: Option<NonZeroU64>,
