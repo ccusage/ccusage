@@ -488,3 +488,26 @@ fn keeps_the_record_a_tail_starts_on_exactly() {
 
     assert_eq!(split.kept, [restored]);
 }
+
+#[test]
+fn reads_a_file_from_its_first_byte_as_whole_lines() {
+    let fixture = fs_fixture!({ "projects/p/.keep": "" });
+    let in_window = format!("{}\n", record_at("2026-09-21T12:00:00Z"));
+    let old_line =
+        |text: &str| format!(r#"{{"timestamp":"2026-09-01T12:00:00Z","text":"{text}"}}"#) + "\n";
+    for (len, kept) in [
+        (16 * 1024, true),
+        (16 * 1024 + 1, true),
+        (16 * 1024 + 2, false),
+    ] {
+        let padding = len - in_window.len() - old_line("").len();
+        let content = in_window.clone() + &old_line(&"x".repeat(padding));
+        assert_eq!(content.len(), len);
+        let file = fixture.path(&format!("projects/p/{len}.jsonl"));
+        std::fs::write(&file, content).unwrap();
+
+        let split = stale_since_split(vec![file.clone()]);
+
+        assert_eq!(split.kept.is_empty(), !kept, "{len} bytes");
+    }
+}
