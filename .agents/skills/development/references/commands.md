@@ -2,7 +2,7 @@
 
 ## Commands
 
-Use `just` as the project entry point. Run `just fmt` before read-only checks.
+Use `just` as the project entry point.
 
 ## Adding A Dependency Or Tool
 
@@ -18,9 +18,10 @@ with `minimumReleaseAge` in `pnpm-workspace.yaml`.
 
 Edit `nix/git-hooks.nix` to change Git hooks.
 
-Run `just typecheck` and `just test` yourself when the change touches behavior,
-types, or package code, or when the hooks and CI do not cover the edited files.
-Narrower package recipes are useful while iterating; finish with the root ones.
+Let Git hooks and CI run the checks they enforce; do not repeat them manually
+as a routine prerequisite to committing or pushing. Choose focused local checks
+when they help develop a change or cover a gap in that automation. Prose-only
+and license-only changes need no runtime tests or type checks.
 
 ## Releases
 
