@@ -991,6 +991,21 @@ pub(crate) fn requestless_response_cases() -> Vec<(&'static str, Vec<String>, us
             2,
         ),
         (
+            "requestless record at the timestamp of a sidechain replay its parent absorbed",
+            vec![
+                linkless_assistant(FIRST_BLOCK, "msg_parent").replace(
+                    r#""type":"assistant","#,
+                    r#""type":"assistant","isSidechain":true,"#,
+                ),
+                linkless_assistant(LATER_BLOCK, "msg_parent").replace(
+                    r#""type":"assistant","#,
+                    r#""type":"assistant","requestId":"req_parent","#,
+                ),
+                linkless_assistant(FIRST_BLOCK, "msg_parent"),
+            ],
+            1,
+        ),
+        (
             "blocks without transcript links",
             vec![
                 format!(
