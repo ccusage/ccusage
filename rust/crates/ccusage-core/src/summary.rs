@@ -5,7 +5,7 @@ use std::{
 
 use crate::{
     LoadedEntry, ModelBreakdown, Result, TimestampMs, TokenCounts, UsageSummary,
-    cli::{SortOrder, WeekDay},
+    cli::{DayLabel, SortOrder, WeekDay},
     cli_error,
     fast::{FxHashMap, FxHashSet},
     format_rfc3339_millis,
@@ -45,6 +45,15 @@ where
         rows.push(summary);
     }
     Ok(rows)
+}
+
+pub fn summarize_by_day(entries: &[LoadedEntry]) -> Result<Vec<UsageSummary>> {
+    summarize_by_key_target(
+        entries,
+        |entry| DayLabel::from(entry.date),
+        |day| (day.day().to_string(), None),
+        KeyTarget::Date,
+    )
 }
 
 #[derive(Default)]

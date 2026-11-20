@@ -1,4 +1,4 @@
-use ccusage_core::summary::KeyTarget;
+use ccusage_core::summary::{KeyTarget, summarize_by_day};
 use ccusage_test_support::{Environment, fs_fixture};
 use serde_json::Value;
 
@@ -29,13 +29,7 @@ fn rows_json(rows: &[UsageSummary]) -> Vec<Value> {
 }
 
 fn daily_from_entries(entries: &[LoadedEntry]) -> Vec<UsageSummary> {
-    summarize_by_key_target(
-        entries,
-        |entry| entry.date,
-        |key| (key.to_string(), None),
-        KeyTarget::Date,
-    )
-    .unwrap()
+    summarize_by_day(entries).unwrap()
 }
 
 #[test]

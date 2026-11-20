@@ -166,9 +166,8 @@ pub fn summarize_entries(
     scope: crate::source::SessionScope,
 ) -> Result<Vec<UsageSummary>> {
     use crate::source::{SessionShape, SummaryKind};
-    use ccusage_core::{
-        cli::DayLabel,
-        summary::{Bucket, KeyTarget, summarize_bucket, summarize_by_key_target},
+    use ccusage_core::summary::{
+        Bucket, KeyTarget, summarize_bucket, summarize_by_day, summarize_by_key_target,
     };
 
     let summaries = match kind {
@@ -185,12 +184,7 @@ pub fn summarize_entries(
                 .collect(),
         },
         SummaryKind::Daily | SummaryKind::Monthly | SummaryKind::Weekly(_) => {
-            let daily = summarize_by_key_target(
-                entries,
-                |entry| DayLabel::from(entry.date),
-                |date| (date.day().to_string(), None),
-                KeyTarget::Date,
-            )?;
+            let daily = summarize_by_day(entries)?;
             Ok(match kind {
                 SummaryKind::Monthly => summarize_bucket(&daily, Bucket::Monthly),
                 SummaryKind::Weekly(start) => summarize_bucket(&daily, Bucket::Weekly(start)),
