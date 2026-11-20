@@ -735,6 +735,12 @@ fn message_first(
     )
 }
 
+fn linkless_assistant(timestamp: &str, message_id: &str) -> String {
+    format!(
+        r#"{{"type":"assistant","timestamp":"{timestamp}","sessionId":"session-a","message":{{"id":"{message_id}","model":"claude-sonnet-4-20250514","usage":{{"input_tokens":100,"output_tokens":25,"cache_read_input_tokens":0}}}}}}"#
+    )
+}
+
 fn with_tool_input(line: String, input: &str) -> String {
     line.replace(r#""input":{}"#, &format!(r#""input":{input}"#))
 }
@@ -934,6 +940,35 @@ pub(crate) fn requestless_response_cases() -> Vec<(&'static str, Vec<String>, us
             1,
         ),
         (
+            "linkless record at the timestamp of a replaced survivor",
+            vec![
+                chained_assistant("a1", None, FIRST_BLOCK, "gateway-7f3a", 100, None),
+                chained_assistant("a2", Some("a1"), LATER_BLOCK, "gateway-7f3a", 100, None)
+                    .replace(r#""output_tokens":25"#, r#""output_tokens":250"#),
+                linkless_assistant(FIRST_BLOCK, "gateway-7f3a"),
+            ],
+            1,
+        ),
+        (
+            "linkless record at the timestamp of a discarded block",
+            vec![
+                chained_assistant("a1", None, FIRST_BLOCK, "gateway-7f3a", 100, None)
+                    .replace(r#""output_tokens":25"#, r#""output_tokens":250"#),
+                chained_assistant("a2", Some("a1"), LATER_BLOCK, "gateway-7f3a", 100, None),
+                linkless_assistant(LATER_BLOCK, "gateway-7f3a"),
+            ],
+            1,
+        ),
+        (
+            "block that connects an earlier response and a same-timestamp record",
+            vec![
+                chained_assistant("a1", None, FIRST_BLOCK, "gateway-7f3a", 100, None),
+                chained_assistant("b1", None, LATER_BLOCK, "gateway-7f3a", 100, None),
+                chained_assistant("c1", Some("a1"), LATER_BLOCK, "gateway-7f3a", 100, None),
+            ],
+            1,
+        ),
+        (
             "blocks whose parent belongs to another session",
             vec![
                 chained_assistant("a1", None, FIRST_BLOCK, "gateway-7f3a", 100, None),
@@ -961,25 +996,23 @@ pub(crate) fn requestless_response_cases() -> Vec<(&'static str, Vec<String>, us
 
 #[test]
 fn requestless_content_blocks_collapse_only_along_their_transcript_chain() {
+    let mut failures = Vec::new();
     for (case, lines, responses) in requestless_response_cases() {
         let fixture = fs_fixture!({
             "projects/project-a/session-a/chat.jsonl": lines.join("\n"),
         });
-        let mut deduped_indexes = Default::default();
-        let mut deduped = Vec::new();
+        let path = fixture.path("projects/project-a/session-a/chat.jsonl");
+        let loaded = read_usage_file(&path, &jiff::tz::TimeZone::UTC, CostMode::Display, None);
+        let (deduped, _) = crate::dedupe::dedupe_files(vec![(path, loaded.entries)]);
 
-        let loaded = read_usage_file(
-            &fixture.path("projects/project-a/session-a/chat.jsonl"),
-            &jiff::tz::TimeZone::UTC,
-            CostMode::Display,
-            None,
-        );
-        for entry in loaded.entries {
-            push_deduped_entry(entry, &mut deduped_indexes, &mut deduped);
+        if deduped.len() != responses {
+            failures.push(format!(
+                "{case}: {} entries, expected {responses}",
+                deduped.len()
+            ));
         }
-
-        assert_eq!(deduped.len(), responses, "{case}");
     }
+    assert!(failures.is_empty(), "{failures:#?}");
 }
 
 #[test]

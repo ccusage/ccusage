@@ -7,7 +7,7 @@ use super::{key, signature};
 use crate::{
     Rejection,
     daily::read::{Refusal, admit, read_daily_usage_file_with_diagnostics},
-    dedupe::{DedupEntry as _, push_deduped_entry},
+    dedupe::DedupEntry as _,
 };
 
 struct Rng(u64);
@@ -145,7 +145,14 @@ fn line(
         member("type", text(kind)),
         member("uuid", text(uuid)),
         member("timestamp", Json::Raw(format!("\"{timestamp}\""))),
-        member("sessionId", raw("\"session-a\"")),
+        member(
+            "sessionId",
+            raw(if rng.chance(6) {
+                "\"session-b\""
+            } else {
+                "\"session-a\""
+            }),
+        ),
     ];
     let mut members = head;
     match (layout, message) {
@@ -220,7 +227,11 @@ fn transcript(rng: &mut Rng) -> Vec<String> {
         second: 0,
     };
     let mut parent: Option<String> = None;
+    let mut stamps: Vec<String> = Vec::new();
     for response in 0..rng.below(5) + 1 {
+        if rng.chance(25) {
+            parent = None;
+        }
         let message_id = if rng.chance(50) {
             "gateway".to_string()
         } else {
@@ -230,6 +241,7 @@ fn transcript(rng: &mut Rng) -> Vec<String> {
         let with_request = rng.chance(5);
         for _ in 0..rng.below(3) + 1 {
             let timestamp = t.timestamp();
+            stamps.push(timestamp.clone());
             let uuid = t.uuid();
             let is_tool_use = rng.chance(50);
             let tool_id = format!("toolu_{}", t.tool_uses.len());
@@ -305,6 +317,13 @@ fn transcript(rng: &mut Rng) -> Vec<String> {
             } else {
                 t.lines.push(block);
                 parent = Some(uuid);
+            }
+            if rng.chance(12) {
+                let at = rng.pick(&stamps).clone();
+                t.lines.push(format!(
+                    r#"{{"type":"assistant","timestamp":"{at}","sessionId":"session-a","message":{{"id":"{message_id}","usage":{{"input_tokens":{input},"output_tokens":{}}}}}}}"#,
+                    rng.below(30) + 1
+                ));
             }
             match rng.below(6) {
                 0 | 1 if !t.tool_uses.is_empty() => {
@@ -392,6 +411,10 @@ struct Reference {
     owners: HashMap<u64, u32>,
 }
 
+fn scoped(session: u64, uuid: u64) -> u64 {
+    session.rotate_left(17) ^ uuid
+}
+
 fn hashed(value: &Value) -> Option<u64> {
     value.as_str().map(|text| key(text.as_bytes()))
 }
@@ -425,17 +448,18 @@ impl Reference {
         None
     }
 
-    fn block(&mut self, line: &Value, signature: u64) -> Option<NonZeroU64> {
+    fn block(&mut self, line: &Value, signature: u64, session: u64) -> Option<NonZeroU64> {
         let uuid = hashed(&line["uuid"]);
-        let index =
-            match hashed(&line["parentUuid"]).and_then(|parent| self.joined(parent, signature)) {
-                Some(index) => index,
-                None => {
-                    self.responses
-                        .push((NonZeroU64::new(uuid?).unwrap_or(NonZeroU64::MIN), signature));
-                    u32::try_from(self.responses.len() - 1).ok()?
-                }
-            };
+        let index = match hashed(&line["parentUuid"])
+            .and_then(|parent| self.joined(scoped(session, parent), signature))
+        {
+            Some(index) => index,
+            None => {
+                self.responses
+                    .push((NonZeroU64::new(uuid?).unwrap_or(NonZeroU64::MIN), signature));
+                u32::try_from(self.responses.len() - 1).ok()?
+            }
+        };
         for block in line["message"]["content"].as_array().into_iter().flatten() {
             if block["type"] == "tool_use"
                 && let Some(id) = hashed(&block["id"])
@@ -444,14 +468,15 @@ impl Reference {
             }
         }
         if let Some(uuid) = uuid {
-            self.nodes.insert(uuid, Node::Block(index));
+            self.nodes.insert(scoped(session, uuid), Node::Block(index));
         }
         Some(self.responses[index as usize].0)
     }
 
     fn link(&mut self, line: &Value, may_carry_usage: bool) -> Option<()> {
-        let uuid = hashed(&line["uuid"])?;
-        let parent = hashed(&line["parentUuid"])?;
+        let session = key(line["sessionId"].as_str().unwrap_or("session-a").as_bytes());
+        let uuid = scoped(session, hashed(&line["uuid"])?);
+        let parent = scoped(session, hashed(&line["parentUuid"])?);
         let kind = line["type"].as_str()?;
         if (may_carry_usage && !line["message"]["usage"].is_null())
             || !self.nodes.contains_key(&parent)
@@ -493,9 +518,15 @@ fn reference_keys(lines: &[String]) -> Vec<Option<NonZeroU64>> {
             Ok(admitted) => {
                 let record = &admitted.record;
                 keys.push(match (&record.request_id, &record.message.id, &value) {
-                    (None, Some(message_id), Some(value)) => {
-                        reference.block(value, signature(message_id, &record.message.usage.usage))
-                    }
+                    (None, Some(message_id), Some(value)) => reference.block(
+                        value,
+                        signature(message_id, &record.message.usage.usage),
+                        key(record
+                            .session_id
+                            .as_deref()
+                            .unwrap_or("session-a")
+                            .as_bytes()),
+                    ),
                     _ => None,
                 });
             }
@@ -512,7 +543,7 @@ fn reference_keys(lines: &[String]) -> Vec<Option<NonZeroU64>> {
     keys
 }
 
-fn deduped_groups(entries: &[(u64, Option<NonZeroU64>, i64, bool)]) -> usize {
+fn deduped_groups(entries: &[(u64, Option<NonZeroU64>, i64, bool, u64)]) -> usize {
     let mut groups = (0..entries.len()).collect::<Vec<_>>();
     fn root(groups: &mut [usize], at: usize) -> usize {
         let mut at = at;
@@ -526,6 +557,7 @@ fn deduped_groups(entries: &[(u64, Option<NonZeroU64>, i64, bool)]) -> usize {
         for (other, earlier) in entries[..index].iter().enumerate() {
             let same = entry.0 == earlier.0
                 && entry.3 == earlier.3
+                && (!entry.3 || entry.4 == earlier.4)
                 && (!entry.3
                     || entry.2 == earlier.2
                     || (entry.1.is_some() && entry.1 == earlier.1));
@@ -572,14 +604,12 @@ fn the_scanner_and_a_full_parse_place_generated_blocks_in_the_same_responses() {
                     entry.key.request.response(),
                     entry.timestamp().as_millis(),
                     entry.request_id().is_none(),
+                    key(entry.session_id().as_bytes()),
                 )
             })
             .collect::<Vec<_>>();
-        let mut deduped_indexes = Default::default();
-        let mut deduped = Vec::new();
-        for entry in entries {
-            push_deduped_entry(entry, &mut deduped_indexes, &mut deduped);
-        }
+        let path = fixture.path("projects/project-a/session-a.jsonl");
+        let (deduped, _) = crate::dedupe::dedupe_files(vec![(path, entries)]);
         assert_eq!(
             deduped.len(),
             deduped_groups(&groups),

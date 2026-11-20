@@ -632,25 +632,24 @@ fn keeps_the_cache_ttl_split_from_an_otherwise_equal_daily_duplicate() {
 
 #[test]
 fn requestless_daily_content_blocks_collapse_only_along_their_transcript_chain() {
+    let mut failures = Vec::new();
     for (case, lines, responses) in crate::tests::requestless_response_cases() {
         let fixture = fs_fixture!({
             "projects/project-a/session-a/chat.jsonl": lines.join("\n"),
         });
-        let mut deduped_indexes = Default::default();
-        let mut deduped = Vec::new();
+        let path = fixture.path("projects/project-a/session-a/chat.jsonl");
+        let loaded =
+            read_daily_usage_file(&path, &jiff::tz::TimeZone::UTC, CostMode::Display, None);
+        let (deduped, _) = crate::dedupe::dedupe_files(vec![(path, loaded)]);
 
-        let loaded = read_daily_usage_file(
-            &fixture.path("projects/project-a/session-a/chat.jsonl"),
-            &jiff::tz::TimeZone::UTC,
-            CostMode::Display,
-            None,
-        );
-        for entry in loaded {
-            push_deduped_entry(entry, &mut deduped_indexes, &mut deduped);
+        if deduped.len() != responses {
+            failures.push(format!(
+                "{case}: {} entries, expected {responses}",
+                deduped.len()
+            ));
         }
-
-        assert_eq!(deduped.len(), responses, "{case}");
     }
+    assert!(failures.is_empty(), "{failures:#?}");
 }
 
 #[test]

@@ -18,6 +18,32 @@ pub(super) struct DedupeIndex {
 
 pub(super) type DedupeIndexVec = SmallVec<[DedupeIndex; 1]>;
 
+#[derive(Default)]
+pub(super) struct DedupeIndexes {
+    buckets: FxHashMap<u64, DedupeIndexVec>,
+    merged: FxHashMap<usize, usize>,
+}
+
+impl DedupeIndexes {
+    fn with_capacity(capacity: usize) -> Self {
+        Self {
+            buckets: FxHashMap::with_capacity_and_hasher(capacity, Default::default()),
+            merged: FxHashMap::default(),
+        }
+    }
+
+    fn get(&self, hash: &u64) -> Option<&DedupeIndexVec> {
+        self.buckets.get(hash)
+    }
+
+    fn resolve(&self, mut index: usize) -> usize {
+        while let Some(&survivor) = self.merged.get(&index) {
+            index = survivor;
+        }
+        index
+    }
+}
+
 // NOTE(2026-03-09, #886): Claude Code bills fast-mode usage at a higher rate. Prefer the fast record when otherwise equal copies disagree on speed.
 fn reports_more_of_the_request<E: DedupEntry>(candidate: &E, existing: &E) -> bool {
     let detail = |entry: &E| {
@@ -89,12 +115,8 @@ fn sidechain_entry_replay_dedupe_hash(message_id: &str, session_id: &str) -> u64
     hasher.finish()
 }
 
-fn push_deduped_index(
-    deduped_indexes: &mut FxHashMap<u64, DedupeIndexVec>,
-    hash: u64,
-    index: usize,
-) {
-    let indexes = deduped_indexes.entry(hash).or_default();
+fn push_deduped_index(deduped_indexes: &mut DedupeIndexes, hash: u64, index: usize) {
+    let indexes = deduped_indexes.buckets.entry(hash).or_default();
     if !indexes
         .iter()
         .any(|dedupe_index| dedupe_index.index == index && dedupe_index.session_alias.is_none())
@@ -106,24 +128,24 @@ fn push_deduped_index(
     }
 }
 
-fn push_new_deduped_index(
-    deduped_indexes: &mut FxHashMap<u64, DedupeIndexVec>,
-    hash: u64,
-    index: usize,
-) {
-    deduped_indexes.entry(hash).or_default().push(DedupeIndex {
-        index,
-        session_alias: None,
-    });
+fn push_new_deduped_index(deduped_indexes: &mut DedupeIndexes, hash: u64, index: usize) {
+    deduped_indexes
+        .buckets
+        .entry(hash)
+        .or_default()
+        .push(DedupeIndex {
+            index,
+            session_alias: None,
+        });
 }
 
 fn push_deduped_session_alias(
-    deduped_indexes: &mut FxHashMap<u64, DedupeIndexVec>,
+    deduped_indexes: &mut DedupeIndexes,
     hash: u64,
     index: usize,
     session_id: &str,
 ) {
-    let indexes = deduped_indexes.entry(hash).or_default();
+    let indexes = deduped_indexes.buckets.entry(hash).or_default();
     if !indexes.iter().any(|dedupe_index| {
         dedupe_index.index == index && dedupe_index.session_alias.as_deref() == Some(session_id)
     }) {
@@ -139,8 +161,7 @@ pub(super) fn dedupe_files<E: DedupEntry>(
 ) -> (Vec<E>, Vec<(usize, Arc<str>)>) {
     files.sort_by_cached_key(|(path, _)| usage_file_order(path));
     let entry_count = files.iter().map(|(_, entries)| entries.len()).sum();
-    let mut deduped_indexes: FxHashMap<u64, DedupeIndexVec> =
-        FxHashMap::with_capacity_and_hasher(entry_count, Default::default());
+    let mut deduped_indexes = DedupeIndexes::with_capacity(entry_count);
     let mut deduped = Vec::with_capacity(entry_count);
     let mut copies = Vec::new();
     for (_, entries) in files {
@@ -154,7 +175,21 @@ pub(super) fn dedupe_files<E: DedupEntry>(
             }
         }
     }
-    (deduped, copies)
+    if deduped_indexes.merged.is_empty() {
+        return (deduped, copies);
+    }
+    let mut kept = vec![usize::MAX; deduped.len()];
+    let mut survivors = Vec::with_capacity(deduped.len() - deduped_indexes.merged.len());
+    for (index, entry) in deduped.into_iter().enumerate() {
+        if !deduped_indexes.merged.contains_key(&index) {
+            kept[index] = survivors.len();
+            survivors.push(entry);
+        }
+    }
+    for (index, _) in &mut copies {
+        *index = kept[deduped_indexes.resolve(*index)];
+    }
+    (survivors, copies)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -218,9 +253,10 @@ fn usage_token_total(entry: &impl DedupEntry) -> u64 {
 
 pub(super) fn push_deduped_entry<E: DedupEntry>(
     entry: E,
-    deduped_indexes: &mut FxHashMap<u64, DedupeIndexVec>,
+    deduped_indexes: &mut DedupeIndexes,
     deduped: &mut Vec<E>,
 ) -> Option<(usize, E)> {
+    let requestless_hashes = requestless_hashes(&entry);
     let dedupe_lookup = entry.message_id().map(|message_id| {
         let request_id = entry.request_id();
         let exact_hash = usage_dedupe_hash(
@@ -229,53 +265,59 @@ pub(super) fn push_deduped_entry<E: DedupEntry>(
             entry.session_id(),
             entry.timestamp(),
         );
-        let existing_index = deduped_indexes
-            .get(&exact_hash)
-            .and_then(|indexes| {
+        let requestless_match = |hash: u64| {
+            deduped_indexes.get(&hash)?.iter().find_map(|dedupe_index| {
+                let index = deduped_indexes.resolve(dedupe_index.index);
+                let existing = &deduped[index];
+                (existing.message_id() == Some(message_id)
+                    && existing.request_id().is_none()
+                    && existing.session_id() == entry.session_id())
+                .then_some(index)
+            })
+        };
+        let existing_index = if request_id.is_none() {
+            let exact = requestless_match(exact_hash);
+            let response = requestless_response_hash(&entry).and_then(requestless_match);
+            match (exact, response) {
+                (Some(exact), Some(response)) if exact != response => {
+                    Some(merge_slots(deduped_indexes, deduped, exact, response))
+                }
+                (exact, response) => exact.or(response),
+            }
+        } else {
+            deduped_indexes.get(&exact_hash).and_then(|indexes| {
                 indexes.iter().find_map(|dedupe_index| {
-                    let existing = &deduped[dedupe_index.index];
+                    let index = deduped_indexes.resolve(dedupe_index.index);
+                    let existing = &deduped[index];
                     (existing.message_id() == Some(message_id)
-                        && existing.request_id() == request_id
-                        && (request_id.is_some()
-                            || (existing.session_id() == entry.session_id()
-                                && existing.timestamp() == entry.timestamp())))
-                    .then_some(dedupe_index.index)
+                        && existing.request_id() == request_id)
+                        .then_some(index)
                 })
             })
-            .or_else(|| {
-                deduped_indexes
-                    .get(&requestless_response_hash(&entry)?)?
-                    .iter()
-                    .find_map(|dedupe_index| {
-                        let existing = &deduped[dedupe_index.index];
-                        (existing.message_id() == Some(message_id)
-                            && existing.session_id() == entry.session_id()
-                            && existing.request_id().is_none())
-                        .then_some(dedupe_index.index)
-                    })
-            })
-            .or_else(|| {
-                // NOTE(2026-05-25, #913): Claude Code /btw sidechains can replay parent usage with the same message ID and a new request ID. Match across request IDs to avoid overcounting (https://github.com/ccusage/ccusage/issues/913).
-                let candidate_is_sidechain = entry.is_sidechain();
-                let route_hash = if candidate_is_sidechain {
-                    sidechain_replay_dedupe_hash(message_id, entry.session_id())
-                } else {
-                    sidechain_entry_replay_dedupe_hash(message_id, entry.session_id())
-                };
-                deduped_indexes.get(&route_hash).and_then(|indexes| {
-                    indexes.iter().find_map(|dedupe_index| {
-                        let existing = &deduped[dedupe_index.index];
-                        let indexed_session_id = dedupe_index
-                            .session_alias
-                            .as_deref()
-                            .unwrap_or(existing.session_id());
-                        (existing.message_id() == Some(message_id)
-                            && indexed_session_id == entry.session_id()
-                            && (candidate_is_sidechain || existing.is_sidechain()))
-                        .then_some(dedupe_index.index)
-                    })
+        }
+        .or_else(|| {
+            // NOTE(2026-05-25, #913): Claude Code /btw sidechains can replay parent usage with the same message ID and a new request ID. Match across request IDs to avoid overcounting (https://github.com/ccusage/ccusage/issues/913).
+            let candidate_is_sidechain = entry.is_sidechain();
+            let route_hash = if candidate_is_sidechain {
+                sidechain_replay_dedupe_hash(message_id, entry.session_id())
+            } else {
+                sidechain_entry_replay_dedupe_hash(message_id, entry.session_id())
+            };
+            deduped_indexes.get(&route_hash).and_then(|indexes| {
+                indexes.iter().find_map(|dedupe_index| {
+                    let index = deduped_indexes.resolve(dedupe_index.index);
+                    let existing = &deduped[index];
+                    let indexed_session_id = dedupe_index
+                        .session_alias
+                        .as_deref()
+                        .unwrap_or(existing.session_id());
+                    (existing.message_id() == Some(message_id)
+                        && indexed_session_id == entry.session_id()
+                        && (candidate_is_sidechain || existing.is_sidechain()))
+                    .then_some(index)
                 })
-            });
+            })
+        });
         (exact_hash, existing_index)
     });
 
@@ -293,15 +335,13 @@ pub(super) fn push_deduped_entry<E: DedupEntry>(
                 }
             }
         }
+        for hash in requestless_hashes.into_iter().flatten() {
+            push_deduped_index(deduped_indexes, hash, index);
+        }
         let discarded = if should_replace_deduped_entry(&entry, &deduped[index]) {
             let previous = std::mem::replace(&mut deduped[index], entry);
             if entry_exact_hash(&previous) != Some(hash) {
                 push_deduped_index(deduped_indexes, hash, index);
-            }
-            if let Some(response_hash) = requestless_response_hash(&deduped[index])
-                && requestless_response_hash(&previous) != Some(response_hash)
-            {
-                push_deduped_index(deduped_indexes, response_hash, index);
             }
             let survivor = &deduped[index];
             let replay_route_changed = previous.session_id() != survivor.session_id()
@@ -324,12 +364,6 @@ pub(super) fn push_deduped_entry<E: DedupEntry>(
             }
             previous
         } else {
-            // NOTE(2026-11-20, #2255): A requestless rewrite at the same timestamp can open a response of its own. Its later blocks carry that response's key, so the key also leads to the surviving entry.
-            if let Some(response_hash) = requestless_response_hash(&entry)
-                && requestless_response_hash(&deduped[index]) != Some(response_hash)
-            {
-                push_deduped_index(deduped_indexes, response_hash, index);
-            }
             entry
         };
         return Some((index, discarded));
@@ -360,6 +394,27 @@ pub(super) fn push_deduped_entry<E: DedupEntry>(
         }
     }
     None
+}
+
+// NOTE(2026-11-20, #2255): A requestless slot can hold records at several timestamps and of several transcript responses, for example blocks of one response or a same-timestamp rewrite. Each record stays findable by its own timestamp and response key, and a record matching two slots by those keys connects them, so the slots merge.
+fn requestless_hashes(entry: &impl DedupEntry) -> [Option<u64>; 2] {
+    if entry.request_id().is_some() {
+        return [None, None];
+    }
+    [entry_exact_hash(entry), requestless_response_hash(entry)]
+}
+
+fn merge_slots<E: DedupEntry>(
+    deduped_indexes: &mut DedupeIndexes,
+    deduped: &mut [E],
+    kept: usize,
+    merged: usize,
+) -> usize {
+    if should_replace_deduped_entry(&deduped[merged], &deduped[kept]) {
+        deduped.swap(kept, merged);
+    }
+    deduped_indexes.merged.insert(merged, kept);
+    kept
 }
 
 fn entry_exact_hash(entry: &impl DedupEntry) -> Option<u64> {
