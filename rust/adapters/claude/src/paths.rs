@@ -260,11 +260,14 @@ fn latest_tail_timestamp(path: &Path) -> Option<i64> {
     }
 
     let mut file = File::open(path).ok()?;
-    let start = file.metadata().ok()?.len().saturating_sub(TAIL_PROBE_BYTES);
+    let len = file.metadata().ok()?.len();
+    let start = len.saturating_sub(TAIL_PROBE_BYTES + 1);
     file.seek(SeekFrom::Start(start)).ok()?;
-    let mut tail = Vec::with_capacity(TAIL_PROBE_BYTES as usize);
-    file.take(TAIL_PROBE_BYTES).read_to_end(&mut tail).ok()?;
-    let whole_lines = if start == 0 {
+    let mut tail = Vec::with_capacity(TAIL_PROBE_BYTES as usize + 1);
+    file.take(TAIL_PROBE_BYTES + 1)
+        .read_to_end(&mut tail)
+        .ok()?;
+    let whole_lines = if len <= TAIL_PROBE_BYTES {
         &tail[..]
     } else {
         &tail[memchr::memchr(b'\n', &tail)? + 1..]

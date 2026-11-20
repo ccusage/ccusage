@@ -470,3 +470,21 @@ fn keeps_a_stale_transcript_whose_tail_holds_no_whole_record() {
     assert_eq!(split.kept, [long, summary]);
     assert!(split.pruned.is_empty());
 }
+
+#[test]
+fn keeps_the_record_a_tail_starts_on_exactly() {
+    let in_window = format!("{}\n", record_at("2026-09-21T12:00:00Z"));
+    let old_line =
+        |text: &str| format!(r#"{{"timestamp":"2026-09-01T12:00:00Z","text":"{text}"}}"#) + "\n";
+    let padding = 16 * 1024 - in_window.len() - old_line("").len();
+    let tail = in_window + &old_line(&"x".repeat(padding));
+    assert_eq!(tail.len(), 16 * 1024);
+    let fixture = fs_fixture!({
+        "projects/p/restored.jsonl": old_line("") + &tail,
+    });
+    let restored = fixture.path("projects/p/restored.jsonl");
+
+    let split = stale_since_split(vec![restored.clone()]);
+
+    assert_eq!(split.kept, [restored]);
+}
