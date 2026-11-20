@@ -709,9 +709,9 @@ mod tests {
                 .find(|entry| entry.message_id.as_deref() == Some("retry-opus"))
                 .unwrap();
             assert_eq!(step.model.as_deref(), Some("gemini-2.5-pro"));
-            assert_eq!(retry.model.as_deref(), Some("claude-4-opus"));
+            assert_eq!(retry.model.as_deref(), Some("claude-opus-4"));
             let step_pricing = pricing.find("gemini-2.5-pro").unwrap();
-            let retry_pricing = pricing.find("claude-4-opus").unwrap();
+            let retry_pricing = pricing.find("claude-opus-4").unwrap();
             let expected_step_cost = 10.0 * step_pricing.input + 5.0 * step_pricing.output;
             let expected_retry_cost = 20.0 * retry_pricing.input + 4.0 * retry_pricing.output;
             assert!((step.cost - expected_step_cost).abs() < 1e-15);
