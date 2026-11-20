@@ -143,7 +143,6 @@ struct Anchor {
     literal: Finder<'static>,
     index: usize,
     run_start: usize,
-    reach: usize,
 }
 
 impl Anchor {
@@ -160,10 +159,6 @@ impl Anchor {
             literal: Finder::new(&marker[run_start..=index]).into_owned(),
             index,
             run_start,
-            reach: content[..run_start]
-                .iter()
-                .map(|&is_content| if is_content { 6 } else { 1 })
-                .sum(),
         })
     }
 }
@@ -205,17 +200,14 @@ impl Marker {
         while let Some(found) = anchor.literal.find(&line[from..]) {
             let run_at = from + found;
             from = run_at + 1;
-            let at = run_at + anchor.index - anchor.run_start;
-            if !self.matches_at(anchor.index, &line[at..]) {
+            let after = run_at + anchor.index - anchor.run_start + 1;
+            if !self.matches_at(anchor.index + 1, &line[after..]) {
                 continue;
             }
             let verbatim = run_at
                 .checked_sub(anchor.run_start)
                 .is_some_and(|start| line[start..run_at].iter().eq(&marker[..anchor.run_start]));
-            if verbatim
-                || line[run_at.saturating_sub(anchor.reach)..run_at].contains(&b'\\')
-                    && self.spelled_before(line, anchor.run_start, run_at)
-            {
+            if verbatim || self.spelled_before(line, anchor.run_start, run_at) {
                 return true;
             }
         }
