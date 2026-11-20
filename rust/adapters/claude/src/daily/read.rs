@@ -56,7 +56,7 @@ pub(super) struct Admitted {
     advisors: crate::AdvisorUsages,
 }
 
-// NOTE(2026-11-20, #2367): RFC 8259 allows whitespace around the `:` of a member, so the gate stops at the quoted name and leaves the delimiter to the parser.
+// NOTE(2026-11-20, #2367): RFC 8259 allows whitespace around the `:` of a member. The gate stops at the quoted name and leaves the delimiter to the parser.
 fn has_usage_marker(line: &[u8]) -> bool {
     static USAGE_MARKER: LazyLock<LinePrefilter> =
         LazyLock::new(|| LinePrefilter::all(&[br#""usage""#]));
