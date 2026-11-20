@@ -35,8 +35,8 @@ exit: 0
     {
       "agent": "all",
       "cacheCreationTokens": 13225,
-      "cacheReadTokens": 295459,
-      "inputTokens": 132036,
+      "cacheReadTokens": 295759,
+      "inputTokens": 132436,
       "metadata": {
         "agents": [
           "amp",
@@ -181,10 +181,10 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 2000,
-          "inputTokens": 3300,
+          "cacheReadTokens": 2300,
+          "inputTokens": 3700,
           "modelName": "gpt-5.5",
-          "outputTokens": 630
+          "outputTokens": 700
         },
         {
           "cacheCreationTokens": 0,
@@ -463,9 +463,9 @@ exit: 0
         "qwen3-coder-plus",
         "unknown"
       ],
-      "outputTokens": 31697,
+      "outputTokens": 31767,
       "period": "2025-12",
-      "totalTokens": 473487
+      "totalTokens": 474257
     },
     {
       "agent": "all",
@@ -1076,10 +1076,10 @@ exit: 0
   ],
   "totals": {
     "cacheCreationTokens": 17765,
-    "cacheReadTokens": 1309967,
-    "inputTokens": 1365200,
-    "outputTokens": 60496,
-    "totalTokens": 2756845,
+    "cacheReadTokens": 1310267,
+    "inputTokens": 1365600,
+    "outputTokens": 60566,
+    "totalTokens": 2757615,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",

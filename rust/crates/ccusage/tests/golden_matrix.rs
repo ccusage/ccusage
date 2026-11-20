@@ -275,6 +275,57 @@ fn pi_tied_fork_keeps_the_first_path_in_both_read_modes() {
 }
 
 #[test]
+fn codex_daily_and_session_count_fork_requests_and_archived_copies_alike() {
+    let fixture = Fixture::new();
+    let root = fixture.root();
+    let seeded = golden::codex::seed(root);
+    let window = ["--since", "20251231", "--until", "20260101"];
+    for (bounds, expected_total) in [(&[][..], 598_494), (&window[..], 19_855)] {
+        for threads in [&[][..], &["--single-thread"][..]] {
+            let report = |kind: &'static str| {
+                let mut case = Case::new(kind, "", &["codex", kind, "--offline", "--json"]);
+                case.args
+                    .extend(bounds.iter().chain(threads).map(|arg| (*arg).to_string()));
+                let output = run_case(root, &seeded, &case);
+                assert_eq!(output.exit, "0", "{}", output.stderr);
+                serde_json::from_str::<serde_json::Value>(&output.stdout).unwrap()
+            };
+            let context = format!("{bounds:?} {threads:?}");
+            let daily = report("daily");
+            let session = report("session");
+            assert_eq!(daily["totals"]["totalTokens"], expected_total, "{context}");
+            assert_eq!(
+                session["totals"]["totalTokens"], expected_total,
+                "{context}"
+            );
+            let cost = |report: &serde_json::Value| report["totals"]["costUSD"].as_f64().unwrap();
+            let (daily_cost, session_cost) = (cost(&daily), cost(&session));
+            assert!(
+                (daily_cost - session_cost).abs() <= 1e-9 * daily_cost.abs().max(1.0),
+                "{context}: daily {daily_cost} != session {session_cost}"
+            );
+            let sessions = session["sessions"].as_array().unwrap();
+            let tokens = |id: &str| {
+                sessions
+                    .iter()
+                    .find(|row| row["sessionId"].as_str().unwrap().ends_with(id))
+                    .map(|row| row["totalTokens"].clone())
+            };
+            assert_eq!(
+                tokens("33333333-3333-4333-8333-333333333333"),
+                Some(1980.into()),
+                "{context}"
+            );
+            assert_eq!(
+                tokens("dddddddd-dddd-4ddd-8ddd-dddddddddddd"),
+                None,
+                "{context}"
+            );
+        }
+    }
+}
+
+#[test]
 fn pi_explicit_stores_keep_a_project_named_sessions_and_agent_dirs_read_their_store() {
     let fixture = Fixture::new();
     let root = fixture.root();

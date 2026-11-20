@@ -3156,33 +3156,6 @@ exit: 0
       "totalTokens": 9590
     },
     {
-      "agent": "codex",
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 400,
-      "inputTokens": 600,
-      "metadata": {
-        "lastActivity": "2025-12-31T16:00:10.000Z",
-        "reasoningOutputTokens": 0
-      },
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 400,
-          "cost": 0.0018,
-          "inputTokens": 600,
-          "modelName": "gpt-5-codex",
-          "outputTokens": 100
-        }
-      ],
-      "modelsUsed": [
-        "gpt-5-codex"
-      ],
-      "outputTokens": 100,
-      "period": "rollout-2025-12-31T16-00-00-dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-      "totalCost": 0.0018,
-      "totalTokens": 1100
-    },
-    {
       "agent": "kimi",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 0,
@@ -5453,11 +5426,11 @@ exit: 0
   ],
   "totals": {
     "cacheCreationTokens": 17825,
-    "cacheReadTokens": 1311537,
-    "inputTokens": 1365815,
-    "outputTokens": 60648,
-    "totalCost": 4.824577425000007,
-    "totalTokens": 2759262,
+    "cacheReadTokens": 1311137,
+    "inputTokens": 1365215,
+    "outputTokens": 60548,
+    "totalCost": 4.822777425000007,
+    "totalTokens": 2758162,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",

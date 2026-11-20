@@ -316,16 +316,16 @@ exit: 0
         {
           "agent": "codex",
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 6570,
-          "inputTokens": 25096,
+          "cacheReadTokens": 6870,
+          "inputTokens": 25496,
           "modelBreakdowns": [
             {
               "cacheCreationTokens": 0,
-              "cacheReadTokens": 2000,
-              "cost": 0.05785,
-              "inputTokens": 3300,
+              "cacheReadTokens": 2300,
+              "cost": 0.059975,
+              "inputTokens": 3700,
               "modelName": "gpt-5.5",
-              "outputTokens": 630
+              "outputTokens": 700
             },
             {
               "cacheCreationTokens": 0,
@@ -367,9 +367,9 @@ exit: 0
             "gpt-5.5",
             "gpt-6.1-sol"
           ],
-          "outputTokens": 3305,
-          "totalCost": 0.1006405,
-          "totalTokens": 34971
+          "outputTokens": 3375,
+          "totalCost": 0.10276550000000001,
+          "totalTokens": 35741
         },
         {
           "agent": "copilot",
@@ -1169,8 +1169,8 @@ exit: 0
         }
       ],
       "cacheCreationTokens": 13225,
-      "cacheReadTokens": 295459,
-      "inputTokens": 132036,
+      "cacheReadTokens": 295759,
+      "inputTokens": 132436,
       "metadata": {
         "agents": [
           "amp",
@@ -1347,11 +1347,11 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 2000,
-          "cost": 0.05785,
-          "inputTokens": 3300,
+          "cacheReadTokens": 2300,
+          "cost": 0.059975,
+          "inputTokens": 3700,
           "modelName": "gpt-5.5",
-          "outputTokens": 630
+          "outputTokens": 700
         },
         {
           "cacheCreationTokens": 0,
@@ -1664,10 +1664,10 @@ exit: 0
         "qwen3-coder-plus",
         "unknown"
       ],
-      "outputTokens": 31697,
+      "outputTokens": 31767,
       "period": "2025-12",
-      "totalCost": 21.189836409999995,
-      "totalTokens": 473487
+      "totalCost": 21.191961409999994,
+      "totalTokens": 474257
     },
     {
       "agent": "all",
@@ -3618,11 +3618,11 @@ exit: 0
   ],
   "totals": {
     "cacheCreationTokens": 17765,
-    "cacheReadTokens": 1309967,
-    "inputTokens": 1365200,
-    "outputTokens": 60496,
-    "totalCost": 28.177333424999997,
-    "totalTokens": 2756845,
+    "cacheReadTokens": 1310267,
+    "inputTokens": 1365600,
+    "outputTokens": 60566,
+    "totalCost": 28.179458424999996,
+    "totalTokens": 2757615,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",

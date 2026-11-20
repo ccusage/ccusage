@@ -8,9 +8,9 @@ exit: 0
   "monthly": [
     {
       "cacheCreationTokens": 0,
-      "cacheReadTokens": 6570,
+      "cacheReadTokens": 6870,
       "costUSD": 0,
-      "inputTokens": 25096,
+      "inputTokens": 25496,
       "models": {
         "gpt-5": {
           "cacheCreationTokens": 0,
@@ -41,12 +41,12 @@ exit: 0
         },
         "gpt-5.5": {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 2000,
-          "inputTokens": 3300,
+          "cacheReadTokens": 2300,
+          "inputTokens": 3700,
           "isFallback": false,
-          "outputTokens": 630,
-          "reasoningOutputTokens": 70,
-          "totalTokens": 5930
+          "outputTokens": 700,
+          "reasoningOutputTokens": 80,
+          "totalTokens": 6700
         },
         "gpt-6.1-sol": {
           "cacheCreationTokens": 0,
@@ -59,9 +59,9 @@ exit: 0
         }
       },
       "month": "2025-12",
-      "outputTokens": 3305,
-      "reasoningOutputTokens": 75,
-      "totalTokens": 34971
+      "outputTokens": 3375,
+      "reasoningOutputTokens": 85,
+      "totalTokens": 35741
     },
     {
       "cacheCreationTokens": 300,
@@ -123,12 +123,12 @@ exit: 0
   ],
   "totals": {
     "cacheCreationTokens": 300,
-    "cacheReadTokens": 460650,
+    "cacheReadTokens": 460950,
     "costUSD": 0,
-    "inputTokens": 130946,
-    "outputTokens": 5828,
-    "reasoningOutputTokens": 139,
-    "totalTokens": 597724
+    "inputTokens": 131346,
+    "outputTokens": 5898,
+    "reasoningOutputTokens": 149,
+    "totalTokens": 598494
   }
 }
 
