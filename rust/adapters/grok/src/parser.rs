@@ -803,7 +803,7 @@ mod tests {
             output_cost_per_token: Some(0.002),
             ..crate::cli::PricingOverride::default()
         };
-        let key = "xai/grok-unreleased-9.9-20261101".to_string();
+        let key = "xai/grok-unreleased-9.9".to_string();
         let pricing =
             ccusage_core::PricingMap::load_with_overrides(true, false, [(&key, &pricing_override)]);
         for unpriced in [
