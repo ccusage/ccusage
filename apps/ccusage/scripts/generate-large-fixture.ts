@@ -2,7 +2,7 @@
 /*
 #! nix shell --inputs-from ../../.. nixpkgs#nodejs -c node
 */
-import { mkdir, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, utimes, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { zstdCompressSync } from 'node:zlib';
 
@@ -11,6 +11,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const FIXTURE_START_MS = Date.UTC(2026, 5, 1);
 const FIXTURE_DAYS = 120;
 const CLAUDE_PROJECT_COUNT = 48;
+const CLAUDE_MANY_SMALL_FILES_PROJECT_COUNT = 1600;
 const SUBAGENT_FILE_EVERY = 4;
 const LEGACY_PROGRESS_FILE_EVERY = 6;
 const LEGACY_PROGRESS_USAGE_CHANCE = 0.08;
@@ -18,7 +19,15 @@ const METADATA_FIRST_ASSISTANT_CHANCE = 0.01;
 const CODEX_PLAIN_RECENT_DAYS = 14;
 const CODEX_ARCHIVED_FILE_EVERY = 4;
 const CODEX_COMPACTION_CHANCE = 1 / 30;
+const CODEX_FORK_FILE_EVERY = 8;
+const CODEX_FORK_HISTORY_LINES = 120;
 type Format = 'claude' | 'codex' | 'grok';
+type ClaudeShape = 'default' | 'many-small-files' | 'requestless-proxy';
+const CLAUDE_SHAPES = [
+	'default',
+	'many-small-files',
+	'requestless-proxy',
+] as const satisfies readonly ClaudeShape[];
 
 type SizeProfile = {
 	files: number;
@@ -81,6 +90,25 @@ const SIZE_PROFILES = {
 		],
 	},
 } as const satisfies Record<Format, SizeProfile>;
+const CLAUDE_MANY_SMALL_FILES_PROFILE = {
+	files: 40_000,
+	totalBytes: 512 * MIB,
+	quantiles: [
+		{ percentile: 0, size: 400 },
+		{ percentile: 0.25, size: 3000 },
+		{ percentile: 0.5, size: 8000 },
+		{ percentile: 0.75, size: 16_000 },
+		{ percentile: 0.9, size: 32_000 },
+		{ percentile: 0.99, size: 120_000 },
+		{ percentile: 1, size: 400_000 },
+	],
+} as const satisfies SizeProfile;
+
+function sizeProfile(format: Format, claudeShape: ClaudeShape): SizeProfile {
+	return format === 'claude' && claudeShape === 'many-small-files'
+		? CLAUDE_MANY_SMALL_FILES_PROFILE
+		: SIZE_PROFILES[format];
+}
 
 const CLAUDE_MODELS = [
 	'claude-opus-4-5-20251101',
@@ -146,6 +174,7 @@ type Options = {
 	codexSizeMib: number;
 	grokSizeMib: number;
 	codexLayout: CodexLayout;
+	claudeShape: ClaudeShape;
 };
 
 type Line = Record<string, unknown>;
@@ -158,10 +187,14 @@ function parsePositiveInteger(value: string, flagName: string): number {
 	return parsed;
 }
 
-function parseSizeMib(value: string | undefined, flagName: string, format: Format): number {
+function parseSizeMib(value: string | undefined, flagName: string, profile: SizeProfile): number {
 	return value === undefined
-		? Math.round(SIZE_PROFILES[format].totalBytes / MIB)
+		? Math.round(profile.totalBytes / MIB)
 		: parsePositiveInteger(value, flagName);
+}
+
+function isClaudeShape(value: string): value is ClaudeShape {
+	return CLAUDE_SHAPES.some((shape) => shape === value);
 }
 
 function parseArguments(args: readonly string[]): Options {
@@ -184,6 +217,7 @@ function parseArguments(args: readonly string[]): Options {
 				'--codex-size-mib',
 				'--grok-size-mib',
 				'--codex-layout',
+				'--claude-shape',
 			].includes(flag)
 		) {
 			throw new Error(`Unknown option: ${flag}`);
@@ -200,15 +234,28 @@ function parseArguments(args: readonly string[]): Options {
 	if (codexLayout !== 'current' && codexLayout !== 'legacy') {
 		throw new Error('--codex-layout must be current or legacy');
 	}
+	const claudeShape = values.get('--claude-shape') ?? 'default';
+	if (!isClaudeShape(claudeShape)) {
+		throw new Error(`--claude-shape must be one of ${CLAUDE_SHAPES.join(', ')}`);
+	}
 
 	return {
 		outputDir,
 		codexOutputDir: values.get('--codex-output-dir'),
 		grokOutputDir: values.get('--grok-output-dir'),
-		sizeMib: parseSizeMib(values.get('--size-mib'), '--size-mib', 'claude'),
-		codexSizeMib: parseSizeMib(values.get('--codex-size-mib'), '--codex-size-mib', 'codex'),
-		grokSizeMib: parseSizeMib(values.get('--grok-size-mib'), '--grok-size-mib', 'grok'),
+		sizeMib: parseSizeMib(
+			values.get('--size-mib'),
+			'--size-mib',
+			sizeProfile('claude', claudeShape),
+		),
+		codexSizeMib: parseSizeMib(
+			values.get('--codex-size-mib'),
+			'--codex-size-mib',
+			SIZE_PROFILES.codex,
+		),
+		grokSizeMib: parseSizeMib(values.get('--grok-size-mib'), '--grok-size-mib', SIZE_PROFILES.grok),
 		codexLayout,
+		claudeShape,
 	};
 }
 
@@ -376,16 +423,18 @@ type ClaudeSession = {
 	legacyProgress: boolean;
 	parentMessageIds: string[];
 	random: Random;
+	lastUuid?: string;
+	proxy?: { constantMessageId?: string; messageIdPrefix: string };
 };
 
 function claudeEnvelope(
 	session: ClaudeSession,
 	type: string,
 	timestamp: string,
-	assistant?: { message: Line; requestId: string },
+	assistant?: { message: Line; requestId?: string },
 ): Line {
 	const ancestry = {
-		parentUuid: session.random.uuid(),
+		parentUuid: session.lastUuid ?? null,
 		isSidechain: session.agentId !== undefined,
 	};
 	const agent = session.agentId === undefined ? {} : { agentId: session.agentId };
@@ -398,6 +447,7 @@ function claudeEnvelope(
 		gitBranch: 'main',
 	};
 	const record = { type, uuid: session.random.uuid(), timestamp };
+	session.lastUuid = record.uuid;
 	if (assistant && !session.random.chance(METADATA_FIRST_ASSISTANT_CHANCE)) {
 		// NOTE(2026-11-19, Claude Code 2.1, #2221): The message precedes report metadata in most usage rows. Preserve insertion order to exercise this parser path.
 		return { ...ancestry, ...assistant, ...record, ...context, ...agent };
@@ -485,8 +535,10 @@ function claudeAssistantResponse(
 ): { lines: Line[]; replayableId?: string } {
 	const { random } = session;
 	const model = random.chance(0.01) ? '<synthetic>' : random.pick(CLAUDE_MODELS);
-	const id = messageId ?? `msg_${random.hex(24)}`;
-	const requestId = `req_${random.hex(24)}`;
+	const { proxy } = session;
+	const id =
+		messageId ?? proxy?.constantMessageId ?? `${proxy?.messageIdPrefix ?? 'msg_'}${random.hex(24)}`;
+	const requestId = proxy === undefined ? { requestId: `req_${random.hex(24)}` } : {};
 	const usage = claudeUsage(random, model);
 	const blocks = random.chance(0.6) ? ['thinking'] : [];
 	blocks.push(random.chance(0.55) ? 'tool_use' : 'text');
@@ -518,7 +570,7 @@ function claudeAssistantResponse(
 			return {
 				...claudeEnvelope(session, 'progress', timestamp),
 				data: {
-					message: { type: 'assistant', message, requestId, uuid: random.uuid(), timestamp },
+					message: { type: 'assistant', message, ...requestId, uuid: random.uuid(), timestamp },
 					normalizedMessages: [],
 					type: 'agent_progress',
 					agentId: random.hex(17),
@@ -528,7 +580,7 @@ function claudeAssistantResponse(
 			};
 		}
 		return {
-			...claudeEnvelope(session, 'assistant', timestamp, { message, requestId }),
+			...claudeEnvelope(session, 'assistant', timestamp, { message, ...requestId }),
 			requestedModel: model,
 			effort: 'high',
 			apiBlockIndex: 0,
@@ -691,7 +743,11 @@ type CodexSession = {
 	random: Random;
 	ordinal: number;
 	total: Line;
+	fork?: CodexFork;
 };
+
+type CodexParent = { sessionId: string; history: Line[] };
+type CodexFork = { parent: CodexParent; spawned: boolean };
 
 function codexUsage(random: Random): Line {
 	const input = random.between(2000, 180_000);
@@ -760,20 +816,44 @@ function codexUsageRecordPayload(session: CodexSession, turnId: string, usage: L
 	};
 }
 
+function codexForkSource(fork: CodexFork): Line | string {
+	return fork.spawned
+		? { subagent: { thread_spawn: { parent_thread_id: fork.parent.sessionId, depth: 1 } } }
+		: 'cli';
+}
+
+function* codexCopiedHistory(session: CodexSession, fork: CodexFork): Generator<Line> {
+	const { history } = fork.parent;
+	const copied = history.slice(1, 1 + session.random.between(1, Math.max(1, history.length - 1)));
+	const forkedAt = session.clock.tick(session.random, 50);
+	for (const line of copied) {
+		// Spawned subagents drop the parent's `token_usage_record` lines; user forks keep them, still naming the parent thread.
+		if (fork.spawned && line.type === 'token_usage_record') {
+			continue;
+		}
+		session.ordinal += 1;
+		yield { ...line, timestamp: forkedAt, ordinal: session.ordinal };
+	}
+}
+
 function* codexSessionLines(session: CodexSession): Generator<Line> {
-	const { random } = session;
+	const { random, fork } = session;
 	yield codexLine(session, 'session_meta', {
 		session_id: session.sessionId,
 		id: session.sessionId,
+		...(fork === undefined ? {} : { forked_from_id: fork.parent.sessionId }),
 		timestamp: new Date(FIXTURE_START_MS).toISOString(),
 		cwd: session.cwd,
 		originator: 'codex_cli_rs',
 		cli_version: '0.200.0',
-		source: 'cli',
+		source: fork === undefined ? 'cli' : codexForkSource(fork),
 		model_provider: 'openai',
 		base_instructions: { text: text(random, around(random, 18_000)) },
 		git: { commit_hash: random.hex(40), branch: 'main', repository_url: null },
 	});
+	if (fork !== undefined) {
+		yield* codexCopiedHistory(session, fork);
+	}
 	while (true) {
 		const turnId = random.uuid();
 		const model = random.pick(CODEX_MODELS);
@@ -1107,14 +1187,28 @@ function paddedNumber(value: number, width: number): string {
 
 type PlannedFile = {
 	path: string;
+	startMs: number;
 	lines: Generator<Line>;
 	compressed?: boolean;
 	sidecar?: { path: string; value: Line };
+	keepLines?: number;
 };
+
+function claudeProxy(random: Random): ClaudeSession['proxy'] {
+	switch (random.int(3)) {
+		case 0:
+			return { messageIdPrefix: 'msg_' };
+		case 1:
+			return { messageIdPrefix: 'chatcmpl-' };
+		default:
+			return { messageIdPrefix: '', constantMessageId: `gateway-${random.hex(8)}` };
+	}
+}
 
 function planClaudeFile(
 	directory: string,
 	fileIndex: number,
+	shape: ClaudeShape,
 	previous?: ClaudeSession,
 ): {
 	file: PlannedFile;
@@ -1131,6 +1225,7 @@ function planClaudeFile(
 			clock: new Clock(startMs),
 			parentMessageIds: [...previous.parentMessageIds],
 			random,
+			lastUuid: undefined,
 		};
 		return {
 			file: {
@@ -1142,12 +1237,15 @@ function planClaudeFile(
 					'subagents',
 					`agent-${agentId}.jsonl`,
 				),
+				startMs,
 				lines: claudeSessionLines(session),
 			},
 			session: previous,
 		};
 	}
-	const project = `project-${paddedNumber(fileIndex % CLAUDE_PROJECT_COUNT, 3)}`;
+	const projectCount =
+		shape === 'many-small-files' ? CLAUDE_MANY_SMALL_FILES_PROJECT_COUNT : CLAUDE_PROJECT_COUNT;
+	const project = `project-${paddedNumber(fileIndex % projectCount, 4)}`;
 	const projectDir = `-tmp-ccusage-fixture-${project}`;
 	const session: ClaudeSession = {
 		clock: new Clock(startMs),
@@ -1158,17 +1256,24 @@ function planClaudeFile(
 		legacyProgress: fileIndex % LEGACY_PROGRESS_FILE_EVERY === 0,
 		parentMessageIds: [],
 		random,
+		proxy: shape === 'requestless-proxy' ? claudeProxy(random) : undefined,
 	};
 	return {
 		file: {
 			path: join(directory, 'projects', projectDir, `${session.sessionId}.jsonl`),
+			startMs,
 			lines: claudeSessionLines(session),
 		},
 		session,
 	};
 }
 
-function planCodexFile(directory: string, fileIndex: number, layout: CodexLayout): PlannedFile {
+function planCodexFile(
+	directory: string,
+	fileIndex: number,
+	layout: CodexLayout,
+	parent?: CodexParent,
+): PlannedFile & { sessionId: string } {
 	const random = new Random(500_000 + fileIndex);
 	const startMs = FIXTURE_START_MS + (fileIndex % FIXTURE_DAYS) * DAY_MS + random.int(DAY_MS / 2);
 	const start = new Date(startMs);
@@ -1181,6 +1286,10 @@ function planCodexFile(directory: string, fileIndex: number, layout: CodexLayout
 		random,
 		ordinal: 0,
 		total: {},
+		fork:
+			parent !== undefined && fileIndex % CODEX_FORK_FILE_EVERY === CODEX_FORK_FILE_EVERY - 1
+				? { parent, spawned: random.chance(0.5) }
+				: undefined,
 	};
 	const name = `rollout-${stamp}-${sessionId}.jsonl`;
 	const day = fileIndex % FIXTURE_DAYS;
@@ -1197,8 +1306,11 @@ function planCodexFile(directory: string, fileIndex: number, layout: CodexLayout
 					paddedNumber(start.getUTCDate(), 2),
 					compressed ? `${name}.zst` : name,
 				),
+		startMs,
 		lines: codexSessionLines(session),
 		compressed,
+		keepLines: CODEX_FORK_HISTORY_LINES,
+		sessionId,
 	};
 }
 
@@ -1218,6 +1330,7 @@ function planGrokFile(directory: string, fileIndex: number): PlannedFile {
 	const sessionDir = join(directory, 'sessions', encodeURIComponent(cwd), session.sessionId);
 	return {
 		path: join(sessionDir, 'updates.jsonl'),
+		startMs,
 		lines: grokSessionLines(session),
 		sidecar: {
 			path: join(sessionDir, 'summary.json'),
@@ -1233,14 +1346,24 @@ function planGrokFile(directory: string, fileIndex: number): PlannedFile {
 	};
 }
 
+function lineTimeMs(line: Line): number | undefined {
+	const { timestamp } = line;
+	if (typeof timestamp === 'number') {
+		return timestamp * 1000;
+	}
+	return typeof timestamp === 'string' ? Date.parse(timestamp) : undefined;
+}
+
 async function writePlannedFile(
 	file: PlannedFile,
 	targetSize: number,
-): Promise<{ bytes: number; diskBytes: number; lines: number }> {
+): Promise<{ bytes: number; diskBytes: number; lines: number; kept: Line[] }> {
 	await mkdir(dirname(file.path), { recursive: true });
 	const chunks: string[] = [];
+	const kept: Line[] = [];
 	let bytes = 0;
 	let lines = 0;
+	let lastMs = file.startMs;
 	while (bytes < targetSize) {
 		const next = file.lines.next();
 		if (next.done) {
@@ -1254,44 +1377,62 @@ async function writePlannedFile(
 		chunks.push(line);
 		bytes += lineBytes;
 		lines += 1;
+		lastMs = Math.max(lastMs, lineTimeMs(next.value) ?? lastMs);
+		if (kept.length < (file.keepLines ?? 0)) {
+			kept.push(next.value);
+		}
 	}
 	const content = Buffer.from(chunks.join(''));
 	const data = file.compressed ? zstdCompressSync(content) : content;
+	// Bounded reports prune by mtime, so a file must look last written at its last record.
+	const mtime = new Date(lastMs);
 	await writeFile(file.path, data);
+	await utimes(file.path, mtime, mtime);
 	if (file.sidecar) {
 		await writeFile(file.sidecar.path, JSON.stringify(file.sidecar.value));
+		await utimes(file.sidecar.path, mtime, mtime);
 	}
-	return { bytes, diskBytes: data.byteLength, lines };
+	return { bytes, diskBytes: data.byteLength, lines, kept };
 }
 
 async function generateFixture(
 	outputDir: string,
 	sizeMib: number,
 	format: Format,
-	codexLayout: CodexLayout = 'current',
+	{
+		codexLayout = 'current',
+		claudeShape = 'default',
+	}: Partial<Pick<Options, 'codexLayout' | 'claudeShape'>> = {},
 ): Promise<FixtureResult> {
-	const fileSizeTargets = createFileSizeTargets(SIZE_PROFILES[format], sizeMib * MIB);
+	const fileSizeTargets = createFileSizeTargets(sizeProfile(format, claudeShape), sizeMib * MIB);
 
 	let totalBytes = 0;
 	let diskBytes = 0;
 	let lineCount = 0;
 	let previousSession: ClaudeSession | undefined;
+	let codexParent: CodexParent | undefined;
 	for (let fileIndex = 0; fileIndex < fileSizeTargets.length; fileIndex += 1) {
 		const targetSize = fileSizeTargets[shuffledIndex(fileIndex, fileSizeTargets.length)];
 		if (targetSize === undefined) {
 			throw new Error(`Missing file size target for index ${fileIndex}`);
 		}
 		let file: PlannedFile;
+		let codexSessionId: string | undefined;
 		if (format === 'claude') {
-			const planned = planClaudeFile(outputDir, fileIndex, previousSession);
+			const planned = planClaudeFile(outputDir, fileIndex, claudeShape, previousSession);
 			file = planned.file;
 			previousSession = planned.session;
 		} else if (format === 'codex') {
-			file = planCodexFile(outputDir, fileIndex, codexLayout);
+			const planned = planCodexFile(outputDir, fileIndex, codexLayout, codexParent);
+			file = planned;
+			codexSessionId = planned.sessionId;
 		} else {
 			file = planGrokFile(outputDir, fileIndex);
 		}
 		const written = await writePlannedFile(file, targetSize);
+		if (codexSessionId !== undefined) {
+			codexParent = { sessionId: codexSessionId, history: written.kept };
+		}
 		totalBytes += written.bytes;
 		diskBytes += written.diskBytes;
 		lineCount += written.lines;
@@ -1324,7 +1465,7 @@ async function main(): Promise<void> {
 		await createEmptyDirectory(grokOutputDir, '--grok-output-dir');
 	}
 
-	const claudeResult = await generateFixture(outputDir, options.sizeMib, 'claude');
+	const claudeResult = await generateFixture(outputDir, options.sizeMib, 'claude', options);
 	printResult('Claude', outputDir, claudeResult);
 
 	if (codexOutputDir !== undefined) {
@@ -1332,7 +1473,7 @@ async function main(): Promise<void> {
 			codexOutputDir,
 			options.codexSizeMib,
 			'codex',
-			options.codexLayout,
+			options,
 		);
 		printResult('Codex', codexOutputDir, codexResult);
 	}
