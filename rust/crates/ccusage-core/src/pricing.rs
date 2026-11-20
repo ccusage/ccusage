@@ -2026,12 +2026,18 @@ fn pricing_key_matches(
         || names_same_model((normalized_model, model), (normalized_candidate, candidate))
 }
 
-// NOTE(2026-11-20, #2236): Either id may carry only a host or provider qualifier in front of the other, so a word in front, as in `chat-gpt-5.4` for `gpt-5.4`, makes it another model. The qualifier is read from the raw id because the identity spells `openai.` as `openai-`.
+// NOTE(2026-11-20, #2236): Either id may carry only a host or provider qualifier in front of the other, so a word in front, as in `chat-gpt-5.4` for `gpt-5.4`, makes it another model. The qualifier is read from the raw id because the identity spells `openai.` as `openai-`. Only the logged id may add a price-neutral suffix: a catalogue lists a dated, `[1m]` or effort-level id because it prices that variant itself.
 fn names_same_model((model, raw_model): (&str, &str), (key, raw_key): (&str, &str)) -> bool {
     if model.len() >= key.len() {
         contains_pricing_key(model, raw_model, key)
     } else {
-        contains_pricing_key(key, raw_key, model)
+        key.strip_suffix(model).is_some_and(|qualifier| {
+            raw_key
+                .as_bytes()
+                .get(qualifier.len() - 1)
+                .copied()
+                .is_some_and(is_qualifier_end)
+        })
     }
 }
 
@@ -7798,6 +7804,34 @@ mod tests {
             "opus",
         ] {
             assert_eq!(pricing.find(model), None, "{model}");
+        }
+    }
+
+    #[test]
+    fn only_the_logged_id_may_add_a_price_neutral_suffix() {
+        crate::test_support::install_pricing_snapshots();
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{
+                "sample-1-20260101": {"input_cost_per_token": 1, "output_cost_per_token": 1},
+                "sample-2[1m]": {"input_cost_per_token": 2, "output_cost_per_token": 2},
+                "sample-3-high": {"input_cost_per_token": 3, "output_cost_per_token": 3},
+                "host/sample-4": {"input_cost_per_token": 4, "output_cost_per_token": 4},
+                "sample-5": {"input_cost_per_token": 5, "output_cost_per_token": 5}
+            }"#,
+        );
+        for model in ["sample-1", "sample-2", "sample-3", "other/sample-3"] {
+            assert_eq!(pricing.find(model), None, "{model}");
+        }
+        for (model, input) in [
+            ("sample-1-20260101", 1.0),
+            ("sample-4", 4.0),
+            ("sample-5-20260101", 5.0),
+            ("sample-5[1m]", 5.0),
+            ("host/sample-5-high", 5.0),
+        ] {
+            let found = pricing.find(model).unwrap_or_else(|| panic!("{model}"));
+            assert_eq!(found.input, input, "{model}");
         }
     }
 
