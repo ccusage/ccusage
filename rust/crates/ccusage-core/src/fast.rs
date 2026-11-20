@@ -1,10 +1,12 @@
-use std::io::{self, Read};
-
 use memchr::{memchr, memchr_iter, memmem::Finder};
 use smallvec::SmallVec;
 
 #[cfg(test)]
 mod reference;
+
+mod line_reader;
+
+pub use line_reader::LineReader;
 
 pub type FxHashMap<K, V> = rustc_hash::FxHashMap<K, V>;
 pub type FxHashSet<T> = rustc_hash::FxHashSet<T>;
@@ -306,88 +308,6 @@ pub fn newline_offsets(bytes: &[u8]) -> impl DoubleEndedIterator<Item = usize> +
     memchr_iter(b'\n', bytes)
 }
 
-pub struct LineReader<R> {
-    reader: R,
-    buffer: Vec<u8>,
-    start: usize,
-    scanned: usize,
-    end: usize,
-    eof: bool,
-}
-
-impl<R: Read> LineReader<R> {
-    pub fn with_buffer(mut buffer: Vec<u8>, reader: R) -> Self {
-        if buffer.is_empty() {
-            buffer.push(0);
-        }
-        Self {
-            reader,
-            buffer,
-            start: 0,
-            scanned: 0,
-            end: 0,
-            eof: false,
-        }
-    }
-
-    pub fn into_buffer(self) -> Vec<u8> {
-        self.buffer
-    }
-
-    /// Includes the trailing newline unless the final line is unterminated.
-    /// After a read error, [`Self::rest`] holds the bytes after the last returned line.
-    pub fn next_line(&mut self) -> io::Result<Option<&[u8]>> {
-        let line_end = loop {
-            if let Some(newline) = memchr(b'\n', &self.buffer[self.scanned..self.end]) {
-                break self.scanned + newline + 1;
-            }
-            self.scanned = self.end;
-            if self.eof {
-                if self.start == self.end {
-                    return Ok(None);
-                }
-                break self.end;
-            }
-            self.fill()?;
-        };
-        let line = &self.buffer[self.start..line_end];
-        self.start = line_end;
-        self.scanned = line_end;
-        Ok(Some(line))
-    }
-
-    /// Bytes received after the last line [`Self::next_line`] returned.
-    pub fn rest(&self) -> &[u8] {
-        &self.buffer[self.start..self.end]
-    }
-
-    fn fill(&mut self) -> io::Result<()> {
-        if self.start > 0 {
-            self.buffer.copy_within(self.start..self.end, 0);
-            self.end -= self.start;
-            self.scanned -= self.start;
-            self.start = 0;
-        }
-        if self.end == self.buffer.len() {
-            self.buffer.resize(self.buffer.len() * 2, 0);
-        }
-        loop {
-            match self.reader.read(&mut self.buffer[self.end..]) {
-                Ok(0) => {
-                    self.eof = true;
-                    return Ok(());
-                }
-                Ok(read) => {
-                    self.end += read;
-                    return Ok(());
-                }
-                Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
-                Err(error) => return Err(error),
-            }
-        }
-    }
-}
-
 pub fn suffix_string(value: &str, suffix: &str) -> String {
     let mut output = String::with_capacity(value.len() + suffix.len());
     output.push_str(value);
@@ -397,9 +317,7 @@ pub fn suffix_string(value: &str, suffix: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::io::{self, Cursor, Read};
-
-    use super::{LinePrefilter, LineReader, suffix_string};
+    use super::{LinePrefilter, suffix_string};
 
     #[test]
     fn line_prefilter_all_requires_every_marker() {
@@ -735,52 +653,6 @@ mod tests {
                 );
             }
         }
-    }
-
-    fn read_lines(content: &[u8], capacity: usize) -> Vec<Vec<u8>> {
-        let mut reader = LineReader::with_buffer(vec![0; capacity], Cursor::new(content));
-        let mut lines = Vec::new();
-        while let Some(line) = reader.next_line().unwrap() {
-            lines.push(line.to_vec());
-        }
-        lines
-    }
-
-    #[test]
-    fn line_reader_splits_lines_across_buffer_boundaries() {
-        let content = b"one\n\ntwo lines longer than the buffer\nthree";
-        for capacity in [1, 2, 3, 7, 64] {
-            let lines = read_lines(content, capacity);
-            assert_eq!(
-                lines,
-                [
-                    b"one\n".as_slice(),
-                    b"\n",
-                    b"two lines longer than the buffer\n",
-                    b"three"
-                ],
-            );
-            assert_eq!(lines.concat(), content);
-        }
-        assert!(read_lines(b"", 4).is_empty());
-        assert_eq!(read_lines(b"one\n", 4), [b"one\n".to_vec()]);
-    }
-
-    struct Failing;
-
-    impl Read for Failing {
-        fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
-            Err(io::Error::other("read failed"))
-        }
-    }
-
-    #[test]
-    fn line_reader_keeps_the_partial_line_before_a_read_error() {
-        let mut reader =
-            LineReader::with_buffer(vec![0; 4], Cursor::new(b"complete\npartial").chain(Failing));
-        assert_eq!(reader.next_line().unwrap(), Some(b"complete\n".as_slice()));
-        assert!(reader.next_line().is_err());
-        assert_eq!(reader.rest(), b"partial");
     }
 
     #[test]
