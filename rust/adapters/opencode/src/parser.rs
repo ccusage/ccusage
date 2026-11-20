@@ -2,7 +2,11 @@ use ccusage_core::cost::PriceTable;
 use std::sync::Arc;
 
 use jiff::tz::TimeZone as JiffTimeZone;
-use serde::Deserialize;
+use serde::{
+    Deserialize, Deserializer,
+    de::{self, IgnoredAny, MapAccess, Visitor},
+};
+use std::fmt;
 
 use crate::{
     LoadedEntry, TokenUsageRaw, apply_total_token_fallback,
@@ -70,6 +74,60 @@ struct OpenCodeCache {
 struct OpenCodeTime {
     #[serde(default, deserialize_with = "jsonl::lenient_i64")]
     created: Option<i64>,
+}
+
+struct TimeKey(bool);
+
+impl<'de> Deserialize<'de> for TimeKey {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct KeyVisitor;
+
+        impl Visitor<'_> for KeyVisitor {
+            type Value = TimeKey;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("an object key")
+            }
+
+            fn visit_str<E: de::Error>(self, key: &str) -> Result<Self::Value, E> {
+                Ok(TimeKey(key == "time"))
+            }
+        }
+
+        deserializer.deserialize_str(KeyVisitor)
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(transparent)]
+struct LenientTime(#[serde(deserialize_with = "jsonl::lenient_object")] Option<OpenCodeTime>);
+
+struct TimeField<'a>(&'a mut Option<OpenCodeTime>);
+
+impl<'de> Visitor<'de> for TimeField<'_> {
+    type Value = ();
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("a JSON object")
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+        while let Some(TimeKey(is_time)) = map.next_key()? {
+            if is_time {
+                *self.0 = map.next_value::<LenientTime>()?.0;
+                return Ok(());
+            }
+            map.next_value::<IgnoredAny>()?;
+        }
+        Ok(())
+    }
+}
+
+pub(crate) fn message_time_created(data: &[u8]) -> Option<i64> {
+    let mut time = None;
+    // NOTE(2026-11-19, #2242): Reading stops at the payload's top-level time, so serde_json reports the unread rest as an error. Whether the record is valid stays the typed reader's decision.
+    let _ = serde_json::Deserializer::from_slice(data).deserialize_map(TimeField(&mut time));
+    time?.created.filter(|millis| *millis > 0)
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -491,8 +549,8 @@ mod tests {
 
     use super::{
         MissingTimestamp, OpenCodeMessage, OpenCodeSessionAggregate, SessionMessageKind,
-        SessionMessageRow, message_value_to_entry, open_code_model_candidates,
-        session_message_value_to_entry_checked, session_value_to_entry,
+        SessionMessageRow, message_time_created, message_value_to_entry,
+        open_code_model_candidates, session_message_value_to_entry_checked, session_value_to_entry,
     };
     use crate::{LoadedEntry, PricingMap, cli::CostMode};
 
@@ -1216,6 +1274,36 @@ mod tests {
             "{{\"deepseek-v4-flash\":{{\"litellm_provider\":\"deepseek\",\"input_cost_per_token\":{input},\"output_cost_per_token\":0.00000028}}}}"
         ));
         pricing
+    }
+
+    #[test]
+    fn reads_only_the_messages_own_creation_time() {
+        for (payload, expected) in [
+            (
+                r#"{"time":{"created":1767312000000}}"#,
+                Some(1_767_312_000_000),
+            ),
+            ("{\n  \"time\": {\n    \"created\": 42\n  }\n}", Some(42)),
+            (
+                r#"{"metadata":{"time":{"created":1}},"time":{"created":1767312000000}}"#,
+                Some(1_767_312_000_000),
+            ),
+            (r#"{"parts":[{"time":{"created":1}}]}"#, None),
+            (r#"{"unit":"time","created":1767312000000}"#, None),
+            (r#"{"time":{"created":"1767312000000"}}"#, None),
+            (r#"{"time":{"created":-5}}"#, None),
+            (r#"{"time":{"completed":1767312000000}}"#, None),
+            (r#"{"time":"2026-01-02"}"#, None),
+            (r#"{"\u0074ime":{"created":42}}"#, Some(42)),
+            (r#"{"id":"#, None),
+            (r#"[{"time":{"created":1767312000000}}]"#, None),
+        ] {
+            assert_eq!(
+                message_time_created(payload.as_bytes()),
+                expected,
+                "{payload}"
+            );
+        }
     }
 
     #[test]
