@@ -27,5 +27,6 @@ When a bot or CI system stays silent past a reasonable polling window, state exa
 
 ## Context
 
+- Repository-facing GitHub communication is US English.
 - Reviewer bots act on a comment only when their handle is mentioned — in the initial request and in every reply asking them to do something.
 - Amending or force-pushing after reviewers have read the PR needs an explicit request from the user.

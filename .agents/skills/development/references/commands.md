@@ -4,7 +4,21 @@
 
 Use `just` as the project entry point.
 
+Work inside the pinned Nix dev shell. Run `direnv allow` when initializing it;
+prefix one-offs with `direnv exec .` from outside it.
+
+Use `ccusage` with agent subcommands, such as `ccusage codex daily`, in code,
+tests, and examples.
+
+Choose Rust for production binaries and CPU- or memory-intensive tooling,
+Nushell for small orchestration, Babashka for automation with a reusable data
+model, substantial transformations, reporting, or its own tests, and TypeScript
+for JavaScript APIs or work that benefits from the npm ecosystem.
+
 ## Adding A Dependency Or Tool
+
+Runtime libraries for bundled packages go in `devDependencies` unless the user
+asks otherwise.
 
 `comma` and `nix run` are fine for one-off investigation, but anything used
 repeatedly belongs in the repo: system and dev-shell CLIs in `flake.nix`
