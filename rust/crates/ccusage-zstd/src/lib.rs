@@ -47,15 +47,15 @@ pub struct ZstdLines {
 }
 
 enum Inner {
-    Direct(Direct),
-    Replay(Replay),
+    Direct(Box<Direct>),
+    Replay(Box<Replay>),
 }
 
 impl ZstdLines {
     pub fn new(file: File, capacity: usize) -> io::Result<Self> {
         let capacity = capacity.max(1);
         Ok(Self {
-            inner: Inner::Direct(Direct::new(file, capacity)?),
+            inner: Inner::Direct(Box::new(Direct::new(file, capacity)?)),
             capacity,
             failed: None,
         })
@@ -120,7 +120,10 @@ fn replay(inner: &mut Inner, capacity: usize) -> io::Result<&mut Replay> {
                 "zstd replay ended before the lines already returned",
             ));
         }
-        *inner = Inner::Replay(LineReader::with_buffer(vec![0; capacity], decoder));
+        *inner = Inner::Replay(Box::new(LineReader::with_buffer(
+            vec![0; capacity],
+            decoder,
+        )));
     }
     match inner {
         Inner::Replay(reader) => Ok(reader),
