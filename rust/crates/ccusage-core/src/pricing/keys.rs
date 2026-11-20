@@ -110,8 +110,17 @@ fn family_words(key: &str) -> &'static [&'static str] {
     );
     data::FAMILY_PRICE_NEUTRAL_SUFFIX_WORDS
         .iter()
-        .find(|(family, _)| names.clone().any(|name| name.starts_with(family)))
+        .find(|(family, _)| names.clone().any(|name| names_family(name, family)))
         .map_or(&[], |(_, words)| words)
+}
+
+// NOTE(2026-11-20): Lookup treats `.` and `@` in a key as `-`, so a `.` in a family name such as `qwen3.5-plus` must also match `qwen3-5-plus`. A `-` in a family name stays literal, so a Bedrock qualifier such as `mistral.devstral-…` never names the `mistral-` family.
+fn names_family(name: &str, family: &str) -> bool {
+    name.len() >= family.len()
+        && name.bytes().zip(family.bytes()).all(|(byte, expected)| {
+            byte == expected
+                || (expected == b'.' && (byte == b'-' || is_pricing_key_separator(byte)))
+        })
 }
 
 fn price_neutral_word_end<'a>(rest: &'a str, family: &[&str]) -> Option<&'a str> {

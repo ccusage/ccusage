@@ -363,6 +363,7 @@ fn a_thinking_variant_without_a_documented_billing_rule_stays_unpriced() {
         "qwen-plus-2025-01-25-thinking",
         "gemma-4-31b-it-thinking",
         "mistral-large-4-reasoning",
+        "mistral.devstral-2-123b-thinking",
         "claude-sonnet-5-5-reasoning",
         "grok-4.7-thinking",
     ] {
