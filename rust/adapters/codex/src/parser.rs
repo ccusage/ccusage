@@ -384,13 +384,14 @@ fn visit_codex_session_file_inner(
                     {
                         return ControlFlow::Continue(());
                     }
-                    record_decode_failure(
-                        path,
-                        current.number(),
+                    jsonl::record_decode_error(
                         line,
                         error,
+                        path,
+                        current.number(),
+                        current.unterminated(),
                         diagnostics,
-                        Some(&mut state.previous_totals),
+                        Some(is_usage_value),
                     );
                     return ControlFlow::Continue(());
                 }
@@ -1200,39 +1201,17 @@ fn normalize_codex_raw_usage(mut usage: CodexRawUsage) -> CodexRawUsage {
     usage
 }
 
-// NOTE(2026-11-15): A rejected `token_count` can still carry a usable cumulative total. Advance the baseline or the next dated delta can recount its tokens.
-fn record_decode_failure(
-    path: &Path,
-    line: u32,
-    content: &[u8],
-    error: serde_json::Error,
-    diagnostics: &Diagnostics,
-    previous_totals: Option<&mut Option<CodexRawUsage>>,
-) {
-    jsonl::record_decode_error(
-        content,
-        error,
-        path,
-        line,
-        !content.ends_with(b"\n"),
-        diagnostics,
-        Some(|value: &Value| {
-            let token_count = value.get("type").and_then(Value::as_str) == Some("event_msg")
-                && value.pointer("/payload/type").and_then(Value::as_str) == Some("token_count");
-            if let Some(previous_totals) = previous_totals
-                && token_count
-                && let Some(total) = value.pointer("/payload/info/total_token_usage")
-                && let Ok(total) = serde_json::from_value::<CodexRawUsage>(total.clone())
-            {
-                *previous_totals = Some(total);
-            }
-            value.get("type").and_then(Value::as_str) == Some("token_usage_record")
-                || (token_count
-                    && value
-                        .pointer("/payload/info")
-                        .is_some_and(|info| !info.is_null()))
-        }),
-    );
+fn is_usage_value(value: &Value) -> bool {
+    match value.get("type").and_then(Value::as_str) {
+        Some("token_usage_record") => true,
+        Some("event_msg") => {
+            value.pointer("/payload/type").and_then(Value::as_str) == Some("token_count")
+                && value
+                    .pointer("/payload/info")
+                    .is_some_and(|info| !info.is_null())
+        }
+        _ => false,
+    }
 }
 
 struct RecordLocation<'a> {
