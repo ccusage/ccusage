@@ -271,11 +271,12 @@ pub(super) const BUILTIN_PRICING: &[Supplement] = &[
         pricing: rates(1.4e-6, 4.4e-6, 0.0, 0.26e-6),
         context_limit: None,
     },
-    // NOTE(2026-11-20): Alibaba lists a separate thinking-mode output price for qwen-plus at https://www.alibabacloud.com/help/en/model-studio/model-pricing ($0.4 input, $1.2 non-thinking and $4 thinking output) and for qwen-turbo ($0.05 / $0.2 / $0.5), qwen3-30b-a3b ($0.2 / $0.8 / $2.4), qwen3-14b ($0.35 / $1.4 / $4.2) and qwen3-8b ($0.18 / $0.7 / $2.1) at https://web.archive.org/web/20260802131610/https://www.alibabacloud.com/help/en/model-studio/model-pricing, all per 1M tokens in the lowest International tier. A thinking id bills at that rate. Cache creation is 125% and a cache hit 10% of input there.
+    // NOTE(2026-11-20): Alibaba lists a separate thinking-mode output price for qwen-plus at https://www.alibabacloud.com/help/en/model-studio/model-pricing ($0.4 input, $1.2 non-thinking and $4 thinking output) and for qwen-turbo ($0.05 / $0.2 / $0.5), qwen3-30b-a3b ($0.2 / $0.8 / $2.4), qwen3-14b ($0.35 / $1.4 / $4.2) and qwen3-8b ($0.18 / $0.7 / $2.1) at https://web.archive.org/web/20260802131610/https://www.alibabacloud.com/help/en/model-studio/model-pricing, all per 1M tokens in the lowest International tier. A thinking id bills at that rate.
+    // NOTE(2026-11-20): Alibaba bills an explicit-cache write at 125% of input and an implicit-cache hit, which every qwen-plus request gets without opting in, at 20% of input at https://www.alibabacloud.com/help/en/model-studio/context-cache. qwen-turbo and the Qwen3 open models are not on that page's supported list, so their cache rates are the default ratios and apply only if a host reports cached tokens.
     Supplement {
         provider: "dashscope",
         model: "qwen-plus-thinking",
-        pricing: rates(0.4e-6, 4e-6, 0.5e-6, 0.04e-6),
+        pricing: rates(0.4e-6, 4e-6, 0.5e-6, 0.08e-6),
         context_limit: None,
     },
     Supplement {

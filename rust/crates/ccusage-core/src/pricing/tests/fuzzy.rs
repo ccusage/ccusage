@@ -339,6 +339,17 @@ fn a_qwen_thinking_run_bills_at_the_thinking_rate_where_alibaba_lists_one() {
 }
 
 #[test]
+fn a_qwen_plus_thinking_cache_hit_bills_at_the_implicit_cache_rate() {
+    crate::test_support::install_pricing_snapshots();
+    let pricing = PricingMap::load_embedded();
+    let found = pricing.find("qwen-plus-thinking").unwrap();
+    assert_eq!(
+        (found.cache_create, found.cache_read),
+        (Some(0.5e-6), Some(0.08e-6))
+    );
+}
+
+#[test]
 fn a_thinking_variant_without_a_documented_billing_rule_stays_unpriced() {
     crate::test_support::install_pricing_snapshots();
     let pricing = PricingMap::load_embedded();
