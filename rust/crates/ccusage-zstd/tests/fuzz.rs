@@ -342,51 +342,43 @@ fn random_streams_and_mutations_decode_like_the_streaming_decoder() {
 }
 
 #[test]
-fn reading_on_after_a_decode_error_is_counted() {
+fn a_decode_error_ends_the_stream() {
     let fixture = Fixture::new();
     let dir = fixture.path("");
     let trials: usize = setting("FUZZ_RETRY_TRIALS").unwrap_or(40);
     let mut random = Random(7);
-    let mut found = 0;
+    let mut failed = 0;
     for trial in 0..trials {
         let d = data(&mut random, 600_000, 1 << 17);
-        let mut s = compress(&d, 3, 17, false, false, false);
+        let content_size = trial % 2 == 0;
+        let mut s = compress(&d, 3, 17, content_size, content_size, false);
         let tail = compress(b"after\n", 3, 17, false, false, false);
         let i = 20 + random.below(s.len() - 40);
         s[i] ^= 0x55;
         s.extend_from_slice(&tail);
         let path = write(&dir, &s);
         let mut reader = ZstdLines::new(File::open(&path).unwrap(), 8192).unwrap();
-        let mut errors = 0;
-        let mut after_error = Vec::new();
-        for _ in 0..100_000 {
+        let first = loop {
             match reader.next_line() {
-                Ok(Some(line)) => {
-                    if errors > 0 {
-                        after_error.push(line.to_vec())
-                    }
-                }
-                Ok(None) => break,
-                Err(_) => {
-                    errors += 1;
-                    if errors > 3 {
-                        break;
-                    }
-                }
+                Ok(Some(_)) => {}
+                Ok(None) => break None,
+                Err(error) => break Some(error),
             }
-        }
-        if errors > 0 && !after_error.is_empty() {
-            found += 1;
-            if found <= 3 {
-                eprintln!(
-                    "trial {trial}: {errors} error(s), then {} lines delivered after the error, last={:?}",
-                    after_error.len(),
-                    String::from_utf8_lossy(
-                        &after_error.last().unwrap()[..after_error.last().unwrap().len().min(20)]
-                    )
-                );
+        };
+        let Some(first) = first else {
+            continue;
+        };
+        failed += 1;
+        for _ in 0..3 {
+            match reader.next_line() {
+                Err(error) => assert_eq!(
+                    (error.kind(), error.to_string()),
+                    (first.kind(), first.to_string()),
+                    "trial {trial}"
+                ),
+                Ok(line) => panic!("trial {trial} read {line:?} after {first}"),
             }
         }
     }
-    eprintln!("retry-after-error continued in {found}/{trials} trials");
+    assert!(failed > 0);
 }
