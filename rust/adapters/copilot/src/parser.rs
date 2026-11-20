@@ -7,7 +7,7 @@ mod session_state;
 
 #[cfg(test)]
 pub(super) use otel::parse_otel_file;
-pub(super) use otel::{CopilotUsageCandidate, read_otel_calls, reconcile_otel_calls};
+pub(super) use otel::{OtelFileCalls, read_otel_calls, reconcile_otel_calls};
 pub(super) use session_state::parse_session_state_file;
 
 #[derive(Debug, Clone)]
@@ -91,7 +91,7 @@ pub(super) struct CopilotUsageRecordEntry {
 
 #[derive(Debug, Default)]
 pub(super) struct CopilotSourceUsage {
-    pub(super) otel_calls: Vec<CopilotUsageCandidate>,
+    pub(super) otel_calls: Option<OtelFileCalls>,
     pub(super) entries: Vec<CopilotUsageEntry>,
     pub(super) usage_records: Vec<CopilotUsageRecordEntry>,
     pub(super) credit_snapshots: Vec<CopilotCreditSnapshot>,

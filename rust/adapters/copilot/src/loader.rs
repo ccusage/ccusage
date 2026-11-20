@@ -143,7 +143,7 @@ fn read_source_file(
 ) -> std::result::Result<CopilotSourceUsage, UnitError> {
     match kind {
         CopilotSourceKind::Otel => Ok(CopilotSourceUsage {
-            otel_calls: read_otel_calls(path, diagnostics)?,
+            otel_calls: Some(read_otel_calls(path, diagnostics)?),
             ..CopilotSourceUsage::default()
         }),
         CopilotSourceKind::SessionState => parse_session_state_file(path, diagnostics),

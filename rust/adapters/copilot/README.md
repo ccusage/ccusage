@@ -44,7 +44,8 @@ shutdowns report, counted with `requests.count` from the first shutdown interval
 OpenTelemetry rows, those rows replace the intervals from there on. The comparison covers every
 shutdown, so it does not depend on `--since` or `--until`. Other OpenTelemetry records remain
 available. OpenTelemetry identities are reconciled across all OpenTelemetry files at once, so the
-result does not depend on how rows are split between files. A row whose key built from its trace
+result does not depend on how rows are split between files. A row without a model or session takes them from
+the other records of its trace in any OpenTelemetry file. A row whose key built from its trace
 and span IDs (or trace ID and turn index) was already seen counts once, and chat spans the CLI
 exports twice, with the response ID and usage of one call, count once at the earliest timestamp;
 keys that fall back to the row's line or time are file-local and never match across files. Copilot counts cache reads and writes in session-state `inputTokens` and in OpenTelemetry

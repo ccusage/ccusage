@@ -2376,6 +2376,34 @@ fn keeps_the_earliest_copy_of_one_span_identity_in_one_file_or_several() {
 }
 
 #[test]
+fn a_re_export_inherits_its_trace_model_from_another_file() {
+    let response = ("gen_ai.response.id", "response-1");
+    let with_model = otel_call_with("span-1", "2026-01-02T09:00:00.000Z", response);
+    let mut without_model: serde_json::Value = serde_json::from_str(&otel_call_with(
+        "span-2",
+        "2026-01-02T09:05:00.000Z",
+        response,
+    ))
+    .unwrap();
+    without_model["attributes"]
+        .as_object_mut()
+        .unwrap()
+        .remove("gen_ai.response.model");
+    let without_model = without_model.to_string();
+
+    for lines in [
+        [with_model.clone(), without_model.clone()],
+        [without_model.clone(), with_model.clone()],
+    ] {
+        let [joined, split] = joined_and_split_otel_rows(&lines);
+
+        let earliest = [("2026-01-02T09:00:00.000Z".to_string(), 1)];
+        assert_eq!(joined, earliest);
+        assert_eq!(split, earliest);
+    }
+}
+
+#[test]
 fn keeps_distinct_calls_of_one_response_id_in_one_file_or_several() {
     let call = |span_id: &str, input_tokens: u64| {
         let mut span: serde_json::Value =

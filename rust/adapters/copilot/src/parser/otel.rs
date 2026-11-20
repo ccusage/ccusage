@@ -53,15 +53,98 @@ enum CopilotUsageSource {
     AgentSummarySpan,
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 struct TraceContext {
     model: Option<String>,
     session_id: Option<String>,
     session_id_priority: u8,
 }
 
+impl TraceContext {
+    fn add(&mut self, model: Option<String>, session: Option<(String, u8)>) {
+        if self.model.is_none() {
+            self.model = model;
+        }
+        if let Some((session_id, priority)) = session
+            && priority > self.session_id_priority
+        {
+            self.session_id = Some(session_id);
+            self.session_id_priority = priority;
+        }
+    }
+}
+
 #[derive(Debug)]
-pub(crate) struct CopilotUsageCandidate {
+pub(crate) struct OtelFileCalls {
+    trace_contexts: HashMap<String, TraceContext>,
+    calls: Vec<OtelCall>,
+}
+
+#[derive(Debug)]
+struct OtelCall {
+    source: CopilotUsageSource,
+    trace_id: Option<String>,
+    response_id: Option<String>,
+    service_request_id: Option<String>,
+    logged_model: Option<String>,
+    session: Option<String>,
+    timestamp: TimestampMs,
+    usage: TokenUsageRaw,
+    reasoning_output_tokens: u64,
+    extra_total_tokens: u64,
+    call_key: Option<CallKey>,
+    turn: Option<u64>,
+    index: usize,
+}
+
+impl OtelCall {
+    fn resolve(self, trace_contexts: &HashMap<String, TraceContext>) -> CopilotUsageCandidate {
+        let trace_context = self.trace_id.as_ref().and_then(|id| trace_contexts.get(id));
+        let logged_model = self
+            .logged_model
+            .or_else(|| trace_context.and_then(|context| context.model.clone()))
+            .unwrap_or_else(|| "unknown".to_string());
+        let (model, logged_model) = copilot_model_names(logged_model);
+        let session_id = self
+            .session
+            .or_else(|| trace_context.and_then(|context| context.session_id.clone()))
+            .or_else(|| self.trace_id.clone())
+            .unwrap_or_else(|| "unknown-session".to_string());
+        let dedup_key = self.call_key.as_ref().map_or_else(
+            || {
+                fallback_dedup_key(
+                    self.source,
+                    self.trace_id.as_deref(),
+                    &session_id,
+                    self.timestamp,
+                    self.turn,
+                    self.index,
+                )
+            },
+            ToString::to_string,
+        );
+        CopilotUsageCandidate {
+            source: self.source,
+            trace_id: self.trace_id,
+            response_id: self.response_id,
+            service_request_id: self.service_request_id,
+            model,
+            logged_model,
+            session_id,
+            timestamp: self.timestamp,
+            input_tokens: self.usage.input_tokens,
+            output_tokens: self.usage.output_tokens,
+            cache_creation_tokens: self.usage.cache_creation_input_tokens,
+            cache_read_tokens: self.usage.cache_read_input_tokens,
+            reasoning_output_tokens: self.reasoning_output_tokens,
+            extra_total_tokens: self.extra_total_tokens,
+            dedup_key,
+            call_key: self.call_key,
+        }
+    }
+}
+
+struct CopilotUsageCandidate {
     source: CopilotUsageSource,
     trace_id: Option<String>,
     response_id: Option<String>,
@@ -83,7 +166,7 @@ pub(crate) struct CopilotUsageCandidate {
 pub(crate) fn read_otel_calls(
     path: &Path,
     diagnostics: &Diagnostics,
-) -> Result<Vec<CopilotUsageCandidate>, UnitError> {
+) -> Result<OtelFileCalls, UnitError> {
     let prefilter = LinePrefilter::all(&[br#""attributes""#]);
     let mut numbers = Vec::new();
     let mut records = Vec::new();
@@ -98,17 +181,36 @@ pub(crate) fn read_otel_calls(
         },
     )?;
     let trace_contexts = collect_trace_contexts(&records);
-    Ok(records
+    let calls = records
         .iter()
         .enumerate()
         .zip(numbers)
-        .filter_map(|((index, record), number)| {
-            to_candidate(record, index, &trace_contexts, path, number, diagnostics)
-        })
-        .collect())
+        .filter_map(|((index, record), number)| to_call(record, index, path, number, diagnostics))
+        .collect();
+    Ok(OtelFileCalls {
+        trace_contexts,
+        calls,
+    })
 }
 
-pub(crate) fn reconcile_otel_calls(calls: Vec<CopilotUsageCandidate>) -> Vec<CopilotUsageEntry> {
+pub(crate) fn reconcile_otel_calls(files: Vec<OtelFileCalls>) -> Vec<CopilotUsageEntry> {
+    let mut trace_contexts = HashMap::<String, TraceContext>::new();
+    for file in &files {
+        for (trace_id, context) in &file.trace_contexts {
+            trace_contexts.entry(trace_id.clone()).or_default().add(
+                context.model.clone(),
+                context
+                    .session_id
+                    .clone()
+                    .map(|session_id| (session_id, context.session_id_priority)),
+            );
+        }
+    }
+    let calls = files
+        .into_iter()
+        .flat_map(|file| file.calls)
+        .map(|call| call.resolve(&trace_contexts))
+        .collect::<Vec<_>>();
     let mut earliest = HashMap::<&CallKey, usize>::new();
     for (index, call) in calls.iter().enumerate() {
         if let Some(key) = &call.call_key {
@@ -157,7 +259,7 @@ pub(crate) fn parse_otel_file(
     path: &Path,
     diagnostics: &Diagnostics,
 ) -> Result<Vec<CopilotUsageEntry>, UnitError> {
-    read_otel_calls(path, diagnostics).map(reconcile_otel_calls)
+    read_otel_calls(path, diagnostics).map(|file| reconcile_otel_calls(vec![file]))
 }
 
 const INPUT_TOKENS_ATTRIBUTE: &str = "gen_ai.usage.input_tokens";
@@ -195,7 +297,7 @@ pub(super) fn is_otel_usage_envelope(value: &Value) -> bool {
 }
 
 fn collect_trace_contexts(records: &[CopilotRecord]) -> HashMap<String, TraceContext> {
-    let mut contexts = HashMap::new();
+    let mut contexts = HashMap::<String, TraceContext>::new();
     for record in records {
         let Some(trace_id) = trace_id_from_record(record) else {
             continue;
@@ -203,30 +305,21 @@ fn collect_trace_contexts(records: &[CopilotRecord]) -> HashMap<String, TraceCon
         let Some(attributes) = record.attributes.as_ref() else {
             continue;
         };
-        let context = contexts
-            .entry(trace_id)
-            .or_insert_with(TraceContext::default);
-        if context.model.is_none() {
-            context.model = first_non_empty_model_attr(attributes);
-        }
-        if let Some((session_id, priority)) = best_session_attr(attributes)
-            && priority > context.session_id_priority
-        {
-            context.session_id = Some(session_id);
-            context.session_id_priority = priority;
-        }
+        contexts.entry(trace_id).or_default().add(
+            first_non_empty_model_attr(attributes),
+            best_session_attr(attributes),
+        );
     }
     contexts
 }
 
-fn to_candidate(
+fn to_call(
     record: &CopilotRecord,
     index: usize,
-    trace_contexts: &HashMap<String, TraceContext>,
     path: &Path,
     number: u32,
     diagnostics: &Diagnostics,
-) -> Option<CopilotUsageCandidate> {
+) -> Option<OtelCall> {
     let attributes = record.attributes.as_ref()?;
     let source = if is_chat_span_record(record, attributes) {
         CopilotUsageSource::ChatSpan
@@ -258,19 +351,6 @@ fn to_candidate(
     if crate::total_usage_tokens(usage) + extra_total_tokens == 0 {
         return None;
     }
-    let trace_id = trace_id_from_record(record);
-    let trace_context = trace_id.as_ref().and_then(|id| trace_contexts.get(id));
-    let response_id = attr_string(attributes, "gen_ai.response.id");
-    let service_request_id = attr_string(attributes, "github.copilot.service_request_id");
-    let logged_model = first_non_empty_model_attr(attributes)
-        .or_else(|| trace_context.and_then(|context| context.model.clone()))
-        .unwrap_or_else(|| "unknown".to_string());
-    let (model, logged_model) = copilot_model_names(logged_model);
-    let session_id = best_session_attr(attributes)
-        .map(|(session_id, _)| session_id)
-        .or_else(|| trace_context.and_then(|context| context.session_id.clone()))
-        .or_else(|| trace_id.clone())
-        .unwrap_or_else(|| "unknown-session".to_string());
     let Some(timestamp) = timestamp_from_record(record) else {
         diagnostics.record(ccusage_core::Skip::record(
             path,
@@ -280,32 +360,22 @@ fn to_candidate(
         ));
         return None;
     };
-    let (dedup_key, call_key) = dedup_key_for_record(
+    let trace_id = trace_id_from_record(record);
+    let turn = turn_index(attributes);
+    Some(OtelCall {
         source,
-        record,
-        attributes,
-        &trace_id,
-        &session_id,
-        timestamp,
-        index,
-    );
-    Some(CopilotUsageCandidate {
-        source,
+        call_key: call_key_for(source, trace_id.clone(), span_id_from_record(record), turn),
         trace_id,
-        response_id,
-        service_request_id,
-        model,
-        logged_model,
-        session_id,
+        response_id: attr_string(attributes, "gen_ai.response.id"),
+        service_request_id: attr_string(attributes, "github.copilot.service_request_id"),
+        logged_model: first_non_empty_model_attr(attributes),
+        session: best_session_attr(attributes).map(|(session_id, _)| session_id),
         timestamp,
-        input_tokens: usage.input_tokens,
-        output_tokens: usage.output_tokens,
-        cache_creation_tokens: usage.cache_creation_input_tokens,
-        cache_read_tokens: usage.cache_read_input_tokens,
+        usage,
         reasoning_output_tokens: reasoning,
         extra_total_tokens,
-        dedup_key,
-        call_key,
+        turn,
+        index,
     })
 }
 
@@ -475,46 +545,47 @@ fn is_agent_turn_log_record(record: &CopilotRecord, attributes: &Map<String, Val
             || record_body(record).is_some_and(|body| body.starts_with("copilot_chat.agent.turn")))
 }
 
-fn dedup_key_for_record(
+fn call_key_for(
     source: CopilotUsageSource,
-    record: &CopilotRecord,
-    attributes: &Map<String, Value>,
-    trace_id: &Option<String>,
-    session_id: &str,
-    timestamp: TimestampMs,
-    index: usize,
-) -> (String, Option<CallKey>) {
-    let trace = trace_id.clone();
-    let call_key = match source {
+    trace: Option<String>,
+    span: Option<String>,
+    turn: Option<u64>,
+) -> Option<CallKey> {
+    match source {
         CopilotUsageSource::ChatSpan | CopilotUsageSource::AgentSummarySpan => trace
-            .zip(span_id_from_record(record))
+            .zip(span)
             .map(|(trace, span)| CallKey::Span { trace, span }),
         CopilotUsageSource::InferenceLog => trace
-            .zip(span_id_from_record(record))
+            .zip(span)
             .map(|(trace, span)| CallKey::Log { trace, span }),
         CopilotUsageSource::AgentTurnLog => trace
-            .zip(turn_index(attributes))
+            .zip(turn)
             .map(|(trace, turn)| CallKey::AgentTurn { trace, turn }),
-    };
-    if let Some(call_key) = call_key {
-        return (call_key.to_string(), Some(call_key));
     }
+}
+
+fn fallback_dedup_key(
+    source: CopilotUsageSource,
+    trace_id: Option<&str>,
+    session_id: &str,
+    timestamp: TimestampMs,
+    turn: Option<u64>,
+    index: usize,
+) -> String {
     let millis = timestamp.as_millis();
-    let key = match source {
+    match source {
         CopilotUsageSource::ChatSpan | CopilotUsageSource::AgentSummarySpan => {
             format!("span:{session_id}:{millis}:{index}")
         }
         CopilotUsageSource::InferenceLog => format!("log:{session_id}:{millis}:{index}"),
         CopilotUsageSource::AgentTurnLog => {
-            let turn_index = turn_index(attributes)
-                .map_or_else(|| format!("idx-{index}"), |turn| turn.to_string());
-            trace_id.as_ref().map_or_else(
+            let turn_index = turn.map_or_else(|| format!("idx-{index}"), |turn| turn.to_string());
+            trace_id.map_or_else(
                 || format!("agent-turn:{session_id}:{turn_index}:{index}"),
                 |trace_id| format!("agent-turn:{trace_id}:{turn_index}"),
             )
         }
-    };
-    (key, None)
+    }
 }
 
 fn turn_index(attributes: &Map<String, Value>) -> Option<u64> {
