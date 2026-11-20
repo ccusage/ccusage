@@ -278,7 +278,7 @@ const DEEPSEEK_V4_FLASH: PricingSchedule = PricingSchedule {
         cache_create: 0.44e-6,
         cache_read: 0.014e-6,
     },
-    // NOTE(2026-11-20, #2401): DeepSeek retired V4 Flash but still accepts `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp`, serving both from V4.1 Flash at V4.1 Flash rates: https://api-docs.deepseek.com/quick_start/pricing/.
+    // NOTE(2026-11-20, #2401): DeepSeek retired V4 Flash but still accepts `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp` at https://api-docs.deepseek.com/quick_start/pricing/. Both ids follow this handoff instead of the V4 Flash rates above.
     successor: Some(Successor {
         from_ms: DEEPSEEK_V4_1_FLASH_MS,
         schedule: &DEEPSEEK_FLASH,
