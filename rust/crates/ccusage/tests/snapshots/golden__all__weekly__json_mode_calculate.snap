@@ -10,7 +10,7 @@ exit: 0
     "cacheReadTokens": 1309937,
     "inputTokens": 1346414,
     "outputTokens": 58600,
-    "totalCost": 4.785749925000003,
+    "totalCost": 4.7856899250000025,
     "totalTokens": 2736093,
     "unpricedModels": [
       "GLM-5.3",
@@ -39,6 +39,7 @@ exit: 0
       "model_placeholder_m499",
       "mystery-model-9000",
       "opencode-mystery-1",
+      "opus",
       "qwen-mystery-1",
       "unknown",
       "zcode-mystery-1"
@@ -654,14 +655,6 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.00006000000000000001,
-          "inputTokens": 7,
-          "modelName": "opus",
-          "outputTokens": 1
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
           "cost": 0.000044999999999999996,
           "inputTokens": 200,
           "modelName": "gpt-5-mini",
@@ -885,6 +878,15 @@ exit: 0
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.0,
+          "inputTokens": 7,
+          "missingPricing": true,
+          "modelName": "opus",
+          "outputTokens": 1
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
           "inputTokens": 300,
           "missingPricing": true,
           "modelName": "[pi] pi-mystery-1",
@@ -990,7 +992,7 @@ exit: 0
       ],
       "outputTokens": 56453,
       "period": "2025-12-29",
-      "totalCost": 4.733211175000003,
+      "totalCost": 4.733151175000002,
       "totalTokens": 2721145
     },
     {
