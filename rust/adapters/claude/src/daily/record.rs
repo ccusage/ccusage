@@ -111,10 +111,10 @@ struct RawUsageRecord<'a> {
     #[serde(borrow)]
     timestamp: Text<'a>,
     message: RawUsageMessage,
-    #[serde(borrow, default)]
-    version: Text<'a>,
-    #[serde(borrow, default)]
-    session_id: Text<'a>,
+    #[serde(borrow, default, deserialize_with = "crate::nullable")]
+    version: Nullable<Text<'a>>,
+    #[serde(borrow, default, deserialize_with = "crate::nullable")]
+    session_id: Nullable<Text<'a>>,
     #[serde(rename = "costUSD")]
     #[serde(default, deserialize_with = "crate::nullable")]
     cost_usd: Nullable<f64>,
@@ -126,20 +126,17 @@ struct RawUsageRecord<'a> {
 }
 
 impl<'a> RawUsageRecord<'a> {
-    fn decode(self) -> Option<std::result::Result<ClaudeUsageRecord<'a>, Rejection>> {
-        let timestamp = self.timestamp.value()?;
-        Some((|| {
-            Ok(ClaudeUsageRecord {
-                timestamp,
-                message: self.message.decode()?,
-                version: self.version.non_null()?,
-                session_id: self.session_id.non_null()?,
-                cost_usd: non_null(self.cost_usd)?,
-                request_id: non_null(self.request_id)?,
-                is_sidechain: self.is_sidechain,
-                is_api_error_message: non_null(self.is_api_error_message)?,
-            })
-        })())
+    fn decode(self) -> std::result::Result<ClaudeUsageRecord<'a>, Rejection> {
+        Ok(ClaudeUsageRecord {
+            timestamp: self.timestamp.0,
+            message: self.message.decode()?,
+            version: non_null(self.version)?.map(|version| version.0),
+            session_id: non_null(self.session_id)?.map(|session_id| session_id.0),
+            cost_usd: non_null(self.cost_usd)?,
+            request_id: non_null(self.request_id)?,
+            is_sidechain: self.is_sidechain,
+            is_api_error_message: non_null(self.is_api_error_message)?,
+        })
     }
 }
 
@@ -168,12 +165,9 @@ impl RawUsageMessage {
 pub(crate) fn parse_usage_line<'a>(
     line: &'a JsonText<'a>,
 ) -> std::result::Result<(ClaudeUsageRecord<'a>, AdvisorLookup), Rejection> {
-    let direct = deserialize_borrowed_usage_line::<RawUsageRecord<'a>>(line)
-        .ok()
-        .and_then(RawUsageRecord::decode);
-    match direct {
-        Some(entry) => {
-            let entry = entry?;
+    match deserialize_borrowed_usage_line::<RawUsageRecord<'a>>(line) {
+        Ok(raw) => {
+            let entry = raw.decode()?;
             let lookup = if entry.message.usage.has_advisor_iteration {
                 AdvisorLookup::AskLine
             } else {
@@ -181,7 +175,7 @@ pub(crate) fn parse_usage_line<'a>(
             };
             Ok((entry, lookup))
         }
-        None => deserialize_borrowed_usage_line::<AgentProgressEntry<'a>>(line)
+        Err(_) => deserialize_borrowed_usage_line::<AgentProgressEntry<'a>>(line)
             .and_then(AgentProgressEntry::decode)
             .map(|entry| {
                 let lookup = if entry.message.usage.has_advisor_iteration {
@@ -198,8 +192,8 @@ pub(crate) fn parse_usage_line<'a>(
 #[derive(Deserialize)]
 struct AgentProgressEntry<'a> {
     #[serde(rename = "sessionId")]
-    #[serde(borrow, default)]
-    session_id: Text<'a>,
+    #[serde(borrow, default, deserialize_with = "crate::nullable")]
+    session_id: Nullable<Text<'a>>,
     #[serde(borrow)]
     data: AgentProgressData<'a>,
 }
@@ -208,11 +202,11 @@ impl<'a> AgentProgressEntry<'a> {
     fn decode(self) -> std::result::Result<ClaudeUsageRecord<'a>, Rejection> {
         let message = self.data.message;
         Ok(ClaudeUsageRecord {
-            timestamp: message.timestamp.value().ok_or(Rejection::Malformed)?,
+            timestamp: message.timestamp.0,
             message: message.message.decode()?,
             version: None,
             is_api_error_message: non_null(message.is_api_error_message)?,
-            session_id: self.session_id.non_null()?,
+            session_id: non_null(self.session_id)?.map(|session_id| session_id.0),
             cost_usd: non_null(message.cost_usd)?,
             request_id: non_null(message.request_id)?,
             is_sidechain: message.is_sidechain,
