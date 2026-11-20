@@ -52,7 +52,9 @@ fn compaction_identity_does_not_consume_the_normal_replay_prefix() {
         fixture.root(),
         &fixture.path("child.jsonl"),
         Some(CodexForkReplay {
-            prefix: &prefix,
+            parent_usage: &prefix,
+            missing_parent: None,
+            child_id: None,
             ends_at_usage_record: false,
         }),
         |event| {

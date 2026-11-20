@@ -51,18 +51,18 @@ exit: 0
     {
       "cacheCreationTokens": 0,
       "cacheReadTokens": 330,
-      "costUSD": 0.020435000000000002,
+      "costUSD": 0.040425,
       "date": "2025-12-31",
-      "inputTokens": 1620,
+      "inputTokens": 19396,
       "models": {
         "gpt-5": {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 80,
-          "inputTokens": 400,
+          "inputTokens": 18176,
           "isFallback": false,
-          "outputTokens": 48,
+          "outputTokens": 1824,
           "reasoningOutputTokens": 0,
-          "totalTokens": 528
+          "totalTokens": 20080
         },
         "gpt-5.5": {
           "cacheCreationTokens": 0,
@@ -83,9 +83,9 @@ exit: 0
           "totalTokens": 627
         }
       },
-      "outputTokens": 195,
+      "outputTokens": 1971,
       "reasoningOutputTokens": 5,
-      "totalTokens": 2145
+      "totalTokens": 21697
     },
     {
       "cacheCreationTokens": 300,
@@ -188,11 +188,11 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 300,
     "cacheReadTokens": 460950,
-    "costUSD": 0.67657925,
-    "inputTokens": 113570,
-    "outputTokens": 4122,
+    "costUSD": 0.69656925,
+    "inputTokens": 131346,
+    "outputTokens": 5898,
     "reasoningOutputTokens": 149,
-    "totalTokens": 578942,
+    "totalTokens": 598494,
     "unpricedModels": [
       "codex-mystery-1"
     ]

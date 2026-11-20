@@ -439,7 +439,7 @@ exit: 0
       "agent": "all",
       "cacheCreationTokens": 160,
       "cacheReadTokens": 28080,
-      "inputTokens": 23332,
+      "inputTokens": 41108,
       "metadata": {
         "agents": [
           "antigravity",
@@ -480,10 +480,10 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 2980,
-          "cost": 0.05544875,
-          "inputTokens": 3705,
+          "cost": 0.07543875,
+          "inputTokens": 21481,
           "modelName": "gpt-5",
-          "outputTokens": 889,
+          "outputTokens": 2665,
           "storedCost": 0.05
         },
         {
@@ -634,10 +634,10 @@ exit: 0
         "qwen3-coder-plus",
         "unknown"
       ],
-      "outputTokens": 4159,
+      "outputTokens": 5935,
       "period": "2025-12-31",
-      "totalCost": 0.46969551,
-      "totalTokens": 55941
+      "totalCost": 0.48968551000000005,
+      "totalTokens": 75493
     },
     {
       "agent": "all",
@@ -1701,10 +1701,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 17765,
     "cacheReadTokens": 1310267,
-    "inputTokens": 1347824,
-    "outputTokens": 58790,
-    "totalCost": 28.159468425,
-    "totalTokens": 2738063,
+    "inputTokens": 1365600,
+    "outputTokens": 60566,
+    "totalCost": 28.179458425,
+    "totalTokens": 2757615,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",
