@@ -45,7 +45,7 @@ jobs:
     name: Validate PR title scope
     if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
     runs-on: blacksmith-2vcpu-ubuntu-2404
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - name: Skip on merge groups
         if: github.event_name == 'merge_group'
