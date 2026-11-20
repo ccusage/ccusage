@@ -266,3 +266,34 @@ fn a_frame_needing_more_than_the_window_limit_is_refused_like_the_streaming_deco
     assert!(expected.error.is_some());
     assert_eq!(direct(&path, 8 * 1024, None).0, expected);
 }
+
+#[test]
+fn a_replay_that_ends_before_the_returned_lines_is_an_error() {
+    let fixture = Fixture::new();
+    let mut random = Random(0x0BAD_5EED);
+    let mut stream = Vec::new();
+    for _ in 0..4 {
+        stream.extend(compress(&text(&mut random, 200, 0), 3, None, true));
+    }
+    let path = write(&fixture, "shrinking.zst", &stream);
+    let mut reader = ZstdLines::new(File::open(&path).unwrap(), 8 * 1024).unwrap();
+    for _ in 0..500 {
+        reader.next_line().unwrap().unwrap();
+    }
+    std::fs::write(&path, compress(b"one line\n", 3, None, true)).unwrap();
+    if let super::Inner::Direct(direct) = &mut reader.inner {
+        direct.fail_after = Some(0);
+    }
+    let error = loop {
+        match reader.next_line() {
+            Ok(Some(_)) => {}
+            Ok(None) => panic!("the replay must not end cleanly"),
+            Err(error) => break error,
+        }
+    };
+    assert_eq!(error.kind(), io::ErrorKind::UnexpectedEof);
+    assert_eq!(
+        error.to_string(),
+        "zstd replay ended before the lines already returned"
+    );
+}

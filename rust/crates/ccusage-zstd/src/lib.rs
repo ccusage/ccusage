@@ -90,7 +90,13 @@ fn replay(inner: &mut Inner, capacity: usize) -> io::Result<&mut Replay> {
         file.seek(SeekFrom::Start(0))?;
         let mut decoder =
             zstd::stream::read::Decoder::with_buffer(BufReader::with_capacity(capacity, file))?;
-        io::copy(&mut (&mut decoder).take(delivered), &mut io::sink())?;
+        let skipped = io::copy(&mut (&mut decoder).take(delivered), &mut io::sink())?;
+        if skipped != delivered {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "zstd replay ended before the lines already returned",
+            ));
+        }
         *inner = Inner::Replay(LineReader::with_buffer(vec![0; capacity], decoder));
     }
     match inner {
