@@ -27,6 +27,7 @@ enum Parent {
     Missing,
     Unrelated,
     ReplayedAsPrefix,
+    ReplayedAsSuffix,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -72,6 +73,9 @@ fn parent_usage(parent: Parent) -> Vec<CodexRawUsage> {
         Parent::ReplayedAsPrefix => (0..PARENT_LEN as u64)
             .map(|value| usage(100 + value))
             .collect(),
+        Parent::ReplayedAsSuffix => (0..PARENT_LEN as u64)
+            .map(|value| usage(99 + value))
+            .collect(),
     }
 }
 
@@ -81,13 +85,16 @@ fn count_values(lines: &[Line], parent: Parent) -> Vec<u64> {
     for (index, line) in lines.iter().enumerate() {
         match line {
             Line::Count => {
-                values.push(
-                    if parent == Parent::ReplayedAsPrefix && plain < PARENT_LEN {
-                        100 + plain as u64
-                    } else {
-                        1_000 + index as u64
-                    },
-                );
+                let replayed = match parent {
+                    Parent::ReplayedAsPrefix => PARENT_LEN,
+                    Parent::ReplayedAsSuffix => PARENT_LEN - 1,
+                    Parent::Missing | Parent::Unrelated => 0,
+                };
+                values.push(if plain < replayed {
+                    100 + plain as u64
+                } else {
+                    1_000 + index as u64
+                });
                 plain += 1;
             }
             Line::OwnRecord => values.push(5_000 + index as u64),
@@ -159,34 +166,40 @@ fn documented_outcome(lines: &[Line], case: Case) -> (Vec<u64>, bool) {
             .iter()
             .position(|line| case.child_known && matches!(line, Line::ForeignSettings))
     });
-    let leading_end = foreign.or(boundary).unwrap_or(resolution);
-    let mut counted = Vec::new();
-    let mut leading = Vec::new();
-    let mut values = values.into_iter();
-    for (index, line) in lines.iter().enumerate() {
-        if !matches!(line, Line::Count | Line::OwnRecord) {
-            continue;
-        }
-        let value = values.next().unwrap();
-        let copied = matches!((foreign, boundary), (Some(f), Some(b)) if f < index && index < b);
-        if index < leading_end {
-            leading.push(value);
-        } else if !copied {
-            counted.push(value);
+    let window_end = boundary.unwrap_or(resolution);
+    let unproven_end = foreign.unwrap_or(window_end);
+    let usage_lines = lines
+        .iter()
+        .enumerate()
+        .filter(|(_, line)| matches!(line, Line::Count | Line::OwnRecord))
+        .map(|(index, _)| index)
+        .zip(values)
+        .collect::<Vec<_>>();
+    let window = usage_lines
+        .iter()
+        .filter(|(index, _)| *index < window_end)
+        .map(|(_, value)| *value)
+        .collect::<Vec<_>>();
+    let parent = parent_usage(case.parent)
+        .iter()
+        .map(|usage| usage.input_tokens)
+        .collect::<Vec<_>>();
+    let matched = (0..=parent.len().min(window.len()))
+        .filter(|len| {
+            parent[..*len] == window[..*len] || parent[parent.len() - len..] == window[..*len]
+        })
+        .max()
+        .unwrap_or(0);
+    let mut emitted = Vec::new();
+    for (ordinal, (index, value)) in usage_lines.iter().enumerate() {
+        let replayed = *index < window_end && ordinal < matched;
+        let copied = matches!((foreign, boundary), (Some(f), Some(b)) if f < *index && *index < b);
+        if !replayed && !copied {
+            emitted.push(*value);
         }
     }
-    let skipped = match case.parent {
-        Parent::Missing | Parent::Unrelated => 0,
-        Parent::ReplayedAsPrefix => leading
-            .iter()
-            .zip(100..)
-            .take(PARENT_LEN)
-            .take_while(|(value, parent)| **value == *parent)
-            .count(),
-    };
-    let warned = case.parent == Parent::Missing && !leading.is_empty();
-    let mut emitted = leading.split_off(skipped);
-    emitted.append(&mut counted);
+    let warned = case.parent == Parent::Missing
+        && usage_lines.iter().any(|(index, _)| *index < unproven_end);
     (emitted, warned)
 }
 
@@ -215,7 +228,12 @@ fn filter_follows_the_documented_fork_rule_for_every_short_rollout() {
     for lines in sequences(6) {
         for spawned in [false, true] {
             for child_known in [false, true] {
-                for parent in [Parent::Missing, Parent::Unrelated, Parent::ReplayedAsPrefix] {
+                for parent in [
+                    Parent::Missing,
+                    Parent::Unrelated,
+                    Parent::ReplayedAsPrefix,
+                    Parent::ReplayedAsSuffix,
+                ] {
                     let case = Case {
                         spawned,
                         child_known,

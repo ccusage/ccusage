@@ -89,18 +89,18 @@ impl<'a> CodexReplayFilter<'a> {
         let Some(fork) = self.fork else {
             return CodexReplayResolution::Deterministic;
         };
-        let (leading_end, copied) = match (self.foreign_start, self.own_start) {
+        let window_end = self.own_start.unwrap_or(self.pending.len());
+        let (unproven_end, copied) = match (self.foreign_start, self.own_start) {
             (Some(foreign), Some(own)) => (foreign, foreign..own),
-            (_, own) => (own.unwrap_or(self.pending.len()), 0..0),
+            _ => (window_end, 0..0),
         };
-        let leading = &self.pending[..leading_end];
         let resolution = match fork.missing_parent {
-            Some(parent_id) if leading.iter().any(is_replayable) => {
+            Some(parent_id) if self.pending[..unproven_end].iter().any(is_replayable) => {
                 CodexReplayResolution::MissingParent(parent_id)
             }
             _ => CodexReplayResolution::Deterministic,
         };
-        let leading = leading
+        let leading = self.pending[..window_end]
             .iter()
             .filter(|event| is_replayable(event))
             .map(CodexTokenUsageEvent::raw_usage)
@@ -111,7 +111,7 @@ impl<'a> CodexReplayFilter<'a> {
         for (index, event) in std::mem::take(&mut self.pending).into_iter().enumerate() {
             if !is_replayable(&event) {
                 visit(event);
-            } else if index < leading_end && inherited > 0 {
+            } else if index < window_end && inherited > 0 {
                 inherited -= 1;
             } else if !copied.contains(&index) {
                 visit(event);

@@ -348,3 +348,17 @@ fn keeps_usage_logged_before_the_first_foreign_marker() {
         &[],
     );
 }
+
+#[test]
+fn skips_a_parent_suffix_that_a_copied_marker_splits() {
+    let child = [
+        replay_metadata("2026-11-01T09:00:00.000Z", CHILD, Some(PARENT)),
+        replay_token_count("2026-11-01T09:00:00.010Z", 200),
+        settings_applied("2026-11-01T09:00:00.020Z", Some(PARENT)),
+        replay_token_count("2026-11-01T09:00:00.030Z", 300),
+        settings_applied("2026-11-01T09:00:00.040Z", Some(CHILD)),
+        replay_token_count("2026-11-01T09:05:00.000Z", 400),
+    ];
+
+    assert_child_usage(&load_fork(Some(&parent_rollout()), &child), &[400], &[]);
+}
