@@ -1,0 +1,519 @@
+use std::sync::Arc;
+
+use crate::TimestampMs;
+
+use super::{
+    CachedHit, Candidate, HitKind, Lookup, Name, NameCache, Pass, Pricing, PricingMap, PricingRows,
+    PricingSchedule, RequestCache, RequestHit, Row, RowMatch, Scope, last_segment,
+    models_dev_pricing, names_pricing_key, pricing_key_matches,
+};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MatchKind {
+    StrictExact,
+    Exact,
+    Fuzzy,
+    Fallback,
+}
+
+pub struct AgentModel<'a> {
+    raw: &'a str,
+    display: String,
+}
+
+impl<'a> AgentModel<'a> {
+    pub fn new(agent: &str, raw: &'a str) -> Self {
+        Self {
+            raw,
+            display: format!("[{agent}] {raw}"),
+        }
+    }
+
+    pub fn display(&self) -> &str {
+        &self.display
+    }
+
+    pub fn into_display(self) -> String {
+        self.display
+    }
+
+    pub fn candidates(&self) -> [(&str, MatchKind); 2] {
+        [
+            (self.display(), MatchKind::StrictExact),
+            (self.raw, MatchKind::Fuzzy),
+        ]
+    }
+
+    pub fn overriding_candidate(&self, pricing: Option<&PricingMap>) -> Option<(&str, MatchKind)> {
+        let pricing = pricing?;
+        [self.display(), self.raw]
+            .into_iter()
+            .find(|model| pricing.has_user_override(model))
+            .map(|model| (model, MatchKind::Fuzzy))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg(feature = "resolver-trace")]
+pub enum ResolutionStep {
+    ReportedOverride,
+    AuthoritativeIdentity,
+    AuthoritativeSuffix,
+    ModelsDevIdentity,
+    AuthoritativeFuzzy,
+    ModelsDevFuzzy,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg(feature = "resolver-trace")]
+pub struct Explanation<'a> {
+    pub candidate: &'a str,
+    pub step: ResolutionStep,
+    pub row_key: &'a str,
+    pub source: super::Source,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct PricingHandle {
+    rates: Pricing,
+    schedule: Option<&'static PricingSchedule>,
+}
+
+impl PricingHandle {
+    fn new(row: &Row, hit: CachedHit) -> Self {
+        Self {
+            rates: row.pricing.rates(),
+            schedule: row.schedule.filter(|_| hit.scheduled()),
+        }
+    }
+
+    pub fn is_time_dependent(&self) -> bool {
+        self.schedule.is_some()
+    }
+
+    pub fn with_rates_at<T>(
+        &self,
+        timestamp: Option<TimestampMs>,
+        calculate: impl FnOnce(&Pricing) -> T,
+    ) -> T {
+        match (timestamp, self.schedule) {
+            (Some(timestamp), Some(schedule)) => calculate(&self.rates.at(schedule, timestamp)),
+            _ => calculate(&self.rates),
+        }
+    }
+}
+
+impl PricingMap {
+    pub fn find(&self, model: &str) -> Option<Pricing> {
+        let (_, found, _) = self.resolve_row_with(
+            Some(model),
+            &[(model, MatchKind::Fuzzy)],
+            Lookup::Pricing,
+            models_dev_pricing,
+        )?;
+        Some(found.row.pricing.rates())
+    }
+
+    #[cfg(feature = "resolver-trace")]
+    pub fn explain<'a>(
+        &'a self,
+        reported_model: Option<&'a str>,
+        candidates: &[(&'a str, MatchKind)],
+    ) -> Option<Explanation<'a>> {
+        let (candidate, found, hit) = self.resolve_row_with(
+            reported_model,
+            candidates,
+            Lookup::Pricing,
+            models_dev_pricing,
+        )?;
+        Some(Explanation {
+            candidate,
+            step: hit.step()?,
+            row_key: found.key,
+            source: found.row.source,
+        })
+    }
+
+    pub fn resolve_at<'a>(
+        &self,
+        reported_model: Option<&'a str>,
+        candidates: &[(&'a str, MatchKind)],
+        timestamp: Option<TimestampMs>,
+    ) -> Option<(&'a str, Pricing)> {
+        let (model, found, hit) = self.resolve_row_with(
+            reported_model,
+            candidates,
+            Lookup::Pricing,
+            models_dev_pricing,
+        )?;
+        let handle = PricingHandle::new(found.row, hit);
+        Some((model, handle.with_rates_at(timestamp, |rates| *rates)))
+    }
+
+    pub fn find_handle(&self, model: &str) -> Option<PricingHandle> {
+        let (_, found, hit) = self.resolve_row_with(
+            Some(model),
+            &[(model, MatchKind::Fuzzy)],
+            Lookup::Pricing,
+            models_dev_pricing,
+        )?;
+        Some(PricingHandle::new(found.row, hit))
+    }
+
+    pub(super) fn available_models_dev(&self) -> Option<&PricingRows> {
+        self.live_models_dev
+            .get()
+            .and_then(Option::as_deref)
+            .or(self.models_dev.as_deref())
+    }
+
+    fn select_models_dev<'a>(
+        &self,
+        live: impl FnOnce() -> Option<&'a Self>,
+    ) -> Option<&PricingRows> {
+        if self.enable_models_dev_fallback {
+            self.live_models_dev
+                .get_or_init(|| live().map(|source| Arc::clone(&source.rows)));
+        }
+        self.available_models_dev()
+    }
+
+    fn authoritative<'a>(
+        &'a self,
+        model: Name<'_>,
+        lookup: Lookup,
+        hosted: bool,
+        models_dev: &impl Fn() -> Option<&'a PricingRows>,
+        visible: impl Fn(&Row) -> bool,
+    ) -> Option<RowMatch<'a>> {
+        let project = |found: RowMatch<'a>| {
+            (lookup.includes(found.row) && visible(found.row)).then_some(found)
+        };
+        if self.overrides.is_empty() {
+            return self.rows.authoritative(model, hosted, project);
+        }
+        self.overrides
+            .id_identity(model.identity())
+            .and_then(|id| self.resolve_override(id, models_dev, false))
+            .and_then(project)
+            .or_else(|| {
+                self.rows.authoritative(model, hosted, |found| {
+                    let found = match self.overrides.shadow(found) {
+                        Some(id) => self.resolve_override(id, models_dev, false)?,
+                        None => found,
+                    };
+                    project(found)
+                })
+            })
+    }
+
+    pub(super) fn resolve_row_with<'a, 'live>(
+        &self,
+        reported: Option<&'a str>,
+        candidates: &[(&'a str, MatchKind)],
+        lookup: Lookup,
+        live: impl FnOnce() -> Option<&'live Self>,
+    ) -> Option<(&'a str, RowMatch<'_>, CachedHit)> {
+        let search = || {
+            let live = std::cell::Cell::new(Some(live));
+            self.search_request(reported, candidates, lookup, &|| {
+                live.take().and_then(|load| load())
+            })
+        };
+        let hit = match lookup {
+            Lookup::Pricing => self
+                .requests
+                .get_or_init(RequestCache::default)
+                .get_or_init(reported, candidates, search),
+            Lookup::Context => search(),
+        }?;
+        let model = match hit.candidate {
+            Some(index) => candidates.get(index)?.0,
+            None => reported?,
+        };
+        self.cached_row(model, hit.row)
+    }
+
+    #[inline(never)]
+    fn search_request<'live>(
+        &self,
+        reported: Option<&str>,
+        candidates: &[(&str, MatchKind)],
+        lookup: Lookup,
+        live: &dyn Fn() -> Option<&'live Self>,
+    ) -> Option<RequestHit> {
+        let models_dev = || self.select_models_dev(live);
+        let cache = self.find_cache.get_or_init(NameCache::default);
+        let matching = |name, pass| {
+            cache.get_or_init(name, lookup, pass, |slot| {
+                self.search_pass(name, slot, lookup, pass, &models_dev)
+            })
+        };
+        if !self.overrides.is_empty()
+            && let Some(model) = reported
+            && let Some(row) = matching(model, Pass::Label)
+        {
+            return Some(RequestHit {
+                candidate: None,
+                row,
+            });
+        }
+        let has_fallback = candidates
+            .iter()
+            .any(|&(_, kind)| kind == MatchKind::Fallback);
+        for fallback in [false, true] {
+            if fallback && !has_fallback {
+                break;
+            }
+            for pass in [Pass::S2, Pass::S34, Pass::S3f, Pass::S56] {
+                if matches!((lookup, pass), (Lookup::Context, Pass::S3f)) {
+                    continue;
+                }
+                for (index, &(model, kind)) in candidates.iter().enumerate() {
+                    if (kind == MatchKind::Fallback) == fallback
+                        && pass.allows(kind)
+                        && let Some(row) = matching(model, pass)
+                    {
+                        return Some(RequestHit {
+                            candidate: Some(index),
+                            row,
+                        });
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    fn models_dev_names<'a, 'n>(
+        &'a self,
+        name: Name<'n>,
+        lookup: Lookup,
+        models_dev: &impl Fn() -> Option<&'a PricingRows>,
+    ) -> impl Iterator<Item = Name<'n>> {
+        // NOTE(2026-11-20, #2238): An authoritative row for an id behind the path outranks the models.dev row for it. After S3 only a vendor's free row can be left there, and it must still answer through S3f.
+        let unclaimed = move |suffix: &Name<'_>| {
+            self.authoritative(*suffix, lookup, false, models_dev, |_| true)
+                .is_none()
+        };
+        std::iter::once(name).chain(name.suffixes().take_while(unclaimed))
+    }
+
+    fn search_pass<'a>(
+        &'a self,
+        model: &str,
+        slot: &Candidate<'_>,
+        lookup: Lookup,
+        pass: Pass,
+        models_dev: &impl Fn() -> Option<&'a PricingRows>,
+    ) -> Option<CachedHit> {
+        match pass {
+            Pass::Label => {
+                let id = self.overrides.label_id(model, slot)?;
+                let found = self.resolve_override(id, models_dev, false)?;
+                lookup
+                    .includes(found.row)
+                    .then(|| CachedHit::new(found, HitKind::ReportedOverride))
+            }
+            Pass::S2 => slot
+                .names(model, |name| {
+                    self.authoritative(name, lookup, true, models_dev, |_| true)
+                })
+                .map(|found| CachedHit::new(found, HitKind::AuthoritativeIdentity)),
+            Pass::S34 | Pass::S3f => {
+                let free = matches!(pass, Pass::S3f);
+                if free && matches!(lookup, Lookup::Context) {
+                    return None;
+                }
+                slot.names(model, |name| {
+                    name.suffixes().find_map(|suffix| {
+                        self.authoritative(suffix, lookup, false, models_dev, |row| {
+                            if free {
+                                row.scope == Scope::Direct && row.is_free()
+                            } else {
+                                !row.is_free()
+                                    || (matches!(lookup, Lookup::Context)
+                                        && row.scope == Scope::Direct)
+                            }
+                        })
+                    })
+                })
+                .map(|found| CachedHit::new(found, HitKind::AuthoritativeSuffix))
+                .or_else(|| {
+                    if free {
+                        return None;
+                    }
+                    let rows = models_dev()?;
+                    slot.names(model, |name| {
+                        self.models_dev_names(name, lookup, models_dev)
+                            .find_map(|name| rows.exact(name, lookup))
+                    })
+                    .map(|found| CachedHit::new(found, HitKind::ModelsDevIdentity))
+                })
+            }
+            Pass::S56 => {
+                let secondary = models_dev();
+                if let Some(rows) = secondary
+                    && slot
+                        .names(model, |name| {
+                            self.models_dev_names(name, lookup, models_dev)
+                                .any(|name| {
+                                    rows.contains_exact_only_identity(name.raw(), name.identity())
+                                })
+                                .then_some(())
+                        })
+                        .is_some()
+                {
+                    return None;
+                }
+                slot.names(model, |name| {
+                    self.search_fuzzy(name, lookup, secondary, models_dev)
+                })
+            }
+        }
+    }
+
+    fn search_fuzzy<'a>(
+        &'a self,
+        name: Name<'_>,
+        lookup: Lookup,
+        secondary: Option<&'a PricingRows>,
+        models_dev: &impl Fn() -> Option<&'a PricingRows>,
+    ) -> Option<CachedHit> {
+        let normalized = name.identity();
+        let base = self.rows.normalized_matches();
+        let primary = if self.overrides.is_empty() {
+            Self::fuzzy(
+                base.map(|(found, identity)| (found.key, identity, found)),
+                name.raw(),
+                normalized,
+                lookup,
+            )
+        } else {
+            let shadowed = self.override_shadows.get_or_init(|| {
+                self.rows
+                    .matches()
+                    .filter_map(|found| self.overrides.shadow(found))
+                    .collect()
+            });
+            let matches =
+                |key, identity| pricing_key_matches(key, identity, name.raw(), normalized);
+            let resolve = |id| self.resolve_override(id, models_dev, true);
+            let base = base.filter_map(|(raw, identity)| {
+                let found = match self.overrides.shadow(raw) {
+                    Some(id) if matches(raw.key, identity) => resolve(id)?,
+                    Some(_) => return None,
+                    None => raw,
+                };
+                Some((raw.key, identity, found))
+            });
+            let overrides =
+                self.overrides
+                    .names()
+                    .enumerate()
+                    .filter_map(|(id, (key, identity))| {
+                        if shadowed.contains(&id) || !matches(key, identity) {
+                            return None;
+                        }
+                        Some((key, identity, resolve(id)?))
+                    });
+            Self::fuzzy(base.chain(overrides), name.raw(), normalized, lookup)
+        };
+        primary
+            .map(|found| CachedHit::new(found, HitKind::AuthoritativeFuzzy))
+            .or_else(|| {
+                Self::fuzzy(
+                    secondary?
+                        .normalized_matches()
+                        .map(|(found, identity)| (found.key, identity, found)),
+                    name.raw(),
+                    normalized,
+                    lookup,
+                )
+                .map(|found| CachedHit::new(found, HitKind::ModelsDevFuzzy))
+            })
+    }
+
+    fn cached_row<'a>(
+        &self,
+        name: &'a str,
+        hit: CachedHit,
+    ) -> Option<(&'a str, RowMatch<'_>, CachedHit)> {
+        let row = if hit.overridden() {
+            self.overrides.resolved(hit.id())
+        } else if hit.is_models_dev() {
+            self.available_models_dev()?.at(hit.id())
+        } else {
+            self.rows.at(hit.id())
+        }?;
+        Some((name, row, hit))
+    }
+
+    fn fuzzy<'a>(
+        rows: impl Iterator<Item = (&'a str, &'a str, RowMatch<'a>)>,
+        name: &str,
+        normalized: &str,
+        lookup: Lookup,
+    ) -> Option<RowMatch<'a>> {
+        let segment = last_segment(normalized);
+        let pool = rows.filter(|(key, identity, found)| {
+            lookup.includes(found.row)
+                && (!found.row.is_free()
+                    || (matches!(lookup, Lookup::Context) && found.row.scope == Scope::Direct))
+                && if found.row.exact_only {
+                    names_pricing_key(key, identity, name, normalized)
+                } else {
+                    pricing_key_matches(key, identity, name, normalized)
+                }
+        });
+        let mut best = None;
+        let mut best_not_longer = None;
+        let mut equal_segment_seen = false;
+        for (key, identity, found) in pool {
+            let row_segment = last_segment(identity);
+            let rank = (key.len(), std::cmp::Reverse(key));
+            if best.is_none_or(|(previous, _)| rank > previous) {
+                best = Some((rank, found));
+            }
+            if row_segment.len() <= segment.len() {
+                if best_not_longer.is_none_or(|(previous, _)| rank > previous) {
+                    best_not_longer = Some((rank, found));
+                }
+                equal_segment_seen |= row_segment == segment;
+            }
+        }
+        let winner = if equal_segment_seen {
+            best_not_longer
+        } else {
+            best
+        };
+        winner.map(|(_, found)| found)
+    }
+
+    pub(super) fn has_user_override(&self, model: &str) -> bool {
+        self.overrides
+            .label_id(model, &Candidate::default())
+            .is_some()
+    }
+
+    pub fn context_limit(&self, model: &str) -> Option<u64> {
+        self.resolve_context_limit(model, MatchKind::Fuzzy, models_dev_pricing)
+    }
+
+    pub(super) fn resolve_context_limit<'live>(
+        &self,
+        model: &str,
+        kind: MatchKind,
+        live: impl FnOnce() -> Option<&'live Self>,
+    ) -> Option<u64> {
+        let candidates = [(model, kind)];
+        let live = std::cell::Cell::new(Some(live));
+        let limit = |lookup| {
+            self.resolve_row_with(Some(model), &candidates, lookup, || {
+                live.take().and_then(|load| load())
+            })
+            .and_then(|(_, found, _)| found.row.context_limit)
+        };
+        limit(Lookup::Pricing).or_else(|| limit(Lookup::Context))
+    }
+}
