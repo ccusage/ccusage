@@ -216,3 +216,6 @@ impl ResponseChains {
         None
     }
 }
+
+#[cfg(test)]
+mod tests;

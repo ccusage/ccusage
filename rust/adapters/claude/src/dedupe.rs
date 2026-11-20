@@ -177,7 +177,7 @@ impl Request {
         }
     }
 
-    fn response(&self) -> Option<NonZeroU64> {
+    pub(super) fn response(&self) -> Option<NonZeroU64> {
         match self {
             Self::Id(_) => None,
             Self::Missing(response) => *response,
