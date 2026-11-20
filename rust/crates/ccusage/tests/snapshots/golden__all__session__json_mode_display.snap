@@ -3690,7 +3690,7 @@ exit: 0
       "agent": "codex",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 50,
-      "inputTokens": 300,
+      "inputTokens": 18076,
       "metadata": {
         "lastActivity": "2025-12-30T20:00:10.000Z",
         "reasoningOutputTokens": 0
@@ -3700,18 +3700,18 @@ exit: 0
           "cacheCreationTokens": 0,
           "cacheReadTokens": 50,
           "cost": 0.0,
-          "inputTokens": 300,
+          "inputTokens": 18076,
           "modelName": "gpt-5",
-          "outputTokens": 35
+          "outputTokens": 1811
         }
       ],
       "modelsUsed": [
         "gpt-5"
       ],
-      "outputTokens": 35,
+      "outputTokens": 1811,
       "period": "rollout-2025-12-30T20-00-00-55555555-5555-4555-8555-555555555555",
       "totalCost": 0,
-      "totalTokens": 385
+      "totalTokens": 19937
     },
     {
       "agent": "codex",
@@ -5462,10 +5462,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 17865,
     "cacheReadTokens": 1311567,
-    "inputTokens": 1348049,
-    "outputTokens": 58892,
+    "inputTokens": 1365825,
+    "outputTokens": 60668,
     "totalCost": 24.12330000000001,
-    "totalTokens": 2739810
+    "totalTokens": 2759362
   }
 }
 

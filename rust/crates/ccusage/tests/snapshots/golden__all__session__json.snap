@@ -1921,6 +1921,33 @@ exit: 0
       "totalTokens": 6220
     },
     {
+      "agent": "codex",
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 50,
+      "inputTokens": 18076,
+      "metadata": {
+        "lastActivity": "2025-12-30T20:00:10.000Z",
+        "reasoningOutputTokens": 0
+      },
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 50,
+          "cost": 0.020355625000000002,
+          "inputTokens": 18076,
+          "modelName": "gpt-5",
+          "outputTokens": 1811
+        }
+      ],
+      "modelsUsed": [
+        "gpt-5"
+      ],
+      "outputTokens": 1811,
+      "period": "rollout-2025-12-30T20-00-00-55555555-5555-4555-8555-555555555555",
+      "totalCost": 0.020355625000000002,
+      "totalTokens": 19937
+    },
+    {
       "agent": "copilot",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 0,
@@ -4145,33 +4172,6 @@ exit: 0
       "totalTokens": 500
     },
     {
-      "agent": "codex",
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 50,
-      "inputTokens": 300,
-      "metadata": {
-        "lastActivity": "2025-12-30T20:00:10.000Z",
-        "reasoningOutputTokens": 0
-      },
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 50,
-          "cost": 0.00036562500000000006,
-          "inputTokens": 300,
-          "modelName": "gpt-5",
-          "outputTokens": 35
-        }
-      ],
-      "modelsUsed": [
-        "gpt-5"
-      ],
-      "outputTokens": 35,
-      "period": "rollout-2025-12-30T20-00-00-55555555-5555-4555-8555-555555555555",
-      "totalCost": 0.00036562500000000006,
-      "totalTokens": 385
-    },
-    {
       "agent": "opencode",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 0,
@@ -5580,10 +5580,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 17865,
     "cacheReadTokens": 1311567,
-    "inputTokens": 1349049,
-    "outputTokens": 58992,
-    "totalCost": 28.93123842500002,
-    "totalTokens": 2740910,
+    "inputTokens": 1366825,
+    "outputTokens": 60768,
+    "totalCost": 28.95122842500002,
+    "totalTokens": 2760462,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",
