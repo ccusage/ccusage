@@ -35,8 +35,8 @@
 024-hermes/deepseek|deepseek-v3-2|E:deepseek/deepseek-v3-2,F:deepseek-v3-2|0.28/0.4|S2|deepseek/deepseek-v3.2|
 025-hermes/bedrock|deepseek.v3.2|E:bedrock/deepseek.v3.2,F:deepseek.v3.2|0.28/0.4|S2|deepseek/deepseek-v3.2|
 027-droid|deepseek-v3-2-251201|F:deepseek-v3-2-251201|0.28985507/0.43478261|S6|deepseek/deepseek-v3.2-251201|
-028-claude|deepseek-flash|F:deepseek-flash|0.3/1.2|S2|deepseek-flash|
-029-hermes/deepseek|deepseek-flash|E:deepseek/deepseek-flash,F:deepseek-flash|0.3/1.2|S2|deepseek/deepseek-flash|
+028-claude|deepseek-flash|F:deepseek-flash|0.15/0.6/0.003|S2|deepseek-flash|
+029-hermes/deepseek|deepseek-flash|E:deepseek/deepseek-flash,F:deepseek-flash|0.15/0.6/0.003|S2|deepseek/deepseek-flash|
 030-claude|deepseek-chat|F:deepseek-chat|0.28/0.42|S2|deepseek-chat|
 031-hermes/deepseek|deepseek-chat|E:deepseek/deepseek-chat,F:deepseek-chat|0.28/0.42|S2|deepseek/deepseek-chat|
 032-claude|deepseek-v4-flash|F:deepseek-v4-flash|0.22/0.66|S2|deepseek-v4-flash|

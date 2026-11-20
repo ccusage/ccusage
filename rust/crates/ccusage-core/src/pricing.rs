@@ -3582,6 +3582,85 @@ mod tests {
     }
 
     #[test]
+    fn deepseek_flash_uses_current_peak_and_off_peak_rates() {
+        crate::test_support::install_pricing_snapshots();
+        let pricing = PricingMap::load_embedded();
+        for (instant, multiplier) in [
+            ("2026-11-18T00:59:59Z", 1.0),
+            ("2026-11-18T01:00:00Z", 2.0),
+            ("2026-11-18T03:59:59Z", 2.0),
+            ("2026-11-18T04:00:00Z", 1.0),
+            ("2026-11-18T05:59:59Z", 1.0),
+            ("2026-11-18T06:00:00Z", 2.0),
+            ("2026-11-18T09:59:59Z", 2.0),
+            ("2026-11-18T10:00:00Z", 1.0),
+            ("2026-11-21T02:00:00Z", 1.0),
+            ("2026-11-22T07:00:00Z", 1.0),
+            ("2026-11-18T09:00:00+08:00", 2.0),
+        ] {
+            for model in ["deepseek-flash", "deepseek/deepseek-flash"] {
+                let rates = pricing.find_at(model, timestamp(instant)).unwrap();
+                for (actual, off_peak) in [
+                    (rates.input, 0.15),
+                    (rates.output, 0.6),
+                    (rates.cache_create.unwrap(), 0.15),
+                    (rates.cache_read.unwrap(), 0.003),
+                ] {
+                    assert!(
+                        (actual * 1e6 - off_peak * multiplier).abs() < 1e-12,
+                        "{model} at {instant}: {rates:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn deepseek_flash_schedule_preserves_hosted_rates_and_explicit_overrides() {
+        crate::test_support::install_pricing_snapshots();
+        let mut pricing = PricingMap::default();
+        pricing.load_json(
+            r#"{
+                "deepseek-flash": {
+                    "litellm_provider": "deepseek",
+                    "input_cost_per_token": 0.0000003,
+                    "output_cost_per_token": 0.0000012
+                },
+                "openrouter/deepseek-flash": {
+                    "input_cost_per_token": 0.000002,
+                    "output_cost_per_token": 0.000003
+                }
+            }"#,
+        );
+        let model = "deepseek-flash".to_string();
+        let patch = ccusage_cli::PricingOverride {
+            input_cost_per_token: Some(9e-6),
+            ..Default::default()
+        };
+        let overridden = pricing.with_user_overrides([(&model, &patch)]);
+        for (instant, output_per_million) in
+            [("2026-11-18T03:00:00Z", 1.2), ("2026-11-18T10:00:00Z", 0.6)]
+        {
+            let hosted = pricing
+                .find_at("openrouter/deepseek-flash", timestamp(instant))
+                .unwrap();
+            assert!((hosted.input * 1e6 - 2.0).abs() < 1e-12);
+            assert!((hosted.output * 1e6 - 3.0).abs() < 1e-12);
+            let direct = overridden.find_at(&model, timestamp(instant)).unwrap();
+            assert!((direct.input * 1e6 - 9.0).abs() < 1e-12);
+            assert!((direct.output * 1e6 - output_per_million).abs() < 1e-12);
+        }
+        assert!(pricing.find_handle(&model).unwrap().is_time_dependent());
+        assert!(
+            !pricing
+                .find_handle("openrouter/deepseek-flash")
+                .unwrap()
+                .is_time_dependent()
+        );
+        assert!((pricing.find(&model).unwrap().input * 1e6 - 0.3).abs() < 1e-12);
+    }
+
+    #[test]
     fn applies_deepseek_v4_rates_by_effective_period_for_both_models() {
         let pricing = direct_deepseek_pricing();
         let cases = [

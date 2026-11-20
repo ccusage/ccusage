@@ -109,7 +109,7 @@ expression: "serde_json::to_string_pretty(&table_snapshot(&result.rows, kind,\n&
         "2,600",
         "22,000",
         "50,220",
-        "$0.04"
+        "$0.03"
       ],
       "kind": "total"
     }

@@ -781,6 +781,45 @@ mod tests {
     }
 
     #[test]
+    fn prices_flash_tokens_by_request_time_on_api_key_and_account_routes() {
+        ccusage_test_support::install_pricing_snapshots();
+        let pricing = ccusage_core::PricingMap::load_embedded();
+        for provider in ["deepseek-official", "deepseek-account"] {
+            for timezone in [JiffTimeZone::UTC, JiffTimeZone::get("Asia/Tokyo").unwrap()] {
+                for (instant, expected) in [
+                    ("2026-11-18T03:00:00Z", 1.506),
+                    ("2026-11-18T10:00:00Z", 0.753),
+                ] {
+                    let entry = DshUsageEntry {
+                        timestamp: ccusage_core::parse_ts_timestamp(instant).unwrap(),
+                        session_id: "sid".to_string(),
+                        cwd: None,
+                        seq: Some(1),
+                        provider: Some(provider.to_string()),
+                        model: "deepseek-flash".to_string(),
+                        usage: TokenUsageRaw {
+                            input_tokens: 1_000_000,
+                            output_tokens: 1_000_000,
+                            cache_read_input_tokens: 1_000_000,
+                            ..Default::default()
+                        },
+                        extra_total_tokens: 0,
+                    };
+                    for mode in [PriceTable::Auto(&pricing), PriceTable::Calculate(&pricing)] {
+                        let loaded = dsh_entry_to_loaded(entry.clone(), &timezone, mode);
+                        assert!(
+                            (loaded.cost - expected).abs() < 1e-12,
+                            "{provider} at {instant}: {}",
+                            loaded.cost
+                        );
+                        assert_eq!(loaded.missing_pricing_model, None);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn applies_the_deepseek_time_of_day_schedule_to_first_party_routes() {
         ccusage_test_support::install_pricing_snapshots();
         let pricing = ccusage_core::PricingMap::load_embedded();

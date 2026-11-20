@@ -8,7 +8,7 @@ expression: "ccusage_adapter_common::source::EntrySource::report_json(&crate::SO
     "cacheReadTokens": 22000,
     "inputTokens": 23850,
     "outputTokens": 1770,
-    "totalCost": 0.0377626,
+    "totalCost": 0.0344326,
     "totalTokens": 50220
   },
   "weekly": [
@@ -18,20 +18,20 @@ expression: "ccusage_adapter_common::source::EntrySource::report_json(&crate::SO
       "inputTokens": 20650,
       "modelBreakdowns": [
         {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.006659999999999999,
-          "inputTokens": 19000,
-          "modelName": "deepseek-flash",
-          "outputTokens": 800
-        },
-        {
           "cacheCreationTokens": 600,
           "cacheReadTokens": 17000,
           "cost": 0.0042526000000000005,
           "inputTokens": 1650,
           "modelName": "deepseek-v4-pro",
           "outputTokens": 420
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0033299999999999996,
+          "inputTokens": 19000,
+          "modelName": "deepseek-flash",
+          "outputTokens": 800
         }
       ],
       "modelsUsed": [
@@ -39,7 +39,7 @@ expression: "ccusage_adapter_common::source::EntrySource::report_json(&crate::SO
         "deepseek-flash"
       ],
       "outputTokens": 1220,
-      "totalCost": 0.0109126,
+      "totalCost": 0.0075826,
       "totalTokens": 39470,
       "week": "2026-10-12"
     },
