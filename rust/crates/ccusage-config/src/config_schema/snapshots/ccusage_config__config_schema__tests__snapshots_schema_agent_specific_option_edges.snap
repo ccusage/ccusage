@@ -1321,6 +1321,11 @@ expression: "json!({\n    \"rootRef\": schema[\"$ref\"], \"rootProperties\":\n  
         "markdownDescription": "Sort order.",
         "type": "string"
       },
+      "piAgentDir": {
+        "description": "Path or comma-separated paths to pi agent directories; ccusage reads each directory's `sessions` store.",
+        "markdownDescription": "Path or comma-separated paths to pi agent directories; ccusage reads each directory's `sessions` store.",
+        "type": "string"
+      },
       "piPath": {
         "description": "Path or comma-separated paths to pi-agent sessions directories.",
         "markdownDescription": "Path or comma-separated paths to pi-agent sessions directories.",

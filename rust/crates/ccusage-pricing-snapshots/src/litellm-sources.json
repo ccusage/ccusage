@@ -6,7 +6,8 @@
 		"deepseek",
 		"zai",
 		"moonshot",
-		"xai"
+		"xai",
+		"dashscope"
 	],
 	"embedded": [
 		{

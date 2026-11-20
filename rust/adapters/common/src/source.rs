@@ -173,6 +173,7 @@ pub struct LoadedRows {
 pub struct SourceOptions<'a> {
     pub claude_project: Option<&'a str>,
     pub pi_path: Option<&'a str>,
+    pub pi_agent_dir: Option<&'a str>,
     pub open_claw_path: Option<&'a str>,
     pub codex_speed: CodexSpeed,
 }
@@ -182,6 +183,7 @@ impl<'a> SourceOptions<'a> {
         Self {
             claude_project: args.options.claude_project.as_deref(),
             pi_path: args.options.pi_path.as_deref(),
+            pi_agent_dir: args.options.pi_agent_dir.as_deref(),
             open_claw_path: args.options.open_claw_path.as_deref(),
             codex_speed: args.options.codex_speed,
         }
@@ -191,6 +193,7 @@ impl<'a> SourceOptions<'a> {
         source.map_or_else(Self::default, |source| Self {
             claude_project: source.options.claude_project.as_deref(),
             pi_path: source.options.pi_path.as_deref(),
+            pi_agent_dir: source.options.pi_agent_dir.as_deref(),
             open_claw_path: source.options.open_claw_path.as_deref(),
             codex_speed: source.options.codex_speed,
         })

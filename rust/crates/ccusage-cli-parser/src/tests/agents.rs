@@ -367,6 +367,8 @@ fn parses_pi_session_options() {
         "--json",
         "--pi-path",
         "/tmp/pi-sessions",
+        "--pi-agent-dir",
+        "/tmp/pi-agent",
     ]);
     let Command::Agent(StandardAgent::Pi, AgentCommand::Report(args)) = cli else {
         panic!("expected pi command");
@@ -374,6 +376,7 @@ fn parses_pi_session_options() {
     assert_eq!(args.kind, AgentReportKind::Session);
     assert!(args.shared.json);
     assert_eq!(args.options.pi_path.as_deref(), Some("/tmp/pi-sessions"));
+    assert_eq!(args.options.pi_agent_dir.as_deref(), Some("/tmp/pi-agent"));
 }
 
 #[test]
