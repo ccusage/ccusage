@@ -48,6 +48,49 @@ fn prices_the_logged_model_before_its_normalized_form() {
 }
 
 #[test]
+fn only_a_single_call_selects_the_long_context_tier() {
+    ccusage_test_support::install_pricing_snapshots();
+    let fixture = fs_fixture!({
+        "copilot.jsonl": json!({
+            "type": "span",
+            "traceId": "trace-1",
+            "spanId": "span-1",
+            "name": "chat",
+            "endTime": [1_775_934_264_u64, 0_u64],
+            "attributes": {
+                "gen_ai.operation.name": "chat",
+                "gen_ai.response.model": "tiered-model",
+                "gen_ai.usage.input_tokens": 250_000,
+            },
+        }).to_string(),
+    });
+    let mut pricing = ccusage_core::PricingMap::default();
+    pricing.load_json(
+        r#"{"tiered-model":{"input_cost_per_token":1,"output_cost_per_token":1,"input_cost_per_token_above_200k_tokens":2}}"#,
+    );
+    let call = parse_otel_file(&fixture.path("copilot.jsonl"), &Diagnostics::new("copilot"))
+        .unwrap()
+        .pop()
+        .unwrap();
+    let interval = CopilotUsageEntry {
+        request_count: 3,
+        ..call.clone()
+    };
+    let price = |entry| {
+        usage_entry_to_loaded(
+            entry,
+            &jiff::tz::TimeZone::UTC,
+            CostMode::Calculate,
+            PriceTable::Calculate(&pricing),
+        )
+        .cost
+    };
+
+    assert_eq!(price(call), 200_000.0 + 50_000.0 * 2.0);
+    assert_eq!(price(interval), 250_000.0);
+}
+
+#[test]
 fn parses_copilot_chat_spans() {
     let fixture = fs_fixture!({
         "copilot.jsonl": [

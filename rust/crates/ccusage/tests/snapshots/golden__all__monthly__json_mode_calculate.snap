@@ -559,19 +559,19 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 50100,
-          "cost": 0.84299,
-          "inputTokens": 200300,
-          "modelName": "grok-4.5-build",
-          "outputTokens": 1060
-        },
-        {
-          "cacheCreationTokens": 0,
           "cacheReadTokens": 450300,
           "cost": 0.5829249999999999,
           "inputTokens": 100600,
           "modelName": "gpt-5.5",
           "outputTokens": 1590
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 50100,
+          "cost": 0.42199,
+          "inputTokens": 200300,
+          "modelName": "grok-4.5-build",
+          "outputTokens": 1060
         },
         {
           "cacheCreationTokens": 0,
@@ -1163,7 +1163,7 @@ exit: 0
       ],
       "outputTokens": 28292,
       "period": "2026-01",
-      "totalCost": 3.761798264999999,
+      "totalCost": 3.340798264999999,
       "totalTokens": 2279790
     },
     {
@@ -1200,7 +1200,7 @@ exit: 0
     "cacheReadTokens": 1310237,
     "inputTokens": 1364590,
     "outputTokens": 60446,
-    "totalCost": 4.817007424999998,
+    "totalCost": 4.396007424999999,
     "totalTokens": 2756305,
     "unpricedModels": [
       "GLM-5.3",

@@ -1,6 +1,6 @@
 use ccusage_core::cost::PriceTable;
 use ccusage_core::{
-    cost::{EntryPricing, price_entry},
+    cost::{EntryPricing, UsageGranularity, price_entry},
     pricing::AgentModel,
 };
 use std::{
@@ -301,6 +301,7 @@ fn read_session_file_data_with_context(
         let source_cost = source_cost_for_mode(display_cost, mode, override_candidate.is_some());
         let priced = price_entry(
             EntryPricing {
+                granularity: UsageGranularity::Request,
                 usage,
                 reasoning_tokens: 0,
                 residual_tokens: 0,

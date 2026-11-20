@@ -1,6 +1,6 @@
 use ccusage_core::cost::PriceTable;
 use ccusage_core::{
-    cost::{EntryPricing, price_entry},
+    cost::{EntryPricing, UsageGranularity, price_entry},
     pricing::MatchKind,
 };
 use std::{collections::HashMap, path::Path, sync::Arc};
@@ -180,6 +180,12 @@ fn usage_entry_to_loaded(
     };
     let priced = price_entry(
         EntryPricing {
+            // NOTE(2026-11-20, #2365): Shutdown intervals total several calls and record no per-call split. Only an entry that is exactly one call can select the long-context tier.
+            granularity: if entry.request_count == 1 {
+                UsageGranularity::Request
+            } else {
+                UsageGranularity::Aggregate
+            },
             usage,
             reasoning_tokens: 0,
             residual_tokens: entry.extra_total_tokens,

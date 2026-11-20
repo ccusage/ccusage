@@ -1,6 +1,6 @@
 use ccusage_core::cost::PriceTable;
 use ccusage_core::{
-    cost::{EntryPricing, price_entry},
+    cost::{EntryPricing, UsageGranularity, price_entry},
     pricing::MatchKind,
 };
 use std::{path::Path, sync::Arc};
@@ -190,6 +190,7 @@ fn price_qwen(
         .collect();
     let priced = price_entry(
         EntryPricing {
+            granularity: UsageGranularity::Request,
             usage,
             reasoning_tokens: 0,
             residual_tokens: 0,
