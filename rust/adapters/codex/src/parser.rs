@@ -2047,6 +2047,8 @@ mod diagnostic_tests {
 
         let pointers = [
             "/timestamp",
+            "/created_at",
+            "/createdAt",
             "/model",
             "/model_name",
             "/metadata",
