@@ -12,7 +12,7 @@ defaults:
 jobs:
   approve:
     if: ${{ !github.event.issue.pull_request }}
-    runs-on: ubuntu-slim
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     permissions:
       contents: write
       issues: write
@@ -22,14 +22,14 @@ jobs:
         with:
           ref: ${{ github.event.repository.default_branch }}
 
-      - name: Set up Nushell
-        uses: ./.github/actions/setup-nu
+      - name: Set up Nix
+        uses: ./.github/actions/setup-nix-cache
 
       - name: Update contributor approval
         id: update
         env:
           GH_TOKEN: ${{ github.token }}
-        run: nu .github/scripts/contribution-gate.nu approve-contributor
+        run: .github/scripts/contribution-gate.nu approve-contributor
 
       - name: Commit and push
         if: steps.update.outputs.status == 'added' || steps.update.outputs.status == 'updated'
@@ -48,4 +48,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           APPROVAL_STATUS: ${{ steps.update.outputs.status }}
           APPROVAL_CAPABILITY: ${{ steps.update.outputs.capability }}
-        run: nu .github/scripts/contribution-gate.nu approve-contributor-comment
+        run: .github/scripts/contribution-gate.nu approve-contributor-comment

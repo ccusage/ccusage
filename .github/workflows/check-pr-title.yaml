@@ -29,7 +29,7 @@ jobs:
   main:
     name: Validate PR title
     if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
-    runs-on: ubuntu-slim
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - name: Skip on merge groups
         if: github.event_name == 'merge_group'
@@ -44,7 +44,7 @@ jobs:
   scope:
     name: Validate PR title scope
     if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
-    runs-on: ubuntu-slim
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 5
     steps:
       - name: Skip on merge groups
@@ -56,20 +56,22 @@ jobs:
           persist-credentials: false
           sparse-checkout: |
             .github/actions
+            flake.lock
+            flake.nix
             scripts
       - if: github.event_name == 'pull_request'
-        uses: ./.github/actions/setup-nu
+        uses: ./.github/actions/setup-nix-cache
       - name: Check title scope against the changed adapters
         if: github.event_name == 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: nu scripts/validate-commit-scope.nu pr
+        run: scripts/validate-commit-scope.nu pr
 
   # NOTE(2026-11-10, #2062): Dispatch check runs do not attach to the release PR. Post commit statuses on the same SHA to satisfy the required title checks.
   release-pr-statuses:
     name: Release PR title statuses
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
-    runs-on: ubuntu-slim
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 5
     permissions:
       pull-requests: read
