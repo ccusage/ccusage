@@ -17,7 +17,7 @@ pub(super) struct CodexReplayFilter<'a> {
     fork: Option<CodexForkReplay<'a>>,
     pending: Vec<CodexTokenUsageEvent>,
     own_start: Option<usize>,
-    foreign_before_own: bool,
+    foreign_start: Option<usize>,
 }
 
 impl<'a> CodexReplayFilter<'a> {
@@ -26,7 +26,7 @@ impl<'a> CodexReplayFilter<'a> {
             fork,
             pending: Vec::new(),
             own_start: None,
-            foreign_before_own: false,
+            foreign_start: None,
         }
     }
 
@@ -57,7 +57,7 @@ impl<'a> CodexReplayFilter<'a> {
             return Some(self.resolve_leading(visit));
         }
         if thread_id.is_some() && fork.child_id.is_some() && self.own_start.is_none() {
-            self.foreign_before_own = true;
+            self.foreign_start.get_or_insert(self.pending.len());
         }
         None
     }
@@ -89,13 +89,11 @@ impl<'a> CodexReplayFilter<'a> {
         let Some(fork) = self.fork else {
             return CodexReplayResolution::Deterministic;
         };
-        let leading_end = self.own_start.unwrap_or(self.pending.len());
+        let (leading_end, copied) = match (self.foreign_start, self.own_start) {
+            (Some(foreign), Some(own)) => (foreign, foreign..own),
+            (_, own) => (own.unwrap_or(self.pending.len()), 0..0),
+        };
         let leading = &self.pending[..leading_end];
-        if self.foreign_before_own && self.own_start.is_some() {
-            let inherited = leading.iter().filter(|event| is_replayable(event)).count();
-            self.emit_after(inherited, visit);
-            return CodexReplayResolution::Deterministic;
-        }
         let resolution = match fork.missing_parent {
             Some(parent_id) if leading.iter().any(is_replayable) => {
                 CodexReplayResolution::MissingParent(parent_id)
@@ -108,20 +106,18 @@ impl<'a> CodexReplayFilter<'a> {
             .map(CodexTokenUsageEvent::raw_usage)
             .take(fork.parent_usage.len())
             .collect::<Vec<_>>();
-        let inherited = replayed_parent_len(fork.parent_usage, &leading);
-        self.emit_after(inherited, visit);
-        resolution
-    }
-
-    fn emit_after(&mut self, mut inherited: usize, visit: &mut impl FnMut(CodexTokenUsageEvent)) {
+        let mut inherited = replayed_parent_len(fork.parent_usage, &leading);
         self.fork = None;
-        for event in std::mem::take(&mut self.pending) {
-            if inherited > 0 && is_replayable(&event) {
+        for (index, event) in std::mem::take(&mut self.pending).into_iter().enumerate() {
+            if !is_replayable(&event) {
+                visit(event);
+            } else if index < leading_end && inherited > 0 {
                 inherited -= 1;
-            } else {
+            } else if !copied.contains(&index) {
                 visit(event);
             }
         }
+        resolution
     }
 }
 

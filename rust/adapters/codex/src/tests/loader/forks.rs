@@ -284,7 +284,7 @@ fn keeps_own_usage_a_spawned_child_wrote_before_its_first_usage_record() {
 }
 
 #[test]
-fn skips_usage_records_copied_into_a_user_fork_before_its_own_settings() {
+fn skips_usage_between_a_copied_record_and_the_forks_own_settings() {
     let usage_record = |timestamp: &str, thread_id: &str, response_id: &str, input: u64| {
         json!({
             "timestamp": timestamp,
@@ -317,7 +317,7 @@ fn skips_usage_records_copied_into_a_user_fork_before_its_own_settings() {
 
     assert_eq!(
         replay_input_tokens_by_session(fixture.root()),
-        [("child".to_string(), 500)]
+        [("child".to_string(), 100), ("child".to_string(), 500)]
     );
 }
 
