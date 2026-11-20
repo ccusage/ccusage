@@ -10,7 +10,7 @@ exit: 0
     "cacheReadTokens": 1310267,
     "inputTokens": 1365600,
     "outputTokens": 60566,
-    "totalTokens": 2757615,
+    "totalTokens": 2757505,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",
@@ -898,7 +898,7 @@ exit: 0
       ],
       "outputTokens": 58299,
       "period": "2025-12-29",
-      "totalTokens": 2741467
+      "totalTokens": 2741357
     },
     {
       "agent": "all",

@@ -166,7 +166,7 @@ pub(super) fn to_loaded_entry(
         project_path: Arc::from("Hermes"),
         cost,
         credits: None,
-        extra_total_tokens: entry.reasoning_tokens,
+        extra_total_tokens: 0,
         message_count: Some(entry.message_count),
         model: Some(entry.model),
         usage_limit_reset_time: None,
@@ -185,9 +185,10 @@ fn price_hermes(entry: &HermesEntry, pricing: PriceTable<'_>) -> (f64, Option<St
         .iter()
         .map(|(name, kind)| (name.as_str(), *kind))
         .collect();
+    // NOTE(2026-11-20, #2364): Hermes reads `reasoning_tokens` from the output token details and bills only `output_tokens` (NousResearch/hermes-agent `agent/usage_pricing.py`). Reasoning is a subset of output, so it is neither priced nor totaled again.
     let entry_pricing = EntryPricing {
         usage: entry.usage,
-        reasoning_tokens: entry.reasoning_tokens,
+        reasoning_tokens: 0,
         residual_tokens: 0,
         reported_model: Some(&entry.model),
         candidates: &candidates,
@@ -252,13 +253,13 @@ mod tests {
         );
         for (stored, auto, display) in [
             (Some(0.42), 0.42, 0.42),
-            (Some(0.0), 0.26, 0.0),
-            (None, 0.26, 0.0),
+            (Some(0.0), 0.2, 0.0),
+            (None, 0.2, 0.0),
         ] {
             for (mode, expected) in [
                 (CostMode::Auto, auto),
                 (CostMode::Display, display),
-                (CostMode::Calculate, 0.26),
+                (CostMode::Calculate, 0.2),
             ] {
                 let entry = HermesEntry {
                     timestamp: ccusage_core::parse_ts_timestamp("2026-05-19T00:00:00Z").unwrap(),
@@ -291,6 +292,42 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn reasoning_tokens_are_part_of_output_and_not_counted_again() {
+        ccusage_test_support::install_pricing_snapshots();
+        let mut pricing = ccusage_core::PricingMap::default();
+        pricing.load_json(
+            r#"{"gpt-5":{"litellm_provider":"openai","input_cost_per_token":1.25e-6,"output_cost_per_token":1e-5}}"#,
+        );
+        let entry = HermesEntry {
+            timestamp: ccusage_core::parse_ts_timestamp("2026-05-19T00:00:00Z").unwrap(),
+            session_id: "s".to_string(),
+            model: "gpt-5".to_string(),
+            provider: "openai".to_string(),
+            usage: TokenUsageRaw {
+                input_tokens: 1_000_000,
+                output_tokens: 500_000,
+                ..TokenUsageRaw::default()
+            },
+            reasoning_tokens: 300_000,
+            message_count: 1,
+            cost_usd: None,
+        };
+
+        let loaded = to_loaded_entry(
+            entry,
+            &JiffTimeZone::UTC,
+            CostMode::Calculate,
+            PriceTable::Calculate(&pricing),
+        );
+
+        assert_eq!(
+            ccusage_core::total_usage_tokens(loaded.usage) + loaded.extra_total_tokens,
+            1_500_000
+        );
+        assert!((loaded.cost - 6.25).abs() < 1e-9, "{}", loaded.cost);
+    }
 
     #[test]
     fn hermes_start_time_is_always_seconds() {

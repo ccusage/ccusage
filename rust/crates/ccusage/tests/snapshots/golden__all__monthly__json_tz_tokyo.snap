@@ -619,14 +619,6 @@ exit: 0
           "outputTokens": 1050
         },
         {
-          "cacheCreationTokens": 60,
-          "cacheReadTokens": 6040,
-          "cost": 0.0070550000000000005,
-          "inputTokens": 1300,
-          "modelName": "openai/gpt-5",
-          "outputTokens": 420
-        },
-        {
           "cacheCreationTokens": 400,
           "cacheReadTokens": 1200,
           "cost": 0.006872,
@@ -643,6 +635,14 @@ exit: 0
           "modelName": "[pi] claude-opus-4-20250514",
           "outputTokens": 550,
           "storedCost": 0.0
+        },
+        {
+          "cacheCreationTokens": 60,
+          "cacheReadTokens": 6040,
+          "cost": 0.006655,
+          "inputTokens": 1300,
+          "modelName": "openai/gpt-5",
+          "outputTokens": 420
         },
         {
           "cacheCreationTokens": 50,
@@ -1109,8 +1109,8 @@ exit: 0
       ],
       "outputTokens": 44815,
       "period": "2026-01",
-      "totalCost": 18.420009115,
-      "totalTokens": 2527603
+      "totalCost": 18.419609115,
+      "totalTokens": 2527493
     },
     {
       "agent": "all",
@@ -1146,8 +1146,8 @@ exit: 0
     "cacheReadTokens": 1310267,
     "inputTokens": 1365600,
     "outputTokens": 60566,
-    "totalCost": 28.179458425,
-    "totalTokens": 2757615,
+    "totalCost": 28.179058425,
+    "totalTokens": 2757505,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",
