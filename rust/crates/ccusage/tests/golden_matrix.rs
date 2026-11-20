@@ -260,8 +260,7 @@ fn last_stops_at_the_end_of_the_current_period() {
         agent: &'static str,
         kind: &'static str,
         now: &'static str,
-        field: &str,
-    ) -> Vec<String> {
+    ) -> Vec<serde_json::Value> {
         let case = Case::new(
             kind,
             "",
@@ -280,25 +279,26 @@ fn last_stops_at_the_end_of_the_current_period() {
         let output = run_case(root, seeded, &case);
         assert_eq!(output.exit, "0", "{}", output.stderr);
         let report: serde_json::Value = serde_json::from_str(&output.stdout).unwrap();
-        report[kind]
-            .as_array()
-            .unwrap()
-            .iter()
+        report[kind].as_array().unwrap().clone()
+    }
+
+    fn keys(rows: &[serde_json::Value], field: &str) -> Vec<String> {
+        rows.iter()
             .map(|row| row[field].as_str().unwrap().to_string())
             .collect()
     }
 
     let codex_fixture = Fixture::new();
     let codex = golden::codex::seed(codex_fixture.root());
+    let codex_daily = rows(
+        codex_fixture.root(),
+        &codex,
+        "codex",
+        "daily",
+        "2025-12-31T12:00:00Z",
+    );
     assert_eq!(
-        rows(
-            codex_fixture.root(),
-            &codex,
-            "codex",
-            "daily",
-            "2025-12-31T12:00:00Z",
-            "date"
-        ),
+        keys(&codex_daily, "date"),
         ["2025-12-31"],
         "a daily --last 1 window ends today"
     );
@@ -306,39 +306,43 @@ fn last_stops_at_the_end_of_the_current_period() {
     let opencode_fixture = Fixture::new();
     let root = opencode_fixture.root();
     let opencode = golden::opencode::seed(root);
+    let last_week = rows(
+        root,
+        &opencode,
+        "opencode",
+        "weekly",
+        "2025-12-28T12:00:00Z",
+    );
     assert_eq!(
-        rows(
-            root,
-            &opencode,
-            "opencode",
-            "weekly",
-            "2025-12-28T12:00:00Z",
-            "week"
-        ),
+        keys(&last_week, "week"),
         ["2025-12-22"],
         "a weekly --last 1 window ends with the current week"
     );
+    let current_week = rows(
+        root,
+        &opencode,
+        "opencode",
+        "weekly",
+        "2025-12-31T12:00:00Z",
+    );
     assert_eq!(
-        rows(
-            root,
-            &opencode,
-            "opencode",
-            "weekly",
-            "2025-12-31T12:00:00Z",
-            "week"
-        ),
+        keys(&current_week, "week"),
         ["2025-12-29"],
         "a weekly window keeps the later days of the current week"
     );
     assert_eq!(
-        rows(
-            root,
-            &opencode,
-            "opencode",
-            "monthly",
-            "2025-12-31T12:00:00Z",
-            "month"
-        ),
+        current_week[0]["totalTokens"], 27117,
+        "the week counts every record through its last day, including 1-2 January"
+    );
+    let current_month = rows(
+        root,
+        &opencode,
+        "opencode",
+        "monthly",
+        "2025-12-31T12:00:00Z",
+    );
+    assert_eq!(
+        keys(&current_month, "month"),
         ["2025-12"],
         "a monthly --last 1 window ends with the current month"
     );
