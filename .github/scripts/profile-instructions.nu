@@ -140,7 +140,7 @@ def "main run" [
         'golden' => (golden-env $fixture_dir)
         _ => { error make {msg: $"Unknown fixture '($fixture)'"} }
     }
-    let vars = $context.vars | merge $report_vars | merge {PATH: $env.PATH}
+    let vars = $context.vars | merge $report_vars | merge {PATH: ($env.PATH | str join (char esep))}
     let profile = $out | path join callgrind.out
     let args = [
         '-i'
