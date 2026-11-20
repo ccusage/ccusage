@@ -89,12 +89,11 @@ pub(crate) const fn merge_codex_service_tiers(
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct CodexTokenUsageEvent {
-    pub(crate) session_id: std::sync::Arc<str>,
     pub(crate) response_id: Option<String>,
     pub(crate) record_response_id: Option<std::sync::Arc<str>>,
     pub(crate) timestamp: crate::TimestampMs,
     pub(crate) last_activity: compact_str::CompactString,
-    pub(crate) model: std::sync::Arc<str>,
+    pub(crate) model: compact_str::CompactString,
     pub(crate) input_tokens: u64,
     pub(crate) cached_input_tokens: u64,
     pub(crate) cache_creation_tokens: u64,

@@ -49,7 +49,6 @@ fn compaction_identity_does_not_consume_the_normal_replay_prefix() {
     }];
     let mut events = Vec::new();
     visit_codex_session_file_with_diagnostics(
-        fixture.root(),
         &fixture.path("child.jsonl"),
         Some(CodexForkReplay {
             parent_usage: &prefix,

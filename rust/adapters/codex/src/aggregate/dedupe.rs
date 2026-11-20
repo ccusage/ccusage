@@ -49,15 +49,17 @@ pub(super) struct CodexEventProvenance {
     file_index: usize,
     occurrences: FxHashMap<CodexUsageKey, CodexFileOccurrences>,
     models: FxHashMap<CompactString, StringId>,
+    session_id: String,
     session: Option<StringId>,
 }
 
 impl CodexEventProvenance {
-    pub(super) fn new(file_index: usize) -> Self {
+    pub(super) fn new(file_index: usize, session_id: String) -> Self {
         Self {
             file_index,
             occurrences: FxHashMap::default(),
             models: FxHashMap::default(),
+            session_id,
             session: None,
         }
     }
@@ -296,7 +298,9 @@ impl<'a> CodexDedupe<'a> {
                 .sessions
                 .lock()
                 .map_err(|_| crate::cli_error("codex interner poisoned"))?
-                .intern(&event.session_id, || CompactString::new(&event.session_id))?;
+                .intern(&provenance.session_id, || {
+                    CompactString::new(&provenance.session_id)
+                })?;
             provenance.session = Some(session);
             session
         };

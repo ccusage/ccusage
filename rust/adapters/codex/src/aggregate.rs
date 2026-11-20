@@ -240,7 +240,6 @@ fn aggregate_discovered(
             } else if let Some(metadata) = metadata {
                 replay_files.push(CodexReplayFile {
                     path: file.path,
-                    sessions_dir: dir,
                     metadata: metadata.unwrap_or_default(),
                 });
             }
@@ -336,7 +335,8 @@ fn fold_rollout(
     index: usize,
     diagnostics: &Diagnostics,
 ) -> Result<Option<CodexSessionMetadata>> {
-    let mut provenance = CodexEventProvenance::new(index);
+    let mut provenance =
+        CodexEventProvenance::new(index, parser::codex_session_id(sessions_dir, path));
     let mut result = Ok(());
     let mut visit = |event: CodexTokenUsageEvent| {
         if result.is_ok()
@@ -349,14 +349,13 @@ fn fold_rollout(
     };
     let metadata = if let Some(replay) = replay {
         parser::visit_codex_session_file_with_metadata(
-            sessions_dir,
             path,
             replay.fork_replay(path),
             &mut visit,
             diagnostics,
         )
     } else {
-        parser::visit_codex_session_file_unless_fork(sessions_dir, path, &mut visit, diagnostics)
+        parser::visit_codex_session_file_unless_fork(path, &mut visit, diagnostics)
     };
     result?;
     if let Some(metadata) = &metadata {

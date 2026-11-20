@@ -66,7 +66,7 @@ fn session_tokens_from_codex_home(fixture: &Fixture, single_thread: bool) -> BTr
     })
 }
 
-fn total_tokens(events: &[crate::CodexTokenUsageEvent]) -> u64 {
+fn total_tokens(events: &[crate::test_support::SessionEvent]) -> u64 {
     events.iter().map(|event| event.total_tokens).sum()
 }
 
@@ -241,7 +241,6 @@ fn reads_the_other_encoding_when_codex_migrates_after_discovery() {
     assert_eq!(files, vec![plain]);
     let mut visited = Vec::new();
     crate::parser::visit_codex_session_file_with_diagnostics(
-        fixture.root(),
         &files[0],
         None,
         |event| {
@@ -250,7 +249,10 @@ fn reads_the_other_encoding_when_codex_migrates_after_discovery() {
         &Diagnostics::new("codex"),
     );
     assert_eq!(visited.len(), 1);
-    assert_eq!(&*visited[0].session_id, "session");
+    assert_eq!(
+        crate::parser::codex_session_id(fixture.root(), &files[0]),
+        "session"
+    );
     assert_eq!(visited[0].total_tokens, 120);
 }
 
@@ -272,7 +274,6 @@ fn dates_headless_usage_from_the_encoding_opened_after_migration() {
 
     let mut visited = Vec::new();
     crate::parser::visit_codex_session_file_with_diagnostics(
-        fixture.root(),
         &files[0],
         None,
         |event| {

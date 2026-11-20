@@ -83,7 +83,20 @@ pub(crate) fn load_rollouts(
     load_groups_from_directory(fixture.root(), &shared, kind).unwrap()
 }
 
-pub(crate) fn rollout_events(dir: &Path) -> Vec<CodexTokenUsageEvent> {
+pub(crate) struct SessionEvent {
+    pub(crate) session_id: String,
+    event: CodexTokenUsageEvent,
+}
+
+impl std::ops::Deref for SessionEvent {
+    type Target = CodexTokenUsageEvent;
+
+    fn deref(&self) -> &CodexTokenUsageEvent {
+        &self.event
+    }
+}
+
+pub(crate) fn rollout_events(dir: &Path) -> Vec<SessionEvent> {
     let diagnostics = Diagnostics::new("codex");
     let files = collect_codex_usage_files(dir, &diagnostics);
     let selection = [(dir, files.as_slice())];
@@ -91,12 +104,14 @@ pub(crate) fn rollout_events(dir: &Path) -> Vec<CodexTokenUsageEvent> {
     let mut events = Vec::new();
     for file in &files {
         parser::visit_codex_session_file_with_diagnostics(
-            dir,
             file,
             plan.fork_replay(file),
             |event| {
                 if !plan.is_replayed_compaction(file, event.response_id.as_deref()) {
-                    events.push(event);
+                    events.push(SessionEvent {
+                        session_id: parser::codex_session_id(dir, file),
+                        event,
+                    });
                 }
             },
             &diagnostics,

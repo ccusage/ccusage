@@ -4,9 +4,10 @@ use std::{
     collections::{HashMap, HashSet},
     ops::ControlFlow,
     path::Path,
-    sync::{Arc, LazyLock},
+    sync::LazyLock,
 };
 
+use compact_str::CompactString;
 use memchr::memmem::Finder;
 use serde_json::Value;
 
@@ -76,7 +77,7 @@ struct CodexPendingUsage {
 #[derive(Default)]
 struct CodexSessionUsageState {
     previous_totals: Option<CodexRawUsage>,
-    current_model: Option<Arc<str>>,
+    current_model: Option<CompactString>,
     current_model_is_fallback: bool,
     current_service_tier: Option<CodexServiceTier>,
     compaction_usage: CodexCompactionUsageState,
@@ -98,7 +99,6 @@ pub(super) struct CodexForkReplay<'a> {
 }
 
 pub(super) fn visit_codex_session_file_with_compaction_history(
-    sessions_dir: &Path,
     path: &Path,
     fork_replay: Option<CodexForkReplay<'_>>,
     compaction_history: Option<&mut HashMap<String, Option<TimestampMs>>>,
@@ -106,7 +106,6 @@ pub(super) fn visit_codex_session_file_with_compaction_history(
     diagnostics: &Diagnostics,
 ) {
     visit_codex_session_file_inner(
-        sessions_dir,
         path,
         fork_replay,
         compaction_history,
@@ -118,32 +117,21 @@ pub(super) fn visit_codex_session_file_with_compaction_history(
 
 #[cfg(test)]
 pub(super) fn visit_codex_session_file_with_diagnostics(
-    sessions_dir: &Path,
     path: &Path,
     fork_replay: Option<CodexForkReplay<'_>>,
     visit: impl FnMut(CodexTokenUsageEvent),
     diagnostics: &Diagnostics,
 ) {
-    visit_codex_session_file_inner(
-        sessions_dir,
-        path,
-        fork_replay,
-        None,
-        visit,
-        diagnostics,
-        None,
-    );
+    visit_codex_session_file_inner(path, fork_replay, None, visit, diagnostics, None);
 }
 
 pub(super) fn visit_codex_session_file_unless_fork(
-    sessions_dir: &Path,
     path: &Path,
     visit: impl FnMut(CodexTokenUsageEvent),
     diagnostics: &Diagnostics,
 ) -> Option<CodexSessionMetadata> {
     let mut metadata = CodexSessionMetadata::default();
     let opened = visit_codex_session_file_inner(
-        sessions_dir,
         path,
         None,
         None,
@@ -155,7 +143,6 @@ pub(super) fn visit_codex_session_file_unless_fork(
 }
 
 pub(super) fn visit_codex_session_file_with_metadata(
-    sessions_dir: &Path,
     path: &Path,
     fork_replay: Option<CodexForkReplay<'_>>,
     visit: impl FnMut(CodexTokenUsageEvent),
@@ -163,7 +150,6 @@ pub(super) fn visit_codex_session_file_with_metadata(
 ) -> Option<CodexSessionMetadata> {
     let mut metadata = CodexSessionMetadata::default();
     let opened = visit_codex_session_file_inner(
-        sessions_dir,
         path,
         fork_replay,
         None,
@@ -175,7 +161,6 @@ pub(super) fn visit_codex_session_file_with_metadata(
 }
 
 fn visit_codex_session_file_inner(
-    sessions_dir: &Path,
     path: &Path,
     fork_replay: Option<CodexForkReplay<'_>>,
     compaction_history: Option<&mut HashMap<String, Option<TimestampMs>>>,
@@ -183,7 +168,6 @@ fn visit_codex_session_file_inner(
     diagnostics: &Diagnostics,
     mut first_line: Option<(&mut CodexSessionMetadata, bool)>,
 ) -> bool {
-    let session_id: Arc<str> = codex_session_id(sessions_dir, path).into();
     let mut state = CodexSessionUsageState::default();
     if compaction_history.is_some() {
         state.compaction_usage.recorded_usage_timestamps = Some(HashMap::new());
@@ -271,17 +255,9 @@ fn visit_codex_session_file_inner(
                 {
                     missing_parent = Some(parent_id);
                 }
-                visit_codex_session_entry(
-                    &session_id,
-                    value,
-                    &mut state,
-                    &mut replay,
-                    &mut visit,
-                    &location,
-                );
+                visit_codex_session_entry(value, &mut state, &mut replay, &mut visit, &location);
             } else {
                 add_codex_exec_event(
-                    &session_id,
                     &value,
                     || {
                         *fallback_timestamp
@@ -355,7 +331,6 @@ fn is_session_usage_type(entry_type: Option<&str>, payload_type: Option<&str>) -
 }
 
 fn visit_codex_session_entry(
-    session_id: &Arc<str>,
     value: CodexLogEntry<'_>,
     state: &mut CodexSessionUsageState,
     replay: &mut CodexReplayFilter<'_>,
@@ -445,7 +420,6 @@ fn visit_codex_session_entry(
             &mut request_model_is_fallback,
         );
         let event = CodexTokenUsageEvent {
-            session_id: Arc::clone(session_id),
             response_id: Some(response_id.clone()),
             record_response_id: None,
             timestamp,
@@ -577,7 +551,6 @@ fn visit_codex_session_entry(
 
     replay.visit(
         CodexTokenUsageEvent {
-            session_id: Arc::clone(session_id),
             response_id: None,
             record_response_id,
             timestamp,

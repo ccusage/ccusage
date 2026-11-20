@@ -47,7 +47,6 @@ fn usage(input_tokens: u64) -> CodexRawUsage {
 
 fn event(input_tokens: u64) -> CodexTokenUsageEvent {
     CodexTokenUsageEvent {
-        session_id: CHILD.into(),
         response_id: None,
         record_response_id: None,
         timestamp: TimestampMs::from_millis(0),

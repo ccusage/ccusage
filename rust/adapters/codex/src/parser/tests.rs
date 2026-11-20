@@ -198,7 +198,7 @@ fn headless_decoder_keeps_the_last_duplicate_field() {
         let fixture = fs_fixture!({ "headless.jsonl": line });
         let events = crate::test_support::rollout_events(fixture.root());
         assert_eq!(events.len(), 1);
-        assert_eq!(&*events[0].model, "gpt-5-mini");
+        assert_eq!(events[0].model, "gpt-5-mini");
         assert_eq!(events[0].input_tokens, 10);
     }
 }
@@ -211,7 +211,7 @@ fn session_usage_ignores_unrelated_headless_fields() {
     let events = crate::test_support::rollout_events(fixture.root());
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].input_tokens, 10);
-    assert_eq!(&*events[0].model, "gpt-5");
+    assert_eq!(events[0].model, "gpt-5");
 }
 
 #[test]
@@ -310,7 +310,7 @@ fn counts_only_usage_records_linked_to_compaction_events() {
     assert_eq!(compacted_usages[0].cached_input_tokens, 280);
     assert_eq!(compacted_usages[0].output_tokens, 20);
     assert_eq!(compacted_usages[0].total_tokens, 320);
-    assert_eq!(&*compacted_usages[0].model, "gpt-reserve");
+    assert_eq!(compacted_usages[0].model.as_str(), "gpt-reserve");
     assert!(compacted_usages[0].is_fallback_model);
     assert_eq!(compacted_usages[1].input_tokens, 200);
 }
@@ -330,7 +330,7 @@ fn usage_record_models_do_not_replace_the_active_turn_model() {
             ].join("\n"),
         });
         let events = crate::test_support::rollout_events(fixture.root());
-        assert_eq!(&*events.last().unwrap().model, "gpt-5");
+        assert_eq!(events.last().unwrap().model.as_str(), "gpt-5");
         assert!(!events.last().unwrap().is_fallback_model);
     }
 }
@@ -455,7 +455,7 @@ fn loads_token_counts_whose_types_are_spelled_with_escapes() {
     let events = crate::test_support::rollout_events(fixture.root());
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].total_tokens, 120);
-    assert_eq!(&*events[0].model, "gpt-5-mini");
+    assert_eq!(events[0].model.as_str(), "gpt-5-mini");
 }
 
 #[test]
@@ -469,7 +469,7 @@ fn loads_token_counts_with_spaces_after_type_colons() {
     let events = crate::test_support::rollout_events(fixture.root());
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].total_tokens, 120);
-    assert_eq!(&*events[0].model, "gpt-5-mini");
+    assert_eq!(events[0].model.as_str(), "gpt-5-mini");
 }
 #[test]
 fn counts_compaction_usage_without_changing_cumulative_baseline() {
@@ -493,6 +493,6 @@ fn counts_compaction_usage_without_changing_cumulative_baseline() {
         [120, 330, 60]
     );
     assert_eq!(events[1].cached_input_tokens, 200);
-    assert_eq!(&*events[1].model, "gpt-5");
+    assert_eq!(events[1].model.as_str(), "gpt-5");
     assert!(events[1].is_fallback_model);
 }

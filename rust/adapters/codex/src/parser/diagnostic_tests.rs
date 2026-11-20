@@ -8,7 +8,7 @@ fn a_rollout_removed_after_discovery_is_noted_not_skipped() {
     let path = fixture.path("session.jsonl");
     let diagnostics = Diagnostics::new("codex");
 
-    visit_codex_session_file_with_diagnostics(fixture.root(), &path, None, |_| {}, &diagnostics);
+    visit_codex_session_file_with_diagnostics(&path, None, |_| {}, &diagnostics);
 
     assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 0);
     let debug = crate::cli::SharedArgs {
@@ -35,7 +35,7 @@ fn an_unreadable_sibling_encoding_of_a_removed_rollout_is_a_skip() {
     fs::set_permissions(&compressed, fs::Permissions::from_mode(0o000)).unwrap();
     let diagnostics = Diagnostics::new("codex");
 
-    visit_codex_session_file_with_diagnostics(fixture.root(), &path, None, |_| {}, &diagnostics);
+    visit_codex_session_file_with_diagnostics(&path, None, |_| {}, &diagnostics);
     fs::set_permissions(&compressed, fs::Permissions::from_mode(0o600)).unwrap();
 
     assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 1);
@@ -63,7 +63,6 @@ fn visit_rollout_cut_short(on_event: impl Fn(&Path)) -> (usize, Diagnostics) {
     let diagnostics = Diagnostics::new("codex");
     let mut events = 0;
     visit_codex_session_file_with_diagnostics(
-        fixture.root(),
         &path,
         None,
         |_| {
@@ -125,7 +124,6 @@ fn visit_torn_compressed_rollout(
     let diagnostics = Diagnostics::new("codex");
     let mut tokens = 0;
     visit_codex_session_file_with_diagnostics(
-        fixture.root(),
         &path,
         None,
         |event| {
@@ -196,13 +194,7 @@ fn malformed_usage_lines_skip_the_same_whether_or_not_a_marker_is_escaped() {
             .join("\n"),
         );
         let diagnostics = Diagnostics::new("codex");
-        visit_codex_session_file_with_diagnostics(
-            fixture.root(),
-            &path,
-            None,
-            |_| {},
-            &diagnostics,
-        );
+        visit_codex_session_file_with_diagnostics(&path, None, |_| {}, &diagnostics);
 
         assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1, "{malformed}");
     }
@@ -219,7 +211,6 @@ fn nonusage_and_suppressed_session_records_stay_quiet() {
     let diagnostics = Diagnostics::new("codex");
     let mut events = Vec::new();
     visit_codex_session_file_with_diagnostics(
-        fixture.root(),
         &path,
         None,
         |event| {
@@ -245,7 +236,6 @@ fn session_events(lines: &[&str]) -> (Vec<CodexTokenUsageEvent>, Diagnostics) {
     let diagnostics = Diagnostics::new("codex");
     let mut events = Vec::new();
     visit_codex_session_file_with_diagnostics(
-        fixture.root(),
         &path,
         None,
         |event| events.push(event),

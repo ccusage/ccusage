@@ -77,7 +77,7 @@ fn load_fork(parent: Option<&[String]>, child: &[String]) -> Vec<ForkLoad> {
             let child_session = child_name.trim_end_matches(".jsonl");
             let child_input = crate::test_support::rollout_events(fixture.root())
                 .into_iter()
-                .filter(|event| &*event.session_id == child_session)
+                .filter(|event| event.session_id == child_session)
                 .map(|event| event.input_tokens)
                 .collect();
             let sources = [CodexUsageSource::new(

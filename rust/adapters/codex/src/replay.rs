@@ -38,9 +38,8 @@ struct ParentUsage {
     compactions: HashMap<String, Option<TimestampMs>>,
 }
 
-pub(super) struct CodexReplayFile<'a> {
+pub(super) struct CodexReplayFile {
     pub(super) path: PathBuf,
-    pub(super) sessions_dir: &'a Path,
     pub(super) metadata: CodexSessionMetadata,
 }
 
@@ -85,7 +84,7 @@ impl CodexReplayPlan {
     }
 
     fn for_metadata<'a>(
-        files: Vec<CodexReplayFile<'a>>,
+        files: Vec<CodexReplayFile>,
         available: impl IntoIterator<Item = (&'a Path, &'a [PathBuf])>,
         single_thread: bool,
         diagnostics: &Diagnostics,
@@ -129,7 +128,7 @@ impl CodexReplayPlan {
     }
 
     pub(super) fn new(
-        files: Vec<CodexReplayFile<'_>>,
+        files: Vec<CodexReplayFile>,
         selection: Option<(&HashSet<PathBuf>, &HashSet<String>)>,
         single_thread: bool,
         diagnostics: &Diagnostics,
@@ -182,7 +181,7 @@ impl CodexReplayPlan {
         let parents = files
             .iter()
             .filter(|file| parent_paths.contains(&file.path))
-            .map(|file| (file.path.clone(), file.sessions_dir))
+            .map(|file| file.path.clone())
             .collect::<Vec<_>>();
         Self {
             usage_by_parent: read_parent_usage(&parents, single_thread, diagnostics),
@@ -270,7 +269,7 @@ fn collect_replay_files<'a>(
 
 pub(super) type ReplayProbe<'a> = (PathBuf, &'a Path, Option<CodexSessionMetadata>);
 
-fn lineage_edge(file: &CodexReplayFile<'_>) -> Option<(String, String)> {
+fn lineage_edge(file: &CodexReplayFile) -> Option<(String, String)> {
     Some((
         file.metadata.session_id.clone()?,
         file.metadata.lineage_parent_id.clone()?,
@@ -292,7 +291,7 @@ fn read_replay_files<'a>(
     single_thread: bool,
     diagnostics: Option<&Diagnostics>,
     failed_parent_ids: &mut HashSet<String>,
-) -> Vec<CodexReplayFile<'a>> {
+) -> Vec<CodexReplayFile> {
     let read = |(path, sessions_dir): &(PathBuf, &'a Path)| {
         (
             path.clone(),
@@ -312,10 +311,10 @@ fn read_replay_files<'a>(
 fn decode_probes<'a>(
     probes: Vec<ReplayProbe<'a>>,
     failed_parent_ids: &mut HashSet<String>,
-) -> Vec<CodexReplayFile<'a>> {
+) -> Vec<CodexReplayFile> {
     probes
         .into_iter()
-        .map(|(path, sessions_dir, metadata)| {
+        .map(|(path, _, metadata)| {
             if metadata.is_none()
                 && let Some(name) = path.file_name().and_then(|name| name.to_str())
             {
@@ -325,7 +324,6 @@ fn decode_probes<'a>(
             }
             CodexReplayFile {
                 path,
-                sessions_dir,
                 metadata: metadata.unwrap_or_default(),
             }
         })
@@ -333,35 +331,26 @@ fn decode_probes<'a>(
 }
 
 fn read_parent_usage(
-    parents: &[(PathBuf, &Path)],
+    parents: &[PathBuf],
     single_thread: bool,
     diagnostics: &Diagnostics,
 ) -> HashMap<PathBuf, ParentUsage> {
-    let read = |(path, sessions_dir): &(PathBuf, &Path)| {
-        read_parent_usage_file(path, sessions_dir, diagnostics)
-    };
+    let read = |path: &PathBuf| read_parent_usage_file(path, diagnostics);
     ccusage_adapter_common::map_parallel(
         parents,
         single_thread,
-        ccusage_adapter_common::Split::BySize(|(path, _)| path.as_path()),
+        ccusage_adapter_common::Split::BySize(PathBuf::as_path),
         read,
     )
     .into_iter()
     .collect()
 }
 
-fn read_parent_usage_file(
-    path: &Path,
-    sessions_dir: &Path,
-    diagnostics: &Diagnostics,
-) -> (PathBuf, ParentUsage) {
-    (
-        path.to_path_buf(),
-        read_usage_events(sessions_dir, path, diagnostics),
-    )
+fn read_parent_usage_file(path: &Path, diagnostics: &Diagnostics) -> (PathBuf, ParentUsage) {
+    (path.to_path_buf(), read_usage_events(path, diagnostics))
 }
 
-fn read_usage_events(sessions_dir: &Path, path: &Path, diagnostics: &Diagnostics) -> ParentUsage {
+fn read_usage_events(path: &Path, diagnostics: &Diagnostics) -> ParentUsage {
     let mut stream = ParentUsage {
         timestamps: Vec::new(),
         usage: Vec::new(),
@@ -373,7 +362,6 @@ fn read_usage_events(sessions_dir: &Path, path: &Path, diagnostics: &Diagnostics
         compactions,
     } = &mut stream;
     visit_codex_session_file_with_compaction_history(
-        sessions_dir,
         path,
         None,
         Some(compactions),
@@ -645,7 +633,6 @@ mod tests {
                 );
                 let mut tokens = 0;
                 crate::parser::visit_codex_session_file_with_diagnostics(
-                    fixture.root(),
                     &selected[0],
                     plan.fork_replay(&selected[0]),
                     |event| tokens += event.total_tokens,

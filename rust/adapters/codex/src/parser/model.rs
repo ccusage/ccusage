@@ -1,4 +1,6 @@
-use std::{borrow::Cow, sync::Arc};
+use std::borrow::Cow;
+
+use compact_str::CompactString;
 
 use crate::{
     TimestampMs,
@@ -32,9 +34,9 @@ impl CodexAutoReviewFallback {
 pub(super) fn resolve_codex_usage_model(
     parsed_model: Option<String>,
     timestamp: TimestampMs,
-    current_model: &mut Option<Arc<str>>,
+    current_model: &mut Option<CompactString>,
     current_model_is_fallback: &mut bool,
-) -> (Arc<str>, bool) {
+) -> (CompactString, bool) {
     if let Some(model) = parsed_model {
         *current_model = Some(model.into());
         *current_model_is_fallback = false;
@@ -45,7 +47,7 @@ pub(super) fn resolve_codex_usage_model(
     });
     match codex_log_model_fallback(model, timestamp) {
         Some(fallback) => (fallback.into(), true),
-        None => (Arc::clone(model), *current_model_is_fallback),
+        None => (model.clone(), *current_model_is_fallback),
     }
 }
 

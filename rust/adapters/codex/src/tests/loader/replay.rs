@@ -758,7 +758,7 @@ fn counts_first_response_when_missing_parent_history_begins_after_fork() {
     let events = crate::test_support::rollout_events(fixture.root());
 
     assert_eq!(events.len(), 1);
-    assert_eq!(&*events[0].model, "gpt-5");
+    assert_eq!(events[0].model.as_str(), "gpt-5");
     assert_eq!(events[0].input_tokens, 1_000);
     assert_eq!(events[0].cached_input_tokens, 400);
     assert_eq!(events[0].output_tokens, 10);

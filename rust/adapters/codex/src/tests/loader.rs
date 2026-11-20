@@ -51,7 +51,7 @@ fn replay_token_count(timestamp: &str, input_tokens: u64) -> String {
 fn replay_input_tokens_by_session(dir: &Path) -> Vec<(String, u64)> {
     crate::test_support::rollout_events(dir)
         .iter()
-        .map(|event| (event.session_id.to_string(), event.input_tokens))
+        .map(|event| (event.session_id.clone(), event.input_tokens))
         .collect()
 }
 

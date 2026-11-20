@@ -379,7 +379,6 @@ fn parent_replay_records_skips_once_however_often_the_parent_is_read() {
     assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
     for file in &files {
         crate::parser::visit_codex_session_file_with_diagnostics(
-            &sessions,
             file,
             plan.fork_replay(file),
             |_| {},

@@ -161,7 +161,7 @@ fn counts_spawned_responses_once_across_duplicate_snapshot_controls() {
             .into_iter()
             .map(|event| {
                 (
-                    event.session_id.to_string(),
+                    event.session_id.clone(),
                     event.input_tokens,
                     event.total_tokens,
                 )
@@ -348,7 +348,7 @@ fn keeps_child_usage_matching_parent_event_after_fork() {
         let events = crate::test_support::rollout_events(fixture.root());
         let child_events = events
             .iter()
-            .filter(|event| &*event.session_id == "child")
+            .filter(|event| event.session_id == "child")
             .collect::<Vec<_>>();
 
         assert_eq!(child_events.len(), 1, "single_thread={single_thread}");
@@ -410,7 +410,7 @@ fn keeps_usage_of_a_session_that_lists_itself_as_its_own_parent() {
         assert_eq!(
             events
                 .iter()
-                .map(|event| (event.session_id.to_string(), event.input_tokens))
+                .map(|event| (event.session_id.clone(), event.input_tokens))
                 .collect::<Vec<_>>(),
             [("self".to_string(), 100), ("self".to_string(), 200)],
             "single_thread={single_thread}"
@@ -519,7 +519,7 @@ fn skips_nested_replays_against_immutable_parent_streams() {
     assert_eq!(
         events
             .iter()
-            .map(|event| (&*event.session_id, event.input_tokens))
+            .map(|event| (event.session_id.as_str(), event.input_tokens))
             .collect::<Vec<_>>(),
         [("01-root", 100), ("02-parent", 50), ("03-child", 25)]
     );

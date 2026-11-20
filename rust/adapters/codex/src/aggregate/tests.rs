@@ -27,7 +27,6 @@ fn prices_the_configured_alias_target_when_both_models_have_rates() {
             }"#,
     );
     let mut event = CodexTokenUsageEvent {
-        session_id: "session".into(),
         response_id: None,
         record_response_id: None,
         timestamp: parse_ts_timestamp("2026-09-01T00:00:00Z").unwrap(),
@@ -43,7 +42,7 @@ fn prices_the_configured_alias_target_when_both_models_have_rates() {
         service_tier: None,
     };
     let seen = CodexDedupe::new(1, Some(&pricing));
-    let mut provenance = CodexEventProvenance::new(0);
+    let mut provenance = CodexEventProvenance::new(0, "session".into());
     seen.record(&event, &mut provenance).unwrap();
     event.model = "alias-model".into();
     seen.record(&event, &mut provenance).unwrap();
@@ -72,7 +71,6 @@ fn tier_split_uses_the_supplied_pricing_entry_instead_of_embedded_rates() {
     let mut pricing = PricingMap::default();
     pricing.load_json(r#"{"gpt-5.5":{"input_cost_per_token":0.000001,"output_cost_per_token":0.000002,"input_cost_per_token_above_200k_tokens":0.000003}}"#);
     let event = CodexTokenUsageEvent {
-        session_id: "session".into(),
         response_id: None,
         record_response_id: None,
         timestamp: parse_ts_timestamp("2026-09-01T00:00:00Z").unwrap(),
@@ -88,7 +86,7 @@ fn tier_split_uses_the_supplied_pricing_entry_instead_of_embedded_rates() {
         service_tier: None,
     };
     let seen = CodexDedupe::new(1, Some(&pricing));
-    seen.record(&event, &mut CodexEventProvenance::new(0))
+    seen.record(&event, &mut CodexEventProvenance::new(0, "session".into()))
         .unwrap();
     let groups = seen
         .fold(&SharedArgs::default(), AgentReportKind::Session)
@@ -181,7 +179,6 @@ fn saturates_each_usage_bucket_component() {
 fn usage_attribution_uses_file_order_when_workers_finish_in_reverse() {
     ccusage_test_support::install_pricing_snapshots();
     let first = CodexTokenUsageEvent {
-        session_id: "session".into(),
         response_id: None,
         record_response_id: None,
         timestamp: crate::parse_ts_timestamp("2026-09-01T00:00:01Z").unwrap(),
@@ -207,8 +204,11 @@ fn usage_attribution_uses_file_order_when_workers_finish_in_reverse() {
     let pricing = PricingMap::load_embedded();
     let seen = CodexDedupe::new(2, Some(&pricing));
     for (event, file_index) in [(&copied, 1), (&first, 0)] {
-        seen.record(event, &mut CodexEventProvenance::new(file_index))
-            .unwrap();
+        seen.record(
+            event,
+            &mut CodexEventProvenance::new(file_index, "session".into()),
+        )
+        .unwrap();
     }
     let groups = seen.fold(&shared, AgentReportKind::Session).unwrap();
 
@@ -227,7 +227,6 @@ fn usage_attribution_uses_file_order_when_workers_finish_in_reverse() {
 fn compaction_attribution_uses_file_order_when_workers_finish_in_reverse() {
     ccusage_test_support::install_pricing_snapshots();
     let first = CodexTokenUsageEvent {
-        session_id: "first-session".into(),
         response_id: Some("response-1".into()),
         record_response_id: None,
         timestamp: crate::parse_ts_timestamp("2026-09-01T00:00:01Z").unwrap(),
@@ -243,7 +242,6 @@ fn compaction_attribution_uses_file_order_when_workers_finish_in_reverse() {
         service_tier: Some(CodexServiceTier::Standard),
     };
     let mut copied = first.clone();
-    copied.session_id = "copied-session".into();
     copied.timestamp = crate::parse_ts_timestamp("2026-09-02T00:00:01Z").unwrap();
     copied.last_activity = "2026-09-02T00:00:01Z".into();
     copied.model = "gpt-5-mini".into();
@@ -256,9 +254,14 @@ fn compaction_attribution_uses_file_order_when_workers_finish_in_reverse() {
     };
     let pricing = PricingMap::load_embedded();
     let seen = CodexDedupe::new(2, Some(&pricing));
-    for (event, file_index) in [(&copied, 1), (&first, 0)] {
-        seen.record(event, &mut CodexEventProvenance::new(file_index))
-            .unwrap();
+    for (event, file_index, session) in
+        [(&copied, 1, "copied-session"), (&first, 0, "first-session")]
+    {
+        seen.record(
+            event,
+            &mut CodexEventProvenance::new(file_index, session.into()),
+        )
+        .unwrap();
     }
     let groups = seen.fold(&shared, AgentReportKind::Session).unwrap();
 
@@ -1954,7 +1957,6 @@ fn credits_a_replaced_stand_in_to_the_recording_session() {
 #[test]
 fn replaces_the_stand_in_attribution_regardless_of_arrival_order() {
     let stand_in = CodexTokenUsageEvent {
-        session_id: "session-b".into(),
         response_id: None,
         record_response_id: None,
         timestamp: parse_ts_timestamp("2026-11-01T09:00:00Z").unwrap(),
@@ -1970,7 +1972,6 @@ fn replaces_the_stand_in_attribution_regardless_of_arrival_order() {
         service_tier: Some(CodexServiceTier::Fast),
     };
     let recorded = CodexTokenUsageEvent {
-        session_id: "session-a".into(),
         record_response_id: Some("resp-a".into()),
         is_fallback_model: false,
         service_tier: Some(CodexServiceTier::Flex),
@@ -1983,7 +1984,10 @@ fn replaces_the_stand_in_attribution_regardless_of_arrival_order() {
         for file_index in order {
             seen.record(
                 &events[file_index],
-                &mut CodexEventProvenance::new(file_index),
+                &mut CodexEventProvenance::new(
+                    file_index,
+                    ["session-b", "session-a"][file_index].into(),
+                ),
             )
             .unwrap();
         }

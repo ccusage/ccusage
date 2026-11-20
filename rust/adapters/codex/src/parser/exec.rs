@@ -8,10 +8,9 @@ use super::{
 };
 
 pub(super) fn add_codex_exec_event(
-    session_id: &std::sync::Arc<str>,
     value: &CodexLogEntry<'_>,
     fallback_timestamp: impl FnOnce() -> TimestampMs,
-    current_model: &mut Option<std::sync::Arc<str>>,
+    current_model: &mut Option<compact_str::CompactString>,
     current_model_is_fallback: &mut bool,
     visit: &mut impl FnMut(CodexTokenUsageEvent),
     location: &RecordLocation<'_>,
@@ -26,7 +25,6 @@ pub(super) fn add_codex_exec_event(
     };
     let parsed_model = codex_model_from_result(value);
     visit_codex_exec_usage_event(
-        session_id,
         raw_usage,
         parsed_model,
         codex_timestamp_from_result(value).unwrap_or_else(fallback_timestamp),
@@ -37,11 +35,10 @@ pub(super) fn add_codex_exec_event(
 }
 
 fn visit_codex_exec_usage_event(
-    session_id: &std::sync::Arc<str>,
     raw_usage: CodexRawUsage,
     parsed_model: Option<String>,
     timestamp: TimestampMs,
-    current_model: &mut Option<std::sync::Arc<str>>,
+    current_model: &mut Option<compact_str::CompactString>,
     current_model_is_fallback: &mut bool,
     visit: &mut impl FnMut(CodexTokenUsageEvent),
 ) {
@@ -53,7 +50,6 @@ fn visit_codex_exec_usage_event(
         current_model_is_fallback,
     );
     visit(CodexTokenUsageEvent {
-        session_id: std::sync::Arc::clone(session_id),
         response_id: None,
         record_response_id: None,
         timestamp,
