@@ -509,23 +509,3 @@ fn bounded_parent_usage_failures_warn_once_without_changing_replay() {
         assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
     }
 }
-
-fn session_input_tokens(
-    sources: &[CodexUsageSource],
-    shared: &SharedArgs,
-    diagnostics: &Diagnostics,
-) -> (Vec<(String, u64)>, bool) {
-    let (groups, detected) = crate::aggregate::load_groups_from_sources_with_diagnostics(
-        sources,
-        shared,
-        AgentReportKind::Session,
-        Some(&crate::PricingMap::load_embedded()),
-        diagnostics,
-    )
-    .unwrap();
-    let sessions = groups
-        .into_iter()
-        .map(|(session, group)| (session, group.input_tokens))
-        .collect();
-    (sessions, detected)
-}
