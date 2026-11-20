@@ -46,13 +46,7 @@ fn read_usage_file(
     mode: CostMode,
     pricing: Option<&PricingMap>,
 ) -> LoadedFile {
-    read_usage_file_with_diagnostics(
-        path,
-        tz,
-        mode,
-        pricing,
-        &Diagnostics::without_clock("claude"),
-    )
+    read_usage_file_with_diagnostics(path, tz, mode, pricing, &Diagnostics::new("claude"))
 }
 
 #[test]
@@ -79,7 +73,7 @@ fn windowed_calculate_mode_prices_entries_with_shared_display_mode() {
         let loaded = super::load_windowed_entries(
             &shared,
             None,
-            &Diagnostics::without_clock("claude"),
+            &Diagnostics::new("claude"),
             CostMode::Calculate,
         )
         .unwrap();
@@ -236,7 +230,7 @@ fn null_contract_rejections_claude_code_writes_stay_quiet() {
         ]
         .join("\n"),
     });
-    let diagnostics = ccusage_core::Diagnostics::without_clock("claude");
+    let diagnostics = ccusage_core::Diagnostics::new("claude");
 
     let loaded = read_usage_file_with_diagnostics(
         &fixture.path("projects/project-a/session-a.jsonl"),
@@ -267,7 +261,7 @@ fn limits_usage_file_discovery_to_requested_project() {
     let files = super::paths::usage_files(
         &[fixture.root().to_path_buf()],
         Some("project-a"),
-        &ccusage_core::Diagnostics::without_clock("claude"),
+        &ccusage_core::Diagnostics::new("claude"),
     );
 
     assert_eq!(files.len(), 1);
@@ -284,7 +278,7 @@ fn filters_non_segment_projects_before_reading_files() {
     let files = super::paths::usage_files(
         &[fixture.root().to_path_buf()],
         Some("project-a/session-a"),
-        &ccusage_core::Diagnostics::without_clock("claude"),
+        &ccusage_core::Diagnostics::new("claude"),
     );
 
     assert!(files.is_empty());

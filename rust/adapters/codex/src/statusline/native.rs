@@ -55,8 +55,7 @@ impl NativeUsageReader {
                     thread_id
                 };
                 let now = args.shared.clock.now();
-                let diagnostics =
-                    Diagnostics::for_report("codex", ccusage_core::cli::ReportClock::Fixed(now));
+                let diagnostics = Diagnostics::new("codex");
                 let timezone = resolve_tz(args.shared.timezone.as_ref());
                 let today = date_at(now.into(), &timezone).into();
                 let result = refresh(
@@ -265,7 +264,7 @@ mod tests {
 
     #[test]
     fn refresh_failure_is_reported_once_until_the_warning_changes() {
-        let diagnostics = Diagnostics::without_clock("codex");
+        let diagnostics = Diagnostics::new("codex");
         let shared = SharedArgs {
             debug: true,
             ..Default::default()

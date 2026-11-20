@@ -21,7 +21,7 @@ fn load_linked(
         &directories,
         shared,
         report_kind,
-        &Diagnostics::without_clock("opencode"),
+        &Diagnostics::new("opencode"),
     )
 }
 
@@ -50,7 +50,7 @@ fn reports_failed_schema_probes_without_database_details() {
     connection
         .execute("CREATE TABLE session_message (id TEXT, session_id TEXT, seq INTEGER)")
         .unwrap();
-    let diagnostics = Diagnostics::without_clock("opencode");
+    let diagnostics = Diagnostics::new("opencode");
     assert!(super::schema::table_exists(
         &connection,
         super::Table::SessionMessage,
@@ -96,7 +96,7 @@ fn an_unreadable_message_directory_is_reported() {
         mode: CostMode::Display,
         ..Default::default()
     };
-    let diagnostics = Diagnostics::without_clock("opencode");
+    let diagnostics = Diagnostics::new("opencode");
     load_directories(
         &[fixture.root().to_path_buf()],
         &shared,
@@ -129,7 +129,7 @@ fn a_data_directory_that_cannot_be_listed_for_databases_is_reported() {
         mode: CostMode::Display,
         ..Default::default()
     };
-    let diagnostics = Diagnostics::without_clock("opencode");
+    let diagnostics = Diagnostics::new("opencode");
     load_directories(
         std::slice::from_ref(&data),
         &shared,
@@ -161,7 +161,7 @@ fn specialized_diagnostics_keep_healthy_database_rows() {
         debug: true,
         ..Default::default()
     };
-    let diagnostics = ccusage_core::Diagnostics::without_clock("opencode");
+    let diagnostics = ccusage_core::Diagnostics::new("opencode");
     let loaded = load_directories(
         &[fixture.root().to_path_buf()],
         &shared,
@@ -201,7 +201,7 @@ fn names_a_session_message_table_without_usage_columns_an_unsupported_schema() {
         debug: true,
         ..Default::default()
     };
-    let diagnostics = ccusage_core::Diagnostics::without_clock("opencode");
+    let diagnostics = ccusage_core::Diagnostics::new("opencode");
 
     let loaded = load_directories(
         &[fixture.root().to_path_buf()],
@@ -238,7 +238,7 @@ fn specialized_diagnostics_leave_optional_sources_and_nonusage_quiet() {
         debug: true,
         ..Default::default()
     };
-    let diagnostics = ccusage_core::Diagnostics::without_clock("opencode");
+    let diagnostics = ccusage_core::Diagnostics::new("opencode");
     let loaded = load_directories(
         &[fixture.root().to_path_buf()],
         &shared,
@@ -260,7 +260,7 @@ fn reports_aggregate_schema_read_failures() {
     let path = fixture.path("opencode.db");
     create_db_session_aggregate_table(&path, "session_v2");
     let connection = sqlite::open(&path).unwrap();
-    let diagnostics = Diagnostics::without_clock("opencode");
+    let diagnostics = Diagnostics::new("opencode");
     let schema = TableSchema::probe(&connection, Table::SessionV2, &path, &diagnostics).unwrap();
     connection.execute("DROP TABLE session_v2").unwrap();
     let shared = SharedArgs::default();
@@ -338,7 +338,7 @@ fn skips_usage_without_a_creation_time_in_every_format() {
             until: until.map(|date| date.parse().unwrap()),
             ..SharedArgs::default()
         };
-        let diagnostics = Diagnostics::without_clock("opencode");
+        let diagnostics = Diagnostics::new("opencode");
 
         let entries = load_directories(
             &[fixture.root().to_path_buf()],
@@ -379,7 +379,7 @@ fn untimed_rows_in_two_tables_count_as_one_database_input() {
         mode: CostMode::Display,
         ..SharedArgs::default()
     };
-    let diagnostics = Diagnostics::without_clock("opencode");
+    let diagnostics = Diagnostics::new("opencode");
     assert!(
         load_directories(
             &[fixture.root().to_path_buf()],
@@ -433,7 +433,7 @@ fn specialized_diagnostics_distinguish_v2_usage_from_suppressed_rows() {
         debug: true,
         ..Default::default()
     };
-    let diagnostics = ccusage_core::Diagnostics::without_clock("opencode");
+    let diagnostics = ccusage_core::Diagnostics::new("opencode");
     let loaded = load_directories(
         &[fixture.root().to_path_buf()],
         &shared,
@@ -2388,7 +2388,7 @@ fn opencode_indexed_tables_keep_rows_on_the_local_day_bounds() {
             &sqlite::open(&db_path).unwrap(),
             schema_table,
             &db_path,
-            &ccusage_core::Diagnostics::without_clock("opencode"),
+            &ccusage_core::Diagnostics::new("opencode"),
         )
         .unwrap();
         assert!(schema.indexed_time, "{table:?}");

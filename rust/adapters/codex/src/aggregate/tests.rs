@@ -466,7 +466,7 @@ fn skips_historical_files_before_parsing_but_keeps_long_running_sessions() {
     };
 
     let load = |shared: &SharedArgs| {
-        let diagnostics = Diagnostics::without_clock("codex");
+        let diagnostics = Diagnostics::new("codex");
         let (groups, _) = load_groups_from_sources_with_diagnostics(
             &[directory_source(&fixture.path("sessions"))],
             shared,
@@ -1610,7 +1610,7 @@ fn credits_a_replaced_stand_in_to_the_recording_session() {
                 &shared,
                 AgentReportKind::Session,
                 None,
-                &Diagnostics::without_clock("codex"),
+                &Diagnostics::new("codex"),
             )
             .unwrap();
             assert_eq!(

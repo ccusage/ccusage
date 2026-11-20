@@ -103,7 +103,7 @@ mod tests {
         });
         Environment::with_var(DSH_HOME_ENV, fixture.root()).run(|| {
             assert_eq!(
-                discover_session_files(&Diagnostics::without_clock("dsh")).unwrap(),
+                discover_session_files(&Diagnostics::new("dsh")).unwrap(),
                 vec![
                     fixture.path("sessions/--home-u-proj--/s1/session.v4.jsonl.zstd"),
                     fixture.path("sessions/--home-u-proj--/s2/session.jsonl"),
@@ -124,7 +124,7 @@ mod tests {
         );
         Environment::with_var(DSH_HOME_ENV, &value).run(|| {
             assert_eq!(
-                discover_session_files(&Diagnostics::without_clock("dsh")).unwrap(),
+                discover_session_files(&Diagnostics::new("dsh")).unwrap(),
                 vec![
                     first.path("sessions/p/a/session.v4.jsonl"),
                     second.path("sessions/p/b/session.v4.jsonl"),

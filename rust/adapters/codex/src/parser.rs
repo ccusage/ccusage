@@ -228,7 +228,7 @@ fn visit_codex_session_file_inner(
                         error,
                         path,
                         current.number(),
-                        current.unterminated(),
+                        current.ending(),
                         diagnostics,
                         Some(is_usage_value),
                     );

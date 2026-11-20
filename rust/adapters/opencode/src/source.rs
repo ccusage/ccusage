@@ -54,7 +54,7 @@ fn load_rows(
     request: &LoadRequest<'_>,
     counted: impl FnOnce() -> Result<ClaudeCounted>,
 ) -> Result<LoadedRows> {
-    let diagnostics = Diagnostics::for_report("opencode", request.shared.clock);
+    let diagnostics = Diagnostics::new("opencode");
     let linked = load_entries_with_native_sessions_with_diagnostics(
         request.shared,
         request.kind.report_kind(),

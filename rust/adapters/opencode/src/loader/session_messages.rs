@@ -112,7 +112,7 @@ pub(super) fn load_session_message_rows(
                         error,
                         context.db_path,
                         row,
-                        false,
+                        jsonl::Ending::COMPLETE,
                         &row_diagnostics(statement, &diagnostics),
                         Some(|_: &serde_json::Value| true),
                     );

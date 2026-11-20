@@ -421,7 +421,7 @@ mod tests {
             CostMode::Auto,
             PriceTable::Auto(&pricing),
             &jiff::tz::TimeZone::UTC,
-            &Diagnostics::without_clock("cline"),
+            &Diagnostics::new("cline"),
         );
 
         assert_eq!(entries.len(), 1);
@@ -465,7 +465,7 @@ mod tests {
             CostMode::Auto,
             PriceTable::Auto(&ccusage_core::PricingMap::load_embedded()),
             &jiff::tz::TimeZone::UTC,
-            &Diagnostics::without_clock("cline"),
+            &Diagnostics::new("cline"),
         );
 
         assert!(entries.is_empty());
@@ -561,7 +561,7 @@ mod tests {
             CostMode::Auto,
             PriceTable::Auto(&ccusage_core::PricingMap::load_embedded()),
             &jiff::tz::TimeZone::UTC,
-            &Diagnostics::without_clock("cline"),
+            &Diagnostics::new("cline"),
         );
 
         assert_eq!(entries.len(), 1);
@@ -643,7 +643,7 @@ mod tests {
             CostMode::Auto,
             PriceTable::Auto(&ccusage_core::PricingMap::load_embedded()),
             &jiff::tz::TimeZone::UTC,
-            &Diagnostics::without_clock("cline"),
+            &Diagnostics::new("cline"),
         );
 
         assert_eq!(entries.len(), 1);
@@ -717,7 +717,7 @@ mod tests {
             CostMode::Auto,
             PriceTable::Auto(&ccusage_core::PricingMap::load_embedded()),
             &jiff::tz::TimeZone::UTC,
-            &Diagnostics::without_clock("cline"),
+            &Diagnostics::new("cline"),
         );
 
         assert_eq!(entries.len(), 1);
@@ -761,7 +761,7 @@ mod tests {
             CostMode::Auto,
             PriceTable::Auto(&ccusage_core::PricingMap::load_embedded()),
             &jiff::tz::TimeZone::UTC,
-            &Diagnostics::without_clock("cline"),
+            &Diagnostics::new("cline"),
         );
 
         assert!(entries.is_empty());
@@ -798,7 +798,7 @@ mod tests {
             CostMode::Auto,
             PriceTable::Auto(&pricing),
             &jiff::tz::TimeZone::UTC,
-            &Diagnostics::without_clock("cline"),
+            &Diagnostics::new("cline"),
         );
 
         assert_eq!(entries.len(), 2);
@@ -839,7 +839,7 @@ mod tests {
             CostMode::Auto,
             PriceTable::Auto(&pricing),
             &jiff::tz::TimeZone::UTC,
-            &Diagnostics::without_clock("cline"),
+            &Diagnostics::new("cline"),
         );
         let display = parse_cli_messages(
             &root,
@@ -847,7 +847,7 @@ mod tests {
             CostMode::Display,
             PriceTable::Display,
             &jiff::tz::TimeZone::UTC,
-            &Diagnostics::without_clock("cline"),
+            &Diagnostics::new("cline"),
         );
         let calculate = parse_cli_messages(
             &root,
@@ -855,7 +855,7 @@ mod tests {
             CostMode::Calculate,
             PriceTable::Calculate(&pricing),
             &jiff::tz::TimeZone::UTC,
-            &Diagnostics::without_clock("cline"),
+            &Diagnostics::new("cline"),
         );
 
         assert_eq!(auto[0].cost, 0.0);
@@ -886,7 +886,7 @@ mod tests {
             CostMode::Auto,
             PriceTable::Auto(&pricing),
             &jiff::tz::TimeZone::UTC,
-            &Diagnostics::without_clock("cline"),
+            &Diagnostics::new("cline"),
         );
         let display = parse_cli_messages(
             &root,
@@ -894,7 +894,7 @@ mod tests {
             CostMode::Display,
             PriceTable::Display,
             &jiff::tz::TimeZone::UTC,
-            &Diagnostics::without_clock("cline"),
+            &Diagnostics::new("cline"),
         );
         let calculate = parse_cli_messages(
             &root,
@@ -902,7 +902,7 @@ mod tests {
             CostMode::Calculate,
             PriceTable::Calculate(&pricing),
             &jiff::tz::TimeZone::UTC,
-            &Diagnostics::without_clock("cline"),
+            &Diagnostics::new("cline"),
         );
 
         assert!(auto[0].cost > 0.0);
@@ -931,7 +931,7 @@ mod tests {
             CostMode::Auto,
             PriceTable::Auto(&pricing),
             &jiff::tz::TimeZone::UTC,
-            &Diagnostics::without_clock("cline"),
+            &Diagnostics::new("cline"),
         );
 
         assert_eq!(entries[0].recorded_cost, None);
@@ -969,7 +969,7 @@ mod tests {
             CostMode::Auto,
             PriceTable::Auto(&ccusage_core::PricingMap::load_embedded()),
             &jiff::tz::TimeZone::UTC,
-            &Diagnostics::without_clock("cline"),
+            &Diagnostics::new("cline"),
         );
 
         assert_eq!(entries.len(), 1);
@@ -989,7 +989,7 @@ mod tests {
             CostMode::Auto,
             PriceTable::Auto(&pricing),
             &jiff::tz::TimeZone::UTC,
-            &Diagnostics::without_clock("cline"),
+            &Diagnostics::new("cline"),
         );
 
         assert!(entries.is_empty());

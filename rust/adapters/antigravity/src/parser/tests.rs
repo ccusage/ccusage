@@ -27,7 +27,7 @@ fn merge_prefers_resolved_then_placeholder_then_default_model() {
                 provider: None,
                 timestamp: Some((TimestampMs::UNIX_EPOCH, 3)),
                 trajectory_timestamp: None,
-                diagnostics: &ccusage_core::Diagnostics::without_clock("antigravity"),
+                diagnostics: &ccusage_core::Diagnostics::new("antigravity"),
                 record: (std::path::Path::new("fixture.db"), 1),
                 session_id: "session",
                 fallback_identities: &[],

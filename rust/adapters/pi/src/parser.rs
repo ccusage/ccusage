@@ -491,7 +491,7 @@ mod pricing_identity_tests {
             CostMode::Calculate,
             PriceTable::Calculate(&pricing),
             "pi",
-            &Diagnostics::without_clock("pi"),
+            &Diagnostics::new("pi"),
         )
         .unwrap()
         .entries;

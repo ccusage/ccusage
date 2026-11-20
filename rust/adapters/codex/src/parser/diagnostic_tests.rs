@@ -1,11 +1,12 @@
 use super::*;
 use ccusage_test_support::Fixture;
+use std::path::PathBuf;
 
 #[test]
 fn a_rollout_removed_after_discovery_is_noted_not_skipped() {
     let fixture = Fixture::new();
     let path = fixture.path("session.jsonl");
-    let diagnostics = Diagnostics::without_clock("codex");
+    let diagnostics = Diagnostics::new("codex");
 
     visit_codex_session_file_with_diagnostics(fixture.root(), &path, None, |_| {}, &diagnostics);
 
@@ -32,7 +33,7 @@ fn an_unreadable_sibling_encoding_of_a_removed_rollout_is_a_skip() {
     let path = fixture.path("session.jsonl");
     let compressed = fixture.write_file("session.jsonl.zst", "rollout");
     fs::set_permissions(&compressed, fs::Permissions::from_mode(0o000)).unwrap();
-    let diagnostics = Diagnostics::without_clock("codex");
+    let diagnostics = Diagnostics::new("codex");
 
     visit_codex_session_file_with_diagnostics(fixture.root(), &path, None, |_| {}, &diagnostics);
     fs::set_permissions(&compressed, fs::Permissions::from_mode(0o600)).unwrap();
@@ -50,20 +51,133 @@ fn an_unreadable_sibling_encoding_of_a_removed_rollout_is_a_skip() {
     );
 }
 
-#[test]
-fn a_rollout_line_still_being_written_is_not_a_skip() {
-    let fixture = Fixture::new();
-    let path = fixture.write_file(
-        "session.jsonl",
-        r#"{"type":"event_msg","payload":{"type":"token_count","info":{"total_tok"#,
-    );
-    let now = ccusage_test_support::instant("2026-01-02T00:00:00Z");
-    ccusage_test_support::set_modified(&path, now);
-    let diagnostics =
-        Diagnostics::for_report("codex", ccusage_core::cli::ReportClock::Fixed(now.into()));
-    visit_codex_session_file_with_diagnostics(fixture.root(), &path, None, |_| {}, &diagnostics);
+const ROLLOUT_CUT_SHORT: &str = concat!(
+    r#"{"timestamp":"2026-09-01T00:00:01Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"output_tokens":20}}}}"#,
+    "\n",
+    r#"{"type":"event_msg","payload":{"type":"token_count","info":{"total_tok"#,
+);
 
+fn visit_rollout_cut_short(on_event: impl Fn(&Path)) -> (usize, Diagnostics) {
+    let fixture = Fixture::new();
+    let path = fixture.write_file("session.jsonl", ROLLOUT_CUT_SHORT);
+    let diagnostics = Diagnostics::new("codex");
+    let mut events = 0;
+    visit_codex_session_file_with_diagnostics(
+        fixture.root(),
+        &path,
+        None,
+        |_| {
+            events += 1;
+            on_event(&path);
+        },
+        &diagnostics,
+    );
+    (events, diagnostics)
+}
+
+#[test]
+fn a_rollout_line_cut_short_while_the_rollout_grows_is_not_a_skip() {
+    let (events, diagnostics) = visit_rollout_cut_short(|path| {
+        use std::io::Write;
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(path)
+            .unwrap()
+            .write_all(b"al")
+            .unwrap();
+    });
+
+    assert_eq!(events, 1);
     assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 0);
+}
+
+#[test]
+fn a_rollout_line_left_cut_short_is_a_skip() {
+    let (events, diagnostics) = visit_rollout_cut_short(|_| {});
+
+    assert_eq!(events, 1);
+    assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+}
+
+const USAGE_LINE: &str = r#"{"timestamp":"2026-09-01T00:00:01Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"output_tokens":20}}}}"#;
+const MODIFIED: &str = "2026-09-01T00:00:00Z";
+
+fn torn_compressed_rollout(fixture: &Fixture, complete_frame: bool) -> PathBuf {
+    let mut compressed = if complete_frame {
+        zstd::stream::encode_all(format!("{USAGE_LINE}\n").as_bytes(), 3).unwrap()
+    } else {
+        Vec::new()
+    };
+    let torn = zstd::stream::encode_all(format!("{USAGE_LINE}\n").as_bytes(), 3).unwrap();
+    compressed.extend(&torn[..torn.len() / 2]);
+    let path = fixture.write_file("session.jsonl.zst", "");
+    std::fs::write(&path, compressed).unwrap();
+    ccusage_test_support::set_modified(&path, ccusage_test_support::instant(MODIFIED));
+    path
+}
+
+fn visit_torn_compressed_rollout(
+    complete_frame: bool,
+    on_event: impl Fn(&Path),
+) -> (PathBuf, u64, Vec<String>, Diagnostics) {
+    let fixture = Fixture::new();
+    let path = torn_compressed_rollout(&fixture, complete_frame);
+    let diagnostics = Diagnostics::new("codex");
+    let mut tokens = 0;
+    visit_codex_session_file_with_diagnostics(
+        fixture.root(),
+        &path,
+        None,
+        |event| {
+            tokens += event.total_tokens;
+            on_event(&path);
+        },
+        &diagnostics,
+    );
+    let warnings = diagnostics.warnings(&crate::cli::SharedArgs {
+        debug: true,
+        ..Default::default()
+    });
+    (path, tokens, warnings, diagnostics)
+}
+
+#[test]
+fn a_compressed_rollout_cut_inside_a_frame_while_it_changes_is_noted_not_skipped() {
+    let (path, tokens, warnings, diagnostics) = visit_torn_compressed_rollout(true, |path| {
+        ccusage_test_support::set_modified(
+            path,
+            ccusage_test_support::instant(MODIFIED).plus(std::time::Duration::from_secs(1)),
+        );
+    });
+
+    assert_eq!(tokens, 120);
+    assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 0);
+    assert_eq!(diagnostics.skipped(SkipKind::ReadInterrupted), 0);
+    assert_eq!(
+        warnings,
+        [format!(
+            "codex: {}: incomplete, read as still being written",
+            path.display()
+        )]
+    );
+}
+
+#[test]
+fn a_compressed_rollout_left_cut_inside_a_frame_keeps_earlier_usage_as_invalid_data() {
+    let (_, tokens, _, diagnostics) = visit_torn_compressed_rollout(true, |_| {});
+
+    assert_eq!(tokens, 120);
+    assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+    assert_eq!(diagnostics.skipped(SkipKind::ReadInterrupted), 0);
+}
+
+#[test]
+fn a_compressed_rollout_left_cut_inside_its_first_frame_is_invalid_data() {
+    let (_, tokens, _, diagnostics) = visit_torn_compressed_rollout(false, |_| {});
+
+    assert_eq!(tokens, 0);
+    assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+    assert_eq!(diagnostics.skipped(SkipKind::ReadInterrupted), 0);
 }
 
 #[test]
@@ -81,7 +195,7 @@ fn malformed_usage_lines_skip_the_same_whether_or_not_a_marker_is_escaped() {
             ]
             .join("\n"),
         );
-        let diagnostics = Diagnostics::without_clock("codex");
+        let diagnostics = Diagnostics::new("codex");
         visit_codex_session_file_with_diagnostics(
             fixture.root(),
             &path,
@@ -102,7 +216,7 @@ fn nonusage_and_suppressed_session_records_stay_quiet() {
         r#"{"type":"event_msg","payload":{"type":"token_count","info":null}}"#,
         r#"{"type":"event_msg","timestamp":"2026-01-02T00:00:00Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":0}}}}"#,
     ].join("\n"));
-    let diagnostics = Diagnostics::without_clock("codex");
+    let diagnostics = Diagnostics::new("codex");
     let mut events = Vec::new();
     visit_codex_session_file_with_diagnostics(
         fixture.root(),
@@ -128,7 +242,7 @@ fn nonusage_and_suppressed_session_records_stay_quiet() {
 fn session_events(lines: &[&str]) -> (Vec<CodexTokenUsageEvent>, Diagnostics) {
     let fixture = Fixture::new();
     let path = fixture.write_file("session.jsonl", lines.join("\n"));
-    let diagnostics = Diagnostics::without_clock("codex");
+    let diagnostics = Diagnostics::new("codex");
     let mut events = Vec::new();
     visit_codex_session_file_with_diagnostics(
         fixture.root(),
