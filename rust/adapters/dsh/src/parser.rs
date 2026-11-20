@@ -1,7 +1,7 @@
 use ccusage_core::cost::PriceTable;
 use ccusage_core::{
-    cost::{EntryPricing, price_entry},
-    pricing::MatchKind,
+    cost::{EntryPricing, price_entry, price_entry_on_route},
+    pricing::{BillingRoute, MatchKind},
 };
 use std::{io, ops::ControlFlow, path::Path, sync::Arc};
 
@@ -466,18 +466,19 @@ pub(super) fn dsh_entry_to_loaded(
         .iter()
         .map(|name| (name.as_str(), MatchKind::Fuzzy))
         .collect();
-    let priced = price_entry(
-        EntryPricing {
-            usage: entry.usage,
-            reasoning_tokens: 0,
-            residual_tokens: 0,
-            reported_model: Some(&entry.model),
-            candidates: &candidates,
-            stored_cost: None,
-            timestamp: Some(entry.timestamp),
-        },
-        pricing,
-    );
+    let entry_pricing = EntryPricing {
+        usage: entry.usage,
+        reasoning_tokens: 0,
+        residual_tokens: 0,
+        reported_model: Some(&entry.model),
+        candidates: &candidates,
+        stored_cost: None,
+        timestamp: Some(entry.timestamp),
+    };
+    let priced = match billing_route(entry.provider.as_deref()) {
+        Some(route) => price_entry_on_route(entry_pricing, route, pricing),
+        None => price_entry(entry_pricing, pricing),
+    };
     let cost = priced.cost;
     let missing_pricing_model = priced
         .missing_pricing
@@ -503,8 +504,15 @@ pub(super) fn dsh_entry_to_loaded(
     }
 }
 
+fn billing_route(provider: Option<&str>) -> Option<BillingRoute> {
+    match provider? {
+        "deepseek-official" | "deepseek-account" => Some(BillingRoute::Direct),
+        _ => Some(BillingRoute::Foreign),
+    }
+}
+
 fn model_candidates(provider: Option<&str>, model: &str) -> Vec<String> {
-    if let Some("deepseek-official" | "deepseek-account") = provider {
+    if billing_route(provider) == Some(BillingRoute::Direct) {
         return vec![model.to_string(), format!("deepseek/{model}")];
     }
     let mut candidates = Vec::new();
@@ -784,13 +792,13 @@ mod tests {
     fn applies_the_deepseek_time_of_day_schedule_to_first_party_routes() {
         ccusage_test_support::install_pricing_snapshots();
         let pricing = ccusage_core::PricingMap::load_embedded();
-        let cost_at = |millis: i64| {
+        let cost_at = |provider: &str, millis: i64| {
             let entry = DshUsageEntry {
                 timestamp: TimestampMs::from_millis(millis),
                 session_id: "sid".to_string(),
                 cwd: None,
                 seq: Some(1),
-                provider: Some("deepseek-official".to_string()),
+                provider: Some(provider.to_string()),
                 model: "deepseek-v4-pro".to_string(),
                 usage: TokenUsageRaw {
                     input_tokens: 1_000_000,
@@ -804,12 +812,14 @@ mod tests {
             };
             dsh_entry_to_loaded(entry, &JiffTimeZone::UTC, PriceTable::Auto(&pricing)).cost
         };
-        let peak = cost_at(1_794_880_800_000);
-        let off_peak = cost_at(1_794_916_800_000);
-        assert!(
-            (peak - off_peak * 2.0).abs() < 1e-9,
-            "peak {peak} should be twice off-peak {off_peak}"
-        );
+        for provider in ["deepseek-official", "deepseek-account"] {
+            let peak = cost_at(provider, 1_794_880_800_000);
+            let off_peak = cost_at(provider, 1_794_916_800_000);
+            assert!(
+                (peak - off_peak * 2.0).abs() < 1e-9,
+                "{provider}: peak {peak} should be twice off-peak {off_peak}"
+            );
+        }
     }
 }
 
@@ -842,11 +852,11 @@ mod pricing_identity_tests {
         let with_override = pricing.with_user_overrides([(&id, &patch)]);
         for (case, provider, model, map, expected) in [
             (
-                "36_foreign_route",
+                "36_foreign_route_missing_its_qualified_price_is_static",
                 "openrouter",
                 "deepseek-v4-flash",
                 &pricing,
-                0.00088,
+                0.0015,
             ),
             (
                 "81_qualified_override",

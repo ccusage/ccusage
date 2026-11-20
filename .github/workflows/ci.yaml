@@ -20,7 +20,7 @@ defaults:
 jobs:
   changes:
     name: Detect code changes
-    runs-on: ubuntu-slim
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     outputs:
       code-changed: ${{ steps.detect.outputs.code-changed }}
     steps:
@@ -94,7 +94,7 @@ jobs:
     name: tirith SARIF upload
     needs: tirith-scan
     if: ${{ always() && !github.event.pull_request.head.repo.fork }}
-    runs-on: ubuntu-slim
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 10
     permissions:
       contents: read
@@ -107,7 +107,7 @@ jobs:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: tirith-sarif
-      - uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+      - uses: github/codeql-action/upload-sarif@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4
         with:
           sarif_file: results.sarif
           category: tirith
@@ -502,7 +502,7 @@ jobs:
       - ccusage-perf
       - ccusage-perf-comment
     if: ${{ always() }}
-    runs-on: ubuntu-slim
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - uses: Kesin11/actions-timeline@460b1f8a750077029ad3589824d371b200e91dcf # v3.2.1
 
@@ -520,7 +520,7 @@ jobs:
       - ccusage-perf
       - ccusage-perf-comment
     if: ${{ always() }}
-    runs-on: ubuntu-slim
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - name: Report job results
         env:
@@ -534,7 +534,7 @@ jobs:
   release-dispatch-status-pending:
     name: release dispatch status (pending)
     if: (github.event_name == 'workflow_dispatch' || github.event_name == 'push') && startsWith(github.ref_name, 'tagpr-from-')
-    runs-on: ubuntu-slim
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 5
     permissions:
       statuses: write
@@ -555,7 +555,7 @@ jobs:
       - release-dispatch-status-pending
       - ci-gate
     if: ${{ always() && (github.event_name == 'workflow_dispatch' || github.event_name == 'push') && startsWith(github.ref_name, 'tagpr-from-') }}
-    runs-on: ubuntu-slim
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 5
     permissions:
       statuses: write
