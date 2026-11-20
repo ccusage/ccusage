@@ -43,6 +43,7 @@ type Replay = LineReader<zstd::stream::read::Decoder<'static, BufReader<File>>>;
 pub struct ZstdLines {
     inner: Inner,
     capacity: usize,
+    failed: Option<(io::ErrorKind, String)>,
 }
 
 enum Inner {
@@ -56,23 +57,23 @@ impl ZstdLines {
         Ok(Self {
             inner: Inner::Direct(Direct::new(file, capacity)?),
             capacity,
+            failed: None,
         })
     }
 
     /// Includes the trailing newline unless the final line is unterminated.
-    /// After a read error, [`Self::rest`] holds the bytes after the last returned line.
+    /// After a read error, [`Self::rest`] holds the bytes after the last returned line, and every
+    /// later call returns the same error.
     pub fn next_line(&mut self) -> io::Result<Option<&[u8]>> {
-        let line = match &mut self.inner {
-            Inner::Direct(direct) => match direct.next_line() {
-                Ok(line) => Some(line),
-                Err(Fault::Io(error)) => return Err(error),
-                Err(Fault::Unexpected) => None,
-            },
-            Inner::Replay(_) => None,
-        };
-        match (&mut self.inner, line) {
-            (Inner::Direct(direct), Some(line)) => Ok(line.map(|range| direct.line(range))),
-            (inner, _) => replay(inner, self.capacity)?.next_line(),
+        if let Some((kind, message)) = &self.failed {
+            return Err(io::Error::new(*kind, message.clone()));
+        }
+        match read_line(&mut self.inner, self.capacity) {
+            Err(error) => {
+                self.failed = Some((error.kind(), error.to_string()));
+                Err(error)
+            }
+            line => line,
         }
     }
 
@@ -87,6 +88,21 @@ impl ZstdLines {
     #[cfg(test)]
     fn replaying(&self) -> bool {
         matches!(self.inner, Inner::Replay(_))
+    }
+}
+
+fn read_line(inner: &mut Inner, capacity: usize) -> io::Result<Option<&[u8]>> {
+    let line = match inner {
+        Inner::Direct(direct) => match direct.next_line() {
+            Ok(line) => Some(line),
+            Err(Fault::Io(error)) => return Err(error),
+            Err(Fault::Unexpected) => None,
+        },
+        Inner::Replay(_) => None,
+    };
+    match (inner, line) {
+        (Inner::Direct(direct), Some(line)) => Ok(line.map(|range| direct.line(range))),
+        (inner, _) => replay(inner, capacity)?.next_line(),
     }
 }
 

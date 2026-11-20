@@ -338,3 +338,22 @@ fn a_frame_that_understates_its_window_decodes_at_least_what_the_streaming_decod
     }
     assert!(accepted_beyond_the_streaming_decoder > 0);
 }
+
+#[test]
+fn a_decode_error_is_terminal() {
+    let fixture = Fixture::new();
+    let mut stream = vec![
+        0x28, 0xB5, 0x2F, 0xFD, 0x24, 0x20, 0x01, 0x00, 0x00, 0x99, 0xE9, 0xD8, 0x51,
+    ];
+    stream.extend(compress(b"after\n", 3, None, true));
+    let path = write(&fixture, "terminal.zst", &stream);
+    let mut reader = ZstdLines::new(File::open(&path).unwrap(), 8 * 1024).unwrap();
+    let error = reader.next_line().unwrap_err();
+    for _ in 0..3 {
+        let again = reader.next_line().unwrap_err();
+        assert_eq!(
+            (again.kind(), again.to_string()),
+            (error.kind(), error.to_string())
+        );
+    }
+}
