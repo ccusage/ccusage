@@ -16,7 +16,7 @@ defaults:
 
 jobs:
   check-contributor:
-    runs-on: ubuntu-slim
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       issues: read
@@ -37,8 +37,11 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Set up Nushell
-        uses: ./.github/actions/setup-nu
+      - name: Set up Nix
+        uses: ./.github/actions/setup-nix-cache
+
+      - name: Install Nushell
+        run: nix profile install --inputs-from . nixpkgs#nushell
 
       - name: Check PR author
         id: access
@@ -85,7 +88,7 @@ jobs:
       needs.check-contributor.outputs.access_outcome == 'success' &&
       needs.check-contributor.outputs.skip != 'true' &&
       needs.check-contributor.outputs.bypass != 'true'
-    runs-on: ubuntu-slim
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       issues: write
@@ -98,8 +101,11 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Set up Nushell
-        uses: ./.github/actions/setup-nu
+      - name: Set up Nix
+        uses: ./.github/actions/setup-nix-cache
+
+      - name: Install Nushell
+        run: nix profile install --inputs-from . nixpkgs#nushell
 
       - name: Apply the PR verdict
         env:

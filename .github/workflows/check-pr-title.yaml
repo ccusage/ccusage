@@ -44,7 +44,7 @@ jobs:
   scope:
     name: Validate PR title scope
     if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
-    runs-on: ubuntu-slim
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Skip on merge groups
@@ -56,9 +56,14 @@ jobs:
           persist-credentials: false
           sparse-checkout: |
             .github/actions
+            flake.lock
+            flake.nix
             scripts
       - if: github.event_name == 'pull_request'
-        uses: ./.github/actions/setup-nu
+        uses: ./.github/actions/setup-nix-cache
+      - name: Install Nushell
+        if: github.event_name == 'pull_request'
+        run: nix profile install --inputs-from . nixpkgs#nushell
       - name: Check title scope against the changed adapters
         if: github.event_name == 'pull_request'
         env:

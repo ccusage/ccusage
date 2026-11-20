@@ -55,8 +55,11 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Set up Nushell
-        uses: ./.github/actions/setup-nu
+      - name: Set up Nix
+        uses: ./.github/actions/setup-nix-cache
+
+      - name: Install Nushell
+        run: nix profile install --inputs-from . nixpkgs#nushell
 
       - name: Resolve issue context
         id: issue
@@ -106,7 +109,7 @@ jobs:
       needs.triage.result != 'cancelled' &&
       needs.triage.outputs.access_outcome == 'success' &&
       (needs.triage.outputs.skip != 'true' || inputs.force_implementation == true)
-    runs-on: ubuntu-slim
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       issues: write
@@ -126,8 +129,11 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Set up Nushell
-        uses: ./.github/actions/setup-nu
+      - name: Set up Nix
+        uses: ./.github/actions/setup-nix-cache
+
+      - name: Install Nushell
+        run: nix profile install --inputs-from . nixpkgs#nushell
 
       - name: Apply the issue verdict
         id: verdict
@@ -178,11 +184,11 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Set up Nushell
-        uses: ./.github/actions/setup-nu
-
       - name: Set up Nix
         uses: ./.github/actions/setup-nix-cache
+
+      - name: Install Nushell
+        run: nix profile install --inputs-from . nixpkgs#nushell
 
       - name: Record the implementation base
         id: base
@@ -267,8 +273,11 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Set up Nushell
-        uses: ./.github/actions/setup-nu
+      - name: Set up Nix
+        uses: ./.github/actions/setup-nix-cache
+
+      - name: Install Nushell
+        run: nix profile install --inputs-from . nixpkgs#nushell
 
       - name: Download the implementation artifact
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
