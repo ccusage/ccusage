@@ -12,7 +12,7 @@ def main [rust_dir: path]: nothing -> nothing {
             "std::thread::Scope::spawn"
             "std::thread::Builder::spawn"
         ]
-        "crates/ccusage-environment/clippy.toml": ["std::env::var_os"]
+        "crates/ccusage-environment/clippy.toml": ["std::env::var" "std::env::var_os"]
         "crates/ccusage-terminal/clippy.toml": ["std::io::stdout" "std::io::stderr"]
         "crates/ccusage-test-support/clippy.toml": ["std::fs::read_dir"]
     }

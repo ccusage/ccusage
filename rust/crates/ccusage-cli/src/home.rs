@@ -104,9 +104,7 @@ impl ClaudeConfigDirs {
 pub fn claude_config_dirs() -> ClaudeConfigDirs {
     let environment = Environment::current();
     claude_config_dirs_from(
-        environment
-            .var_os("CLAUDE_CONFIG_DIR")
-            .and_then(|value| value.into_string().ok()),
+        environment.var("CLAUDE_CONFIG_DIR").ok(),
         environment.var_os("XDG_CONFIG_HOME"),
         home_dir_in(&environment),
     )

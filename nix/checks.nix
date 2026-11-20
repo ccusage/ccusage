@@ -98,8 +98,8 @@ in
     in
     {
       checks = {
-        clj-kondo = mkRepoCheck "clj-kondo-check" [ pkgs.clj-kondo ] ''
-          clj-kondo --lint apps/ccusage/scripts
+        clj-kondo = mkRepoCheck "clj-kondo-check" [ pkgs.clj-kondo pkgs.fd ] ''
+          fd --hidden --exclude .git --type file --extension clj --extension cljc --extension bb --exec-batch clj-kondo --lint
         '';
         ccusage-package = config.packages.ccusage;
         ccusage-tests = config.packages.ccusage-tests;
@@ -110,6 +110,11 @@ in
           nu scripts/check-models-dev-dependencies.nu \
             ${inputs.models-dev}/bun.lock nix/tools/models-dev-gen/package.json
         '';
+        workspace-dependency-inheritance =
+          mkRepoCheck "workspace-dependency-inheritance-check" [ pkgs.nushell ]
+            ''
+              nu --no-config-file scripts/check-workspace-dependency-inheritance.nu rust
+            '';
         comments = mkRepoCheck "comment-check" [ pkgs.nushell pkgs.ast-grep pkgs.just ] ''
           nu --no-config-file scripts/comments/check.nu --source-tree
         '';
@@ -126,6 +131,8 @@ in
               nu --no-config-file scripts/comments/tests/check.test.nu
               nu scripts/validate-commit-scope.test.nu
               nu scripts/check-models-dev-dependencies.test.nu
+              nu scripts/check-workspace-dependency-inheritance.test.nu
+              nu scripts/check-nushell.test.nu
               nu .github/scripts/contribution-gate.test.nu
               nu .github/scripts/pricing-lock.test.nu
               nu .github/scripts/upsert-pr-comment.test.nu
@@ -144,6 +151,9 @@ in
         '';
         gitleaks = mkRepoCheck "gitleaks-check" [ pkgs.gitleaks ] ''
           gitleaks detect --source . --config .gitleaks.toml --no-git
+        '';
+        nushell-ide-check = mkRepoCheck "nushell-ide-check" [ pkgs.nushell ] ''
+          nu --no-config-file scripts/check-nushell.nu .
         '';
         nushell-version = mkRepoCheck "nushell-version-check" [ ] ''
           if ! grep -qxF '        version: ${pkgs.nushell.version}' .github/actions/setup-nu/action.yaml; then
