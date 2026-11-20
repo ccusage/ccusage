@@ -202,7 +202,8 @@ impl Marker {
             let run_at = from + found;
             from = run_at + 1;
             let after = run_at + anchor.index - anchor.run_start + 1;
-            if !self.matches_at(anchor.index + 1, &line[after..]) {
+            if anchor.index + 1 < marker.len() && !self.matches_at(anchor.index + 1, &line[after..])
+            {
                 continue;
             }
             let verbatim = run_at
