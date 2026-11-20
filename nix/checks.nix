@@ -64,6 +64,22 @@ in
           '';
         }
       );
+      ccusage-unsafe-code = craneLib.mkCargoDerivation (
+        commonArgs
+        // testArtifacts.consumerArgs
+        // {
+          pname = "ccusage-unsafe-code";
+          src = rustSrc;
+          sourceRoot = "source/rust";
+          cargoLock = root + /rust/Cargo.lock;
+          inherit cargoArtifacts;
+          nativeBuildInputs = commonArgs.nativeBuildInputs or [ ] ++ [ pkgs.nushell ];
+          buildPhaseCargoCommand = ''
+            nu --no-config-file ${root + /scripts}/check-unsafe-code.test.nu
+            nu --no-config-file ${root + /scripts}/check-unsafe-code.nu Cargo.toml --target-dir "''${CARGO_TARGET_DIR:-target}"
+          '';
+        }
+      );
       ccusage-fmt = craneLib.cargoFmt {
         pname = "ccusage-rust";
         inherit version;
@@ -111,7 +127,7 @@ in
             ${inputs.models-dev}/bun.lock nix/tools/models-dev-gen/package.json
         '';
         workspace-dependency-inheritance =
-          mkRepoCheck "workspace-dependency-inheritance-check" [ pkgs.nushell pkgs.ast-grep ]
+          mkRepoCheck "workspace-dependency-inheritance-check" [ pkgs.nushell ]
             ''
               nu --no-config-file scripts/check-workspace-dependency-inheritance.nu rust
             '';
@@ -146,6 +162,7 @@ in
           ccusage-clippy
           ccusage-fmt
           ccusage-hawk
+          ccusage-unsafe-code
           ;
         oxlint = mkRepoCheck "oxlint-check" [ config.packages.oxlint ] ''
           oxlint --config nix/oxlint-check.json .
