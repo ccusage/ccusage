@@ -100,12 +100,15 @@ unused_dependencies = "deny"
 unused_workspace_dependencies = "deny"
 
 [workspace.lints.rust]
-unsafe_code = "forbid"
+unsafe_code = "deny"
+unsafe_op_in_unsafe_fn = "deny"
 unfulfilled_lint_expectations = "deny"
 elided_lifetimes_in_paths = "deny"
 unreachable_pub = "deny"
 
 [workspace.lints.clippy]
+undocumented_unsafe_blocks = "deny"
+multiple_unsafe_ops_per_block = "deny"
 allow_attributes = "deny"
 allow_attributes_without_reason = "deny"
 dbg_macro = "deny"

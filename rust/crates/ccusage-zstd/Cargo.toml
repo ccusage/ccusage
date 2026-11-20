@@ -13,33 +13,5 @@ zstd-sys.workspace = true
 [dev-dependencies]
 ccusage-test-support.workspace = true
 
-# NOTE(2026-11-20): This crate alone calls libzstd directly, so it cannot inherit the workspace ban on unsafe code. It copies the workspace lints with unsafe code denied and expected only in src/direct.rs.
-[lints.rust]
-unsafe_code = "deny"
-unsafe_op_in_unsafe_fn = "deny"
-unfulfilled_lint_expectations = "deny"
-elided_lifetimes_in_paths = "deny"
-unreachable_pub = "deny"
-
-[lints.clippy]
-undocumented_unsafe_blocks = "deny"
-multiple_unsafe_ops_per_block = "deny"
-allow_attributes = "deny"
-allow_attributes_without_reason = "deny"
-dbg_macro = "deny"
-todo = "deny"
-unimplemented = "deny"
-unwrap_used = "deny"
-match_wildcard_for_single_variants = "deny"
-mod_module_files = "deny"
-clone_on_ref_ptr = "deny"
-implicit_clone = "deny"
-cast_lossless = "deny"
-cast_possible_wrap = "deny"
-float_cmp = "deny"
-disallowed_methods = "deny"
-wildcard_imports = "deny"
-wildcard_enum_match_arm = "deny"
-panic = "deny"
-print_stderr = "deny"
-print_stdout = "deny"
+[lints]
+workspace = true

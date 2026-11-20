@@ -13,6 +13,38 @@ def dependency-tables [manifest: record]: nothing -> list<record> {
     $direct | append $targets
 }
 
+const unsafe_site = 'crates/ccusage-zstd/src/direct.rs'
+
+def lint-violations [root: path, manifest: record, members: list<string>]: nothing -> list<string> {
+    let level = $manifest | get --optional workspace.lints.rust.unsafe_code
+    let workspace = if $level not-in ['deny' 'forbid'] {
+        [
+            'Cargo.toml: [workspace.lints.rust] unsafe_code must be "deny" or "forbid"'
+        ]
+    } else { [] }
+    let inheritance = $members | each {|member|
+        let lints = open --raw $member | from toml | get --optional lints
+        if $lints != {workspace: true} {
+            $"($member | path relative-to $root): must inherit [workspace.lints] with [lints] workspace = true"
+        }
+    } | compact
+    let attributes = $members
+    | each {|member| glob ($member | path dirname | path join '**/*.rs') --exclude ['**/target/**'] }
+    | flatten
+    | where {|file| ($file | path relative-to $root) != $unsafe_site }
+    | each {|file|
+        open --raw $file
+        | lines
+        | enumerate
+        | where {|line| $line.item =~ '\b(?:allow|expect)\s*\([^)]*\bunsafe_code\b' }
+        | each {|line|
+            $"($file | path relative-to $root):($line.index + 1): unsafe_code may be allowed only in ($unsafe_site)"
+        }
+    }
+    | flatten
+    $workspace | append $inheritance | append $attributes
+}
+
 def main [workspace: path]: nothing -> nothing {
     let root = $workspace | path expand
     let manifest = open --raw ($root | path join 'Cargo.toml') | from toml
@@ -21,6 +53,7 @@ def main [workspace: path]: nothing -> nothing {
     | default []
     | each {|member| glob ($root | path join $member 'Cargo.toml') }
     | flatten
+    let lints = lint-violations $root $manifest $members
     let violations = $members | each {|member|
         let parsed = open --raw $member | from toml
         dependency-tables $parsed | each {|table|
@@ -36,7 +69,7 @@ def main [workspace: path]: nothing -> nothing {
                 }
             }
         } | flatten
-    } | flatten | compact
+    } | flatten | compact | append $lints
     if ($violations | is-not-empty) {
         error make {
             msg: ($violations | str join "\n")
