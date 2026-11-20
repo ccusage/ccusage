@@ -61,7 +61,8 @@ fn contains_pricing_key(value: &str, raw_value: &str, key: &str) -> bool {
             .checked_sub(1)
             .and_then(|before| raw_value.as_bytes().get(before))
             .copied();
-        before.is_none_or(is_qualifier_end) && is_price_neutral_suffix(&value[index + key.len()..])
+        before.is_none_or(is_qualifier_end)
+            && is_price_neutral_suffix(&value[index + key.len()..], family_words(key))
     })
 }
 
@@ -69,7 +70,7 @@ fn is_qualifier_end(byte: u8) -> bool {
     !byte.is_ascii_alphanumeric() && !matches!(byte, b'-' | b'_')
 }
 
-fn is_price_neutral_suffix(suffix: &str) -> bool {
+fn is_price_neutral_suffix(suffix: &str, family: &[&str]) -> bool {
     let mut rest = suffix;
     while let Some(&separator) = rest.as_bytes().first() {
         if separator == b'[' {
@@ -91,7 +92,7 @@ fn is_price_neutral_suffix(suffix: &str) -> bool {
             after
         } else if let Some(after) = deployment_revision_end(word, after) {
             after
-        } else if let Some(after) = price_neutral_word_end(&rest[1..]) {
+        } else if let Some(after) = price_neutral_word_end(&rest[1..], family) {
             after
         } else {
             return false;
@@ -100,15 +101,26 @@ fn is_price_neutral_suffix(suffix: &str) -> bool {
     true
 }
 
-fn price_neutral_word_end(rest: &str) -> Option<&str> {
-    data::PRICE_NEUTRAL_SUFFIX_WORDS.iter().find_map(|word| {
-        let after = rest.strip_prefix(word)?;
-        (!after
-            .bytes()
-            .next()
-            .is_some_and(|byte| byte.is_ascii_alphanumeric()))
-        .then_some(after)
-    })
+fn family_words(key: &str) -> &'static [&'static str] {
+    let segment = last_segment(key);
+    data::FAMILY_PRICE_NEUTRAL_SUFFIX_WORDS
+        .iter()
+        .find(|(family, _)| segment.split('.').any(|part| part.starts_with(family)))
+        .map_or(&[], |(_, words)| words)
+}
+
+fn price_neutral_word_end<'a>(rest: &'a str, family: &[&str]) -> Option<&'a str> {
+    data::PRICE_NEUTRAL_SUFFIX_WORDS
+        .iter()
+        .chain(family)
+        .find_map(|word| {
+            let after = rest.strip_prefix(word)?;
+            (!after
+                .bytes()
+                .next()
+                .is_some_and(|byte| byte.is_ascii_alphanumeric()))
+            .then_some(after)
+        })
 }
 
 fn date_suffix_end<'a>(word: &str, after: &'a str) -> Option<&'a str> {
