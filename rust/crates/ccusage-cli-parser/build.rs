@@ -8,7 +8,7 @@ use ccusage_cli::AGENTS;
 use ccusage_environment::Environment;
 use serde_json::Value;
 
-#[path = "src/help_codegen.rs"]
+#[path = "src/help/codegen.rs"]
 mod help_codegen;
 
 const CLI_HELP_JSON: &str = "src/cli-help.json";

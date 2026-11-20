@@ -1,5 +1,8 @@
 use ccusage_cli::command_tokens;
 
+#[cfg(test)]
+mod codegen;
+
 struct HelpPage {
     path: &'static [&'static str],
     description: &'static str,

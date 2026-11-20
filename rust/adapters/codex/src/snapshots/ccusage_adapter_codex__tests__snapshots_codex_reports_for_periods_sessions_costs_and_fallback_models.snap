@@ -1,5 +1,5 @@
 ---
-source: adapters/codex/src/lib.rs
+source: adapters/codex/src/tests.rs
 expression: "serde_json::json!({\n    \"daily\": report(AgentReportKind::Daily, standard), \"weekly\":\n    report(AgentReportKind::Weekly, standard), \"monthly\":\n    report(AgentReportKind::Monthly, standard), \"sessionFast\":\n    report(AgentReportKind::Session,\n    CodexSpeedPolicy::Forced(CodexServiceTier::Fast),),\n})"
 ---
 {
