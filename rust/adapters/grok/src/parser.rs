@@ -237,10 +237,8 @@ pub(super) fn parse_session_files_with_diagnostics(
                         cache_creation: None,
                     };
                     let reasoning_tokens = model_usage.reasoning_tokens;
-                    (ccusage_core::utils::total_usage_tokens(usage_raw)
-                        .saturating_add(reasoning_tokens)
-                        > 0)
-                    .then_some((raw_model, model_usage, usage_raw, reasoning_tokens))
+                    (total_usage_tokens(usage_raw).saturating_add(reasoning_tokens) > 0)
+                        .then_some((raw_model, model_usage, usage_raw, reasoning_tokens))
                 })
                 .collect::<Vec<_>>();
             if model_rows.is_empty() {
