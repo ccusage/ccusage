@@ -3,6 +3,11 @@ use std::cell::OnceCell;
 use serde::{Deserialize, de::DeserializeOwned};
 
 /// JSON bytes parsed through `serde_json`'s string reader, so each record type is compiled once.
+///
+/// Parsing equals `serde_json::from_slice` for targets that read strings as `str` or `String`.
+/// Byte-reading targets (`deserialize_bytes` or `deserialize_byte_buf`, such as `&[u8]`, `CString`
+/// or `serde_bytes`) must use `from_slice`: on invalid UTF-8 they would see the escapes that stand
+/// in for the invalid bytes.
 pub struct JsonText<'a> {
     bytes: &'a [u8],
     probe: OnceCell<Probe>,
@@ -35,12 +40,14 @@ impl<'a> JsonText<'a> {
         self.bytes
     }
 
+    /// Equals `serde_json::from_slice` when `T` reads strings as `str` or `String`; see [`JsonText`].
     #[inline]
     pub fn parse<'b, T: Deserialize<'b>>(&'b self) -> serde_json::Result<T> {
         self.parse_with(serde_json::from_str)
     }
 
-    /// Runs `parse` on the text until its result matches `serde_json::from_slice` on the bytes.
+    /// Runs `parse` on the text until its result matches `serde_json::from_slice` on the bytes, for
+    /// string-reading targets only; see [`JsonText`].
     #[inline]
     pub fn parse_with<'b, R>(
         &'b self,
@@ -84,6 +91,7 @@ impl<'a> JsonText<'a> {
     }
 }
 
+/// Parses owned values with [`JsonText::parse`], under the same string-target contract.
 pub fn parse<T: DeserializeOwned>(bytes: &[u8]) -> serde_json::Result<T> {
     JsonText::new(bytes).parse()
 }
@@ -450,6 +458,46 @@ mod tests {
             serde_json::from_slice::<Borrowed<'_>>(bytes)
                 .unwrap_err()
                 .to_string(),
+        );
+    }
+
+    #[derive(Debug, PartialEq)]
+    struct RawBytes(Vec<u8>);
+
+    impl<'de> Deserialize<'de> for RawBytes {
+        fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+            struct BytesVisitor;
+
+            impl serde::de::Visitor<'_> for BytesVisitor {
+                type Value = RawBytes;
+
+                fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                    formatter.write_str("a byte string")
+                }
+
+                fn visit_bytes<E>(self, bytes: &[u8]) -> Result<RawBytes, E> {
+                    Ok(RawBytes(bytes.to_vec()))
+                }
+            }
+
+            #[expect(
+                clippy::disallowed_methods,
+                reason = "pins the byte-target divergence JsonText documents"
+            )]
+            deserializer.deserialize_bytes(BytesVisitor)
+        }
+    }
+
+    #[test]
+    fn byte_targets_see_probe_escapes_instead_of_invalid_bytes() {
+        let bytes = b"\"a\xffb\"";
+        assert_eq!(
+            serde_json::from_slice::<RawBytes>(bytes).unwrap(),
+            RawBytes(b"a\xffb".to_vec())
+        );
+        assert_eq!(
+            JsonText::new(bytes).parse::<RawBytes>().unwrap(),
+            RawBytes(b"a\xed\xb0\x80_b".to_vec())
         );
     }
 }

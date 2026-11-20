@@ -18,4 +18,6 @@ disallowed-methods = [
 	{ path = "std::thread::spawn", reason = "Use the shared worker helpers to carry the fixture environment." },
 	{ path = "std::thread::Scope::spawn", reason = "Use the shared worker helpers to carry the fixture environment." },
 	{ path = "std::thread::Builder::spawn", reason = "Use the shared worker helpers to carry the fixture environment." },
+	{ path = "serde::de::Deserializer::deserialize_bytes", reason = "JsonText matches from_slice only for string targets; decode byte strings with serde_json::from_slice." },
+	{ path = "serde::de::Deserializer::deserialize_byte_buf", reason = "JsonText matches from_slice only for string targets; decode byte strings with serde_json::from_slice." },
 ]
