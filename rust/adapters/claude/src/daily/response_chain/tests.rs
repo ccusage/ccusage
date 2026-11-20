@@ -449,11 +449,13 @@ impl Reference {
         Some(self.responses[index as usize].0)
     }
 
-    fn link(&mut self, line: &Value) -> Option<()> {
+    fn link(&mut self, line: &Value, may_carry_usage: bool) -> Option<()> {
         let uuid = hashed(&line["uuid"])?;
         let parent = hashed(&line["parentUuid"])?;
         let kind = line["type"].as_str()?;
-        if !line["message"]["usage"].is_null() || !self.nodes.contains_key(&parent) {
+        if (may_carry_usage && !line["message"]["usage"].is_null())
+            || !self.nodes.contains_key(&parent)
+        {
             return None;
         }
         let owner = if kind == "user" {
@@ -497,11 +499,11 @@ fn reference_keys(lines: &[String]) -> Vec<Option<NonZeroU64>> {
                     _ => None,
                 });
             }
-            Err(Refusal::NotUsage | Refusal::Rejected(Rejection::Malformed)) => {
+            Err(refusal @ (Refusal::NotUsage | Refusal::Rejected(Rejection::Malformed))) => {
                 if !reference.responses.is_empty()
                     && let Some(value) = value.filter(Value::is_object)
                 {
-                    let _ = reference.link(&value);
+                    let _ = reference.link(&value, matches!(refusal, Refusal::Rejected(_)));
                 }
             }
             Err(_) => {}

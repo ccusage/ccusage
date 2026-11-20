@@ -220,32 +220,29 @@ impl<'a> Cursor<'a> {
 }
 
 impl Skim<'_> {
-    fn complete(&self, want: Want, rest: &[u8]) -> bool {
+    fn complete(&self, want: Want) -> bool {
         self.seen_uuid
             && self.seen_parent
             && self.seen_kind
             && match want {
                 Want::Block => self.seen_message,
-                Want::Link => {
-                    self.seen_message
-                        || (self.kind.is_some_and(|kind| kind != b"user") && lacks(rest, &USAGE))
-                }
+                Want::Link => self.seen_message || self.kind.is_some_and(|kind| kind != b"user"),
             }
     }
+}
+
+static UNICODE_ESCAPE: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(br"\u00"));
+
+// NOTE(2026-11-20, #2255): RFC 8259 lets a JSON string escape an ASCII letter only as `\u00XX`, and whitespace cannot split a value. Bytes that hold neither the letters nor such an escape cannot spell that value anywhere, so the scanner may stop reading there.
+fn lacks(rest: &[u8], letters: &Finder<'_>) -> bool {
+    letters.find(rest).is_none()
+        && (memchr(b'\\', rest).is_none() || UNICODE_ESCAPE.find(rest).is_none())
 }
 
 pub(super) enum Scan<T> {
     Read(T),
     Skip,
     Unsure,
-}
-
-static USAGE: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(b"usage"));
-static UNICODE_ESCAPE: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(br"\u00"));
-
-// NOTE(2026-11-20, #2255): RFC 8259 lets a JSON string escape an ASCII letter only as `\u00XX`, and whitespace cannot split a name or value. Bytes that hold neither the letters nor such an escape cannot spell that name or value anywhere, so the scanner may stop reading there.
-pub(super) fn lacks(rest: &[u8], letters: &Finder<'_>) -> bool {
-    letters.find(rest).is_none() && UNICODE_ESCAPE.find(rest).is_none()
 }
 
 pub(super) fn skim<'a>(
@@ -280,7 +277,7 @@ pub(super) fn skim<'a>(
             }
             _ => return Some(Step::Skip),
         }
-        Some(if skim.complete(want, &cursor.line[cursor.at..]) {
+        Some(if skim.complete(want) {
             Step::Stop
         } else {
             Step::Read

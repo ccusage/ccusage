@@ -94,6 +94,14 @@ fn signature(message_id: &str, usage: &TokenUsageRaw) -> u64 {
     hasher.finish()
 }
 
+// NOTE(2026-11-20, #2255): RFC 8259 lets a JSON string escape an ASCII letter only as `\u00XX`, and whitespace cannot split a name. A line holding neither `parentUuid` nor such an escape cannot have that member, and a line without a backslash holds no escape at all.
+fn may_spell_parent(line: &[u8]) -> bool {
+    static PARENT: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(b"parentUuid"));
+    static UNICODE_ESCAPE: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(br"\u00"));
+    PARENT.find(line).is_some()
+        || (memchr::memchr(b'\\', line).is_some() && UNICODE_ESCAPE.find(line).is_some())
+}
+
 impl ResponseChains {
     pub(super) fn is_tracking(&self) -> bool {
         !self.responses.is_empty()
@@ -102,8 +110,7 @@ impl ResponseChains {
     // NOTE(2026-11-20, #2255): Parents precede children, so a line whose parent is not yet tracked can never lead a later block back to a response, and the scanner rejects it at `parentUuid`. A line the scanner cannot read for certain takes a full parse instead.
     #[inline(never)]
     pub(super) fn link(&mut self, line: &[u8], may_carry_usage: bool) {
-        static PARENT: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(b"parentUuid"));
-        if !line.starts_with(br#"{"parentUuid":""#) && skim::lacks(line, &PARENT) {
+        if !line.starts_with(br#"{"parentUuid":""#) && !may_spell_parent(line) {
             return;
         }
         let want = if may_carry_usage {
@@ -119,7 +126,7 @@ impl ResponseChains {
             Scan::Skip => return,
             Scan::Unsure => parse_line_links(line),
         };
-        let Some(links) = links.filter(|links| !links.has_usage) else {
+        let Some(links) = links.filter(|links| !(may_carry_usage && links.has_usage)) else {
             return;
         };
         if !self.nodes.contains_key(&links.parent) {

@@ -86,10 +86,10 @@ fn reads_the_top_level_uuid_after_a_message_whose_tool_input_holds_one() {
 }
 
 #[test]
-fn leaves_a_uuid_it_cannot_place_at_the_top_level_to_the_full_parse() {
-    let line = br#"{"parentUuid":"p","message":{"content":[]},"uuid":"u","toolUseResult":{"a":1,"uuid":"nested"}}"#;
+fn reads_the_top_level_uuid_past_a_trailing_object_that_holds_one() {
+    let line = br#"{"parentUuid":"p","message":{"content":[]},"toolUseResult":{"a":1,"uuid":"nested"},"uuid":"u"}"#;
 
-    assert!(block_links(line).is_none());
+    assert_eq!(block_links(line).unwrap().uuid, Some(&b"u"[..]));
 }
 
 #[test]
