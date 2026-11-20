@@ -366,6 +366,49 @@ fn a_decode_error_is_terminal() {
 }
 
 #[test]
+fn no_line_of_a_frame_that_fits_the_ring_is_returned_before_its_checksum_passes() {
+    let fixture = Fixture::new();
+    let data = text(&mut Random(0xC0FF_EE01), 40, 0);
+    let mut stream = compress(&data, 3, None, true);
+    let checksum = stream.len() - 1;
+    stream[checksum] ^= 0x01;
+    let path = write(&fixture, "checksum.zst", &stream);
+    for capacity in CAPACITIES {
+        let (actual, _) = direct(&path, capacity, None);
+        assert_eq!(actual.lines, Vec::<Vec<u8>>::new(), "capacity {capacity}");
+        assert_eq!(kind(&actual.error), Some(io::ErrorKind::Other));
+        assert_eq!(actual.rest, Vec::<u8>::new(), "capacity {capacity}");
+    }
+}
+
+#[test]
+fn a_large_frame_returns_no_more_lines_before_a_bad_checksum_than_the_streaming_decoder() {
+    let fixture = Fixture::new();
+    let data = text(&mut Random(0xC0FF_EE02), 3_000, 0);
+    let mut stream = compress(&data, 1, Some(17), false);
+    let checksum = stream.len() - 1;
+    stream[checksum] ^= 0x01;
+    let path = write(&fixture, "large-checksum.zst", &stream);
+    let expected = reference(&path, 128 * 1024);
+    assert!(!expected.lines.is_empty());
+    assert_eq!(
+        kind(&expected.error),
+        Some(io::ErrorKind::Other),
+        "{:?}",
+        expected.error
+    );
+    let actual = direct(&path, 128 * 1024, None).0;
+    assert_eq!(actual.error, expected.error);
+    assert!(!actual.lines.is_empty());
+    assert!(
+        expected.lines.starts_with(&actual.lines),
+        "{} direct lines, {} streaming lines",
+        actual.lines.len(),
+        expected.lines.len()
+    );
+}
+
+#[test]
 fn a_single_segment_window_one_past_the_limit_is_accepted_like_the_streaming_decoder() {
     let fixture = Fixture::new();
     for (content, accepted) in [((128 << 20) + 1, true), ((128 << 20) + 2, false)] {

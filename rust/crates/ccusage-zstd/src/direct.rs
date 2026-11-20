@@ -206,6 +206,8 @@ pub(crate) struct Direct {
     start: usize,
     scanned: usize,
     end: usize,
+    held: usize,
+    deferred: Option<Fault>,
     delivered: u64,
     frame: Frame,
     eof: bool,
@@ -236,6 +238,8 @@ impl Direct {
             start: 0,
             scanned: 0,
             end: 0,
+            held: 0,
+            deferred: None,
             delivered: 0,
             frame: Frame::Between { finished: false },
             eof: false,
@@ -278,7 +282,22 @@ impl Direct {
                 }
                 break self.end;
             }
-            self.decode()?;
+            if let Some(fault) = self.deferred.take() {
+                return Err(fault);
+            }
+            if let Err(fault) = self.decode() {
+                // NOTE(2026-11-20): A torn frame keeps the blocks decoded before the input ended, as the streaming decoder does, so its lines come before the error. Bytes held from a damaged frame are dropped.
+                if let Fault::Io(error) = &fault
+                    && error.kind() == io::ErrorKind::UnexpectedEof
+                    && self.held > self.end
+                {
+                    self.end = self.held;
+                    self.deferred = Some(fault);
+                    continue;
+                }
+                self.held = self.end;
+                return Err(fault);
+            }
         };
         let line = self.start..line_end;
         self.delivered += (line_end - self.start) as u64;
@@ -318,6 +337,14 @@ impl Direct {
                     };
                 }
                 Frame::Zstd(mut ring) => {
+                    if ring.wraps && self.held + ring.block > self.output.len() {
+                        // NOTE(2026-11-20): Decoded bytes stay held until the frame ends or the ring must wrap, so a frame that fits the ring is checksummed before any of its lines is returned. The streaming decoder drops what its failing call decoded, at most one block of a large frame, so this is never less strict.
+                        if self.held > self.end {
+                            self.end = self.held;
+                            return Ok(());
+                        }
+                        self.wrap(ring);
+                    }
                     let written = self.continue_frame(ring)?;
                     if let Frame::Zstd(current) = &mut self.frame {
                         current.decoded += written as u64;
@@ -331,7 +358,10 @@ impl Direct {
                             )));
                         }
                     }
-                    if written > 0 {
+                    if let Frame::Between { .. } = self.frame
+                        && self.held > self.end
+                    {
+                        self.end = self.held;
                         return Ok(());
                     }
                 }
@@ -345,6 +375,7 @@ impl Direct {
         self.end -= self.start;
         self.scanned -= self.start;
         self.start = 0;
+        self.held = self.end;
         self.history = Ring(Vec::new());
 
         let header = self.frame_header()?;
@@ -455,9 +486,6 @@ impl Direct {
                 available => available,
             }
         };
-        if ring.wraps && self.end + ring.block > self.output.len() {
-            self.wrap(ring);
-        }
         #[cfg(test)]
         if let Some(remaining) = &mut self.fail_after {
             if *remaining == 0 {
@@ -466,7 +494,7 @@ impl Direct {
             *remaining -= 1;
         }
 
-        let (destination, capacity) = self.output.tail(self.end);
+        let (destination, capacity) = self.output.tail(self.held);
         let source = &self.input[self.input_start..self.input_start + available];
         // SAFETY: `destination` is null or `capacity` writable ring bytes and `source` is initialized input, in separate allocations. Every pointer libzstd kept is into the ring or history, both still allocated and reached since only through their Vec::as_ptr base (crate docs).
         let written = unsafe {
@@ -486,7 +514,7 @@ impl Direct {
             return Err(Fault::Unexpected);
         }
         self.input_start += available;
-        self.end += written;
+        self.held += written;
         Ok(written)
     }
 
@@ -503,6 +531,7 @@ impl Direct {
         }
         self.scanned -= self.start;
         self.end = pending;
+        self.held = pending;
         self.start = 0;
     }
 
