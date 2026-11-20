@@ -1,5 +1,8 @@
 use ccusage_core::cost::PriceTable;
-use ccusage_core::{cost::EntryPricing, pricing::AgentModel};
+use ccusage_core::{
+    cost::{EntryPricing, UsageGranularity},
+    pricing::AgentModel,
+};
 use std::{path::Path, sync::Arc};
 
 use ccusage_adapter_common::{billing::price_entry_for_provider, jsonl, units::UnitError};
@@ -392,6 +395,7 @@ pub(super) fn entry_to_loaded(
     };
     let candidates = identity.candidates();
     let entry_pricing = EntryPricing {
+        granularity: UsageGranularity::Request,
         usage,
         reasoning_tokens: 0,
         residual_tokens: 0,

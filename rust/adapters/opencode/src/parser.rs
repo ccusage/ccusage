@@ -9,8 +9,12 @@ use serde::{
 use std::fmt;
 
 use crate::{
-    LoadedEntry, TokenUsageRaw, apply_total_token_fallback, cli::CostMode, cost::EntryPricing,
-    date_at, pricing::MatchKind, stored_cost_for_mode,
+    LoadedEntry, TokenUsageRaw, apply_total_token_fallback,
+    cli::CostMode,
+    cost::{EntryPricing, UsageGranularity},
+    date_at,
+    pricing::MatchKind,
+    stored_cost_for_mode,
 };
 use ccusage_adapter_common::{billing::price_entry_for_provider, json::JsonText, jsonl};
 
@@ -364,6 +368,7 @@ impl OpenCodeUsage {
             .map(|(name, kind)| (name.as_str(), *kind))
             .collect();
         let entry_pricing = EntryPricing {
+            granularity: UsageGranularity::Request,
             usage,
             reasoning_tokens: 0,
             residual_tokens: extra_total_tokens,
