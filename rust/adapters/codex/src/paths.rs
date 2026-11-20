@@ -163,7 +163,7 @@ impl CodexFileEligibility {
         self.until_path_date
             .is_none_or(|until| start_date.is_none_or(|date| date <= until))
             && self.since_date.is_none_or(|since| {
-                start_date.is_none_or(|date| date >= since)
+                start_date.is_some_and(|date| date >= since)
                     || modified_millis.is_none_or(|modified| {
                         self.since_millis
                             .is_none_or(|since_millis| modified >= since_millis)
@@ -494,18 +494,60 @@ mod tests {
     }
 
     #[test]
-    fn keeps_undated_files_when_date_filter_cannot_prove_their_range() {
+    fn keeps_an_undated_rollout_modified_on_or_after_since() {
         let fixture = Fixture::new();
-        let sessions_dir = fixture.create_dir_all("codex/sessions");
-        let file = fixture.write_file("codex/sessions/custom.jsonl", "");
+        let archived_dir = fixture.create_dir_all("codex/archived_sessions");
+        let file = fixture.write_file("codex/archived_sessions/custom.jsonl", "");
+        crate::test_support::set_file_modified(
+            &file,
+            crate::parse_ts_timestamp("2026-01-31T00:00:00.000Z").unwrap(),
+        );
+        let shared = SharedArgs {
+            since: Some("20260131".parse().unwrap()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+            ..SharedArgs::default()
+        };
+
+        assert_eq!(
+            filter_codex_usage_files(&archived_dir, std::slice::from_ref(&file), &shared),
+            vec![file]
+        );
+    }
+
+    #[test]
+    fn skips_an_undated_rollout_last_modified_before_since() {
+        let fixture = Fixture::new();
+        let archived_dir = fixture.create_dir_all("codex/archived_sessions");
+        let file = fixture.write_file("codex/archived_sessions/custom.jsonl", "");
+        crate::test_support::set_file_modified(
+            &file,
+            crate::parse_ts_timestamp("2026-01-30T23:59:59.999Z").unwrap(),
+        );
+        let shared = SharedArgs {
+            since: Some("20260131".parse().unwrap()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+            ..SharedArgs::default()
+        };
+
+        assert_eq!(
+            filter_codex_usage_files(&archived_dir, std::slice::from_ref(&file), &shared),
+            Vec::<PathBuf>::new()
+        );
+    }
+
+    #[test]
+    fn keeps_an_undated_rollout_whose_mtime_cannot_be_read() {
+        let fixture = Fixture::new();
+        let archived_dir = fixture.create_dir_all("codex/archived_sessions");
+        let missing = fixture.path("codex/archived_sessions/missing.jsonl");
         let shared = SharedArgs {
             since: Some("20260131".parse().unwrap()),
             ..SharedArgs::default()
         };
 
         assert_eq!(
-            filter_codex_usage_files(&sessions_dir, std::slice::from_ref(&file), &shared),
-            vec![file]
+            filter_codex_usage_files(&archived_dir, std::slice::from_ref(&missing), &shared),
+            vec![missing]
         );
     }
 }

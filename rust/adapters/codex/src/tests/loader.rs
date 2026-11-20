@@ -11,6 +11,7 @@ use crate::{
     test_support::load_groups_from_directory,
 };
 
+mod archived;
 mod auto_review;
 mod bounded;
 mod forks;
