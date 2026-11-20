@@ -8,11 +8,11 @@ on:
         type: string
         default: main
       commands:
-        description: Report commands, one per line or comma-separated, each optionally prefixed with `large:` or `golden:`. Empty profiles every adapter.
+        description: Report commands, one per line or comma-separated, each optionally prefixed with `large:`, `golden:`, `many-files:` or `proxy:`. Empty profiles every adapter.
         type: string
         default: ''
       fixture-mib:
-        description: Size of the generated Claude and Codex fixtures in MiB.
+        description: Size of the generated Claude and Codex fixtures, and of the proxy fixture, in MiB.
         type: string
         default: '1024'
 
@@ -122,20 +122,21 @@ jobs:
         with:
           disk-job: test
           save: 'false'
-      - run: nix profile install --inputs-from . nixpkgs#nushell nixpkgs#valgrind nixpkgs#just
+      - run: nix profile install --inputs-from . nixpkgs#nushell nixpkgs#valgrind
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ccusage-${{ matrix.run.ref_slug }}
           path: ${{ runner.temp }}/ccusage-bin
-      - name: Generate large fixture
-        if: matrix.run.fixture == 'large'
+      - name: Generate fixture
+        if: matrix.run.fixture != 'golden'
         env:
+          FIXTURE: ${{ matrix.run.fixture }}
           FIXTURE_MIB: ${{ inputs.fixture-mib }}
         run: |
-          just generate-large-fixture "$RUNNER_TEMP/ccusage-large-fixture/claude" "$RUNNER_TEMP/ccusage-large-fixture/codex" \
-            --grok-output-dir "$RUNNER_TEMP/ccusage-large-fixture/grok" \
-            --size-mib "$FIXTURE_MIB" \
-            --codex-size-mib "$FIXTURE_MIB"
+          nu .github/scripts/profile-instructions.nu generate \
+            --fixture "$FIXTURE" \
+            --out "$RUNNER_TEMP/ccusage-$FIXTURE-fixture" \
+            --mib "$FIXTURE_MIB"
       - name: Download golden seeds
         if: matrix.run.fixture == 'golden'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
