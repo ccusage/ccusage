@@ -556,18 +556,24 @@ fn reads_the_agent_progress_envelope_when_the_top_level_timestamp_is_null() {
 
 #[test]
 fn decodes_escaped_line_scoped_fields_like_plain_ones() {
-    for (direct, progress) in [
+    for (direct, progress, escaped) in [
         (
             r#"{"timestamp":"2026-03-29T07:00:00.000Z","version":"1.0.0","sessionId":"session-a","message":{"usage":{"input_tokens":1,"output_tokens":2}}}"#,
             r#"{"sessionId":"session-a","data":{"message":{"timestamp":"2026-03-29T07:00:00.000Z","message":{"usage":{"input_tokens":1,"output_tokens":2}}}}}"#,
+            false,
         ),
         (
-            r#"{"timestamp":"2026-03-29T07:00:00.000Z","version":"1.0.0","sessionId":"session-a","message":{"usage":{"input_tokens":1,"output_tokens":2}}}"#,
-            r#"{"sessionId":"session-a","data":{"message":{"timestamp":"2026-03-29T07:00:00.000Z","message":{"usage":{"input_tokens":1,"output_tokens":2}}}}}"#,
+            r#"{"timestamp":"2026-03-29T07:00:00.000\u005a","version":"1.0\u002e0","sessionId":"session\u002da","message":{"usage":{"input_tokens":1,"output_tokens":2}}}"#,
+            r#"{"sessionId":"session\u002da","data":{"message":{"timestamp":"2026-03-29T07:00:00.000\u005a","message":{"usage":{"input_tokens":1,"output_tokens":2}}}}}"#,
+            true,
         ),
     ] {
         let direct = JsonText::new(direct.as_bytes());
         let (record, _) = super::parse_usage_line(&direct).unwrap();
+        assert_eq!(
+            matches!(record.timestamp, std::borrow::Cow::Owned(_)),
+            escaped
+        );
         assert_eq!(record.timestamp, "2026-03-29T07:00:00.000Z");
         assert_eq!(record.version.as_deref(), Some("1.0.0"));
         assert_eq!(record.session_id.as_deref(), Some("session-a"));
