@@ -5,7 +5,7 @@ use crate::TimestampMs;
 use super::{
     CachedHit, Candidate, HitKind, Lookup, Name, NameCache, Pass, Pricing, PricingMap, PricingRows,
     PricingSchedule, RequestCache, RequestHit, Row, RowMatch, Scope, last_segment,
-    models_dev_pricing, names_pricing_key, pricing_key_matches,
+    models_dev_pricing, names_pricing_key, pricing_key_matches, schedule_for,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -54,6 +54,12 @@ impl<'a> AgentModel<'a> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BillingRoute {
+    Direct,
+    Foreign,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg(feature = "resolver-trace")]
 pub enum ResolutionStep {
     ReportedOverride,
@@ -84,6 +90,22 @@ impl PricingHandle {
         Self {
             rates: row.pricing.rates(),
             schedule: row.schedule.filter(|_| hit.scheduled()),
+        }
+    }
+
+    fn on_route(row: &Row, route: BillingRoute, model: &str) -> Self {
+        let schedule = match route {
+            BillingRoute::Direct => {
+                let resolved = crate::model_aliases::resolve_model_name(model);
+                [resolved.as_ref(), model]
+                    .into_iter()
+                    .find_map(|name| schedule_for(last_segment(name)))
+            }
+            BillingRoute::Foreign => None,
+        };
+        Self {
+            rates: row.pricing.rates(),
+            schedule,
         }
     }
 
@@ -147,6 +169,23 @@ impl PricingMap {
             models_dev_pricing,
         )?;
         let handle = PricingHandle::new(found.row, hit);
+        Some((model, handle.with_rates_at(timestamp, |rates| *rates)))
+    }
+
+    pub(crate) fn resolve_on_route_at<'a>(
+        &self,
+        reported_model: Option<&'a str>,
+        candidates: &[(&'a str, MatchKind)],
+        route: BillingRoute,
+        timestamp: Option<TimestampMs>,
+    ) -> Option<(&'a str, Pricing)> {
+        let (model, found, _) = self.resolve_row_with(
+            reported_model,
+            candidates,
+            Lookup::Pricing,
+            models_dev_pricing,
+        )?;
+        let handle = PricingHandle::on_route(found.row, route, reported_model.unwrap_or(model));
         Some((model, handle.with_rates_at(timestamp, |rates| *rates)))
     }
 
