@@ -239,6 +239,13 @@ fn transcript(rng: &mut Rng) -> Vec<String> {
         };
         let input = *rng.pick(&[100, 100, 150]);
         let with_request = rng.chance(5);
+        let replayed_at = (with_request && message_id.starts_with("msg_") && rng.chance(40)).then(|| {
+            let at = t.timestamp();
+            t.lines.push(format!(
+                r#"{{"type":"assistant","isSidechain":true,"timestamp":"{at}","sessionId":"session-a","message":{{"id":"{message_id}","usage":{{"input_tokens":{input},"output_tokens":1}}}}}}"#
+            ));
+            at
+        });
         for _ in 0..rng.below(3) + 1 {
             let timestamp = t.timestamp();
             stamps.push(timestamp.clone());
@@ -291,7 +298,7 @@ fn transcript(rng: &mut Rng) -> Vec<String> {
                 Some(message),
                 extra,
             );
-            if rng.chance(15) {
+            if replayed_at.is_none() && rng.chance(15) {
                 let rewrite = t.uuid();
                 let message = Json::Object(vec![
                     member("id", text(&message_id)),
@@ -318,7 +325,12 @@ fn transcript(rng: &mut Rng) -> Vec<String> {
                 t.lines.push(block);
                 parent = Some(uuid);
             }
-            if rng.chance(12) {
+            if is_tool_use && rng.chance(15) {
+                t.lines.push(format!(
+                    r#"{{"parentUuid":null,"isSidechain":false,"type":"assistant","uuid":"copy_{tool_id}","timestamp":"{timestamp}","sessionId":"session-c","message":{{"id":"copy_{message_id}","role":"assistant","content":[{{"type":"tool_use","id":"{tool_id}","name":"Read","input":{{}}}}],"usage":{{"input_tokens":{input},"output_tokens":1}}}}}}"#
+                ));
+            }
+            if replayed_at.is_none() && rng.chance(12) {
                 let at = rng.pick(&stamps).clone();
                 t.lines.push(format!(
                     r#"{{"type":"assistant","timestamp":"{at}","sessionId":"session-a","message":{{"id":"{message_id}","usage":{{"input_tokens":{input},"output_tokens":{}}}}}}}"#,
@@ -370,6 +382,11 @@ fn transcript(rng: &mut Rng) -> Vec<String> {
                 }
                 _ => {}
             }
+        }
+        if let Some(at) = replayed_at.filter(|_| rng.chance(50)) {
+            t.lines.push(format!(
+                r#"{{"type":"assistant","timestamp":"{at}","sessionId":"session-a","message":{{"id":"{message_id}","usage":{{"input_tokens":{input},"output_tokens":2}}}}}}"#
+            ));
         }
         if rng.chance(40) {
             let uuid = t.uuid();
@@ -464,7 +481,7 @@ impl Reference {
             if block["type"] == "tool_use"
                 && let Some(id) = hashed(&block["id"])
             {
-                self.owners.insert(id, index);
+                self.owners.insert(scoped(session, id), index);
             }
         }
         if let Some(uuid) = uuid {
@@ -498,7 +515,7 @@ impl Reference {
             let owner = self.response_of(parent)?;
             answers
                 .iter()
-                .all(|answer| self.owners.get(answer) == Some(&owner))
+                .all(|answer| self.owners.get(&scoped(session, *answer)) == Some(&owner))
                 .then_some(())?;
             Some(owner)
         } else {
@@ -543,7 +560,18 @@ fn reference_keys(lines: &[String]) -> Vec<Option<NonZeroU64>> {
     keys
 }
 
-fn deduped_groups(entries: &[(u64, Option<NonZeroU64>, i64, bool, u64)]) -> usize {
+// NOTE(2026-11-20, #2255): A sidechain replay matches any record of its message and session only while it survives its slot, which a union of records cannot express. The generator gives a replayed response no requestless rewrites or unlinked records, so this rule holds for every transcript it writes.
+struct Grouped {
+    identity: u64,
+    response: Option<NonZeroU64>,
+    timestamp: i64,
+    requestless: bool,
+    session: u64,
+    message: u64,
+    sidechain: bool,
+}
+
+fn deduped_groups(entries: &[Grouped]) -> usize {
     let mut groups = (0..entries.len()).collect::<Vec<_>>();
     fn root(groups: &mut [usize], at: usize) -> usize {
         let mut at = at;
@@ -555,12 +583,16 @@ fn deduped_groups(entries: &[(u64, Option<NonZeroU64>, i64, bool, u64)]) -> usiz
     }
     for (index, entry) in entries.iter().enumerate() {
         for (other, earlier) in entries[..index].iter().enumerate() {
-            let same = entry.0 == earlier.0
-                && entry.3 == earlier.3
-                && (!entry.3 || entry.4 == earlier.4)
-                && (!entry.3
-                    || entry.2 == earlier.2
-                    || (entry.1.is_some() && entry.1 == earlier.1));
+            let replay = entry.message == earlier.message
+                && entry.session == earlier.session
+                && (entry.sidechain || earlier.sidechain);
+            let same_record = entry.identity == earlier.identity
+                && entry.requestless == earlier.requestless
+                && (!entry.requestless
+                    || (entry.session == earlier.session
+                        && (entry.timestamp == earlier.timestamp
+                            || (entry.response.is_some() && entry.response == earlier.response))));
+            let same = replay || same_record;
             if same {
                 let (a, b) = (root(&mut groups, index), root(&mut groups, other));
                 groups[a] = b;
@@ -599,13 +631,15 @@ fn the_scanner_and_a_full_parse_place_generated_blocks_in_the_same_responses() {
                 let identity = entry
                     .request_id()
                     .map_or(message, |request| message ^ key(request.as_bytes()));
-                (
+                Grouped {
                     identity,
-                    entry.key.request.response(),
-                    entry.timestamp().as_millis(),
-                    entry.request_id().is_none(),
-                    key(entry.session_id().as_bytes()),
-                )
+                    response: entry.key.request.response(),
+                    timestamp: entry.timestamp().as_millis(),
+                    requestless: entry.request_id().is_none(),
+                    session: key(entry.session_id().as_bytes()),
+                    message,
+                    sidechain: entry.is_sidechain(),
+                }
             })
             .collect::<Vec<_>>();
         let path = fixture.path("projects/project-a/session-a.jsonl");
