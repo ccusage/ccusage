@@ -1,4 +1,4 @@
-use super::*;
+use super::{wrap::compact_date_cell, *};
 
 #[test]
 fn compact_date_cell_splits_iso_dates() {

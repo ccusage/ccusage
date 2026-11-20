@@ -690,14 +690,6 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.00006000000000000001,
-          "inputTokens": 7,
-          "modelName": "opus",
-          "outputTokens": 1
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
           "cost": 0.00006,
           "inputTokens": 0,
           "modelName": "grok-code-fast-1",
@@ -841,6 +833,15 @@ exit: 0
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.0,
+          "inputTokens": 7,
+          "missingPricing": true,
+          "modelName": "opus",
+          "outputTokens": 1
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
           "inputTokens": 300,
           "missingPricing": true,
           "modelName": "[pi] pi-mystery-1",
@@ -911,7 +912,7 @@ exit: 0
       ],
       "outputTokens": 17537,
       "period": "2026-01-01",
-      "totalCost": 3.706092315,
+      "totalCost": 3.706032315,
       "totalTokens": 1608822
     }
   ],
@@ -920,7 +921,7 @@ exit: 0
     "cacheReadTokens": 668494,
     "inputTokens": 1171909,
     "outputTokens": 37424,
-    "totalCost": 15.3765813,
+    "totalCost": 15.3765213,
     "totalTokens": 1888490,
     "unpricedModels": [
       "GLM-5.3",
@@ -945,6 +946,7 @@ exit: 0
       "kimi-mystery-1",
       "mystery-model-9000",
       "opencode-mystery-1",
+      "opus",
       "qwen-mystery-1",
       "unknown",
       "zcode-mystery-1"

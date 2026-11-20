@@ -997,13 +997,6 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "inputTokens": 7,
-          "modelName": "opus",
-          "outputTokens": 1
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
           "inputTokens": 0,
           "modelName": "grok-code-fast-1",
           "outputTokens": 40
@@ -1126,6 +1119,14 @@ exit: 0
           "missingPricing": true,
           "modelName": "opencode-mystery-1",
           "outputTokens": 70
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "inputTokens": 7,
+          "missingPricing": true,
+          "modelName": "opus",
+          "outputTokens": 1
         },
         {
           "cacheCreationTokens": 0,
@@ -1567,6 +1568,7 @@ exit: 0
       "model_placeholder_m499",
       "mystery-model-9000",
       "opencode-mystery-1",
+      "opus",
       "qwen-mystery-1",
       "unknown",
       "zcode-mystery-1"
