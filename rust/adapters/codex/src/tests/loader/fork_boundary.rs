@@ -306,3 +306,21 @@ fn treats_a_blank_thread_id_as_absent() {
 
     assert_child_usage(&load_fork(None, &child), &[100], &[MISSING_PARENT_WARNING]);
 }
+
+#[test]
+fn needs_an_own_boundary_before_dropping_usage_after_a_foreign_marker() {
+    let child = [
+        replay_metadata("2026-11-01T09:00:00.000Z", CHILD, Some(PARENT)),
+        settings_applied("2026-11-01T09:00:00.000Z", Some(PARENT)),
+        replay_token_count("2026-11-01T09:00:00.010Z", 200),
+        replay_token_count("2026-11-01T09:00:00.020Z", 300),
+        replay_token_count("2026-11-01T09:05:00.000Z", 400),
+    ];
+
+    assert_child_usage(
+        &load_fork(None, &child),
+        &[200, 300, 400],
+        &[MISSING_PARENT_WARNING],
+    );
+    assert_child_usage(&load_fork(Some(&parent_rollout()), &child), &[400], &[]);
+}

@@ -91,7 +91,7 @@ impl<'a> CodexReplayFilter<'a> {
         };
         let leading_end = self.own_start.unwrap_or(self.pending.len());
         let leading = &self.pending[..leading_end];
-        if self.foreign_before_own {
+        if self.foreign_before_own && self.own_start.is_some() {
             let inherited = leading.iter().filter(|event| is_replayable(event)).count();
             self.emit_after(inherited, visit);
             return CodexReplayResolution::Deterministic;
