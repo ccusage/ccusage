@@ -38,7 +38,7 @@ fn direct_litellm_row_beats_the_bare_hosted_spelling() {
 }
 
 impl PricingMap {
-    pub(crate) fn find_at(&self, model: &str, timestamp: super::TimestampMs) -> Option<Pricing> {
+    pub(crate) fn find_at(&self, model: &str, timestamp: crate::TimestampMs) -> Option<Pricing> {
         self.resolve_at(Some(model), &[(model, MatchKind::Fuzzy)], Some(timestamp))
             .map(|(_, rates)| rates)
     }

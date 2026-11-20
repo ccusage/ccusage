@@ -1,0 +1,207 @@
+use std::borrow::Cow;
+
+use super::data;
+
+const MODEL_DATE_SUFFIX_DIGITS: usize = 8;
+
+pub(super) fn with_names<T>(model: &str, mut choose: impl FnMut(&str) -> Option<T>) -> Option<T> {
+    choose(model)
+        .or_else(|| pricing_alias(model).and_then(&mut choose))
+        .or_else(|| {
+            let alias = crate::model_aliases::resolve_model_name(model);
+            if alias == model {
+                return None;
+            }
+            choose(alias.as_ref()).or_else(|| pricing_alias(alias.as_ref()).and_then(choose))
+        })
+}
+
+pub(super) fn last_segment(key: &str) -> &str {
+    key.rsplit_once('/').map_or(key, |(_, segment)| segment)
+}
+
+pub(super) fn pricing_key_matches(
+    candidate: &str,
+    normalized_candidate: &str,
+    model: &str,
+    normalized_model: &str,
+) -> bool {
+    names_same_model((model, model), (candidate, candidate))
+        || names_same_model((normalized_model, model), (normalized_candidate, candidate))
+}
+
+pub(super) fn names_pricing_key(
+    candidate: &str,
+    normalized_candidate: &str,
+    model: &str,
+    normalized_model: &str,
+) -> bool {
+    contains_pricing_key(model, model, candidate)
+        || contains_pricing_key(normalized_model, model, normalized_candidate)
+}
+
+// NOTE(2026-11-20, #2236): Either id may carry only a host or provider qualifier in front of the other, so a word in front, as in `chat-gpt-5.4` for `gpt-5.4`, makes it another model. The qualifier is read from the raw id because the identity spells `openai.` as `openai-`. Only the logged id may add a price-neutral suffix: a catalogue lists a dated, `[1m]` or effort-level id because it prices that variant itself.
+fn names_same_model((model, raw_model): (&str, &str), (key, raw_key): (&str, &str)) -> bool {
+    if model.len() >= key.len() {
+        contains_pricing_key(model, raw_model, key)
+    } else {
+        key.strip_suffix(model).is_some_and(|qualifier| {
+            raw_key
+                .as_bytes()
+                .get(qualifier.len() - 1)
+                .copied()
+                .is_some_and(is_qualifier_end)
+        })
+    }
+}
+
+fn contains_pricing_key(value: &str, raw_value: &str, key: &str) -> bool {
+    value.match_indices(key).any(|(index, _)| {
+        let before = index
+            .checked_sub(1)
+            .and_then(|before| raw_value.as_bytes().get(before))
+            .copied();
+        before.is_none_or(is_qualifier_end) && is_price_neutral_suffix(&value[index + key.len()..])
+    })
+}
+
+fn is_qualifier_end(byte: u8) -> bool {
+    !byte.is_ascii_alphanumeric() && !matches!(byte, b'-' | b'_')
+}
+
+fn is_price_neutral_suffix(suffix: &str) -> bool {
+    let mut rest = suffix;
+    while let Some(&separator) = rest.as_bytes().first() {
+        if separator == b'[' {
+            let Some(end) = rest.find(']') else {
+                return false;
+            };
+            rest = &rest[end + 1..];
+            continue;
+        }
+        if !matches!(separator, b'-' | b'.' | b'_' | b':' | b'@') {
+            return false;
+        }
+        let word_len = rest[1..]
+            .bytes()
+            .take_while(u8::is_ascii_alphanumeric)
+            .count();
+        let (word, after) = rest[1..].split_at(word_len);
+        rest = if let Some(after) = date_suffix_end(word, after) {
+            after
+        } else if let Some(after) = deployment_revision_end(word, after) {
+            after
+        } else if let Some(after) = price_neutral_word_end(&rest[1..]) {
+            after
+        } else {
+            return false;
+        };
+    }
+    true
+}
+
+fn price_neutral_word_end(rest: &str) -> Option<&str> {
+    data::PRICE_NEUTRAL_SUFFIX_WORDS.iter().find_map(|word| {
+        let after = rest.strip_prefix(word)?;
+        (!after
+            .bytes()
+            .next()
+            .is_some_and(|byte| byte.is_ascii_alphanumeric()))
+        .then_some(after)
+    })
+}
+
+fn date_suffix_end<'a>(word: &str, after: &'a str) -> Option<&'a str> {
+    if is_digits(word, MODEL_DATE_SUFFIX_DIGITS) {
+        return Some(after);
+    }
+    let month = after.strip_prefix('-')?.get(..2)?;
+    let day = after.get(3..)?.strip_prefix('-')?.get(..2)?;
+    let rest = &after[6..];
+    (is_digits(word, 4)
+        && is_digits(month, 2)
+        && is_digits(day, 2)
+        && !rest
+            .bytes()
+            .next()
+            .is_some_and(|byte| byte.is_ascii_alphanumeric()))
+    .then_some(rest)
+}
+
+fn deployment_revision_end<'a>(word: &str, after: &'a str) -> Option<&'a str> {
+    let revision = word.strip_prefix('v')?;
+    let minor = after.strip_prefix(':')?;
+    let minor_len = minor.bytes().take_while(u8::is_ascii_digit).count();
+    (is_digits(revision, revision.len().max(1)) && minor_len > 0).then(|| &minor[minor_len..])
+}
+
+fn is_digits(value: &str, len: usize) -> bool {
+    value.len() == len && value.bytes().all(|byte| byte.is_ascii_digit())
+}
+
+pub(super) fn is_pricing_key_separator(byte: u8) -> bool {
+    matches!(byte, b'.' | b'@')
+}
+
+pub(super) fn dash_pricing_key_separators(chars: impl Iterator<Item = char>) -> String {
+    chars
+        .map(|char| if matches!(char, '.' | '@') { '-' } else { char })
+        .collect()
+}
+
+pub(super) fn normalized_pricing_key(value: &str) -> Cow<'_, str> {
+    if value.bytes().any(is_pricing_key_separator) {
+        Cow::Owned(dash_pricing_key_separators(value.chars()))
+    } else {
+        Cow::Borrowed(value)
+    }
+}
+
+pub(super) fn model_without_date_suffix(model: &str) -> &str {
+    let bytes = model.as_bytes();
+    if model.len() > 11 {
+        let suffix = &bytes[model.len() - 11..];
+        if suffix[0] == b'-'
+            && suffix[1..5].iter().all(u8::is_ascii_digit)
+            && suffix[5] == b'-'
+            && suffix[6..8].iter().all(u8::is_ascii_digit)
+            && suffix[8] == b'-'
+            && suffix[9..].iter().all(u8::is_ascii_digit)
+        {
+            return &model[..model.len() - 11];
+        }
+    }
+    if model.len() > 9 {
+        let suffix = &bytes[model.len() - 9..];
+        if suffix[0] == b'-' && suffix[1..].iter().all(u8::is_ascii_digit) {
+            return &model[..model.len() - 9];
+        }
+    }
+    model
+}
+
+pub(super) fn pricing_alias(model: &str) -> Option<&'static str> {
+    let fold = |byte| {
+        if is_pricing_key_separator(byte) {
+            b'-'
+        } else {
+            byte
+        }
+    };
+    data::ALIASES.iter().find_map(|(key, alias)| {
+        (key.len() == model.len() && key.bytes().map(fold).eq(model.bytes().map(fold)))
+            .then_some(*alias)
+    })
+}
+
+pub(super) fn matches_model_suffix(part: &str, base: &str) -> bool {
+    let (part, base) = (part.as_bytes(), base.as_bytes());
+    if base.is_empty() {
+        return true;
+    }
+    let Some(index) = part.windows(base.len()).rposition(|window| window == base) else {
+        return false;
+    };
+    part.get(index + base.len())
+        .is_none_or(|&next| next == b'-')
+}
