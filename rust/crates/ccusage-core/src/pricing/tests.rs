@@ -1,8 +1,8 @@
 mod scenarios;
 
 use super::{
-    Lookup, MatchKind, Pricing, PricingMap, Row, build_time_models_dev_json,
-    build_time_pricing_json, embedded_models_dev_pricing, model_without_date_suffix,
+    Lookup, MatchKind, Pricing, PricingMap, Row, build_time_pricing_json,
+    embedded::build_time_models_dev_json, embedded_models_dev_pricing, model_without_date_suffix,
 };
 use ccusage_test_support::fs_fixture;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -377,7 +377,7 @@ fn free_hosted_rows_answer_only_their_qualified_identity() {
 #[test]
 fn direct_providers_cover_every_curated_vendor() {
     crate::test_support::install_pricing_snapshots();
-    let providers = &super::litellm_sources().unwrap().direct_providers;
+    let providers = &super::embedded::litellm_sources().unwrap().direct_providers;
     for model in super::BUILTIN_PRICING {
         assert!(
             providers.iter().any(|provider| provider == model.provider),
@@ -1980,7 +1980,7 @@ fn accepts_a_fetched_models_dev_body_only_when_it_prices_a_model() {
         (asset_priced, false),
     ] {
         let mut accepted = None;
-        let pricing = super::load_models_dev_pricing(|load| {
+        let pricing = super::fetch::load_models_dev_pricing(|load| {
             accepted = Some(load(body));
             Ok(())
         });
@@ -2707,14 +2707,14 @@ fn tries_models_dev_pricing_once_per_process() {
     let cell = std::sync::OnceLock::new();
     let attempts = AtomicUsize::new(0);
 
-    let failed = super::load_models_dev_pricing_once(&cell, |_| {
+    let failed = super::fetch::load_models_dev_pricing_once(&cell, |_| {
         attempts.fetch_add(1, Ordering::Relaxed);
         Err(std::io::Error::new(
             std::io::ErrorKind::TimedOut,
             "temporary failure",
         ))
     });
-    let later = super::load_models_dev_pricing_once(&cell, |load| {
+    let later = super::fetch::load_models_dev_pricing_once(&cell, |load| {
         attempts.fetch_add(1, Ordering::Relaxed);
         load(r#"{"openai":{"models":{"gpt-late":{"cost":{"input":1.0,"output":2.0}}}}}"#);
         Ok(())
@@ -2729,7 +2729,7 @@ fn tries_models_dev_pricing_once_per_process() {
 fn keeps_the_models_dev_pricing_its_one_attempt_loaded() {
     crate::test_support::install_pricing_snapshots();
     let cell = std::sync::OnceLock::new();
-    let loaded = super::load_models_dev_pricing_once(&cell, |load| {
+    let loaded = super::fetch::load_models_dev_pricing_once(&cell, |load| {
         load(
             r#"{
                 "openai": {
@@ -2765,7 +2765,7 @@ fn keeps_the_models_dev_pricing_its_one_attempt_loaded() {
         Some(42)
     );
     assert!(
-        super::load_models_dev_pricing_once(&cell, |_| {
+        super::fetch::load_models_dev_pricing_once(&cell, |_| {
             Err(std::io::Error::other("must not fetch again"))
         })
         .is_some()
