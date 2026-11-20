@@ -12,7 +12,7 @@ use crate::{
     IteratedTokenUsage, Rejection, TimestampMs, TokenUsageRaw,
     cost::{PriceTable, price_resolved_usage},
     date_at,
-    dedupe::DedupKey,
+    dedupe::{DedupKey, Request},
     fast::LinePrefilter,
     parse_ts_timestamp,
     paths::extract_project,
@@ -22,6 +22,7 @@ use crate::{
 use super::{
     ClaudeEntry, ParsedUsage, parse_usage_line,
     record::{ClaudeUsageRecord, is_valid_usage_record},
+    response_chain::ResponseChains,
 };
 
 pub(super) const READ_POLICY: ReadPolicy = ReadPolicy {
@@ -145,6 +146,7 @@ pub(crate) fn read_usage_file<E>(
         table: pricing,
         models: smallvec::SmallVec::new(),
     };
+    let mut response_chains = ResponseChains::new(&path_session_id);
     let _ = jsonl::read(path, Some(diagnostics), READ_POLICY, |current, _, _| {
         let line = current.bytes();
         let Admitted {
@@ -153,10 +155,19 @@ pub(crate) fn read_usage_file<E>(
             advisors,
         } = match admit(line) {
             Ok(admitted) => admitted,
-            Err(Refusal::NotUsage | Refusal::Rejected(Rejection::NullContract)) => {
+            Err(Refusal::NotUsage) => {
+                if response_chains.is_tracking() {
+                    response_chains.link(line, false, !current.unterminated());
+                }
+                return ControlFlow::Continue(());
+            }
+            Err(Refusal::Rejected(Rejection::NullContract)) => {
                 return ControlFlow::Continue(());
             }
             Err(Refusal::Rejected(Rejection::Malformed)) => {
+                if response_chains.is_tracking() {
+                    response_chains.link(line, true, !current.unterminated());
+                }
                 crate::diagnostics::rejected(path, current, diagnostics);
                 return ControlFlow::Continue(());
             }
@@ -174,9 +185,6 @@ pub(crate) fn read_usage_file<E>(
             ));
         }
         let IteratedTokenUsage { usage, .. } = data.message.usage;
-        let raw_model = data.message.model;
-        let (cost, missing_pricing_model) =
-            file_pricing.price(raw_model.as_deref(), usage, data.cost_usd, timestamp);
         let session_id = if let Some(session_id) = data.session_id.as_deref() {
             if recorded_session_id.as_ref() != session_id {
                 recorded_session_id = Arc::from(session_id);
@@ -185,12 +193,21 @@ pub(crate) fn read_usage_file<E>(
         } else {
             Arc::clone(&path_session_id)
         };
+        let response = match (&data.request_id, &data.message.id) {
+            (None, Some(message_id)) => {
+                response_chains.response_key(line, &session_id, message_id, &usage)
+            }
+            _ => None,
+        };
+        let raw_model = data.message.model;
+        let (cost, missing_pricing_model) =
+            file_pricing.price(raw_model.as_deref(), usage, data.cost_usd, timestamp);
         let parent = ParsedUsage {
             key: DedupKey {
                 timestamp,
                 session_id,
                 message_id: data.message.id,
-                request_id: data.request_id,
+                request: Request::new(data.request_id, response),
                 is_sidechain: data.is_sidechain,
             },
             date: date_at(timestamp, tz),
@@ -224,7 +241,7 @@ pub(crate) fn read_usage_file<E>(
                             .message_id
                             .as_ref()
                             .map(|id| format!("{id}:advisor:{index}")),
-                        request_id: parent.key.request_id.clone(),
+                        request: parent.key.request.clone(),
                         is_sidechain: parent.key.is_sidechain,
                     },
                     date: parent.date,
