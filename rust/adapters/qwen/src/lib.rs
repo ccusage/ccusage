@@ -65,7 +65,7 @@ mod tests {
         let fixture = fs_fixture!({
             "projects/myProject/chats/chat-a.jsonl": [
                 r#"{"type":"user","text":"hello"}"#,
-                r#"{"type":"assistant","model":"qwen3-coder-plus","timestamp":"2026-02-23T14:24:56.857Z","sessionId":"session-json","usageMetadata":{"promptTokenCount":100,"candidatesTokenCount":50,"thoughtsTokenCount":10,"cachedContentTokenCount":5}}"#,
+                r#"{"type":"assistant","model":"qwen3-coder-plus","timestamp":"2026-02-23T14:24:56.857Z","sessionId":"session-json","usageMetadata":{"promptTokenCount":100,"candidatesTokenCount":50,"thoughtsTokenCount":10,"cachedContentTokenCount":5,"totalTokenCount":160}}"#,
             ]
             .join("\n"),
         });
@@ -89,7 +89,7 @@ mod tests {
             assert_eq!(entries[0].session_id.as_ref(), "session-json");
             assert_eq!(entries[0].project_path.as_ref(), "myProject");
             assert_eq!(entries[0].model.as_deref(), Some("qwen3-coder-plus"));
-            assert_eq!(entries[0].usage.input_tokens, 100);
+            assert_eq!(entries[0].usage.input_tokens, 95);
             assert_eq!(entries[0].usage.output_tokens, 50);
             assert_eq!(entries[0].usage.cache_read_input_tokens, 5);
             assert_eq!(entries[0].extra_total_tokens, 10);
@@ -186,7 +186,7 @@ mod tests {
     #[test]
     fn builds_qwen_daily_json_report_with_reasoning_in_total() {
         let fixture = fs_fixture!({
-            "projects/myProject/chats/chat-a.jsonl": r#"{"type":"assistant","model":"qwen3-coder-plus","timestamp":"2026-02-23T14:24:56.857Z","sessionId":"session-json","usageMetadata":{"promptTokenCount":100,"candidatesTokenCount":50,"thoughtsTokenCount":10,"cachedContentTokenCount":5}}"#,
+            "projects/myProject/chats/chat-a.jsonl": r#"{"type":"assistant","model":"qwen3-coder-plus","timestamp":"2026-02-23T14:24:56.857Z","sessionId":"session-json","usageMetadata":{"promptTokenCount":100,"candidatesTokenCount":50,"thoughtsTokenCount":10,"cachedContentTokenCount":5,"totalTokenCount":160}}"#,
         });
 
         let shared = SharedArgs {
@@ -216,7 +216,7 @@ mod tests {
             assert_eq!(report["daily"][0]["date"], "2026-02-23");
             assert_eq!(report["daily"][0]["outputTokens"], 50);
             assert_eq!(report["daily"][0]["cacheReadTokens"], 5);
-            assert_eq!(report["daily"][0]["totalTokens"], 165);
+            assert_eq!(report["daily"][0]["totalTokens"], 160);
             assert_eq!(
                 report["daily"][0]["modelsUsed"],
                 json!(["qwen3-coder-plus"])
@@ -225,7 +225,7 @@ mod tests {
                 report["daily"][0]["modelBreakdowns"],
                 json!([{
                     "modelName": "qwen3-coder-plus",
-                    "inputTokens": 100,
+                    "inputTokens": 95,
                     "outputTokens": 50,
                     "cacheCreationTokens": 0,
                     "cacheReadTokens": 5,

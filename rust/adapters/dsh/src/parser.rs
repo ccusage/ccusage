@@ -5,7 +5,7 @@ use ccusage_adapter_common::{
 };
 use ccusage_core::cost::PriceTable;
 use ccusage_core::{
-    cost::EntryPricing,
+    cost::{EntryPricing, UsageGranularity},
     pricing::{BillingRoute, MatchKind},
 };
 use std::{io, ops::ControlFlow, path::Path, sync::Arc};
@@ -467,6 +467,7 @@ pub(super) fn dsh_entry_to_loaded(
         .map(|name| (name.as_str(), MatchKind::Fuzzy))
         .collect();
     let entry_pricing = EntryPricing {
+        granularity: UsageGranularity::Request,
         usage: entry.usage,
         reasoning_tokens: 0,
         residual_tokens: 0,

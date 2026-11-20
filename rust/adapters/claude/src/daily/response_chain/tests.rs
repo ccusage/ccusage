@@ -649,6 +649,10 @@ fn the_scanner_and_a_full_parse_place_generated_blocks_in_the_same_responses() {
         fixture.write_file("projects/project-a/session-a.jsonl", lines.join("\n"));
         let entries = read_daily_usage_file_with_diagnostics(
             &fixture.path("projects/project-a/session-a.jsonl"),
+            crate::paths::fixture_projects_root(
+                &fixture.path("projects/project-a/session-a.jsonl"),
+            )
+            .as_deref(),
             &jiff::tz::TimeZone::UTC,
             PriceTable::Display,
             &Diagnostics::new("claude"),

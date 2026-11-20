@@ -1,5 +1,6 @@
 use std::{
-    fs,
+    fs::{self, File},
+    io::{Read, Seek, SeekFrom},
     ops::ControlFlow,
     path::{Path, PathBuf},
     time::UNIX_EPOCH,
@@ -12,7 +13,7 @@ use crate::{
     cli::{SharedArgs, home},
     cli_error, date_range_bounds_ms,
     fast::{FxHashMap, FxHashSet, LinePrefilter},
-    resolve_tz,
+    parse_ts_timestamp, resolve_tz,
 };
 use ccusage_adapter_common::{
     jsonl::{self, ReadPolicy},
@@ -62,13 +63,15 @@ pub(crate) fn visit_usage_files(
     visit: &mut dyn FnMut(PathBuf),
     diagnostics: &Diagnostics,
 ) {
-    let mut filtered_visit = |path: PathBuf| {
-        if project_filter.is_none_or(|filter| extract_project(&path) == filter) {
-            visit(path);
+    let roots = projects_roots(paths);
+    let mut filtered_visit = |file: PathBuf| {
+        if project_filter.is_none_or(|filter| {
+            extract_project(&file, containing_projects_root(&file, &roots)) == filter
+        }) {
+            visit(file);
         }
     };
-    for path in paths {
-        let projects_dir = path.join("projects");
+    for projects_dir in &roots {
         if let Some(project_filter) =
             project_filter.filter(|filter| is_project_path_segment(filter))
         {
@@ -78,9 +81,35 @@ pub(crate) fn visit_usage_files(
                 diagnostics,
             );
         } else {
-            visit_usage_files_in(&projects_dir, &mut filtered_visit, diagnostics);
+            visit_usage_files_in(projects_dir, &mut filtered_visit, diagnostics);
         }
     }
+}
+
+pub(crate) fn projects_roots(config_dirs: &[PathBuf]) -> Vec<PathBuf> {
+    config_dirs
+        .iter()
+        .map(|config_dir| config_dir.join("projects"))
+        .collect()
+}
+
+// NOTE(2026-11-20, #2374): CLAUDE_CONFIG_DIR can list a config directory and one of its descendants. The deepest root keeps a transcript attributed to its own config directory.
+pub(crate) fn containing_projects_root<'a>(
+    file: &Path,
+    projects_roots: &'a [PathBuf],
+) -> Option<&'a Path> {
+    projects_roots
+        .iter()
+        .map(PathBuf::as_path)
+        .filter(|root| file.starts_with(root))
+        .max_by_key(|root| root.components().count())
+}
+
+#[cfg(test)]
+pub(crate) fn fixture_projects_root(path: &Path) -> Option<PathBuf> {
+    path.ancestors()
+        .find(|ancestor| ancestor.file_name().is_some_and(|name| name == "projects"))
+        .map(Path::to_path_buf)
 }
 
 pub(crate) fn usage_file_order(left: &Path, right: &Path) -> std::cmp::Ordering {
@@ -88,6 +117,7 @@ pub(crate) fn usage_file_order(left: &Path, right: &Path) -> std::cmp::Ordering 
 }
 
 const MTIME_PRUNE_MARGIN_MS: i64 = MILLIS_PER_DAY;
+const TAIL_PROBE_BYTES: u64 = 16 * 1024;
 
 pub(super) struct SinceFiles<T> {
     pub(super) kept: Vec<(PathBuf, T)>,
@@ -106,6 +136,7 @@ pub(super) fn read_usage_files_since<T: Send>(
     read_files_since(
         shared.single_thread,
         prune_threshold(shared, now),
+        &projects_roots(paths),
         |visit| visit_usage_files(paths, project_filter, visit, diagnostics),
         read,
     )
@@ -122,6 +153,7 @@ fn prune_threshold(shared: &SharedArgs, now: TimestampMs) -> Option<i64> {
 fn read_files_since<T: Send>(
     single_thread: bool,
     threshold: Option<i64>,
+    projects_roots: &[PathBuf],
     discover: impl FnMut(&mut dyn FnMut(PathBuf)),
     read: impl Fn(&PathBuf) -> T + Sync,
 ) -> SinceFiles<T> {
@@ -138,7 +170,9 @@ fn read_files_since<T: Send>(
         single_thread,
         |visit| {
             discover(&mut |file| {
-                let live = file_modified_millis(&file).is_none_or(|modified| modified >= threshold);
+                // NOTE(2026-11-20, #2376): A restored or imported transcript can keep an mtime older than its records. Pruning on mtime alone silently drops in-window usage, so the latest timestamp in the tail must also be stale.
+                let live = file_modified_millis(&file).is_none_or(|modified| modified >= threshold)
+                    || latest_tail_timestamp(&file).is_none_or(|latest| latest >= threshold);
                 if live {
                     visit(file.clone());
                 }
@@ -161,7 +195,11 @@ fn read_files_since<T: Send>(
     let groups = discovered
         .into_iter()
         .map(|(file, live)| {
-            let group = sessions.file(&file, first_recorded_session_id(&file).as_deref());
+            let group = sessions.file(
+                &file,
+                first_recorded_session_id(&file).as_deref(),
+                projects_roots,
+            );
             (file, live, group)
         })
         .collect::<Vec<_>>();
@@ -193,8 +231,9 @@ struct SessionGroups {
 }
 
 impl SessionGroups {
-    fn file(&mut self, file: &Path, recorded: Option<&str>) -> usize {
-        let (path_session, _) = extract_session_parts(file);
+    fn file(&mut self, file: &Path, recorded: Option<&str>, projects_roots: &[PathBuf]) -> usize {
+        let (path_session, _) =
+            extract_session_parts(file, containing_projects_root(file, projects_roots));
         let group = self.id(&path_session);
         if let Some(recorded) = recorded {
             let recorded = self.id(recorded);
@@ -249,6 +288,40 @@ fn first_recorded_session_id(path: &Path) -> Option<String> {
     .flatten()
 }
 
+fn latest_tail_timestamp(path: &Path) -> Option<i64> {
+    #[derive(Deserialize)]
+    struct TimestampProbe<'a> {
+        timestamp: Option<&'a str>,
+    }
+
+    let mut file = File::open(path).ok()?;
+    let start = file
+        .metadata()
+        .ok()?
+        .len()
+        .saturating_sub(TAIL_PROBE_BYTES + 1);
+    file.seek(SeekFrom::Start(start)).ok()?;
+    let mut tail = Vec::with_capacity(TAIL_PROBE_BYTES as usize + 1);
+    file.take(TAIL_PROBE_BYTES + 1)
+        .read_to_end(&mut tail)
+        .ok()?;
+    let whole_lines = if start == 0 {
+        &tail[..]
+    } else {
+        &tail[memchr::memchr(b'\n', &tail)? + 1..]
+    };
+    whole_lines
+        .split(|&byte| byte == b'\n')
+        .filter_map(|line| {
+            serde_json::from_slice::<TimestampProbe<'_>>(line)
+                .ok()?
+                .timestamp
+        })
+        .filter_map(parse_ts_timestamp)
+        .map(|timestamp| timestamp.as_millis())
+        .max()
+}
+
 fn file_modified_millis(path: &Path) -> Option<i64> {
     fs::metadata(path)
         .ok()?
@@ -269,36 +342,36 @@ pub(super) fn is_project_path_segment(value: &str) -> bool {
         && !value.contains('\\')
 }
 
-pub(crate) fn extract_project(path: &Path) -> String {
-    let mut saw_projects = false;
-    for part in path
-        .components()
-        .filter_map(|component| component.as_os_str().to_str())
-    {
-        if saw_projects {
-            return if part.trim().is_empty() {
-                "unknown"
-            } else {
-                part
-            }
-            .to_string();
-        }
-        if part == "projects" {
-            saw_projects = true;
-        }
-    }
-    "unknown".to_string()
+fn below_projects<'a>(path: &'a Path, projects_root: Option<&Path>) -> Option<Vec<&'a str>> {
+    let relative = path.strip_prefix(projects_root?).ok()?;
+    Some(
+        relative
+            .components()
+            .filter_map(|component| component.as_os_str().to_str())
+            .collect(),
+    )
 }
 
-pub(crate) fn extract_session_parts(path: &Path) -> (String, String) {
-    let parts = path
-        .components()
-        .filter_map(|component| component.as_os_str().to_str())
-        .collect::<Vec<_>>();
-    let projects_index = parts.iter().position(|part| *part == "projects");
-    let relative = projects_index
-        .map(|index| &parts[index + 1..])
-        .unwrap_or(&parts);
+pub(crate) fn extract_project(path: &Path, projects_root: Option<&Path>) -> String {
+    below_projects(path, projects_root)
+        .and_then(|parts| parts.first().copied())
+        .map_or_else(
+            || "unknown".to_string(),
+            |part| {
+                if part.trim().is_empty() {
+                    "unknown"
+                } else {
+                    part
+                }
+                .to_string()
+            },
+        )
+}
+
+pub(crate) fn extract_session_parts(path: &Path, projects_root: Option<&Path>) -> (String, String) {
+    let Some(relative) = below_projects(path, projects_root) else {
+        return ("unknown".to_string(), "Unknown Project".to_string());
+    };
     let file_session_id = relative
         .last()
         .and_then(|file_name| file_name.strip_suffix(".jsonl"))

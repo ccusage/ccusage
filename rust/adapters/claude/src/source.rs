@@ -212,8 +212,10 @@ mod diagnostic_tests {
             };
             let diagnostics = Diagnostics::new("claude");
             let counted = SOURCE.counted(&shared, None, &diagnostics).unwrap();
+            let projects_root = fixture.root().join("projects");
             let probe = crate::load::read_usage_file_with_diagnostics(
                 &main,
+                Some(&projects_root),
                 ReportWindow::from_shared(&shared).timezone(),
                 ccusage_core::cost::PriceTable::Display,
                 &diagnostics,
@@ -230,7 +232,7 @@ mod diagnostic_tests {
                 ("session-side", "2026-01-02T12:00:00Z", false),
                 ("session-main", "2026-01-03T12:00:00Z", true),
                 ("session-main", "2025-12-01T12:00:00Z", false),
-                ("session-stale", "2026-01-03T12:00:00Z", false),
+                ("session-stale", "2026-01-03T12:00:00Z", true),
             ];
             for (session, timestamp, is_counted) in probes {
                 let kept =

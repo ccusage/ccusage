@@ -1,4 +1,4 @@
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use serde::Deserialize;
 use serde_json::Value;
@@ -7,7 +7,7 @@ use crate::fast::FxHashMap;
 
 use super::{
     LongContext, LongContextMode, LongContextRates, Pricing, PricingMap, Row, RowPricing, Scope,
-    Source, embedded::build_time_models_dev_json, model_without_date_suffix, pricing_alias,
+    Source, embedded::embedded_pricing_table, model_without_date_suffix, pricing_alias,
     provider_cache_defaults, speed::PublishedSpeed,
 };
 
@@ -387,11 +387,5 @@ struct ModelsDevLongContextRates {
 }
 
 pub(super) fn embedded_models_dev_pricing() -> &'static PricingMap {
-    static EMBEDDED_MODELS_DEV_PRICING: OnceLock<PricingMap> = OnceLock::new();
-    EMBEDDED_MODELS_DEV_PRICING.get_or_init(|| {
-        let mut map = PricingMap::default();
-        map.load_models_dev_json_missing(build_time_models_dev_json())
-            .expect("embedded models-dev-pricing.json must parse");
-        map
-    })
+    &embedded_pricing_table().models_dev
 }

@@ -1,4 +1,4 @@
-use ccusage_adapter_common::sqlite::read_i64;
+use ccusage_adapter_common::sqlite::{read_i64, table_exists as shared_table_exists};
 use ccusage_core::Diagnostics;
 use std::{collections::HashSet, path::Path};
 
@@ -134,15 +134,8 @@ pub(super) fn table_exists(
     db_path: &Path,
     diagnostics: &Diagnostics,
 ) -> bool {
-    let exists = connection
-        .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1 LIMIT 1")
-        .and_then(|mut statement| {
-            statement.bind((1, table.name()))?;
-            statement.next()
-        });
-    match exists {
-        Ok(sqlite::State::Row) => true,
-        Ok(sqlite::State::Done) => false,
+    match shared_table_exists(connection, table.name()) {
+        Ok(exists) => exists,
         Err(error) => {
             sqlite_setup_failure(error).record(db_path, diagnostics);
             false

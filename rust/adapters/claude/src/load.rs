@@ -18,8 +18,8 @@ use jiff::tz::TimeZone as JiffTimeZone;
 use memchr::memmem;
 
 use super::{
-    claude_paths, daily, dedupe, dedupe::DedupEntry as _, extract_session_parts,
-    read_usage_files_since, visit_usage_files,
+    claude_paths, containing_projects_root, daily, dedupe, dedupe::DedupEntry as _,
+    extract_session_parts, projects_roots, read_usage_files_since, visit_usage_files,
 };
 
 /// Loads every deduplicated Claude usage entry, regardless of `since`.
@@ -257,9 +257,11 @@ fn load_entries_with_mode(
         ),
     );
     let context = UsageLoadContext::new(shared);
+    let projects_roots = projects_roots(&paths);
     let read = |file: &PathBuf| {
         read_usage_file_with_diagnostics(
             file,
+            containing_projects_root(file, &projects_roots),
             context.window().timezone(),
             context.table_for_mode(mode),
             diagnostics,
@@ -380,45 +382,53 @@ impl dedupe::DedupEntry for ClaudeEntry {
 
 pub(super) fn read_usage_file_with_diagnostics(
     path: &Path,
+    projects_root: Option<&Path>,
     tz: &JiffTimeZone,
     pricing: ccusage_core::cost::PriceTable<'_>,
     diagnostics: &Diagnostics,
 ) -> Vec<ClaudeEntry> {
-    let (session_id, project_path) = extract_session_parts(path);
+    let (session_id, project_path) = extract_session_parts(path, projects_root);
     let session_id: Arc<str> = Arc::from(session_id);
     let project_path: Arc<str> = Arc::from(project_path);
-    daily::read_usage_file(path, tz, pricing, diagnostics, |parsed, line| {
-        let model = daily::ParsedUsage::display_model(parsed.raw_model.clone(), &parsed.usage);
-        ClaudeEntry {
-            source_timestamp: parsed.timestamp_text.into_owned(),
-            recorded_session_id: parsed.recorded_session_id,
-            original_model: parsed.raw_model,
-            request: parsed.key.request,
-            is_sidechain: parsed.key.is_sidechain,
-            entry: LoadedEntry {
-                model,
-                usage_limit_reset_time: usage_limit_reset_time_from_line_bytes(
-                    line,
-                    parsed.is_api_error_message,
-                ),
-                usage: parsed.usage,
-                message_id: parsed.key.message_id,
-                version: parsed.version.map(Cow::into_owned),
-                recorded_cost: parsed.cost_usd,
-                timestamp: parsed.key.timestamp,
-                date: parsed.date,
-                project: parsed.project,
-                session_id: Arc::clone(&session_id),
-                project_path: Arc::clone(&project_path),
-                cost: parsed.cost,
-                extra_total_tokens: 0,
-                credits: None,
-                message_count: None,
-                missing_pricing_model: parsed.missing_pricing_model,
-                stored_cost: parsed.stored_cost,
-            },
-        }
-    })
+    daily::read_usage_file(
+        path,
+        projects_root,
+        tz,
+        pricing,
+        diagnostics,
+        |parsed, line| {
+            let model = daily::ParsedUsage::display_model(parsed.raw_model.clone(), &parsed.usage);
+            ClaudeEntry {
+                source_timestamp: parsed.timestamp_text.into_owned(),
+                recorded_session_id: parsed.recorded_session_id,
+                original_model: parsed.raw_model,
+                request: parsed.key.request,
+                is_sidechain: parsed.key.is_sidechain,
+                entry: LoadedEntry {
+                    model,
+                    usage_limit_reset_time: usage_limit_reset_time_from_line_bytes(
+                        line,
+                        parsed.is_api_error_message,
+                    ),
+                    usage: parsed.usage,
+                    message_id: parsed.key.message_id,
+                    version: parsed.version.map(Cow::into_owned),
+                    recorded_cost: parsed.cost_usd,
+                    timestamp: parsed.key.timestamp,
+                    date: parsed.date,
+                    project: parsed.project,
+                    session_id: Arc::clone(&session_id),
+                    project_path: Arc::clone(&project_path),
+                    cost: parsed.cost,
+                    extra_total_tokens: 0,
+                    credits: None,
+                    message_count: None,
+                    missing_pricing_model: parsed.missing_pricing_model,
+                    stored_cost: parsed.stored_cost,
+                },
+            }
+        },
+    )
 }
 
 pub(super) fn usage_limit_reset_time_from_line_bytes(

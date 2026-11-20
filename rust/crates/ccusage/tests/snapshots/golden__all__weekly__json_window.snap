@@ -8,10 +8,10 @@ exit: 0
   "totals": {
     "cacheCreationTokens": 9001,
     "cacheReadTokens": 668794,
-    "inputTokens": 1172309,
+    "inputTokens": 1070549,
     "outputTokens": 37494,
-    "totalCost": 15.388806300000004,
-    "totalTokens": 1889260,
+    "totalCost": 15.286691300000003,
+    "totalTokens": 1787423,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",
@@ -46,7 +46,7 @@ exit: 0
       "agent": "all",
       "cacheCreationTokens": 9001,
       "cacheReadTokens": 668794,
-      "inputTokens": 1172309,
+      "inputTokens": 1070549,
       "metadata": {
         "agents": [
           "amp",
@@ -111,8 +111,8 @@ exit: 0
           "cacheCreation1hTokens": 1000,
           "cacheCreationTokens": 2750,
           "cacheReadTokens": 55060,
-          "cost": 0.7993164999999999,
-          "inputTokens": 15607,
+          "cost": 0.7988364999999998,
+          "inputTokens": 15447,
           "missingPricing": true,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 4672,
@@ -146,14 +146,6 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 101600,
-          "cost": 0.335751,
-          "inputTokens": 302531,
-          "modelName": "qwen3-coder-plus",
-          "outputTokens": 2413
-        },
-        {
-          "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.32,
           "inputTokens": 475,
@@ -161,6 +153,14 @@ exit: 0
           "modelName": "unknown",
           "outputTokens": 69,
           "storedCost": 0.32
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 101600,
+          "cost": 0.234116,
+          "inputTokens": 200931,
+          "modelName": "qwen3-coder-plus",
+          "outputTokens": 2413
         },
         {
           "cacheCreationTokens": 0,
@@ -695,8 +695,8 @@ exit: 0
       ],
       "outputTokens": 37494,
       "period": "2025-12-29",
-      "totalCost": 15.388806300000004,
-      "totalTokens": 1889260
+      "totalCost": 15.286691300000003,
+      "totalTokens": 1787423
     }
   ]
 }

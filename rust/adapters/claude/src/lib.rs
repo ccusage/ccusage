@@ -30,7 +30,8 @@ use load::{
 use usage_wire::{GuardedUsage, IteratedTokenUsage, Nullable, Rejection, non_null, nullable};
 
 pub(crate) use paths::{
-    claude_paths, extract_session_parts, read_usage_files_since, visit_usage_files,
+    claude_paths, containing_projects_root, extract_session_parts, projects_roots,
+    read_usage_files_since, visit_usage_files,
 };
 
 #[cfg(test)]
