@@ -7,11 +7,11 @@ exit: 0
 {
   "totals": {
     "cacheCreationTokens": 17725,
-    "cacheReadTokens": 1310237,
-    "inputTokens": 1364590,
+    "cacheReadTokens": 1308270,
+    "inputTokens": 1261097,
     "outputTokens": 60446,
-    "totalCost": 4.818007425000001,
-    "totalTokens": 2756415,
+    "totalCost": 4.712742425000002,
+    "totalTokens": 2650948,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",
@@ -237,8 +237,8 @@ exit: 0
     {
       "agent": "all",
       "cacheCreationTokens": 16501,
-      "cacheReadTokens": 1307174,
-      "inputTokens": 1356106,
+      "cacheReadTokens": 1305207,
+      "inputTokens": 1252613,
       "metadata": {
         "agents": [
           "amp",
@@ -298,22 +298,22 @@ exit: 0
           "outputTokens": 2290
         },
         {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 102800,
-          "cost": 0.342746,
-          "inputTokens": 305531,
-          "modelName": "qwen3-coder-plus",
-          "outputTokens": 3014
-        },
-        {
           "cacheCreation1hTokens": 1000,
           "cacheCreationTokens": 6440,
-          "cacheReadTokens": 108220,
-          "cost": 0.3052500000000001,
-          "inputTokens": 31408,
+          "cacheReadTokens": 106720,
+          "cost": 0.3028200000000001,
+          "inputTokens": 30748,
           "missingPricing": true,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 9744
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 102800,
+          "cost": 0.23991099999999999,
+          "inputTokens": 202731,
+          "modelName": "qwen3-coder-plus",
+          "outputTokens": 3014
         },
         {
           "cacheCreationTokens": 300,
@@ -894,9 +894,9 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 500,
+          "cacheReadTokens": 33,
           "cost": 0.0,
-          "inputTokens": 33,
+          "inputTokens": 0,
           "missingPricing": true,
           "modelName": "qwen-mystery-1",
           "outputTokens": 665
@@ -992,8 +992,8 @@ exit: 0
       ],
       "outputTokens": 58299,
       "period": "2025-12-29",
-      "totalCost": 4.765468675000001,
-      "totalTokens": 2741467
+      "totalCost": 4.660203675000002,
+      "totalTokens": 2636000
     },
     {
       "agent": "all",

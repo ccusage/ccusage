@@ -37,8 +37,8 @@ exit: 0
     {
       "agent": "all",
       "cacheCreationTokens": 7274,
-      "cacheReadTokens": 120573,
-      "inputTokens": 82733,
+      "cacheReadTokens": 120106,
+      "inputTokens": 80000,
       "metadata": {
         "agents": [
           "amp",
@@ -168,14 +168,6 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 2700,
-          "cost": 0.011295000000000001,
-          "inputTokens": 5000,
-          "modelName": "qwen3-coder-plus",
-          "outputTokens": 901
-        },
-        {
-          "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.01,
           "inputTokens": 100,
@@ -199,6 +191,14 @@ exit: 0
           "modelName": "claude-haiku-4-5-20251001",
           "outputTokens": 167,
           "storedCost": 0.007
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 2700,
+          "cost": 0.008595,
+          "inputTokens": 2300,
+          "modelName": "qwen3-coder-plus",
+          "outputTokens": 901
         },
         {
           "cacheCreationTokens": 0,
@@ -335,9 +335,9 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 500,
+          "cacheReadTokens": 33,
           "cost": 0.0,
-          "inputTokens": 33,
+          "inputTokens": 0,
           "missingPricing": true,
           "modelName": "qwen-mystery-1",
           "outputTokens": 11
@@ -379,14 +379,14 @@ exit: 0
       ],
       "outputTokens": 15244,
       "period": "2025-12",
-      "totalCost": 9.756095560000002,
-      "totalTokens": 226494
+      "totalCost": 9.753395560000003,
+      "totalTokens": 223294
     },
     {
       "agent": "all",
       "cacheCreationTokens": 10491,
-      "cacheReadTokens": 1187694,
-      "inputTokens": 1281856,
+      "cacheReadTokens": 1186194,
+      "inputTokens": 1181096,
       "metadata": {
         "agents": [
           "amp",
@@ -468,9 +468,9 @@ exit: 0
         {
           "cacheCreation1hTokens": 1000,
           "cacheCreationTokens": 3640,
-          "cacheReadTokens": 72320,
-          "cost": 0.8281970000000001,
-          "inputTokens": 19287,
+          "cacheReadTokens": 70820,
+          "cost": 0.825767,
+          "inputTokens": 18627,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 6939,
           "storedCost": 0.671
@@ -524,8 +524,8 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 100100,
-          "cost": 0.331451,
-          "inputTokens": 300531,
+          "cost": 0.231316,
+          "inputTokens": 200431,
           "modelName": "qwen3-coder-plus",
           "outputTokens": 2113
         },
@@ -1109,8 +1109,8 @@ exit: 0
       ],
       "outputTokens": 44815,
       "period": "2026-01",
-      "totalCost": 18.420009115,
-      "totalTokens": 2527603
+      "totalCost": 18.317444115,
+      "totalTokens": 2425336
     },
     {
       "agent": "all",
@@ -1143,11 +1143,11 @@ exit: 0
   ],
   "totals": {
     "cacheCreationTokens": 17765,
-    "cacheReadTokens": 1310267,
-    "inputTokens": 1365600,
+    "cacheReadTokens": 1308300,
+    "inputTokens": 1262107,
     "outputTokens": 60566,
-    "totalCost": 28.179458425,
-    "totalTokens": 2757615,
+    "totalCost": 28.074193425000004,
+    "totalTokens": 2652148,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",

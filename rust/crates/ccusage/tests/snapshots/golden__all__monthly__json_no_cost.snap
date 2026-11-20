@@ -35,8 +35,8 @@ exit: 0
     {
       "agent": "all",
       "cacheCreationTokens": 13225,
-      "cacheReadTokens": 295759,
-      "inputTokens": 132436,
+      "cacheReadTokens": 295292,
+      "inputTokens": 129543,
       "metadata": {
         "agents": [
           "amp",
@@ -87,7 +87,7 @@ exit: 0
         {
           "cacheCreationTokens": 4200,
           "cacheReadTokens": 65960,
-          "inputTokens": 21421,
+          "inputTokens": 21261,
           "missingPricing": true,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 6255
@@ -209,13 +209,6 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 2700,
-          "inputTokens": 5000,
-          "modelName": "qwen3-coder-plus",
-          "outputTokens": 901
-        },
-        {
-          "cacheCreationTokens": 0,
           "cacheReadTokens": 4400,
           "inputTokens": 2400,
           "modelName": "gpt-5-codex",
@@ -234,6 +227,13 @@ exit: 0
           "inputTokens": 520,
           "modelName": "gpt-6.1-sol",
           "outputTokens": 57
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 2700,
+          "inputTokens": 2300,
+          "modelName": "qwen3-coder-plus",
+          "outputTokens": 901
         },
         {
           "cacheCreationTokens": 50,
@@ -406,8 +406,8 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 500,
-          "inputTokens": 33,
+          "cacheReadTokens": 33,
+          "inputTokens": 0,
           "missingPricing": true,
           "modelName": "qwen-mystery-1",
           "outputTokens": 665
@@ -465,13 +465,13 @@ exit: 0
       ],
       "outputTokens": 31767,
       "period": "2025-12",
-      "totalTokens": 474257
+      "totalTokens": 470897
     },
     {
       "agent": "all",
       "cacheCreationTokens": 4540,
-      "cacheReadTokens": 1012508,
-      "inputTokens": 1232153,
+      "cacheReadTokens": 1011008,
+      "inputTokens": 1131553,
       "metadata": {
         "agents": [
           "amp",
@@ -514,8 +514,8 @@ exit: 0
         {
           "cacheCreation1hTokens": 1000,
           "cacheCreationTokens": 2240,
-          "cacheReadTokens": 42260,
-          "inputTokens": 10987,
+          "cacheReadTokens": 40760,
+          "inputTokens": 10487,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 3989
         },
@@ -556,18 +556,18 @@ exit: 0
           "outputTokens": 95
         },
         {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 100100,
-          "inputTokens": 300531,
-          "modelName": "qwen3-coder-plus",
-          "outputTokens": 2113
-        },
-        {
           "cacheCreationTokens": 50,
           "cacheReadTokens": 6000,
           "inputTokens": 800,
           "modelName": "[openclaw] openclaw-mystery-1",
           "outputTokens": 300
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 100100,
+          "inputTokens": 200431,
+          "modelName": "qwen3-coder-plus",
+          "outputTokens": 2113
         },
         {
           "cacheCreationTokens": 0,
@@ -1045,7 +1045,7 @@ exit: 0
       ],
       "outputTokens": 28292,
       "period": "2026-01",
-      "totalTokens": 2279840
+      "totalTokens": 2177733
     },
     {
       "agent": "all",
@@ -1076,10 +1076,10 @@ exit: 0
   ],
   "totals": {
     "cacheCreationTokens": 17765,
-    "cacheReadTokens": 1310267,
-    "inputTokens": 1365600,
+    "cacheReadTokens": 1308300,
+    "inputTokens": 1262107,
     "outputTokens": 60566,
-    "totalTokens": 2757615,
+    "totalTokens": 2652148,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",
