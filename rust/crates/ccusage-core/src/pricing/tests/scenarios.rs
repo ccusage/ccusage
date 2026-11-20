@@ -1,9 +1,9 @@
 use ccusage_cli::PricingOverride;
 
-use super::super::{MatchKind, PricingMap, ResolutionStep};
+use super::super::{BillingRoute, MatchKind, PricingMap, ResolutionStep};
 use super::timestamp;
 use crate::TokenUsageRaw;
-use crate::cost::{EntryPricing, PriceTable, price_entry};
+use crate::cost::{EntryPricing, PriceTable, price_entry, price_entry_on_route};
 
 #[test]
 fn resolver_scenarios_on_the_embedded_tables() {
@@ -28,8 +28,17 @@ fn resolver_scenarios_with_a_live_document() {
 fn check_cases(base: &PricingMap, cases: &str) {
     for line in cases.lines().filter(|line| !line.starts_with('#')) {
         let fields = line.split('|').collect::<Vec<_>>();
-        let [case, label, candidates, expected, step, key, overrides] = fields.as_slice() else {
+        if !(7..=8).contains(&fields.len()) {
             panic!("invalid resolver case {line}");
+        }
+        let (case, label, candidates, expected, step, key, overrides) = (
+            fields[0], fields[1], fields[2], fields[3], fields[4], fields[5], fields[6],
+        );
+        let route = match fields.get(7).copied().unwrap_or("") {
+            "" => None,
+            "direct" => Some(BillingRoute::Direct),
+            "foreign" => Some(BillingRoute::Foreign),
+            route => panic!("{line}: unknown billing route {route}"),
         };
         let name = format!("{case} {label}");
         let candidates = candidates
@@ -46,7 +55,7 @@ fn check_cases(base: &PricingMap, cases: &str) {
                 (model, kind)
             })
             .collect::<Vec<_>>();
-        let step = match *step {
+        let step = match step {
             "S1" => ResolutionStep::ReportedOverride,
             "S2" => ResolutionStep::AuthoritativeIdentity,
             "S3" => ResolutionStep::AuthoritativeSuffix,
@@ -79,10 +88,10 @@ fn check_cases(base: &PricingMap, cases: &str) {
         let found = map
             .explain(Some(label), &candidates)
             .unwrap_or_else(|| panic!("{name}: unpriced"));
-        assert_eq!((found.step, found.row_key), (step, *key), "{name}");
+        assert_eq!((found.step, found.row_key), (step, key), "{name}");
         let (expected, limit) = expected
             .split_once('+')
-            .map_or((*expected, None), |(rates, limit)| {
+            .map_or((expected, None), |(rates, limit)| {
                 (rates, Some(limit.parse().unwrap()))
             });
         if let Some(limit) = limit {
@@ -108,28 +117,37 @@ fn check_cases(base: &PricingMap, cases: &str) {
                     "w" => (0, 0, 0, 1_000),
                     _ => panic!("{name}: unknown token shape {shape}"),
                 };
-                let entry = price_entry(
-                    EntryPricing {
-                        usage: TokenUsageRaw {
-                            input_tokens,
-                            output_tokens,
-                            cache_read_input_tokens,
-                            cache_creation_input_tokens,
-                            ..Default::default()
-                        },
-                        reasoning_tokens: 0,
-                        residual_tokens: 0,
-                        reported_model: Some(label),
-                        candidates: &candidates,
-                        stored_cost: None,
-                        timestamp,
+                let entry_pricing = EntryPricing {
+                    usage: TokenUsageRaw {
+                        input_tokens,
+                        output_tokens,
+                        cache_read_input_tokens,
+                        cache_creation_input_tokens,
+                        ..Default::default()
                     },
-                    PriceTable::Calculate(map),
-                );
+                    reasoning_tokens: 0,
+                    residual_tokens: 0,
+                    reported_model: Some(label),
+                    candidates: &candidates,
+                    stored_cost: None,
+                    timestamp,
+                };
+                let entry = match route {
+                    Some(route) => {
+                        price_entry_on_route(entry_pricing, route, PriceTable::Calculate(map))
+                    }
+                    None => price_entry(entry_pricing, PriceTable::Calculate(map)),
+                };
                 assert!(!entry.missing_pricing, "{name}");
                 assert_close(entry.cost, cost, &name);
             } else {
-                let (_, rates) = map.resolve_at(Some(label), &candidates, timestamp).unwrap();
+                let (_, rates) = match route {
+                    Some(route) => {
+                        map.resolve_on_route_at(Some(label), &candidates, route, timestamp)
+                    }
+                    None => map.resolve_at(Some(label), &candidates, timestamp),
+                }
+                .unwrap();
                 let mut expected = expected.split('/');
                 assert_close(rates.input * 1e6, expected.next().unwrap(), &name);
                 assert_close(rates.output * 1e6, expected.next().unwrap(), &name);

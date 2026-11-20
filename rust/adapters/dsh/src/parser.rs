@@ -1,6 +1,11 @@
+use ccusage_adapter_common::billing::{billing_route, price_entry_for_provider};
+use ccusage_adapter_common::{
+    UnitError,
+    jsonl::{self, Interruption, Line, ReadFailure, ReadPolicy},
+};
 use ccusage_core::cost::PriceTable;
 use ccusage_core::{
-    cost::{EntryPricing, price_entry, price_entry_on_route},
+    cost::EntryPricing,
     pricing::{BillingRoute, MatchKind},
 };
 use std::{io, ops::ControlFlow, path::Path, sync::Arc};
@@ -12,13 +17,8 @@ use crate::{
     Diagnostics, LoadedEntry, Skip, SkipKind, TimestampMs, TokenUsageRaw,
     apply_total_token_fallback, date_at, fast::LinePrefilter,
 };
-use ccusage_adapter_common::{
-    UnitError,
-    jsonl::{self, Interruption, Line, ReadFailure, ReadPolicy},
-};
 
 use super::paths::is_compressed;
-
 const UNKNOWN_MODEL: &str = "unknown";
 
 #[derive(Debug, Deserialize)]
@@ -475,10 +475,7 @@ pub(super) fn dsh_entry_to_loaded(
         stored_cost: None,
         timestamp: Some(entry.timestamp),
     };
-    let priced = match billing_route(entry.provider.as_deref()) {
-        Some(route) => price_entry_on_route(entry_pricing, route, pricing),
-        None => price_entry(entry_pricing, pricing),
-    };
+    let priced = price_entry_for_provider(entry_pricing, entry.provider.as_deref(), pricing);
     let cost = priced.cost;
     let missing_pricing_model = priced
         .missing_pricing
@@ -501,13 +498,6 @@ pub(super) fn dsh_entry_to_loaded(
         version: None,
         recorded_cost: None,
         stored_cost: None,
-    }
-}
-
-fn billing_route(provider: Option<&str>) -> Option<BillingRoute> {
-    match provider? {
-        "deepseek-official" | "deepseek-account" => Some(BillingRoute::Direct),
-        _ => Some(BillingRoute::Foreign),
     }
 }
 
@@ -837,6 +827,14 @@ mod pricing_identity_tests {
             model_candidates(Some("openai"), "gpt-5.2"),
             ["openai/gpt-5.2", "gpt-5.2"]
         );
+    }
+
+    #[test]
+    fn shared_route_treats_deepseek_as_direct_and_unrecorded_providers_as_inferred() {
+        assert_eq!(billing_route(Some("deepseek")), Some(BillingRoute::Direct));
+        for provider in [None, Some(""), Some("unknown")] {
+            assert_eq!(billing_route(provider), None, "{provider:?}");
+        }
     }
 
     #[test]
