@@ -10,10 +10,11 @@ exit: 0
     "cacheReadTokens": 12500,
     "inputTokens": 5131,
     "outputTokens": 1193,
-    "totalCost": 2.05467,
+    "totalCost": 2.0546100000000003,
     "totalTokens": 19074,
     "unpricedModels": [
-      "opencode-mystery-1"
+      "opencode-mystery-1",
+      "opus"
     ]
   },
   "weekly": [
@@ -66,19 +67,20 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.00006000000000000001,
-          "inputTokens": 7,
-          "modelName": "opus",
-          "outputTokens": 1
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
           "cost": 0.0,
           "inputTokens": 300,
           "missingPricing": true,
           "modelName": "opencode-mystery-1",
           "outputTokens": 70
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 7,
+          "missingPricing": true,
+          "modelName": "opus",
+          "outputTokens": 1
         }
       ],
       "modelsUsed": [
@@ -91,7 +93,7 @@ exit: 0
         "gemini-3-pro-high"
       ],
       "outputTokens": 1193,
-      "totalCost": 2.05467,
+      "totalCost": 2.0546100000000003,
       "totalTokens": 19074,
       "week": "2025-12-29"
     }

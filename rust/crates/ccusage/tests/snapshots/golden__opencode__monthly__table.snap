@@ -26,3 +26,4 @@ exit: 0
 
 --- stderr ---
 WARN  Missing embedded pricing for opencode-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for opus; cost excludes this model. Run without --offline or update ccusage after pricing is added.

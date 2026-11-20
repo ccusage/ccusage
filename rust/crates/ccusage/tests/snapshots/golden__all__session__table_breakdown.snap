@@ -1042,10 +1042,6 @@ exit: 0
 │          │              │ └─ [pi]      │         30 │         3 │          0 │           0 │          33 │     $0.00 │
 │          │              │ gpt-5        │            │           │            │             │             │           │
 ├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
-│ ses-v2-… │ OpenCode     │ - opus       │          7 │         1 │          0 │           0 │           8 │     $0.00 │
-├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
-│          │              │   └─ opus    │          7 │         1 │          0 │           0 │           8 │     $0.00 │
-├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
 │ gateway  │ OpenClaw     │ - [openclaw] │         13 │         4 │          0 │           0 │          17 │     $0.00 │
 │          │              │ gpt-5        │            │           │            │             │             │           │
 ├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
@@ -1234,6 +1230,10 @@ exit: 0
 │          │              │ └─           │         70 │         7 │          0 │           0 │          77 │     $0.00 │
 │          │              │ opencode-my… │            │           │            │             │             │           │
 ├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
+│ ses-v2-… │ OpenCode     │ - opus       │          7 │         1 │          0 │           0 │           8 │     $0.00 │
+├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
+│          │              │   └─ opus    │          7 │         1 │          0 │           0 │           8 │     $0.00 │
+├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
 │ sess-de… │ DeepSeek     │ - dsh-myste… │      3,000 │       700 │          0 │           0 │       3,700 │     $0.00 │
 │          │ Harness      │              │            │           │            │             │             │           │
 ├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
@@ -1285,6 +1285,7 @@ WARN  Missing embedded pricing for kimi-mystery-1; cost excludes this model. Run
 WARN  Missing embedded pricing for model_placeholder_m499; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for mystery-model-9000; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for opencode-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for opus; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for qwen-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for unknown; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for zcode-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
