@@ -8,10 +8,10 @@ use crate::{
 };
 
 use super::{
-    MainThreadSessions, UsageLoadContext,
+    MainThreadSessions, UsageLoadContext, containing_projects_root,
     dedupe::{DedupEntry, DedupKey, dedupe_files},
     main_thread_sessions,
-    paths::{claude_paths, read_usage_files_since, visit_usage_files},
+    paths::{claude_paths, projects_roots, read_usage_files_since, visit_usage_files},
     read_discovered_paths,
 };
 
@@ -52,10 +52,12 @@ pub(super) fn load_daily_entries(
 ) -> Result<DailyEntries> {
     let paths = claude_paths()?;
     let context = UsageLoadContext::new(shared);
+    let projects_roots = projects_roots(&paths);
     let mut pruned = Vec::new();
     let read = |file: &PathBuf| {
         read_daily_usage_file_with_diagnostics(
             file,
+            containing_projects_root(file, &projects_roots),
             context.window().timezone(),
             context.table(),
             diagnostics,

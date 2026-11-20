@@ -111,7 +111,10 @@ pub fn run_session(args: SessionArgs) -> Result<()> {
 
     let mut rows = load_session_rows(&shared)?;
     rows.retain(|row| {
-        row.input_tokens + row.output_tokens + row.cache_creation_tokens + row.cache_read_tokens > 0
+        row.input_tokens > 0
+            || row.output_tokens > 0
+            || row.cache_creation_tokens > 0
+            || row.cache_read_tokens > 0
     });
     rows.sort_by(|a, b| match session_cost_ordering(&shared) {
         SortOrder::Asc => a.total_cost.total_cmp(&b.total_cost),

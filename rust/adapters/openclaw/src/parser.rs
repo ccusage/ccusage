@@ -229,12 +229,21 @@ impl TranscriptReader {
             fallback_timestamp,
         )? {
             Ok(entry) => entry,
-            Err(MissingTimestamp) => {
+            Err(TranscriptIssue::MissingTimestamp) => {
                 diagnostics.record(Skip::record(
                     unit,
                     number,
                     SkipKind::InvalidTimestamp,
                     "OpenClaw usage record has no timestamp",
+                ));
+                return None;
+            }
+            Err(TranscriptIssue::UnrepresentableTokens) => {
+                diagnostics.record(Skip::record(
+                    unit,
+                    number,
+                    SkipKind::InvalidData,
+                    "OpenClaw token counts exceed the u64 range",
                 ));
                 return None;
             }
@@ -319,7 +328,7 @@ fn parse_transcript_message(
     current_model: Option<&str>,
     current_provider: Option<&str>,
     fallback_timestamp: Option<TimestampMs>,
-) -> Option<Result<OpenClawEntry, MissingTimestamp>> {
+) -> Option<Result<OpenClawEntry, TranscriptIssue>> {
     if record.r#type.as_deref() != Some("message") {
         return None;
     }
@@ -342,15 +351,20 @@ fn parse_transcript_message(
         cache_creation: None,
     };
     let (raw_usage, extra_total_tokens) = apply_total_token_fallback(raw_usage, 0, total_tokens);
-    if crate::total_usage_tokens(raw_usage) + extra_total_tokens == 0 {
+    let Some(counted_tokens) =
+        ccusage_core::checked_total_usage_tokens(raw_usage, extra_total_tokens)
+    else {
+        return Some(Err(TranscriptIssue::UnrepresentableTokens));
+    };
+    if counted_tokens == 0 {
         return None;
     }
-    let total_tokens = total_tokens.max(crate::total_usage_tokens(raw_usage) + extra_total_tokens);
+    let total_tokens = total_tokens.max(counted_tokens);
     let Some(timestamp) = timestamp_from_value(message.timestamp.as_ref())
         .or_else(|| timestamp_from_value(record.timestamp.as_ref()))
         .or(fallback_timestamp)
     else {
-        return Some(Err(MissingTimestamp));
+        return Some(Err(TranscriptIssue::MissingTimestamp));
     };
     let model = message
         .model_id
@@ -418,10 +432,11 @@ pub(super) fn entry_to_loaded(
         project_path: Arc::from("OpenClaw"),
         cost,
         extra_total_tokens: entry.total_tokens.saturating_sub(
-            entry.input_tokens
-                + entry.output_tokens
-                + entry.cache_creation_tokens
-                + entry.cache_read_tokens,
+            entry
+                .input_tokens
+                .saturating_add(entry.output_tokens)
+                .saturating_add(entry.cache_creation_tokens)
+                .saturating_add(entry.cache_read_tokens),
         ),
         credits: None,
         message_count: None,
@@ -478,7 +493,10 @@ fn extract_session_id(path: &Path) -> String {
 }
 
 #[derive(Debug)]
-struct MissingTimestamp;
+enum TranscriptIssue {
+    MissingTimestamp,
+    UnrepresentableTokens,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(super) struct ContentId {
@@ -693,6 +711,32 @@ mod tests {
             .join("\n");
         assert!(warnings.contains("session.jsonl:3:"));
         assert!(!warnings.contains("SECRET_CANARY"));
+    }
+
+    #[test]
+    fn skips_and_diagnoses_token_counts_that_exceed_the_u64_range() {
+        let fixture = fs_fixture!({
+            "session.jsonl": concat!(
+                r#"{"type":"message","message":{"role":"assistant","model":"gpt-5.2","usage":{"input":18446744073709551615,"output":1},"timestamp":"2026-08-17T01:00:00Z"}}"#,
+                "\n",
+                r#"{"type":"message","message":{"role":"assistant","model":"gpt-5.2","usage":{"input":10,"output":1},"timestamp":"2026-08-17T01:01:00Z"}}"#,
+                "\n",
+            ),
+        });
+        let diagnostics = Diagnostics::new("openclaw");
+
+        let entries = parse_session_file(
+            &fixture.path("session.jsonl"),
+            &jiff::tz::TimeZone::UTC,
+            CostMode::Display,
+            PriceTable::Display,
+            &diagnostics,
+        )
+        .unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].usage.input_tokens, 10);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
     }
 
     #[test]

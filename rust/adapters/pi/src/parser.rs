@@ -272,7 +272,18 @@ fn read_session_file_data_with_context(
             cache_creation: None,
         };
         let (usage, extra_total_tokens) = apply_total_token_fallback(usage, 0, total);
-        if crate::total_usage_tokens(usage) + extra_total_tokens == 0 {
+        let Some(counted_tokens) =
+            ccusage_core::checked_total_usage_tokens(usage, extra_total_tokens)
+        else {
+            diagnostics.record(Skip::record(
+                path,
+                number,
+                SkipKind::InvalidData,
+                "Pi token counts exceed the u64 range",
+            ));
+            return;
+        };
+        if counted_tokens == 0 {
             return;
         }
         let Some((timestamp_text, timestamp)) = record.timestamp.as_ref().and_then(|text| {
