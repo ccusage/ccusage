@@ -102,6 +102,33 @@ pub(crate) fn seed_tied_fork(
     )]
 }
 
+pub(crate) const STORE_WITH_SESSIONS_PROJECT: &str = "pi-store";
+
+pub(crate) fn seed_store_with_sessions_project(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
+    let session = |relative: &str, id: &str, input: u64| {
+        let path = root.join(relative);
+        std::fs::create_dir_all(path.parent().expect("fixture file has a parent"))
+            .expect("create Pi fixture session directory");
+        let lines = [
+            header(id, Some("2025-12-27T00:00:00.000Z"), None),
+            message("2025-12-27T05:00:00.000Z", SONNET, &tokens(input, 0, 0, 0)),
+        ];
+        std::fs::write(path, lines.join("\n")).expect("write Pi fixture session");
+    };
+    session(
+        &format!("{STORE_WITH_SESSIONS_PROJECT}/sessions/in-sessions.jsonl"),
+        "in-sessions",
+        1000,
+    );
+    session(
+        &format!("{STORE_WITH_SESSIONS_PROJECT}/alpha/in-alpha.jsonl"),
+        "in-alpha",
+        2000,
+    );
+    std::fs::create_dir_all(root.join("pi-empty")).expect("create empty Pi store");
+    vec![("PI_AGENT_DIR", vec![root.join("pi-empty").into_os_string()])]
+}
+
 fn seed_main_sessions(root: &Path, write: &impl Fn(&str, &[String])) {
     let main_file = format!("{ALPHA}/2025-12-30T09-59-00-000Z_sess-alpha-main.jsonl");
     let a1 = linked(

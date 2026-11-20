@@ -26,7 +26,7 @@ The CLI reads usage data from pi-agent:
 | -------- | ----------------------- | ----------------------------- |
 | pi-agent | `~/.pi/agent/sessions/` | `PI_AGENT_DIR` or `--pi-path` |
 
-Both `PI_AGENT_DIR` and `--pi-path` can be one sessions directory or a comma-separated list of sessions directories. A pi agent directory such as `~/.pi/agent` is also accepted: when a configured directory has a `sessions` child, ccusage reads that child.
+Both `PI_AGENT_DIR` and `--pi-path` can be one sessions directory or a comma-separated list of sessions directories. Each path is read as the sessions store itself, so a project directory named `sessions` inside it is just another project.
 
 Tools built on the pi session format can also be declared as named stores in the config file for unified reports:
 
@@ -80,7 +80,7 @@ ccusage pi daily --breakdown
 
 | Variable       | Description                                                                                                   |
 | -------------- | ------------------------------------------------------------------------------------------------------------- |
-| `PI_AGENT_DIR` | Custom path, or comma-separated paths, to pi-agent sessions directories                                       |
+| `PI_AGENT_DIR` | Custom path, or comma-separated paths, to pi-agent sessions directories (not agent directories)               |
 | `LOG_LEVEL`    | `0` hides aggregated warnings, progress, and table titles ([details](/guide/environment-variables#log-level)) |
 
 ## Daily View

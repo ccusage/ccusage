@@ -23,9 +23,9 @@ contains a display cost of zero. Without an override, Auto keeps a valid stored
 cost and calculates from tokens only when that cost is missing or invalid.
 
 The default store is named `pi` and follows the same parsing and pricing rules
-as configured stores. A configured directory that contains a `sessions`
-directory is a Pi agent directory, and its store root is that `sessions`
-directory; any other directory is the store root itself. Project names use the
+as configured stores. `PI_AGENT_DIR`, `--pi-path`, `pi.defaults.piPath`, and
+`pi.stores[].path` name store roots directly, even when a root contains a
+project directory called `sessions`. Project names use the
 first directory beneath the store root; files directly in the root have project
 `unknown`.
 
