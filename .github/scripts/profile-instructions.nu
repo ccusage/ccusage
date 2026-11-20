@@ -200,16 +200,7 @@ def "main merge" [--dir: path, --refs: string, --out: path]: nothing -> nothing 
             ref: $ref.ref
             runs: $runs
             ranked: $ranked
-            markdown: (
-                [
-                    $"## Hot functions at `($ref.ref)` \(($runs | first | get sha | str substring 0..<12)\)"
-                    ''
-                    $"Ranked by how many of the ($runs | length) commands have the function in their top 50 by self Ir, then by mean self-Ir share."
-                    ''
-                    (core ranking-md $ranked ($runs | length))
-                    ''
-                ] | str join "\n"
-            )
+            markdown: (core section-md $ref.ref $runs $ranked)
         }
     }
     let comparison = match $sections {

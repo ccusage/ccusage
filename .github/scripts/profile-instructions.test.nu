@@ -132,5 +132,7 @@ def main []: nothing -> nothing {
         }
     ]
     assert str contains (core deltas-md $result main head) '| `big` | 60 | 40 | -20 |'
+    assert str contains (core section-md main $base (core rank $base)) '## Hot functions at `main` (000000000000)'
+    assert str contains (core section-md missing [] []) '## Hot functions at `missing` (no completed runs)'
     print 'Profile instruction tests passed.'
 }

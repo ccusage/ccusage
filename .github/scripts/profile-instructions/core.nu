@@ -269,6 +269,21 @@ export def ranking-md [ranked: list<any>, count: int, --top: int = 50]: nothing 
     )
 }
 
+export def section-md [ref: string, runs: list<any>, ranked: list<any>]: nothing -> string {
+    let revision = match $runs {
+        [] => 'no completed runs'
+        [$run, ..] => ($run.sha | str substring 0..<12)
+    }
+    [
+        $"## Hot functions at `($ref)` \(($revision)\)"
+        ''
+        $"Ranked by how many of the ($runs | length) commands have the function in their top 50 by self Ir, then by mean self-Ir share."
+        ''
+        (ranking-md $ranked ($runs | length))
+        ''
+    ] | str join "\n"
+}
+
 export def deltas-md [
     result: record
     base: string
