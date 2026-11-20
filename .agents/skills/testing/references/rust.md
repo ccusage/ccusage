@@ -18,14 +18,14 @@ A fixture owns an `assert_fs::TempDir` and deletes it when the fixture variable
 drops, so keep that variable alive as long as paths under it are used — returning
 only a `PathBuf` out of an inner scope loses the directory.
 
-Working examples: `rust/adapters/codex/src/loader_tests.rs`,
+Working examples: `rust/adapters/codex/src/tests/loader/`,
 `rust/adapters/gemini/src/paths.rs`.
 
 ## Snapshots
 
 `insta` (with the `json` feature) covers CLI help, parse shapes, report JSON, and
-table rendering — see `rust/crates/ccusage-cli-parser/src/tests.rs` and
-`rust/adapters/codex/src/lib.rs`. Committed `.snap` files live in a `snapshots/`
+table rendering — see `rust/crates/ccusage-cli-parser/src/tests/` and
+`rust/adapters/codex/src/tests.rs`. Committed `.snap` files live in a `snapshots/`
 directory beside the module. `cargo-insta` is in the dev shell, so review pending
 snapshots with `cargo insta review` and read the diff before accepting, rather than
 hand-editing `.snap` files.
