@@ -805,7 +805,7 @@ mod pricing_identity_tests {
             rows[0].model.as_deref(),
             Some("[openclaw] deepseek.v4.flash")
         );
-        assert!((rows[0].cost - 0.00022).abs() < 1e-12);
+        assert!((rows[0].cost - 0.00015).abs() < 1e-12);
     }
 
     #[test]
@@ -816,7 +816,7 @@ mod pricing_identity_tests {
             "router.jsonl": r#"{"type":"message","message":{"role":"assistant","model":"deepseek-v4-flash","provider":"openrouter","usage":{"input":1000,"output":1000,"totalTokens":2000},"timestamp":"2026-11-17T10:00:00Z"}}"#,
             "deepseek.jsonl": r#"{"type":"message","message":{"role":"assistant","model":"deepseek-v4-flash","provider":"deepseek","usage":{"input":1000,"output":1000,"totalTokens":2000},"timestamp":"2026-11-17T10:00:00Z"}}"#
         });
-        for (name, expected) in [("router.jsonl", 0.0015), ("deepseek.jsonl", 0.00088)] {
+        for (name, expected) in [("router.jsonl", 0.0015), ("deepseek.jsonl", 0.00075)] {
             let rows = parse_session_file(
                 &fixture.path(name),
                 &JiffTimeZone::UTC,

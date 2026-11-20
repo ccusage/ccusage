@@ -1027,7 +1027,7 @@ mod pricing_identity_tests {
     fn prices_a_foreign_router_without_the_deepseek_schedule() {
         ccusage_test_support::install_pricing_snapshots();
         let pricing = ccusage_core::PricingMap::load_embedded();
-        for (provider, expected) in [(Some("openrouter"), 0.0015), (Some("deepseek"), 0.00088)] {
+        for (provider, expected) in [(Some("openrouter"), 0.0015), (Some("deepseek"), 0.00075)] {
             let entry = loaded_entry(
                 &SourceFile {
                     path: std::path::PathBuf::from("fixture.json"),

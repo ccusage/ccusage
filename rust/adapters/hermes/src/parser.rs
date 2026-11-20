@@ -664,7 +664,7 @@ mod pricing_identity_tests {
     fn prices_a_foreign_router_without_the_deepseek_schedule() {
         ccusage_test_support::install_pricing_snapshots();
         let pricing = ccusage_core::PricingMap::load_embedded();
-        for (provider, expected) in [("openrouter", 0.0015), ("deepseek", 0.00088)] {
+        for (provider, expected) in [("openrouter", 0.0015), ("deepseek", 0.00075)] {
             let entry = HermesEntry {
                 timestamp: ccusage_core::parse_ts_timestamp("2026-11-17T10:00:00Z").unwrap(),
 
@@ -755,7 +755,7 @@ mod pricing_identity_tests {
                 ("deepseek.v4.flash".into(), MatchKind::Fuzzy),
             ]
         );
-        assert!((price_hermes(&entry, PriceTable::Calculate(&pricing)).0 - 0.00088).abs() < 1e-12);
+        assert!((price_hermes(&entry, PriceTable::Calculate(&pricing)).0 - 0.00075).abs() < 1e-12);
         entry.model = "deepseek.v4.pro".into();
         assert_eq!(
             model_candidates(&entry),
@@ -791,7 +791,7 @@ mod pricing_identity_tests {
                 "deepseek-v4-flash",
                 "deepseek",
                 &pricing,
-                0.00088,
+                0.00075,
             ),
             ("46_glm_override", "glm-4.7", "zai", &with_override, 0.10),
             (

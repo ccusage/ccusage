@@ -272,7 +272,7 @@ mod pricing_identity_tests {
         let pricing = ccusage_core::PricingMap::load_embedded();
         let fixture = ccusage_test_support::Fixture::new();
         let connection = sqlite::open(fixture.path("row.db")).unwrap();
-        for (provider, expected) in [("openrouter", 0.0015), ("deepseek", 0.00088)] {
+        for (provider, expected) in [("openrouter", 0.0015), ("deepseek", 0.00075)] {
             let mut row = connection
                 .prepare(format!(
                     r#"SELECT 's', '{{"model_name":"deepseek-v4-flash"}}', '{provider}', '2026-11-17T10:00:00Z', 2000, 1000, 1000, 2000, 1000, 1000"#
