@@ -115,8 +115,10 @@ const AMAZON_NOVA: CacheDefaults = CacheDefaults {
 };
 
 pub(super) static CACHE_DEFAULTS_BY_SEGMENT_PREFIX: &[(&str, &CacheDefaults)] = &[
-    ("claude-fable-5", &ANTHROPIC_FABLE_MYTHOS_5),
-    ("claude-mythos-5", &ANTHROPIC_FABLE_MYTHOS_5),
+    ("claude-fable-5-1", &ANTHROPIC_FABLE_MYTHOS_5),
+    ("claude-fable-5-2", &ANTHROPIC_FABLE_MYTHOS_5),
+    ("claude-mythos-5-1", &ANTHROPIC_FABLE_MYTHOS_5),
+    ("claude-mythos-5-2", &ANTHROPIC_FABLE_MYTHOS_5),
     ("claude-opus-5-5", &ANTHROPIC_5_5),
     ("claude-sonnet-5-5", &ANTHROPIC_5_5),
     ("claude-", &WRITES_SURCHARGED),
