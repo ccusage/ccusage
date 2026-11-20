@@ -384,3 +384,23 @@ fn a_single_segment_window_one_past_the_limit_is_accepted_like_the_streaming_dec
         );
     }
 }
+
+#[test]
+fn a_line_spanning_many_small_frames_grows_the_ring_geometrically() {
+    let fixture = Fixture::new();
+    let line: Vec<u8> = (0..4 << 20)
+        .map(|offset| b'a' + (offset % 26) as u8)
+        .collect();
+    let mut stream = Vec::new();
+    for chunk in line.chunks(8 * 1024) {
+        stream.extend(compress(chunk, 1, None, true));
+    }
+    stream.extend(compress(b"\n", 1, None, true));
+    let path = write(&fixture, "spanning.zst", &stream);
+    let mut reader = ZstdLines::new(File::open(&path).unwrap(), 8 * 1024).unwrap();
+    assert_eq!(reader.next_line().unwrap().unwrap().len(), line.len() + 1);
+    let super::Inner::Direct(direct) = &reader.inner else {
+        panic!("the direct decoder replayed");
+    };
+    assert!(direct.grows <= 16, "{} grows", direct.grows);
+}

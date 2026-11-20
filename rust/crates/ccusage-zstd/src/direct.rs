@@ -194,6 +194,8 @@ pub(crate) struct Direct {
     eof: bool,
     #[cfg(test)]
     pub(crate) fail_after: Option<usize>,
+    #[cfg(test)]
+    pub(crate) grows: usize,
 }
 
 impl Direct {
@@ -220,6 +222,8 @@ impl Direct {
             eof: false,
             #[cfg(test)]
             fail_after: None,
+            #[cfg(test)]
+            grows: 0,
         })
     }
 
@@ -354,6 +358,16 @@ impl Direct {
             return Err(Fault::Unexpected);
         };
         if self.output.len() < size {
+            #[cfg(test)]
+            {
+                self.grows += 1;
+            }
+            // NOTE(2026-11-20): A line spanning many small frames would otherwise copy its pending bytes into a new ring at every frame. Doubling keeps that copying linear in the line's length.
+            let size = if self.end > 0 {
+                size.max(2 * self.output.len())
+            } else {
+                size
+            };
             self.output = self.output.grown(size, 0..self.end);
         }
 
