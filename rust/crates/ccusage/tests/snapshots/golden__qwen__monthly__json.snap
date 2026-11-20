@@ -8,22 +8,22 @@ exit: 0
   "monthly": [
     {
       "cacheCreationTokens": 0,
-      "cacheReadTokens": 3360,
-      "inputTokens": 6743,
+      "cacheReadTokens": 2893,
+      "inputTokens": 3850,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 2700,
-          "cost": 0.011295000000000001,
-          "inputTokens": 5000,
+          "cost": 0.008595,
+          "inputTokens": 2300,
           "modelName": "qwen3-coder-plus",
           "outputTokens": 901
         },
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 160,
-          "cost": 0.007698,
-          "inputTokens": 1100,
+          "cost": 0.0072180000000000005,
+          "inputTokens": 940,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 290
         },
@@ -45,9 +45,9 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 500,
+          "cacheReadTokens": 33,
           "cost": 0.0,
-          "inputTokens": 33,
+          "inputTokens": 0,
           "missingPricing": true,
           "modelName": "qwen-mystery-1",
           "outputTokens": 665
@@ -62,27 +62,27 @@ exit: 0
       ],
       "month": "2025-12",
       "outputTokens": 1981,
-      "totalCost": 0.019194700000000002,
-      "totalTokens": 12334
+      "totalCost": 0.0160147,
+      "totalTokens": 8974
     },
     {
       "cacheCreationTokens": 0,
-      "cacheReadTokens": 102100,
-      "inputTokens": 301351,
+      "cacheReadTokens": 100600,
+      "inputTokens": 200751,
       "modelBreakdowns": [
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 100100,
-          "cost": 0.331451,
-          "inputTokens": 300531,
+          "cost": 0.231316,
+          "inputTokens": 200431,
           "modelName": "qwen3-coder-plus",
           "outputTokens": 2113
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 2000,
-          "cost": 0.0048000000000000004,
-          "inputTokens": 750,
+          "cacheReadTokens": 500,
+          "cost": 0.00285,
+          "inputTokens": 250,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 130
         },
@@ -103,17 +103,17 @@ exit: 0
       ],
       "month": "2026-01",
       "outputTokens": 2273,
-      "totalCost": 0.336251,
-      "totalTokens": 405791
+      "totalCost": 0.23416599999999999,
+      "totalTokens": 303684
     }
   ],
   "totals": {
     "cacheCreationTokens": 0,
-    "cacheReadTokens": 105460,
-    "inputTokens": 308094,
+    "cacheReadTokens": 103493,
+    "inputTokens": 204601,
     "outputTokens": 4254,
-    "totalCost": 0.35544570000000003,
-    "totalTokens": 418125,
+    "totalCost": 0.2501807,
+    "totalTokens": 312658,
     "unpricedModels": [
       "qwen-mystery-1",
       "unknown"

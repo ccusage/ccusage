@@ -142,7 +142,7 @@ exit: 0
       "outputTokens": 150,
       "sessionId": "p-gpt5-estimated",
       "totalCost": 0.25,
-      "totalTokens": 3410
+      "totalTokens": 3350
     },
     {
       "cacheCreationTokens": 200,
@@ -188,7 +188,7 @@ exit: 0
       "outputTokens": 70,
       "sessionId": "p-mystery",
       "totalCost": 0.0,
-      "totalTokens": 380
+      "totalTokens": 370
     },
     {
       "cacheCreationTokens": 0,
@@ -211,7 +211,7 @@ exit: 0
       "outputTokens": 300,
       "sessionId": "p-openrouter",
       "totalCost": 0.0,
-      "totalTokens": 7140
+      "totalTokens": 7100
     },
     {
       "cacheCreationTokens": 50,
@@ -312,7 +312,7 @@ exit: 0
     "inputTokens": 6670,
     "outputTokens": 1720,
     "totalCost": 1.55,
-    "totalTokens": 37415
+    "totalTokens": 37305
   }
 }
 

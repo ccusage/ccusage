@@ -55,8 +55,8 @@ These views support `--json` for structured output, `--compact` for narrow termi
 ## What Gets Calculated
 
 - **Token usage** - Qwen assistant rows provide input and output token counts through `usageMetadata`.
-- **Reasoning tokens** - `thoughtsTokenCount` is included in `totalTokens` and priced as output tokens when pricing data is available.
-- **Cache tokens** - `cachedContentTokenCount` is treated as cache read tokens. Qwen logs do not currently expose cache creation tokens.
+- **Cache tokens** - `cachedContentTokenCount` is part of `promptTokenCount`, as Qwen Code records it. It is reported as cache read tokens and only the rest of the prompt as input. Qwen logs do not currently expose cache creation tokens.
+- **Reasoning tokens** - Output including thinking is `totalTokenCount` minus `promptTokenCount`, the same rule Qwen Code uses. Thinking that the provider already counts in `candidatesTokenCount` is not added again; thinking outside it is included in `totalTokens`. All of it is priced as output tokens when pricing data is available.
 - **Pricing** - Costs are calculated from LiteLLM pricing data using the raw model name and Qwen provider-prefixed candidates.
 
 ## Environment Variables

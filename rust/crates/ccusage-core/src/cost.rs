@@ -4,8 +4,19 @@ use crate::{
     types::Speed,
 };
 
+/// Whether an entry's usage is one model request or a total over several.
+///
+/// The long-context tier is chosen per request, so it applies only to
+/// `Request` entries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UsageGranularity {
+    Request,
+    Aggregate,
+}
+
 pub struct EntryPricing<'a> {
     pub usage: crate::TokenUsageRaw,
+    pub granularity: UsageGranularity,
     pub reasoning_tokens: u64,
     pub residual_tokens: u64,
     pub reported_model: Option<&'a str>,
@@ -97,7 +108,7 @@ fn price_entry_with<'a>(
     };
     match resolve(map, &entry) {
         Some((model, rates)) => EntryPrice {
-            cost: cost_at_speed(usage, &rates),
+            cost: cost_at_speed(usage, &rates_for(entry.granularity, rates)),
             matched: Some(model),
             missing_pricing: false,
         },
@@ -126,6 +137,14 @@ pub fn price_resolved_usage(
             (0.0, missing)
         }
     }
+}
+
+// NOTE(2026-11-20, #2365): Vendors choose the long-context tier per request. An aggregate entry records no per-request split, so it is priced at the base tier as the closest estimate.
+fn rates_for(granularity: UsageGranularity, mut rates: Pricing) -> Pricing {
+    if granularity == UsageGranularity::Aggregate {
+        rates.long_context = None;
+    }
+    rates
 }
 
 fn cost_at_speed(usage: crate::TokenUsageRaw, rates: &Pricing) -> f64 {

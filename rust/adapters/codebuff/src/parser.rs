@@ -1,6 +1,6 @@
 use ccusage_core::cost::PriceTable;
 use ccusage_core::{
-    cost::{EntryPricing, price_entry_on_route},
+    cost::{EntryPricing, UsageGranularity, price_entry_on_route},
     pricing::{BillingRoute, MatchKind},
 };
 use std::path::Path;
@@ -392,6 +392,7 @@ pub(super) fn price_codebuff(
         .map(|name| (name.as_str(), MatchKind::Fuzzy))
         .collect();
     let entry_pricing = EntryPricing {
+        granularity: UsageGranularity::Request,
         usage: entry.usage,
         reasoning_tokens: 0,
         residual_tokens: entry.extra_total_tokens,

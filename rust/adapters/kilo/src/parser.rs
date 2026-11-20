@@ -1,5 +1,8 @@
 use ccusage_core::cost::PriceTable;
-use ccusage_core::{cost::EntryPricing, pricing::MatchKind};
+use ccusage_core::{
+    cost::{EntryPricing, UsageGranularity},
+    pricing::MatchKind,
+};
 use std::{path::Path, sync::Arc};
 
 use jiff::tz::TimeZone as JiffTimeZone;
@@ -132,6 +135,7 @@ pub(super) fn message_value_to_entry(
         .map(|(name, kind)| (name.as_str(), *kind))
         .collect();
     let entry_pricing = EntryPricing {
+        granularity: UsageGranularity::Request,
         usage,
         reasoning_tokens: 0,
         residual_tokens: extra_total_tokens,
@@ -302,6 +306,7 @@ mod tests {
                     .collect();
                 price_entry(
                     EntryPricing {
+                        granularity: UsageGranularity::Request,
                         usage: usage(),
                         reasoning_tokens: 0,
                         residual_tokens: 0,
@@ -332,6 +337,7 @@ mod tests {
                     .collect();
                 price_entry(
                     EntryPricing {
+                        granularity: UsageGranularity::Request,
                         usage: usage(),
                         reasoning_tokens: 0,
                         residual_tokens: 0,
@@ -371,6 +377,7 @@ mod tests {
                     .collect();
                 price_entry(
                     EntryPricing {
+                        granularity: UsageGranularity::Request,
                         usage: usage(),
                         reasoning_tokens: 0,
                         residual_tokens: 0,
@@ -454,6 +461,7 @@ mod pricing_identity_tests {
             .collect();
         let entry = price_entry(
             EntryPricing {
+                granularity: UsageGranularity::Request,
                 usage: TokenUsageRaw {
                     input_tokens: 1_000,
                     output_tokens: 1_000,
