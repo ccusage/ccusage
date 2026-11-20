@@ -122,7 +122,7 @@ impl<'a> ReportPricing<'a> {
 }
 
 pub struct UsageLoadContext<'a> {
-    pub shared: &'a SharedArgs,
+    pub(crate) shared: &'a SharedArgs,
     window: OnceLock<ReportWindow>,
     pricing: OnceLock<PricingMap>,
 }
