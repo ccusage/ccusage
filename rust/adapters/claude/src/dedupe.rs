@@ -22,6 +22,7 @@ pub(super) type DedupeIndexVec = SmallVec<[DedupeIndex; 1]>;
 pub(super) struct DedupeIndexes {
     buckets: FxHashMap<u64, DedupeIndexVec>,
     merged: FxHashMap<usize, usize>,
+    copies: Vec<(usize, Arc<str>)>,
 }
 
 impl DedupeIndexes {
@@ -29,6 +30,7 @@ impl DedupeIndexes {
         Self {
             buckets: FxHashMap::with_capacity_and_hasher(capacity, Default::default()),
             merged: FxHashMap::default(),
+            copies: Vec::new(),
         }
     }
 
@@ -178,6 +180,7 @@ pub(super) fn dedupe_files<E: DedupEntry>(
     if deduped_indexes.merged.is_empty() {
         return (deduped, copies);
     }
+    copies.append(&mut deduped_indexes.copies);
     let mut kept = vec![usize::MAX; deduped.len()];
     let mut survivors = Vec::with_capacity(deduped.len() - deduped_indexes.merged.len());
     for (index, entry) in deduped.into_iter().enumerate() {
@@ -426,6 +429,12 @@ fn merge_slots<E: DedupEntry>(
     if should_replace_deduped_entry(&deduped[merged], &deduped[kept]) {
         deduped.swap(kept, merged);
     }
+    let forwarded = &deduped[merged];
+    if !forwarded.is_sidechain() && forwarded.session_id() != deduped[kept].session_id() {
+        deduped_indexes
+            .copies
+            .push((kept, forwarded.owned_session_id()));
+    }
     deduped_indexes.merged.insert(merged, kept);
     kept
 }
@@ -455,3 +464,6 @@ fn should_replace_deduped_entry<E: DedupEntry>(candidate: &E, existing: &E) -> b
     }
     reports_more_of_the_request(candidate, existing)
 }
+
+#[cfg(test)]
+mod tests;
