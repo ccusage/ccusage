@@ -153,7 +153,7 @@ fn split_tokens(input: u64, cached: u64) -> (u64, u64) {
     (uncached, cache)
 }
 
-// NOTE(2026-08-10, Grok CLI 1.0.0, #1593): Grok session totals match `logs/unified.jsonl` with `cachedReadTokens` inside `inputTokens`. Only zero `cacheCreationTokens` values were observed, so reserve cache creation from the same input total.
+// NOTE(2026-11-20, Grok CLI 1.0.45, #2257): Grok Build's `PromptUsageModel` sums the full prompt into `inputTokens`, folding in both `cachedReadTokens` and `cacheCreationTokens`; only its Anthropic Messages path reports cache writes, and the xAI Responses path always reports zero. Subtracting both from the input total leaves the uncached prompt tokens.
 fn split_input_tokens(input: u64, cached_read: u64, cache_creation: u64) -> (u64, u64, u64) {
     let (uncached, cache_read) = split_tokens(input, cached_read);
     let cache_creation = cache_creation.min(uncached);
