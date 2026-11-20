@@ -46,7 +46,7 @@ expression: "report_json_with_agents(&result.rows, kind, false)"
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.006659999999999999,
+          "cost": 0.0033299999999999996,
           "inputTokens": 19000,
           "modelName": "deepseek-flash",
           "outputTokens": 800
@@ -57,7 +57,7 @@ expression: "report_json_with_agents(&result.rows, kind, false)"
       ],
       "outputTokens": 800,
       "period": "2026-10-15",
-      "totalCost": 0.006659999999999999,
+      "totalCost": 0.0033299999999999996,
       "totalTokens": 19800
     },
     {
@@ -122,7 +122,7 @@ expression: "report_json_with_agents(&result.rows, kind, false)"
     "cacheReadTokens": 22000,
     "inputTokens": 23850,
     "outputTokens": 1770,
-    "totalCost": 0.0377626,
+    "totalCost": 0.0344326,
     "totalTokens": 50220
   }
 }

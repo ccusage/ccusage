@@ -301,7 +301,33 @@ const DEEPSEEK_V4_PRO: PricingSchedule = PricingSchedule {
     },
 };
 
+// NOTE(2026-11-20, #2268): DeepSeek launched deepseek-flash with V4.1 rates at 04:00 UTC on September 10, 2026: https://api-docs.deepseek.com/news/news260910/. Its rates differ from the retired V4 Flash schedule.
+const DEEPSEEK_FLASH: PricingSchedule = PricingSchedule {
+    cutoff_ms: 1_789_012_800_000,
+    peak_weekdays: 1..=5,
+    peak_hours: &[1..4, 6..10],
+    before: ScheduledRates {
+        input: 0.3e-6,
+        output: 1.2e-6,
+        cache_create: 0.3e-6,
+        cache_read: 0.006e-6,
+    },
+    off_peak: ScheduledRates {
+        input: 0.15e-6,
+        output: 0.6e-6,
+        cache_create: 0.15e-6,
+        cache_read: 0.003e-6,
+    },
+    peak: ScheduledRates {
+        input: 0.3e-6,
+        output: 1.2e-6,
+        cache_create: 0.3e-6,
+        cache_read: 0.006e-6,
+    },
+};
+
 pub(super) static SCHEDULES: &[(&str, PricingSchedule)] = &[
+    ("deepseek-flash", DEEPSEEK_FLASH),
     ("deepseek-v4-flash", DEEPSEEK_V4_FLASH),
     ("deepseek-v4-pro", DEEPSEEK_V4_PRO),
 ];
