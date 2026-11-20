@@ -52,3 +52,23 @@ fn replay_input_tokens_by_session(dir: &Path) -> Vec<(String, u64)> {
         .map(|event| (event.session_id.clone(), event.input_tokens))
         .collect()
 }
+
+fn session_input_tokens(
+    sources: &[CodexUsageSource],
+    shared: &SharedArgs,
+    diagnostics: &Diagnostics,
+) -> (Vec<(String, u64)>, bool) {
+    let (groups, detected) = crate::aggregate::load_groups_from_sources_with_diagnostics(
+        sources,
+        shared,
+        AgentReportKind::Session,
+        Some(&crate::PricingMap::load_embedded()),
+        diagnostics,
+    )
+    .unwrap();
+    let sessions = groups
+        .into_iter()
+        .map(|(session, group)| (session, group.input_tokens))
+        .collect();
+    (sessions, detected)
+}
