@@ -1,6 +1,5 @@
 ---
 source: crates/ccusage/tests/golden/mod.rs
-assertion_line: 330
 description: COLUMNS=200 ccusage dsh session --offline --json --debug
 ---
 exit: 0
