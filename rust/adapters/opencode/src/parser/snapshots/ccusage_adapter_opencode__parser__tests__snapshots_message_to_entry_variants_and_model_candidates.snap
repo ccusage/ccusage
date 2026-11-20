@@ -1,5 +1,5 @@
 ---
-source: adapters/opencode/src/parser.rs
+source: adapters/opencode/src/parser/tests.rs
 expression: "json!({\n    \"calculated\": entry_snapshot(&calculated), \"displayCost\":\n    entry_snapshot(&display_cost), \"unknownSession\":\n    entry_snapshot(&unknown_session), \"candidates\":\n    {\n        \"anthropic\": candidate_names(\"claude-sonnet-4.5\", \"anthropic\"),\n        \"copilot\": candidate_names(\"claude-sonnet-4.5\", \"github-copilot\"),\n        \"geminiAlias\": candidate_names(\"gemini-3-pro-high\", \"google\"),\n        \"unknownProvider\": candidate_names(\"gpt-test\", \"unknown\"),\n    }\n})"
 ---
 {

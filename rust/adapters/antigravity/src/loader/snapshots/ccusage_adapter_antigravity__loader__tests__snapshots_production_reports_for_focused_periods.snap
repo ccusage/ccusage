@@ -1,5 +1,5 @@
 ---
-source: adapters/antigravity/src/loader.rs
+source: adapters/antigravity/src/loader/tests.rs
 expression: reports
 ---
 {
