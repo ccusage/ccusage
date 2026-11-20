@@ -449,3 +449,6 @@ pub(super) fn usage_limit_reset_time_from_line_bytes(
     }
     TimestampMs::from_unix_seconds(timestamp)
 }
+
+#[cfg(test)]
+mod tests;

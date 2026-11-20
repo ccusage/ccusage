@@ -1,5 +1,3 @@
-mod load;
-
 use std::assert_matches;
 use std::{path::Path, sync::Arc};
 
