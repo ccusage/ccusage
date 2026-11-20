@@ -187,7 +187,7 @@ pub(crate) fn read_usage_file<E>(
                     path,
                     ccusage_core::Skip::line_number(current.index),
                     ccusage_core::SkipKind::InvalidData,
-                    "token counts exceed the u64 range",
+                    "Claude token counts exceed the u64 range",
                 ));
                 return ControlFlow::Continue(());
             }

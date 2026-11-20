@@ -225,6 +225,28 @@ fn malformed_advisors_preserve_parent_and_valid_sibling_usage() {
 }
 
 #[test]
+fn unrepresentable_advisor_usage_is_diagnosed_and_dropped() {
+    let fixture = fs_fixture!({
+        "projects/project-a/session-a.jsonl": r#"{"timestamp":"2026-01-02T10:00:00Z","message":{"usage":{"input_tokens":10,"output_tokens":1,"iterations":[{"type":"advisor_message","model":"advisor-model","input_tokens":18446744073709551615,"output_tokens":50},{"type":"advisor_message","model":"advisor-model","input_tokens":3,"output_tokens":2}]}}}"#,
+    });
+    let diagnostics = Diagnostics::new("claude");
+    let loaded = super::read_daily_usage_file_with_diagnostics(
+        &fixture.path("projects/project-a/session-a.jsonl"),
+        &JiffTimeZone::UTC,
+        PriceTable::Display,
+        &diagnostics,
+    );
+    assert_eq!(
+        loaded
+            .iter()
+            .map(|entry| entry.usage.input_tokens)
+            .collect::<Vec<_>>(),
+        [10, 3]
+    );
+    assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
+}
+
+#[test]
 fn irrelevant_outer_advisor_fields_do_not_reject_progress_usage() {
     for message in [
         r#""advisor_message""#,
