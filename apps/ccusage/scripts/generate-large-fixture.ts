@@ -827,7 +827,6 @@ function* codexCopiedHistory(session: CodexSession, fork: CodexFork): Generator<
 	const copied = history.slice(1, 1 + session.random.between(1, Math.max(1, history.length - 1)));
 	const forkedAt = session.clock.tick(session.random, 50);
 	for (const line of copied) {
-		// Spawned subagents drop the parent's `token_usage_record` lines; user forks keep them, still naming the parent thread.
 		if (fork.spawned && line.type === 'token_usage_record') {
 			continue;
 		}
@@ -1384,7 +1383,7 @@ async function writePlannedFile(
 	}
 	const content = Buffer.from(chunks.join(''));
 	const data = file.compressed ? zstdCompressSync(content) : content;
-	// Bounded reports prune by mtime, so a file must look last written at its last record.
+	// NOTE(2026-11-20, #2340): Bounded Claude reports skip files by mtime. Date each file at its last record so `--since` prunes what real logs would.
 	const mtime = new Date(lastMs);
 	await writeFile(file.path, data);
 	await utimes(file.path, mtime, mtime);
