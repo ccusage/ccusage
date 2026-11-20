@@ -111,12 +111,7 @@ fn bounded_codex_reports_deduplicate_per_bucket_after_unified_bucketing() {
             let unified = load_rows(kind, &shared, &NO_SOURCES, WeekDay::Monday)
                 .unwrap()
                 .rows;
-            let count = if kind == AgentReportKind::Session {
-                2
-            } else {
-                1
-            };
-            assert_eq!(unified.len(), count, "{kind:?}");
+            assert_eq!(unified.len(), 1, "{kind:?}");
             for row in unified {
                 assert_eq!(
                     (

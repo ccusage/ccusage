@@ -114,6 +114,7 @@ pub(super) fn visit_codex_session_file_with_compaction_history(
     );
 }
 
+#[cfg(test)]
 pub(super) fn visit_codex_session_file_with_diagnostics(
     sessions_dir: &Path,
     path: &Path,
@@ -146,7 +147,27 @@ pub(super) fn visit_codex_session_file_unless_fork(
         None,
         visit,
         diagnostics,
-        Some(&mut metadata),
+        Some((&mut metadata, true)),
+    );
+    opened.then_some(metadata)
+}
+
+pub(super) fn visit_codex_session_file_with_metadata(
+    sessions_dir: &Path,
+    path: &Path,
+    fork_replay: Option<CodexForkReplay<'_>>,
+    visit: impl FnMut(CodexTokenUsageEvent),
+    diagnostics: &Diagnostics,
+) -> Option<CodexSessionMetadata> {
+    let mut metadata = CodexSessionMetadata::default();
+    let opened = visit_codex_session_file_inner(
+        sessions_dir,
+        path,
+        fork_replay,
+        None,
+        visit,
+        diagnostics,
+        Some((&mut metadata, false)),
     );
     opened.then_some(metadata)
 }
@@ -158,7 +179,7 @@ fn visit_codex_session_file_inner(
     compaction_history: Option<&mut HashMap<String, Option<TimestampMs>>>,
     mut visit: impl FnMut(CodexTokenUsageEvent),
     diagnostics: &Diagnostics,
-    mut stop_at_fork: Option<&mut CodexSessionMetadata>,
+    mut first_line: Option<(&mut CodexSessionMetadata, bool)>,
 ) -> bool {
     let session_id = codex_session_id(sessions_dir, path);
     let mut state = CodexSessionUsageState::default();
@@ -185,13 +206,16 @@ fn visit_codex_session_file_inner(
         rollout_policy(path, READ_BUFFER_SIZE, true),
         |current, opened_path, _| {
             let line = current.raw;
-            let first_metadata = stop_at_fork.take().map(|metadata| {
+            let mut stop_at_fork = false;
+            let first_metadata = first_line.take().map(|(metadata, stop)| {
+                stop_at_fork = stop;
                 *metadata = session_metadata_from_line(path, line);
                 metadata.clone()
             });
-            if first_metadata
-                .as_ref()
-                .is_some_and(CodexSessionMetadata::is_fork)
+            if stop_at_fork
+                && first_metadata
+                    .as_ref()
+                    .is_some_and(CodexSessionMetadata::is_fork)
             {
                 return ControlFlow::Break(());
             }
