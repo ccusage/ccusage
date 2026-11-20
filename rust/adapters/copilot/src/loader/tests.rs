@@ -94,6 +94,52 @@ fn parses_copilot_chat_spans() {
 }
 
 #[test]
+fn skips_and_diagnoses_token_counts_that_exceed_the_u64_range() {
+    let fixture = fs_fixture!({
+        "copilot.jsonl": [
+            json!({
+                "type": "span",
+                "traceId": "trace-huge",
+                "spanId": "span-huge",
+                "name": "chat claude-sonnet-4",
+                "endTime": [1_775_934_264_u64, 967_317_833_u64],
+                "attributes": {
+                    "gen_ai.operation.name": "chat",
+                    "gen_ai.response.model": "claude-sonnet-4",
+                    "gen_ai.conversation.id": "conv-huge",
+                    "gen_ai.usage.input_tokens": 18_446_744_073_709_551_615_u64,
+                    "gen_ai.usage.output_tokens": 1,
+                },
+            })
+            .to_string(),
+            json!({
+                "type": "span",
+                "traceId": "trace-ok",
+                "spanId": "span-ok",
+                "name": "chat claude-sonnet-4",
+                "endTime": [1_775_934_264_u64, 967_317_833_u64],
+                "attributes": {
+                    "gen_ai.operation.name": "chat",
+                    "gen_ai.response.model": "claude-sonnet-4",
+                    "gen_ai.conversation.id": "conv-ok",
+                    "gen_ai.usage.input_tokens": 10,
+                    "gen_ai.usage.output_tokens": 1,
+                },
+            })
+            .to_string(),
+        ]
+        .join("\n"),
+    });
+    let diagnostics = Diagnostics::new("copilot");
+
+    let entries = parse_otel_file(&fixture.path("copilot.jsonl"), &diagnostics).unwrap();
+
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].session_id, "conv-ok");
+    assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+}
+
+#[test]
 fn reports_malformed_usage_lines_and_keeps_the_next_record() {
     let fixture = fs_fixture!({
         "copilot.jsonl": [
@@ -1253,7 +1299,7 @@ fn credit_rows(entries: &[LoadedEntry]) -> Vec<(String, String, u64, u64)> {
             (
                 entry.date.to_string(),
                 entry.model.clone().unwrap_or_default(),
-                crate::total_usage_tokens(entry.usage),
+                ccusage_core::total_usage_tokens(entry.usage),
                 (entry.cost * 100.0).round() as u64,
             )
         })

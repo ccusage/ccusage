@@ -48,6 +48,7 @@ pub(super) enum Refusal {
     NotUsage,
     Rejected(Rejection),
     InvalidTimestamp,
+    UnrepresentableUsage,
 }
 
 pub(super) struct Admitted {
@@ -70,6 +71,9 @@ pub(super) fn admit(line: &[u8]) -> std::result::Result<Admitted, Refusal> {
     let timestamp = parse_ts_timestamp(&record.timestamp).ok_or(Refusal::InvalidTimestamp)?;
     if !is_valid_usage_record(&record) {
         return Err(Refusal::Rejected(Rejection::Malformed));
+    }
+    if ccusage_core::checked_total_usage_tokens(record.message.usage.usage, 0).is_none() {
+        return Err(Refusal::UnrepresentableUsage);
     }
     let advisors = match advisor_lookup.usages(line) {
         Ok(advisors) => advisors,
@@ -173,6 +177,18 @@ pub(crate) fn read_usage_file<E>(
             }
             Err(Refusal::InvalidTimestamp) => {
                 crate::diagnostics::invalid_timestamp(path, current.index, diagnostics);
+                return ControlFlow::Continue(());
+            }
+            Err(Refusal::UnrepresentableUsage) => {
+                if response_chains.is_tracking() {
+                    response_chains.link(line, true, !current.unterminated());
+                }
+                diagnostics.record(ccusage_core::Skip::record(
+                    path,
+                    ccusage_core::Skip::line_number(current.index),
+                    ccusage_core::SkipKind::InvalidData,
+                    "token counts exceed the u64 range",
+                ));
                 return ControlFlow::Continue(());
             }
         };

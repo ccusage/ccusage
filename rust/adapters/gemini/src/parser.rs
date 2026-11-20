@@ -159,6 +159,22 @@ struct GeminiTokens {
     total: Option<u64>,
 }
 
+impl GeminiTokens {
+    fn component_total(self) -> Option<u64> {
+        self.input
+            .checked_add(self.output)?
+            .checked_add(self.cached)?
+            .checked_add(self.thoughts)?
+            .checked_add(self.tool)
+    }
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+enum TokenRejection {
+    Missing,
+    Unrepresentable,
+}
+
 #[derive(Debug, Clone)]
 pub(super) struct GeminiUsageEvent {
     pub(super) timestamp: TimestampMs,
@@ -391,14 +407,26 @@ impl GeminiRecordTime<'_> {
             })
             .or(self.fallback);
         if timestamp.is_none() {
-            let kind = ccusage_core::SkipKind::InvalidTimestamp;
-            let detail = "Gemini usage has no valid timestamp";
-            self.diagnostics.record(match self.line {
-                Some(number) => ccusage_core::Skip::record(self.path, number, kind, detail),
-                None => ccusage_core::Skip::unit(self.path, kind, detail),
-            });
+            self.record(
+                ccusage_core::SkipKind::InvalidTimestamp,
+                "Gemini usage has no valid timestamp",
+            );
         }
         timestamp
+    }
+
+    fn unrepresentable_tokens(&self) {
+        self.record(
+            ccusage_core::SkipKind::InvalidData,
+            "Gemini token counts exceed the u64 range",
+        );
+    }
+
+    fn record(&self, kind: ccusage_core::SkipKind, detail: &str) {
+        self.diagnostics.record(match self.line {
+            Some(number) => ccusage_core::Skip::record(self.path, number, kind, detail),
+            None => ccusage_core::Skip::unit(self.path, kind, detail),
+        });
     }
 }
 
@@ -408,7 +436,7 @@ fn parse_direct_event_record(
     session_id: &str,
     time: &GeminiRecordTime<'_>,
 ) -> Option<GeminiUsageEvent> {
-    let tokens = parse_tokens(record.tokens.as_ref())?;
+    let tokens = parse_usage_tokens(record.tokens.as_ref(), time)?;
     let usage = build_usage(
         record.model.as_deref().or(model_hint),
         tokens,
@@ -424,7 +452,7 @@ fn parse_stats_events(
     session_id: &str,
     time: &GeminiRecordTime<'_>,
 ) -> Vec<GeminiUsageEvent> {
-    let usages = parse_stats_usages(record.stats(), model_hint);
+    let usages = parse_stats_usages(record.stats(), model_hint, time);
     if usages.is_empty() {
         return Vec::new();
     }
@@ -437,7 +465,11 @@ fn parse_stats_events(
         .collect()
 }
 
-fn parse_stats_usages(stats: Option<&Value>, model_hint: Option<&str>) -> Vec<GeminiUsage> {
+fn parse_stats_usages(
+    stats: Option<&Value>,
+    model_hint: Option<&str>,
+    time: &GeminiRecordTime<'_>,
+) -> Vec<GeminiUsage> {
     let Some(stats) = stats.and_then(Value::as_object) else {
         return Vec::new();
     };
@@ -446,7 +478,7 @@ fn parse_stats_usages(stats: Option<&Value>, model_hint: Option<&str>) -> Vec<Ge
             .iter()
             .filter_map(|(model, data)| {
                 let data = data.as_object()?;
-                let tokens = parse_tokens(data.get("tokens"))?;
+                let tokens = parse_usage_tokens(data.get("tokens"), time)?;
                 build_usage(Some(model), tokens, subtract_cached_overlap_tokens, None)
             })
             .collect::<Vec<_>>();
@@ -454,7 +486,7 @@ fn parse_stats_usages(stats: Option<&Value>, model_hint: Option<&str>) -> Vec<Ge
             return events;
         }
     }
-    let Some(tokens) = parse_tokens(Some(&Value::Object(stats.clone()))) else {
+    let Some(tokens) = parse_usage_tokens(Some(&Value::Object(stats.clone())), time) else {
         return Vec::new();
     };
     build_usage(
@@ -467,6 +499,17 @@ fn parse_stats_usages(stats: Option<&Value>, model_hint: Option<&str>) -> Vec<Ge
     .collect()
 }
 
+fn parse_usage_tokens(value: Option<&Value>, time: &GeminiRecordTime<'_>) -> Option<GeminiTokens> {
+    match parse_tokens(value) {
+        Ok(tokens) => Some(tokens),
+        Err(TokenRejection::Missing) => None,
+        Err(TokenRejection::Unrepresentable) => {
+            time.unrepresentable_tokens();
+            None
+        }
+    }
+}
+
 fn build_usage(
     model: Option<&str>,
     tokens: GeminiTokens,
@@ -475,10 +518,13 @@ fn build_usage(
 ) -> Option<GeminiUsage> {
     let model = model.filter(|model| !model.trim().is_empty())?;
     let (input_without_cache, cache_read_tokens) = normalize_input(tokens);
-    let input_tokens = input_without_cache + tokens.tool;
-    let total_tokens = tokens
-        .total
-        .unwrap_or(input_tokens + tokens.output + cache_read_tokens + tokens.thoughts);
+    let input_tokens = input_without_cache.saturating_add(tokens.tool);
+    let total_tokens = tokens.total.unwrap_or_else(|| {
+        input_tokens
+            .saturating_add(tokens.output)
+            .saturating_add(cache_read_tokens)
+            .saturating_add(tokens.thoughts)
+    });
     let display_usage = TokenUsageRaw {
         input_tokens,
         output_tokens: tokens.output,
@@ -507,16 +553,22 @@ fn build_usage(
     })
 }
 
-fn parse_tokens(value: Option<&Value>) -> Option<GeminiTokens> {
-    let record = value?.as_object()?;
-    Some(GeminiTokens {
+fn parse_tokens(value: Option<&Value>) -> std::result::Result<GeminiTokens, TokenRejection> {
+    let record = value
+        .and_then(Value::as_object)
+        .ok_or(TokenRejection::Missing)?;
+    let tokens = GeminiTokens {
         input: token_number(record, INPUT_KEYS),
         output: token_number(record, OUTPUT_KEYS),
         cached: token_number(record, CACHED_KEYS),
         thoughts: token_number(record, THOUGHTS_KEYS),
         tool: token_number(record, TOOL_KEYS),
         total: value_u64(TOTAL_KEYS.iter().find_map(|key| record.get(*key))),
-    })
+    };
+    tokens
+        .component_total()
+        .map(|_| tokens)
+        .ok_or(TokenRejection::Unrepresentable)
 }
 
 fn token_number(record: &Map<String, Value>, keys: &[&str]) -> u64 {
@@ -526,11 +578,15 @@ fn token_number(record: &Map<String, Value>, keys: &[&str]) -> u64 {
 }
 
 fn value_u64(value: Option<&Value>) -> Option<u64> {
-    let value = value?.as_f64()?;
-    if !value.is_finite() {
+    let value = value?;
+    if let Some(integer) = value.as_u64() {
+        return Some(integer);
+    }
+    let float = value.as_f64()?;
+    if !float.is_finite() {
         return None;
     }
-    Some(value.max(0.0).trunc() as u64)
+    Some(float.max(0.0).trunc() as u64)
 }
 
 fn subtract_cached_overlap_tokens(tokens: GeminiTokens) -> (u64, u64) {
@@ -540,8 +596,12 @@ fn subtract_cached_overlap_tokens(tokens: GeminiTokens) -> (u64, u64) {
 }
 
 fn normalize_session_input(tokens: GeminiTokens) -> (u64, u64) {
-    let inclusive_total = tokens.input + tokens.output + tokens.thoughts + tokens.tool;
-    let exclusive_total = inclusive_total + tokens.cached;
+    let inclusive_total = tokens
+        .input
+        .saturating_add(tokens.output)
+        .saturating_add(tokens.thoughts)
+        .saturating_add(tokens.tool);
+    let exclusive_total = inclusive_total.saturating_add(tokens.cached);
     if tokens.cached > 0
         && tokens.total == Some(inclusive_total)
         && tokens.total != Some(exclusive_total)
@@ -564,9 +624,12 @@ pub(super) fn event_to_loaded(
         speed: None,
         cache_creation: None,
     };
-    let extra_total_tokens = event
-        .total_tokens
-        .saturating_sub(event.input_tokens + event.output_tokens + event.cache_read_tokens);
+    let extra_total_tokens = event.total_tokens.saturating_sub(
+        event
+            .input_tokens
+            .saturating_add(event.output_tokens)
+            .saturating_add(event.cache_read_tokens),
+    );
     let names = model_candidates(&event.model);
     let candidates: Vec<_> = names
         .iter()
@@ -750,6 +813,28 @@ mod tests {
 
         assert_eq!(events.len(), 1);
         assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
+    }
+
+    #[test]
+    fn skips_and_diagnoses_token_counts_that_exceed_the_u64_range() {
+        let fixture = ccusage_test_support::fs_fixture!({
+            "session.jsonl": concat!(
+                r#"{"type":"gemini","timestamp":"2026-05-17T11:07:32.000Z","model":"gemini-3-flash-preview","tokens":{"input":18446744073709551615,"output":1}}"#,
+                "\n",
+                r#"{"timestamp":"2026-05-17T11:07:32.000Z","stats":{"models":{"gemini-3-flash-preview":{"tokens":{"input":18446744073709551615,"output":1}}}}}"#,
+                "\n",
+                r#"{"type":"gemini","timestamp":"2026-05-17T11:07:33.000Z","model":"gemini-3-flash-preview","tokens":{"input":10,"output":2}}"#,
+                "\n",
+            ),
+        });
+        let diagnostics = ccusage_core::Diagnostics::new("gemini");
+
+        let events = parse_jsonl_file(&fixture.path("session.jsonl"), &diagnostics).unwrap();
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].input_tokens, 10);
+        assert_eq!(events[0].output_tokens, 2);
+        assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 2);
     }
 
     #[test]

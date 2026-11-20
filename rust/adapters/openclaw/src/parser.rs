@@ -339,10 +339,11 @@ fn parse_transcript_message(
         cache_creation: None,
     };
     let (raw_usage, extra_total_tokens) = apply_total_token_fallback(raw_usage, 0, total_tokens);
-    if crate::total_usage_tokens(raw_usage) + extra_total_tokens == 0 {
+    let counted_tokens = crate::total_usage_tokens(raw_usage).saturating_add(extra_total_tokens);
+    if counted_tokens == 0 {
         return None;
     }
-    let total_tokens = total_tokens.max(crate::total_usage_tokens(raw_usage) + extra_total_tokens);
+    let total_tokens = total_tokens.max(counted_tokens);
     let Some(timestamp) = timestamp_from_value(message.timestamp.as_ref())
         .or_else(|| timestamp_from_value(record.timestamp.as_ref()))
         .or(fallback_timestamp)

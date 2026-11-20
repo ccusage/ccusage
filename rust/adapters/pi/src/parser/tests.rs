@@ -177,6 +177,35 @@ fn bare_model_override_applies_to_default_and_named_stores() {
 }
 
 #[test]
+fn skips_and_diagnoses_token_counts_that_exceed_the_u64_range() {
+    let fixture = fs_fixture!({
+        "sessions/project-a/agent_session-a.jsonl": concat!(
+            r#"{"type":"message","timestamp":"2026-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":18446744073709551615,"output":1}}}"#,
+            "\n",
+            r#"{"type":"message","timestamp":"2026-01-02T00:00:01.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":10,"output":1}}}"#,
+            "\n",
+        ),
+    });
+    let file = fixture.path("sessions/project-a/agent_session-a.jsonl");
+    let diagnostics = Diagnostics::new("pi");
+
+    let data = read_session_file_data_for_store_with_diagnostics(
+        &file,
+        &fixture.path("sessions"),
+        &jiff::tz::TimeZone::UTC,
+        CostMode::Display,
+        PriceTable::Display,
+        "pi",
+        &diagnostics,
+    )
+    .unwrap();
+
+    assert_eq!(data.entries.len(), 1);
+    assert_eq!(data.entries[0].entry.usage.input_tokens, 10);
+    assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+}
+
+#[test]
 fn diagnoses_assistant_usage_without_a_valid_timestamp() {
     let fixture = fs_fixture!({
         "sessions/project-a/agent_session-a.jsonl": concat!(

@@ -198,7 +198,16 @@ fn entry_from_usage_record(
         speed: None,
         cache_creation: None,
     };
-    if crate::total_usage_tokens(usage) == 0 {
+    let Some(counted_tokens) = ccusage_core::checked_total_usage_tokens(usage, 0) else {
+        diagnostics.record(Skip::record(
+            file_path,
+            number,
+            SkipKind::InvalidData,
+            "Kimi token counts exceed the u64 range",
+        ));
+        return None;
+    };
+    if counted_tokens == 0 {
         return None;
     }
     let timestamp = required_wire_timestamp(
@@ -251,7 +260,17 @@ fn entry_from_status_update(
         cache_creation: None,
     };
     let (usage, extra_total_tokens) = apply_total_token_fallback(usage, 0, token_usage.total);
-    if crate::total_usage_tokens(usage) + extra_total_tokens == 0 {
+    let Some(counted_tokens) = ccusage_core::checked_total_usage_tokens(usage, extra_total_tokens)
+    else {
+        diagnostics.record(Skip::record(
+            file_path,
+            number,
+            SkipKind::InvalidData,
+            "Kimi token counts exceed the u64 range",
+        ));
+        return None;
+    };
+    if counted_tokens == 0 {
         return None;
     }
     let timestamp = required_wire_timestamp(
@@ -517,6 +536,28 @@ mod tests {
             2
         );
     }
+    #[test]
+    fn skips_and_diagnoses_token_counts_that_exceed_the_u64_range() {
+        let fixture = ccusage_test_support::fs_fixture!({
+            "sessions/group/session/wire.jsonl": concat!(
+                r#"{"type":"usage.record","model":"kimi-k2","usageScope":"turn","usage":{"inputOther":18446744073709551615,"output":1},"time":1770983427000}"#,
+                "\n",
+                r#"{"type":"usage.record","model":"kimi-k2","usageScope":"turn","usage":{"inputOther":10,"output":2},"time":1770983428000}"#,
+                "\n",
+            ),
+        });
+        let diagnostics = Diagnostics::new("kimi");
+        let events = read_wire_file(
+            &WireFile::from_paths(vec![fixture.path("sessions/group/session/wire.jsonl")])
+                .remove(0),
+            &diagnostics,
+        )
+        .unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].input_tokens, 10);
+        assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
+    }
+
     #[test]
     fn kimi_root_resolves_correctly_for_both_path_layouts() {
         let fixture = fs_fixture!({

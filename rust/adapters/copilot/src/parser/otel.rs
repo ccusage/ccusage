@@ -228,7 +228,17 @@ fn to_candidate(
         cache_creation: None,
     };
     let (usage, extra_total_tokens) = apply_total_token_fallback(usage, 0, total);
-    if crate::total_usage_tokens(usage) + extra_total_tokens == 0 {
+    let Some(counted_tokens) = ccusage_core::checked_total_usage_tokens(usage, extra_total_tokens)
+    else {
+        diagnostics.record(ccusage_core::Skip::record(
+            path,
+            number,
+            ccusage_core::SkipKind::InvalidData,
+            "Copilot token counts exceed the u64 range",
+        ));
+        return None;
+    };
+    if counted_tokens == 0 {
         return None;
     }
     let trace_id = trace_id_from_record(record);

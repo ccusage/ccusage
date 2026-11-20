@@ -247,11 +247,7 @@ pub(super) trait DedupEntry {
 }
 
 fn usage_token_total(entry: &impl DedupEntry) -> u64 {
-    let usage = entry.usage();
-    usage.input_tokens
-        + usage.output_tokens
-        + usage.cache_creation_token_count()
-        + usage.cache_read_input_tokens
+    ccusage_core::total_usage_tokens(*entry.usage())
 }
 
 pub(super) fn push_deduped_entry<E: DedupEntry>(
