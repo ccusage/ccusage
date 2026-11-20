@@ -1,5 +1,6 @@
 use std::{fs, path::PathBuf};
 
+use ccusage_core::pricing::{EmbeddedSnapshots, encode_pricing_table, set_embedded_snapshots};
 use ccusage_environment::Environment;
 
 use serde_json::Value;
@@ -13,6 +14,7 @@ const MODELS_DEV_PRICING_JSON: &str = "src/models-dev-pricing.json";
 const OUT_MODELS_DEV_PRICING_JSON: &str = "models-dev-pricing.json.deflate";
 const MODELS_DEV_CATALOG_RULES_JSON: &str = "src/models-dev-catalog-rules.json";
 const OUT_MODELS_DEV_CATALOG_RULES_JSON: &str = "models-dev-catalog-rules.json.deflate";
+const OUT_PRICING_TABLE: &str = "pricing-table.bin.deflate";
 const PRICING_JSON_PATH_ENV: &str = "CCUSAGE_PRICING_JSON_PATH";
 #[cfg(feature = "fetch-litellm-pricing")]
 const PRICING_FETCH_TIMEOUT_SECONDS: u64 = 10;
@@ -37,23 +39,40 @@ fn main() -> Result<(), String> {
     fs::write(out_path, deflate(pricing_json.as_bytes()))
         .map_err(|error| format!("write build-time pricing snapshot: {error}"))?;
 
-    embed_snapshot("src/litellm-sources.json", "litellm-sources.json.deflate")?;
-    embed_snapshot(MODELS_DEV_PRICING_JSON, OUT_MODELS_DEV_PRICING_JSON)?;
-    embed_snapshot(
+    let litellm_sources =
+        embed_snapshot("src/litellm-sources.json", "litellm-sources.json.deflate")?;
+    let models_dev_pricing = embed_snapshot(MODELS_DEV_PRICING_JSON, OUT_MODELS_DEV_PRICING_JSON)?;
+    let models_dev_catalog_rules = embed_snapshot(
         MODELS_DEV_CATALOG_RULES_JSON,
         OUT_MODELS_DEV_CATALOG_RULES_JSON,
-    )
+    )?;
+
+    set_embedded_snapshots(EmbeddedSnapshots {
+        litellm_sources: litellm_sources.deflated.leak(),
+        models_dev_catalog_rules: models_dev_catalog_rules.deflated.leak(),
+        pricing_table: &[],
+    });
+    let table = encode_pricing_table(&pricing_json, &models_dev_pricing.json);
+    fs::write(out_dir_path(OUT_PRICING_TABLE)?, deflate(&table))
+        .map_err(|error| format!("write {OUT_PRICING_TABLE}: {error}"))
 }
 
-fn embed_snapshot(source: &str, out_name: &str) -> Result<(), String> {
+struct Snapshot {
+    json: String,
+    deflated: Vec<u8>,
+}
+
+fn embed_snapshot(source: &str, out_name: &str) -> Result<Snapshot, String> {
     println!("cargo:rerun-if-changed={source}");
     let snapshot = fs::read_to_string(source).map_err(|error| format!("read {source}: {error}"))?;
     let value = serde_json::from_str::<Value>(&snapshot)
         .map_err(|error| format!("parse {source}: {error}"))?;
-    let minified =
+    let json =
         serde_json::to_string(&value).map_err(|error| format!("serialize {source}: {error}"))?;
-    fs::write(out_dir_path(out_name)?, deflate(minified.as_bytes()))
-        .map_err(|error| format!("write {out_name}: {error}"))
+    let deflated = deflate(json.as_bytes());
+    fs::write(out_dir_path(out_name)?, &deflated)
+        .map_err(|error| format!("write {out_name}: {error}"))?;
+    Ok(Snapshot { json, deflated })
 }
 
 fn deflate(bytes: &[u8]) -> Vec<u8> {

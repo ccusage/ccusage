@@ -9,7 +9,9 @@ mod cache;
 use cache::{CachedHit, Candidate, HitKind, Name, NameCache, Pass, RequestCache, RequestHit};
 mod data;
 mod embedded;
+#[cfg(test)]
 use embedded::build_time_pricing_json;
+use embedded::embedded_pricing_table;
 pub use embedded::{EmbeddedSnapshots, set_embedded_snapshots};
 mod fetch;
 pub use fetch::{JsonFetcher, set_json_fetcher};
@@ -44,6 +46,8 @@ mod rows;
 use rows::{Lookup, PricingRows, RowMatch};
 mod speed;
 use speed::SpeedMultipliers;
+mod table;
+pub use table::encode_pricing_table;
 
 use builtin_pricing::BUILTIN_PRICING;
 
@@ -94,14 +98,12 @@ impl PricingMap {
     }
 
     fn build_embedded() -> Self {
-        Self::from_litellm(build_time_pricing_json())
-    }
-
-    fn from_litellm(json: &str) -> Self {
-        let mut map = Self::default();
-        map.load_json(json);
-        map.complete_layers(embedded_models_dev_pricing());
-        map
+        let table = embedded_pricing_table();
+        Self {
+            rows: Arc::clone(&table.rows),
+            models_dev: Some(Arc::clone(&table.models_dev.rows)),
+            ..Self::default()
+        }
     }
 
     fn complete_layers(&mut self, embedded_models_dev: &Self) {

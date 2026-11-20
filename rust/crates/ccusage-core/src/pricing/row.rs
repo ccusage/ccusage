@@ -39,18 +39,18 @@ impl Default for Row {
 
 #[derive(Clone, Debug)]
 pub(super) struct RowPricing {
-    input: f64,
-    output: f64,
+    pub(super) input: f64,
+    pub(super) output: f64,
     pub(super) cache_create: Option<f64>,
     pub(super) cache_read: Option<f64>,
-    cache_create_1h: Option<f64>,
+    pub(super) cache_create_1h: Option<f64>,
     pub(super) long_context: Option<Arc<LongContext>>,
-    published: Published,
-    explicit_fields: u16,
+    pub(super) published: Published,
+    pub(super) explicit_fields: u16,
 }
 
 #[derive(Clone, Debug)]
-enum Published {
+pub(super) enum Published {
     Known(PublishedRates),
     ByKey {
         speed: PublishedSpeed,
@@ -60,11 +60,11 @@ enum Published {
 }
 
 #[derive(Clone, Copy, Debug)]
-struct PublishedRates {
-    fast_multiplier: f64,
-    ultrafast_multiplier: f64,
-    flex_multiplier: f64,
-    cache_defaults: &'static CacheDefaults,
+pub(super) struct PublishedRates {
+    pub(super) fast_multiplier: f64,
+    pub(super) ultrafast_multiplier: f64,
+    pub(super) flex_multiplier: f64,
+    pub(super) cache_defaults: &'static CacheDefaults,
 }
 
 impl From<Pricing> for RowPricing {
@@ -258,6 +258,14 @@ pub(super) struct Entries {
 }
 
 impl Entries {
+    pub(super) fn from_rows(rows: Vec<Row>) -> Self {
+        let mut literal = FxHashMap::with_capacity_and_hasher(rows.len(), Default::default());
+        for (id, row) in rows.iter().enumerate() {
+            literal.insert(Arc::clone(&row.key), id);
+        }
+        Self { rows, literal }
+    }
+
     pub(super) fn contains_key(&self, key: &str) -> bool {
         self.literal.contains_key(key)
     }
