@@ -11,7 +11,8 @@ use std::{
     io::{self, Read},
     mem,
     ops::Range,
-    ptr::NonNull,
+    ptr::{self, NonNull},
+    slice,
 };
 
 use memchr::memchr;
@@ -32,6 +33,41 @@ const RECYCLED_SIZE_MAX: usize = 16 << 20;
 
 thread_local! {
     static BUFFERS: RefCell<(Vec<u8>, Vec<u8>)> = const { RefCell::new((Vec::new(), Vec::new())) };
+}
+
+struct Ring(Vec<u8>);
+
+impl Ring {
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    fn bytes(&self, range: Range<usize>) -> &[u8] {
+        assert!(range.start <= range.end && range.end <= self.0.len());
+        let start = self.0.as_ptr().wrapping_add(range.start);
+        // SAFETY: the range lies within the initialized buffer, and the pointer comes from Vec::as_ptr, which creates no reference that would invalidate the pointers libzstd keeps.
+        unsafe { slice::from_raw_parts(start, range.len()) }
+    }
+
+    fn move_to_front(&mut self, range: Range<usize>) {
+        assert!(range.start <= range.end && range.end <= self.0.len());
+        let base = self.0.as_mut_ptr();
+        // SAFETY: both ranges lie within the buffer, ptr::copy allows overlap, and the base pointer comes from Vec::as_mut_ptr like every pointer libzstd keeps.
+        unsafe { ptr::copy(base.wrapping_add(range.start), base, range.len()) };
+    }
+
+    fn grown(&self, size: usize, keep: Range<usize>) -> Self {
+        let mut grown = vec![0; size];
+        grown[..keep.len()].copy_from_slice(self.bytes(keep));
+        Self(grown)
+    }
+
+    fn tail(&mut self, start: usize) -> (*mut u8, usize) {
+        (
+            self.0.as_mut_ptr().wrapping_add(start),
+            self.0.len() - start,
+        )
+    }
 }
 
 pub(crate) enum Fault {
@@ -118,11 +154,11 @@ impl Drop for Context {
 enum Frame {
     Between { finished: bool },
     Skippable { remaining: u64 },
-    Zstd(Ring),
+    Zstd(Layout),
 }
 
 #[derive(Clone, Copy)]
-struct Ring {
+struct Layout {
     size: usize,
     block: usize,
     wraps: bool,
@@ -133,7 +169,7 @@ struct Ring {
 impl Drop for Direct {
     fn drop(&mut self) {
         let input = mem::take(&mut self.input);
-        let output = mem::take(&mut self.output);
+        let output = mem::take(&mut self.output.0);
         if input.len() <= RECYCLED_SIZE_MAX && output.len() <= RECYCLED_SIZE_MAX {
             BUFFERS.set((input, output));
         }
@@ -146,8 +182,8 @@ pub(crate) struct Direct {
     input: Vec<u8>,
     input_start: usize,
     input_end: usize,
-    output: Vec<u8>,
-    history: Vec<u8>,
+    output: Ring,
+    history: Ring,
     start: usize,
     scanned: usize,
     end: usize,
@@ -172,8 +208,8 @@ impl Direct {
             input,
             input_start: 0,
             input_end: 0,
-            output,
-            history: Vec::new(),
+            output: Ring(output),
+            history: Ring(Vec::new()),
             start: 0,
             scanned: 0,
             end: 0,
@@ -194,16 +230,16 @@ impl Direct {
     }
 
     pub(crate) fn line(&self, range: Range<usize>) -> &[u8] {
-        &self.output[range]
+        self.output.bytes(range)
     }
 
     pub(crate) fn rest(&self) -> &[u8] {
-        &self.output[self.start..self.end]
+        self.output.bytes(self.start..self.end)
     }
 
     pub(crate) fn next_line(&mut self) -> Result<Option<Range<usize>>, Fault> {
         let line_end = loop {
-            if let Some(newline) = memchr(b'\n', &self.output[self.scanned..self.end]) {
+            if let Some(newline) = memchr(b'\n', self.output.bytes(self.scanned..self.end)) {
                 break self.scanned + newline + 1;
             }
             self.scanned = self.end;
@@ -276,11 +312,11 @@ impl Direct {
 
     fn begin_frame(&mut self) -> Result<(), Fault> {
         // NOTE(2026-11-20): Between frames libzstd holds no pointer into the ring. ZSTD_decompressBegin below clears the old ones, so only here may the ring move or reallocate.
-        self.output.copy_within(self.start..self.end, 0);
+        self.output.move_to_front(self.start..self.end);
         self.end -= self.start;
         self.scanned -= self.start;
         self.start = 0;
-        self.history = Vec::new();
+        self.history = Ring(Vec::new());
 
         let header = self.frame_header()?;
         if header.frameType == ZSTD_FrameType_e::ZSTD_skippableFrame {
@@ -316,14 +352,12 @@ impl Direct {
             return Err(Fault::Unexpected);
         };
         if self.output.len() < size {
-            let mut grown = vec![0; size];
-            grown[..self.end].copy_from_slice(&self.output[..self.end]);
-            self.output = grown;
+            self.output = self.output.grown(size, 0..self.end);
         }
 
         // SAFETY: the context pointer is live and owned by `self`.
         checked(unsafe { ZSTD_decompressBegin(self.context.0.as_ptr()) })?;
-        self.frame = Frame::Zstd(Ring {
+        self.frame = Frame::Zstd(Layout {
             size: ring,
             block,
             wraps,
@@ -363,7 +397,7 @@ impl Direct {
         }
     }
 
-    fn continue_frame(&mut self, ring: Ring) -> Result<usize, Fault> {
+    fn continue_frame(&mut self, ring: Layout) -> Result<usize, Fault> {
         // SAFETY: the context pointer is live and owned by `self`.
         let size = unsafe { ZSTD_nextSrcSizeToDecompress(self.context.0.as_ptr()) };
         if size == 0 {
@@ -393,10 +427,9 @@ impl Direct {
             *remaining -= 1;
         }
 
-        let capacity = self.output.len() - self.end;
-        let destination = self.output[self.end..].as_mut_ptr();
+        let (destination, capacity) = self.output.tail(self.end);
         let source = &self.input[self.input_start..self.input_start + available];
-        // SAFETY: both ranges lie in live, disjoint buffers, and every segment libzstd kept is still allocated (crate docs).
+        // SAFETY: `destination` is `capacity` writable ring bytes and `source` is initialized input, in separate allocations. Every pointer libzstd kept is into the ring or history, both still allocated and reached since only through their Vec::as_ptr base (crate docs).
         let written = unsafe {
             ZSTD_decompressContinue(
                 self.context.0.as_ptr(),
@@ -418,14 +451,15 @@ impl Direct {
         Ok(written)
     }
 
-    fn wrap(&mut self, ring: Ring) {
+    fn wrap(&mut self, ring: Layout) {
         let pending = self.end - self.start;
         if self.output.len() >= ring.size + pending {
-            self.output.copy_within(self.start..self.end, 0);
-            self.history = Vec::new();
+            self.output.move_to_front(self.start..self.end);
+            self.history = Ring(Vec::new());
         } else {
-            let mut grown = vec![0; ring.size + 2 * pending];
-            grown[..pending].copy_from_slice(&self.output[self.start..self.end]);
+            let grown = self
+                .output
+                .grown(ring.size + 2 * pending, self.start..self.end);
             self.history = mem::replace(&mut self.output, grown);
         }
         self.scanned -= self.start;

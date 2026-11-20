@@ -11,6 +11,11 @@
 //! The ring moves or reallocates only between frames, before `ZSTD_decompressBegin` drops the
 //! old pointers.
 //!
+//! Rust code reaches the ring and the history only through pointers from `Vec::as_ptr` and
+//! `Vec::as_mut_ptr`, reading through short-lived shared slices and moving bytes with
+//! `ptr::copy`. It never creates a `&mut` slice of them, which would invalidate the pointers
+//! libzstd keeps under Rust's aliasing rules.
+//!
 //! If libzstd ever breaks one of its documented guarantees, the reader replays the file with the
 //! `zstd` crate's streaming decoder and continues after the lines already returned.
 
