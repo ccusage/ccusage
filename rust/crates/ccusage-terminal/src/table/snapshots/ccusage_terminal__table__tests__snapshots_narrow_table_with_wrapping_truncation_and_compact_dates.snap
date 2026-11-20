@@ -1,5 +1,5 @@
 ---
-source: crates/ccusage-terminal/src/table.rs
+source: crates/ccusage-terminal/src/table/tests.rs
 expression: "table.render_lines().join(\"\\n\")"
 ---
 ┌──────────┬────────────┬──────────┬──────────┬──────────┐
