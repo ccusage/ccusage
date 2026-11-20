@@ -2839,32 +2839,6 @@ exit: 0
       "totalTokens": 62
     },
     {
-      "agent": "opencode",
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 0,
-      "inputTokens": 7,
-      "metadata": {
-        "lastActivity": "2026-01-01T12:10:00.000Z"
-      },
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.00006000000000000001,
-          "inputTokens": 7,
-          "modelName": "opus",
-          "outputTokens": 1
-        }
-      ],
-      "modelsUsed": [
-        "opus"
-      ],
-      "outputTokens": 1,
-      "period": "ses-v2-agent",
-      "totalCost": 0.00006000000000000001,
-      "totalTokens": 8
-    },
-    {
       "agent": "openclaw",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 0,
@@ -3038,6 +3012,33 @@ exit: 0
       "totalTokens": 370
     },
     {
+      "agent": "opencode",
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 7,
+      "metadata": {
+        "lastActivity": "2026-01-01T12:10:00.000Z"
+      },
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 7,
+          "missingPricing": true,
+          "modelName": "opus",
+          "outputTokens": 1
+        }
+      ],
+      "modelsUsed": [
+        "opus"
+      ],
+      "outputTokens": 1,
+      "period": "ses-v2-agent",
+      "totalCost": 0,
+      "totalTokens": 8
+    },
+    {
       "agent": "dsh",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 0,
@@ -3094,7 +3095,7 @@ exit: 0
     "cacheReadTokens": 568814,
     "inputTokens": 873099,
     "outputTokens": 35710,
-    "totalCost": 15.059837600000005,
+    "totalCost": 15.059777600000006,
     "totalTokens": 1488336,
     "unpricedModels": [
       "GLM-5.3",
@@ -3119,6 +3120,7 @@ exit: 0
       "kimi-mystery-1",
       "mystery-model-9000",
       "opencode-mystery-1",
+      "opus",
       "qwen-mystery-1",
       "unknown",
       "zcode-mystery-1"

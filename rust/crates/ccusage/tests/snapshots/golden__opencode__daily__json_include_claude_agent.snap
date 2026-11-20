@@ -95,19 +95,20 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.037500000000000006,
-          "inputTokens": 5000,
-          "modelName": "opus",
-          "outputTokens": 500
-        },
-        {
-          "cacheCreationTokens": 0,
           "cacheReadTokens": 2500,
           "cost": 0.00339,
           "inputTokens": 790,
           "modelName": "gpt-5",
           "outputTokens": 159
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 5000,
+          "missingPricing": true,
+          "modelName": "opus",
+          "outputTokens": 500
         }
       ],
       "modelsUsed": [
@@ -117,7 +118,7 @@ exit: 0
         "claude-haiku-4-5-20251001"
       ],
       "outputTokens": 1319,
-      "totalCost": 2.07989,
+      "totalCost": 2.04239,
       "totalTokens": 19059
     },
     {
@@ -153,14 +154,6 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.0005300000000000001,
-          "inputTokens": 71,
-          "modelName": "opus",
-          "outputTokens": 7
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
           "cost": 0.00013500000000000003,
           "inputTokens": 60,
           "modelName": "gpt-5",
@@ -174,6 +167,15 @@ exit: 0
           "missingPricing": true,
           "modelName": "opencode-mystery-1",
           "outputTokens": 70
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 71,
+          "missingPricing": true,
+          "modelName": "opus",
+          "outputTokens": 7
         }
       ],
       "modelsUsed": [
@@ -185,7 +187,7 @@ exit: 0
         "gemini-3-pro-high"
       ],
       "outputTokens": 380,
-      "totalCost": 0.01275,
+      "totalCost": 0.01222,
       "totalTokens": 5585
     },
     {
@@ -234,10 +236,11 @@ exit: 0
     "cacheReadTokens": 17500,
     "inputTokens": 12250,
     "outputTokens": 2337,
-    "totalCost": 2.84573125,
+    "totalCost": 2.8077012500000005,
     "totalTokens": 32837,
     "unpricedModels": [
-      "opencode-mystery-1"
+      "opencode-mystery-1",
+      "opus"
     ]
   }
 }

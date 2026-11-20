@@ -42,3 +42,4 @@ exit: 0
 WARN  opencode: skipped 1 record in 1 input (invalid timestamp)
 WARN  opencode: skipped 2 inputs and 2 records in 3 inputs (invalid data)
 WARN  Missing embedded pricing for opencode-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for opus; cost excludes this model. Run without --offline or update ccusage after pricing is added.

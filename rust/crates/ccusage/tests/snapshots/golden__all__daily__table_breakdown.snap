@@ -778,10 +778,10 @@ exit: 0
 ├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
 │          │              │   └─ gpt-5   │         60 │         6 │          0 │           0 │          66 │     $0.00 │
 ├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
-│          │              │   └─ opus    │          7 │         1 │          0 │           0 │           8 │     $0.00 │
-├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
 │          │              │ └─           │        300 │        70 │          0 │           0 │         370 │     $0.00 │
 │          │              │ opencode-my… │            │           │            │             │             │           │
+├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
+│          │              │   └─ opus    │          7 │         1 │          0 │           0 │           8 │     $0.00 │
 ├──────────┼──────────────┼──────────────┼────────────┼───────────┼────────────┼─────────────┼─────────────┼───────────┤
 │          │ - pi-agent   │ - [pi]       │      1,915 │     1,185 │        200 │      11,000 │      14,550 │     $0.05 │
 │          │              │ claude-haik… │            │           │            │             │             │           │
@@ -1094,6 +1094,7 @@ WARN  Missing embedded pricing for kimi-mystery-1; cost excludes this model. Run
 WARN  Missing embedded pricing for model_placeholder_m499; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for mystery-model-9000; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for opencode-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for opus; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for qwen-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for unknown; cost excludes this model. Run without --offline or update ccusage after pricing is added.
 WARN  Missing embedded pricing for zcode-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
