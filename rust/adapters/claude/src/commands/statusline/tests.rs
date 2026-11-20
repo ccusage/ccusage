@@ -3,9 +3,13 @@ use std::ffi::OsString;
 
 use ccusage_cli_parser::parse_from_with_config;
 use ccusage_config::ConfigContext;
+use ccusage_core::Color;
 use ccusage_core::cli::{Command, PricingOverride};
 use ccusage_test_support::{Environment, fs_fixture};
 
+use super::block::{BlockAnchor, statusline_block_anchor, statusline_block_shared};
+use super::cache::process_is_alive;
+use super::context::statusline_context_color;
 use super::*;
 
 #[test]
@@ -109,9 +113,7 @@ fn statusline_invocation_passes_config_pricing_overrides_to_cost_loading() {
             }),
             effort: None,
         };
-        let output =
-            render_statusline(&hook, &args, &shared, &Diagnostics::without_clock("claude"))
-                .unwrap();
+        let output = render_statusline(&hook, &args, &shared, &Diagnostics::new("claude")).unwrap();
         assert!(output.contains("💰 $0.40 session"), "{output}");
     })
 }

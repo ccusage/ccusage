@@ -1,10 +1,13 @@
-use super::test_support::{UsageFixture, metadata_blob_with_steps, step_metadata_blob};
-use super::{
-    API_PROVIDER_GOOGLE_GEMINI, DEFAULT_MODEL, EventContext, ModelUsage, ProtoField, ProtoValue,
-    append_usage_event, field_bytes, field_bytes_all, field_text, field_varint, merge_usage_event,
-    model_candidates, model_from_id, normalize_antigravity_model, parse_generator_metadata,
-    parse_step_metadata, price_antigravity,
+use super::model::{
+    API_PROVIDER_GOOGLE_GEMINI, model_candidates, model_from_id, normalize_antigravity_model,
+    price_antigravity,
 };
+use super::proto::{
+    ProtoField, ProtoValue, field_bytes, field_bytes_all, field_text, field_varint,
+    parse_generator_metadata, parse_step_metadata,
+};
+use super::test_support::{UsageFixture, metadata_blob_with_steps, step_metadata_blob};
+use super::{DEFAULT_MODEL, EventContext, ModelUsage, append_usage_event, merge_usage_event};
 use ccusage_core::{TimestampMs, TokenUsageRaw, parse_ts_timestamp};
 
 #[test]
@@ -24,7 +27,7 @@ fn merge_prefers_resolved_then_placeholder_then_default_model() {
                 provider: None,
                 timestamp: Some((TimestampMs::UNIX_EPOCH, 3)),
                 trajectory_timestamp: None,
-                diagnostics: &ccusage_core::Diagnostics::without_clock("antigravity"),
+                diagnostics: &ccusage_core::Diagnostics::new("antigravity"),
                 record: (std::path::Path::new("fixture.db"), 1),
                 session_id: "session",
                 fallback_identities: &[],

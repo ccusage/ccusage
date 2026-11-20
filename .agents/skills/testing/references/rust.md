@@ -50,7 +50,7 @@ pricing. In `ccusage-core` tests, use the crate-local `test_support` equivalent.
 Use `PricingMap::load_embedded()` for tests that need offline pricing.
 
 Use model IDs that resolve in the embedded snapshots, matching the forms the
-tests in `rust/crates/ccusage-core/src/pricing.rs` already cover (dated
+tests in `rust/crates/ccusage-core/src/pricing/tests/` already cover (dated
 `claude-sonnet-4-20250514`, undated `claude-opus-5`). Include both Sonnet and
 Opus when model coverage matters. Alias forms such as `claude-4-sonnet-*` and
 Claude 3 names belong in tests that specifically cover pricing lookup, alias

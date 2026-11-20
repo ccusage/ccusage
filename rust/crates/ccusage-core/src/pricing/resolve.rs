@@ -4,7 +4,7 @@ use crate::TimestampMs;
 
 use super::{
     CachedHit, Candidate, HitKind, Lookup, Name, NameCache, Pass, Pricing, PricingMap, PricingRows,
-    PricingSchedule, RequestCache, RequestHit, Row, RowMatch, Scope, Source, last_segment,
+    PricingSchedule, RequestCache, RequestHit, Row, RowMatch, Scope, last_segment,
     models_dev_pricing, names_pricing_key, pricing_key_matches,
 };
 
@@ -70,7 +70,7 @@ pub struct Explanation<'a> {
     pub candidate: &'a str,
     pub step: ResolutionStep,
     pub row_key: &'a str,
-    pub source: Source,
+    pub source: super::Source,
 }
 
 #[derive(Debug, Clone, Copy)]

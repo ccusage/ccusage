@@ -55,7 +55,7 @@ fn an_unreadable_project_directory_is_reported_and_the_rest_still_found() {
     let blocked = fixture.path("projects/blocked");
     fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).unwrap();
     let denied = read_fixture_dir(&blocked).is_err();
-    let diagnostics = Diagnostics::without_clock("claude");
+    let diagnostics = Diagnostics::new("claude");
     let files = super::usage_files(&[fixture.root().to_path_buf()], None, &diagnostics);
     fs::set_permissions(&blocked, fs::Permissions::from_mode(0o700)).unwrap();
     if !denied {
@@ -80,7 +80,7 @@ fn the_streaming_walk_reports_an_unreadable_project_directory() {
     let blocked = fixture.path("projects/blocked");
     fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).unwrap();
     let denied = read_fixture_dir(&blocked).is_err();
-    let diagnostics = Diagnostics::without_clock("claude");
+    let diagnostics = Diagnostics::new("claude");
     let mut files = Vec::new();
     super::visit_usage_files(
         &[fixture.root().to_path_buf()],
@@ -107,7 +107,7 @@ fn lists_a_parent_transcript_before_its_subagent_transcripts() {
     let files = super::usage_files(
         &[fixture.root().to_path_buf()],
         None,
-        &crate::Diagnostics::without_clock("claude"),
+        &crate::Diagnostics::new("claude"),
     );
 
     assert_eq!(

@@ -33,13 +33,10 @@ fn prices_the_logged_model_before_its_normalized_form() {
                 "test-model":{"input_cost_per_token":2,"output_cost_per_token":2}
             }"#,
     );
-    let entry = parse_otel_file(
-        &fixture.path("copilot.jsonl"),
-        &Diagnostics::without_clock("copilot"),
-    )
-    .unwrap()
-    .pop()
-    .unwrap();
+    let entry = parse_otel_file(&fixture.path("copilot.jsonl"), &Diagnostics::new("copilot"))
+        .unwrap()
+        .pop()
+        .unwrap();
     let loaded = usage_entry_to_loaded(
         entry,
         &jiff::tz::TimeZone::UTC,
@@ -79,7 +76,7 @@ fn parses_copilot_chat_spans() {
     });
     let file = fixture.path("copilot.jsonl");
 
-    let entries = parse_otel_file(&file, &Diagnostics::without_clock("copilot")).unwrap();
+    let entries = parse_otel_file(&file, &Diagnostics::new("copilot")).unwrap();
 
     assert_eq!(entries.len(), 1);
     assert_eq!(
@@ -121,7 +118,7 @@ fn reports_malformed_usage_lines_and_keeps_the_next_record() {
         ]
         .join("\n"),
     });
-    let diagnostics = Diagnostics::without_clock("copilot");
+    let diagnostics = Diagnostics::new("copilot");
 
     let entries = parse_otel_file(&fixture.path("copilot.jsonl"), &diagnostics).unwrap();
 
@@ -261,7 +258,7 @@ fn suppresses_lower_priority_records_for_same_response() {
     });
     let file = fixture.path("copilot.jsonl");
 
-    let entries = parse_otel_file(&file, &Diagnostics::without_clock("copilot")).unwrap();
+    let entries = parse_otel_file(&file, &Diagnostics::new("copilot")).unwrap();
 
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].dedup_key, "trace-dupe:chat-1");
@@ -314,11 +311,8 @@ fn counts_a_re_exported_chat_span_once() {
         .join("\n"),
     });
 
-    let entries = parse_otel_file(
-        &fixture.path("copilot.jsonl"),
-        &Diagnostics::without_clock("copilot"),
-    )
-    .unwrap();
+    let entries =
+        parse_otel_file(&fixture.path("copilot.jsonl"), &Diagnostics::new("copilot")).unwrap();
 
     assert_eq!(
         dedup_keys(&entries),
@@ -337,11 +331,8 @@ fn keeps_calls_of_one_turn_that_share_a_response_id() {
         .join("\n"),
     });
 
-    let entries = parse_otel_file(
-        &fixture.path("copilot.jsonl"),
-        &Diagnostics::without_clock("copilot"),
-    )
-    .unwrap();
+    let entries =
+        parse_otel_file(&fixture.path("copilot.jsonl"), &Diagnostics::new("copilot")).unwrap();
 
     assert_eq!(
         dedup_keys(&entries),
@@ -381,7 +372,7 @@ fn does_not_double_count_reasoning_tokens() {
         r#"{"test-model":{"input_cost_per_token":1,"output_cost_per_token":2,"cache_creation_input_token_cost":3,"cache_read_input_token_cost":4}}"#,
     );
 
-    let loaded = parse_otel_file(&file, &Diagnostics::without_clock("copilot"))
+    let loaded = parse_otel_file(&file, &Diagnostics::new("copilot"))
         .map(|entries| {
             entries
                 .into_iter()
@@ -460,7 +451,7 @@ fn includes_separate_otel_reasoning_tokens_in_total_and_cost() {
         r#"{"test-model":{"input_cost_per_token":1,"output_cost_per_token":2,"cache_creation_input_token_cost":3,"cache_read_input_token_cost":4}}"#,
     );
 
-    let loaded = parse_otel_file(&file, &Diagnostics::without_clock("copilot"))
+    let loaded = parse_otel_file(&file, &Diagnostics::new("copilot"))
         .map(|entries| {
             entries
                 .into_iter()
@@ -542,14 +533,11 @@ fn splits_otel_input_tokens_like_session_state() {
         )
     };
 
-    let otel = parse_otel_file(
-        &fixture.path("copilot.jsonl"),
-        &Diagnostics::without_clock("copilot"),
-    )
-    .unwrap();
+    let otel =
+        parse_otel_file(&fixture.path("copilot.jsonl"), &Diagnostics::new("copilot")).unwrap();
     let session_state = super::super::parser::parse_session_state_file(
         &fixture.path("session-1/events.jsonl"),
-        &Diagnostics::without_clock("copilot"),
+        &Diagnostics::new("copilot"),
     )
     .unwrap()
     .entries;
@@ -582,7 +570,7 @@ fn falls_back_to_total_tokens_when_copilot_parts_are_missing() {
     });
     let file = fixture.path("copilot.jsonl");
 
-    let entries = parse_otel_file(&file, &Diagnostics::without_clock("copilot")).unwrap();
+    let entries = parse_otel_file(&file, &Diagnostics::new("copilot")).unwrap();
 
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].output_tokens, 567);
@@ -2715,7 +2703,7 @@ fn names_the_io_error_kind_of_an_unreadable_source_file() {
             ..crate::cli::SharedArgs::default()
         };
         let window = ReportWindow::from_shared(&shared);
-        let diagnostics = Diagnostics::without_clock("copilot");
+        let diagnostics = Diagnostics::new("copilot");
         let pricing = ccusage_core::PricingMap::default();
         let cx = LoadContext {
             shared: &shared,

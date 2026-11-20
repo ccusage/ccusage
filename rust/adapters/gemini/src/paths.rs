@@ -50,7 +50,7 @@ mod tests {
             fixture.root(),
         )
         .run(|| {
-            let files = discover_log_files(&Diagnostics::without_clock("gemini")).unwrap();
+            let files = discover_log_files(&Diagnostics::new("gemini")).unwrap();
 
             assert_eq!(
                 files,
@@ -76,7 +76,7 @@ mod tests {
             ),
         ])
         .run(|| {
-            let files = discover_log_files(&Diagnostics::without_clock("gemini")).unwrap();
+            let files = discover_log_files(&Diagnostics::new("gemini")).unwrap();
 
             assert_eq!(files, vec![fixture.path("gemini/chats/a.json")]);
         })

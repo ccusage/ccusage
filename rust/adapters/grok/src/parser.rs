@@ -237,10 +237,8 @@ pub(super) fn parse_session_files_with_diagnostics(
                         cache_creation: None,
                     };
                     let reasoning_tokens = model_usage.reasoning_tokens;
-                    (ccusage_core::utils::total_usage_tokens(usage_raw)
-                        .saturating_add(reasoning_tokens)
-                        > 0)
-                    .then_some((raw_model, model_usage, usage_raw, reasoning_tokens))
+                    (total_usage_tokens(usage_raw).saturating_add(reasoning_tokens) > 0)
+                        .then_some((raw_model, model_usage, usage_raw, reasoning_tokens))
                 })
                 .collect::<Vec<_>>();
             if model_rows.is_empty() {
@@ -683,7 +681,7 @@ mod tests {
             &jiff::tz::TimeZone::UTC,
             CostMode::Display,
             PriceTable::Display,
-            &Diagnostics::without_clock("grok"),
+            &Diagnostics::new("grok"),
         )
         .map(|entries| {
             entries
@@ -853,7 +851,7 @@ mod tests {
             &jiff::tz::TimeZone::UTC,
             CostMode::Calculate,
             PriceTable::Calculate(&pricing),
-            &Diagnostics::without_clock("grok"),
+            &Diagnostics::new("grok"),
         )
         .map(|entries| {
             entries
@@ -891,7 +889,7 @@ mod tests {
             &jiff::tz::TimeZone::UTC,
             CostMode::Display,
             PriceTable::Display,
-            &Diagnostics::without_clock("grok"),
+            &Diagnostics::new("grok"),
         )
         .map(|entries| {
             entries
@@ -918,7 +916,7 @@ mod tests {
             &jiff::tz::TimeZone::UTC,
             CostMode::Calculate,
             PriceTable::Calculate(&pricing),
-            &Diagnostics::without_clock("grok"),
+            &Diagnostics::new("grok"),
         )
         .map(|entries| {
             entries
@@ -1031,7 +1029,7 @@ mod tests {
             "sessions/project/session/updates.jsonl": r#"{"params":{"update":{"sessionUpdate":"turn_completed","usage":{"inputTokens":1,"outputTokens":1}}}}"#,
         });
         let files = fixture.path("sessions/project/session/updates.jsonl");
-        let diagnostics = Diagnostics::without_clock("grok");
+        let diagnostics = Diagnostics::new("grok");
         let entries = parse_session_files_with_diagnostics(
             &files,
             &JiffTimeZone::UTC,
@@ -1053,7 +1051,7 @@ mod tests {
             "sessions/project/session/updates.jsonl": r#"{"params":{"update":{"sessionUpdate":"turn_completed","usage":{"inputTokens":0,"outputTokens":0}}}}"#,
         });
         let files = fixture.path("sessions/project/session/updates.jsonl");
-        let diagnostics = Diagnostics::without_clock("grok");
+        let diagnostics = Diagnostics::new("grok");
         let entries = parse_session_files_with_diagnostics(
             &files,
             &JiffTimeZone::UTC,
@@ -1088,7 +1086,7 @@ mod tests {
             "sessions/proj/sess-1/summary.json": r#"{"info":{"id":"SECRET_CANARY""#,
         });
         let files = fixture.path("sessions/proj/sess-1/updates.jsonl");
-        let diagnostics = Diagnostics::without_clock("grok");
+        let diagnostics = Diagnostics::new("grok");
 
         let entries = parse_session_files_with_diagnostics(
             &files,
@@ -1141,7 +1139,7 @@ mod tests {
             &jiff::tz::TimeZone::UTC,
             CostMode::Display,
             PriceTable::Display,
-            &Diagnostics::without_clock("grok"),
+            &Diagnostics::new("grok"),
         )
         .map(|entries| {
             entries
@@ -1196,7 +1194,7 @@ mod tests {
             &jiff::tz::TimeZone::UTC,
             CostMode::Display,
             PriceTable::Display,
-            &Diagnostics::without_clock("grok"),
+            &Diagnostics::new("grok"),
         )
         .map(|entries| {
             entries
@@ -1291,7 +1289,7 @@ mod tests {
             &jiff::tz::TimeZone::UTC,
             CostMode::Display,
             PriceTable::Display,
-            &Diagnostics::without_clock("grok"),
+            &Diagnostics::new("grok"),
         )
         .map(|entries| {
             entries
@@ -1335,7 +1333,7 @@ mod tests {
                 &jiff::tz::TimeZone::UTC,
                 mode,
                 PriceTable::for_map(mode, &pricing),
-                &Diagnostics::without_clock("grok"),
+                &Diagnostics::new("grok"),
             )
             .map(|entries| {
                 entries

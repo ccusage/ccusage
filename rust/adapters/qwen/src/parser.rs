@@ -239,7 +239,7 @@ mod tests {
         let fixture = ccusage_test_support::fs_fixture!({
             "chat.jsonl": "{\"type\":\"assistant\",\"usageMetadata\":{\"promptTokenCount\":1}}\n{\"type\":\"assistant\",\"timestamp\":\"invalid\",\"usageMetadata\":{\"promptTokenCount\":1}}\n{\"type\":\"assistant\",\"timestamp\":\"1970-01-01T00:00:00Z\",\"usageMetadata\":{\"promptTokenCount\":1}}\n{\"type\":\"assistant\",\"usageMetadata\":{}}\n"
         });
-        let diagnostics = Diagnostics::without_clock("qwen");
+        let diagnostics = Diagnostics::new("qwen");
         let entries = read_chat_file(
             &fixture.path("chat.jsonl"),
             &JiffTimeZone::UTC,

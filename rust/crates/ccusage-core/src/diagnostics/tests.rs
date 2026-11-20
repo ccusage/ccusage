@@ -13,7 +13,7 @@ fn invalid_timestamp(unit: &str, line: u32) -> Skip {
 
 #[test]
 fn stable_database_row_ids_survive_changed_scan_ordinals() {
-    let diagnostics = Diagnostics::without_clock("opencode").for_table("message");
+    let diagnostics = Diagnostics::new("opencode").for_table("message");
     for (id, ordinal) in [("row-a", 1), ("row-a", 7), ("row-b", 1)] {
         diagnostics.for_row(Some(id)).record(Skip::record(
             Path::new("db.sqlite"),
@@ -23,7 +23,7 @@ fn stable_database_row_ids_survive_changed_scan_ordinals() {
         ));
     }
     assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 2);
-    let other = Diagnostics::without_clock("opencode").for_table("message");
+    let other = Diagnostics::new("opencode").for_table("message");
     other.for_row(Some("row-a")).record(Skip::record(
         Path::new("db.sqlite"),
         3,
@@ -54,26 +54,15 @@ fn tallies_are_indexed_by_declaration_order() {
 }
 
 #[test]
-fn for_report_uses_the_captured_clock() {
-    let now: jiff::Timestamp = "2026-01-02T00:00:00Z".parse().unwrap();
-    let diagnostics = Diagnostics::for_report("test", crate::cli::ReportClock::Fixed(now));
-
-    assert_eq!(
-        diagnostics.assessment_instant(),
-        Some(crate::TimestampMs::from_millis(now.as_millisecond()))
-    );
-}
-
-#[test]
 fn healthy_loads_render_nothing() {
-    let diagnostics = Diagnostics::without_clock("codex");
+    let diagnostics = Diagnostics::new("codex");
 
     assert!(diagnostics.render(true, true).is_empty());
 }
 
 #[test]
 fn aggregates_record_skips_into_one_line_per_kind() {
-    let diagnostics = Diagnostics::without_clock("codex");
+    let diagnostics = Diagnostics::new("codex");
     diagnostics.record(invalid_timestamp("/logs/a.jsonl", 3));
     diagnostics.record(invalid_timestamp("/logs/a.jsonl", 9));
     diagnostics.record(invalid_timestamp("/logs/b.jsonl", 1));
@@ -87,7 +76,7 @@ fn aggregates_record_skips_into_one_line_per_kind() {
 
 #[test]
 fn table_rows_share_the_database_input_and_keep_distinct_identities() {
-    let diagnostics = Diagnostics::without_clock("opencode");
+    let diagnostics = Diagnostics::new("opencode");
     let message = diagnostics.for_table("message");
     let session_message = diagnostics.for_table("session_message");
     message.record(invalid_timestamp("/logs/opencode.db", 1));
@@ -104,7 +93,7 @@ fn table_rows_share_the_database_input_and_keep_distinct_identities() {
         ]
     );
 
-    let repeated = Diagnostics::without_clock("opencode");
+    let repeated = Diagnostics::new("opencode");
     repeated
         .for_table("message")
         .record(invalid_timestamp("/logs/opencode.db", 1));
@@ -123,7 +112,7 @@ fn table_rows_share_the_database_input_and_keep_distinct_identities() {
 
 #[test]
 fn whole_unit_skips_count_files_and_keep_singulars() {
-    let diagnostics = Diagnostics::without_clock("amp");
+    let diagnostics = Diagnostics::new("amp");
     diagnostics.record(Skip::unit(
         Path::new("/threads/T-1.json"),
         SkipKind::Unreadable,
@@ -142,7 +131,7 @@ fn whole_unit_skips_count_files_and_keep_singulars() {
 
 #[test]
 fn mixed_skips_count_whole_units_separately_from_records() {
-    let diagnostics = Diagnostics::without_clock("test");
+    let diagnostics = Diagnostics::new("test");
     diagnostics.record(Skip::unit(
         Path::new("/logs/broken.json"),
         SkipKind::InvalidData,
@@ -163,7 +152,7 @@ fn mixed_skips_count_whole_units_separately_from_records() {
 
 #[test]
 fn a_skip_recorded_twice_counts_once() {
-    let diagnostics = Diagnostics::without_clock("test");
+    let diagnostics = Diagnostics::new("test");
     diagnostics.record(Skip::unit(
         Path::new("/logs/broken.json"),
         SkipKind::InvalidData,
@@ -192,9 +181,9 @@ fn a_skip_recorded_twice_counts_once() {
 
 #[test]
 fn merging_two_loads_of_one_source_counts_each_skip_once() {
-    let narrow = Diagnostics::without_clock("claude");
+    let narrow = Diagnostics::new("claude");
     narrow.record(invalid_timestamp("/logs/new.jsonl", 2));
-    let wide = Diagnostics::without_clock("claude");
+    let wide = Diagnostics::new("claude");
     wide.record(invalid_timestamp("/logs/new.jsonl", 2));
     wide.record(invalid_timestamp("/logs/old.jsonl", 1));
     wide.record(invalid_timestamp("/logs/old.jsonl", 5));
@@ -215,8 +204,8 @@ fn merging_two_loads_of_one_source_counts_each_skip_once() {
 
 #[test]
 fn merging_keeps_the_first_samples_by_position() {
-    let left = Diagnostics::without_clock("test");
-    let right = Diagnostics::without_clock("test");
+    let left = Diagnostics::new("test");
+    let right = Diagnostics::new("test");
     for line in 1..=SAMPLES_PER_KIND as u32 {
         left.record(invalid_timestamp("/logs/b.jsonl", line));
         right.record(invalid_timestamp("/logs/a.jsonl", line));
@@ -245,7 +234,7 @@ fn merging_keeps_the_first_samples_by_position() {
 
 #[test]
 fn invalid_data_is_reported_by_default() {
-    let diagnostics = Diagnostics::without_clock("codex");
+    let diagnostics = Diagnostics::new("codex");
     diagnostics.record(Skip::unit(
         Path::new("/logs/session.json"),
         SkipKind::InvalidData,
@@ -267,7 +256,7 @@ fn invalid_data_is_reported_by_default() {
 
 #[test]
 fn rendered_diagnostics_escape_terminal_controls_in_dynamic_text() {
-    let diagnostics = Diagnostics::without_clock("test");
+    let diagnostics = Diagnostics::new("test");
     diagnostics.debug_note(Path::new("/data/a.db"), "source path \u{1b}[2J");
     diagnostics.record(Skip::unit(
         Path::new("/logs/bad\u{1b}[2J.json"),
@@ -287,7 +276,7 @@ fn rendered_diagnostics_escape_terminal_controls_in_dynamic_text() {
 
 #[test]
 fn log_level_zero_silences_the_aggregated_lines() {
-    let diagnostics = Diagnostics::without_clock("codex");
+    let diagnostics = Diagnostics::new("codex");
     diagnostics.record(invalid_timestamp("/logs/a.jsonl", 3));
 
     assert!(diagnostics.render(false, false).is_empty());
@@ -295,7 +284,7 @@ fn log_level_zero_silences_the_aggregated_lines() {
 
 #[test]
 fn undecoded_usage_is_counted_but_printed_only_under_debug() {
-    let diagnostics = Diagnostics::without_clock("claude");
+    let diagnostics = Diagnostics::new("claude");
     diagnostics.record(Skip::record(
         Path::new("/projects/p/s.jsonl"),
         7,
@@ -316,7 +305,7 @@ fn undecoded_usage_is_counted_but_printed_only_under_debug() {
 
 #[test]
 fn debug_lists_a_few_units_and_counts_the_rest() {
-    let diagnostics = Diagnostics::without_clock("amp");
+    let diagnostics = Diagnostics::new("amp");
     let total = SAMPLES_PER_KIND + 2;
     for index in 0..total {
         diagnostics.record(Skip::unit(
@@ -369,7 +358,7 @@ fn debug_samples_are_stable_and_bounded_across_recording_orders() {
     ];
 
     for order in orders {
-        let diagnostics = Diagnostics::without_clock("test");
+        let diagnostics = Diagnostics::new("test");
         for index in order {
             diagnostics.record(skips[index].clone());
         }
@@ -381,13 +370,13 @@ fn debug_samples_are_stable_and_bounded_across_recording_orders() {
 
 #[test]
 fn debug_notes_come_first_and_only_under_debug() {
-    let diagnostics = Diagnostics::without_clock("antigravity");
+    let diagnostics = Diagnostics::new("antigravity");
     diagnostics.record(invalid_timestamp("/data/a.db", 1));
     diagnostics.debug_note(
         Path::new("/data/b.db"),
         "Skipping empty database '/data/b.db'",
     );
-    let again = Diagnostics::without_clock("antigravity");
+    let again = Diagnostics::new("antigravity");
     again.debug_note(
         Path::new("/data/b.db"),
         "Skipping empty database '/data/b.db'",

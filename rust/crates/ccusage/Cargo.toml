@@ -21,7 +21,6 @@ ccusage-cli.workspace = true
 ccusage-config.workspace = true
 ccusage-core.workspace = true
 ccusage-pricing-snapshots.workspace = true
-ccusage-report.workspace = true
 jiff.workspace = true
 ring.workspace = true
 rustls.workspace = true
