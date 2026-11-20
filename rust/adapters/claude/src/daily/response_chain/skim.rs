@@ -236,12 +236,31 @@ impl Skim<'_> {
 
 static UNICODE_ESCAPE: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(br"\u00"));
 
-// NOTE(2026-11-20, #2255): RFC 8259 lets a JSON string escape an ASCII letter only as `\u00XX`, and whitespace cannot split a value. Bytes that hold neither the letters nor such an escape cannot spell that value anywhere, so the scanner may stop reading there, and it searches again only once it passes the last place that could.
-fn spelled_at(rest: &[u8], letters: &Finder<'_>) -> Option<usize> {
-    letters.find(rest).or_else(|| {
-        memchr(b'\\', rest)?;
-        UNICODE_ESCAPE.find(rest)
-    })
+// NOTE(2026-11-20, #2255): RFC 8259 lets a JSON string escape an ASCII letter only as `\u00XX`, and whitespace cannot split a value. Bytes that hold neither the letters nor such an escape cannot spell that value anywhere, so the scanner may stop reading there, and each marker is searched again only once the scanner passes its last match.
+struct Spelling<'f> {
+    finder: &'f Finder<'static>,
+    next: Option<Option<usize>>,
+}
+
+impl<'f> Spelling<'f> {
+    fn new(finder: &'f Finder<'static>) -> Self {
+        Self { finder, next: None }
+    }
+
+    fn next_from(&mut self, line: &[u8], at: usize) -> Option<usize> {
+        match self.next {
+            Some(Some(next)) if next >= at => Some(next),
+            Some(None) => None,
+            _ => {
+                let next = line
+                    .get(at..)
+                    .and_then(|rest| self.finder.find(rest))
+                    .map(|offset| at + offset);
+                self.next = Some(next);
+                next
+            }
+        }
+    }
 }
 
 pub(super) enum Scan<T> {
@@ -341,13 +360,13 @@ impl<'a> Cursor<'a> {
 
     fn content_tool_uses(&mut self, tool_uses: &mut SmallVec<[&'a [u8]; 2]>) -> Option<()> {
         self.eat(b'[')?;
-        let mut spelled_until = 0;
+        let mut letters = Spelling::new(&TOOL_USE);
+        let mut escape = Spelling::new(&UNICODE_ESCAPE);
         loop {
-            if self.at >= spelled_until {
-                match spelled_at(self.line.get(self.at..)?, &TOOL_USE) {
-                    Some(offset) => spelled_until = self.at + offset,
-                    None => return Some(()),
-                }
+            if letters.next_from(self.line, self.at).is_none()
+                && escape.next_from(self.line, self.at).is_none()
+            {
+                return Some(());
             }
             match self.peek()? {
                 b']' => return Some(()),
