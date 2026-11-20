@@ -731,11 +731,11 @@ mod pricing_identity_tests {
                 0.0004747,
             ),
             (
-                "55_free_suffix",
+                "55_router_listing_behind_the_path",
                 "openrouter/z-ai/glm-4.7-flash",
                 "openrouter",
                 &pricing,
-                0.0,
+                0.00066125,
             ),
             (
                 "54_free_identity",

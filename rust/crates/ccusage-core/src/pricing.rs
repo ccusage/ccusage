@@ -1625,6 +1625,20 @@ impl PricingMap {
         None
     }
 
+    fn models_dev_names<'a, 'n>(
+        &'a self,
+        name: Name<'n>,
+        lookup: Lookup,
+        models_dev: &impl Fn() -> Option<&'a PricingRows>,
+    ) -> impl Iterator<Item = Name<'n>> {
+        // NOTE(2026-11-20, #2238): An authoritative row for an id behind the path outranks the models.dev row for it. After S3 only a vendor's free row can be left there, and it must still answer through S3f.
+        let unclaimed = move |suffix: &Name<'_>| {
+            self.authoritative(*suffix, lookup, false, models_dev, |_| true)
+                .is_none()
+        };
+        std::iter::once(name).chain(name.suffixes().take_while(unclaimed))
+    }
+
     fn search_pass<'a>(
         &'a self,
         model: &str,
@@ -1670,8 +1684,11 @@ impl PricingMap {
                         return None;
                     }
                     let rows = models_dev()?;
-                    slot.names(model, |name| rows.exact(name, lookup))
-                        .map(|found| CachedHit::new(found, HitKind::ModelsDevIdentity))
+                    slot.names(model, |name| {
+                        self.models_dev_names(name, lookup, models_dev)
+                            .find_map(|name| rows.exact(name, lookup))
+                    })
+                    .map(|found| CachedHit::new(found, HitKind::ModelsDevIdentity))
                 })
             }
             Pass::S56 => {
@@ -1679,7 +1696,10 @@ impl PricingMap {
                 if let Some(rows) = secondary
                     && slot
                         .names(model, |name| {
-                            rows.contains_exact_only_identity(name.raw(), name.identity())
+                            self.models_dev_names(name, lookup, models_dev)
+                                .any(|name| {
+                                    rows.contains_exact_only_identity(name.raw(), name.identity())
+                                })
                                 .then_some(())
                         })
                         .is_some()
@@ -2722,8 +2742,18 @@ mod tests {
             Some(4)
         );
         let pricing = layered(&PricingMap::default(), Some(&secondary));
+        let found = pricing
+            .explain(
+                Some("hostaa/m-1-turbo"),
+                &[("hostaa/m-1-turbo", MatchKind::Fuzzy)],
+            )
+            .unwrap();
+        assert_eq!(
+            (found.step, found.row_key),
+            (super::ResolutionStep::ModelsDevIdentity, "m-1-turbo")
+        );
         for (model, row, rate) in [
-            ("hostaa/m-1-turbo", "hostaa/m-1", 1e-6),
+            ("hostaa/m-1-turbo-max", "hostaa/m-1", 1e-6),
             ("m-2-turbo", "hostc/m-2-turbo", 2e-6),
         ] {
             let candidates = [(model, MatchKind::Fuzzy)];
@@ -2780,10 +2810,10 @@ mod tests {
             ),
             (
                 "openrouter/z-ai/glm-4.7-flash",
-                0.0,
-                0.0,
-                AuthoritativeSuffix,
-                "zai/glm-4.7-flash",
+                0.13225e-6,
+                0.529e-6,
+                ModelsDevIdentity,
+                "z-ai/glm-4.7-flash",
             ),
             (
                 "kyma/glm-4.7-flash",
@@ -7679,6 +7709,40 @@ mod tests {
     }
 
     #[test]
+    fn a_router_path_reaches_the_models_dev_row_of_the_vendor_id_behind_it() {
+        crate::test_support::install_pricing_snapshots();
+        let pricing = PricingMap::load_embedded();
+        for (model, row) in [
+            (
+                "openrouter/anthropic/claude-opus-4.8-fast",
+                "anthropic/claude-opus-4.8-fast",
+            ),
+            (
+                "openrouter/openai/gpt-6.2-sol-fast",
+                "openai/gpt-6.2-sol-fast",
+            ),
+            (
+                "openrouter/deepseek/deepseek-v4-flash-0731",
+                "deepseek/deepseek-v4-flash-0731",
+            ),
+            (
+                "openrouter/deepseek/deepseek-v4-pro-0813",
+                "deepseek/deepseek-v4-pro-0813",
+            ),
+        ] {
+            let found = pricing
+                .explain(Some(model), &[(model, MatchKind::Fuzzy)])
+                .unwrap();
+            assert_eq!(
+                (found.step, found.row_key),
+                (super::ResolutionStep::ModelsDevIdentity, row),
+                "{model}"
+            );
+            assert_eq!(pricing.find(model), pricing.find(row), "{model}");
+        }
+    }
+
+    #[test]
     fn split_threshold_comes_from_the_resolved_pricing_entry() {
         crate::test_support::install_pricing_snapshots();
         let _aliases = crate::model_aliases::set_model_aliases_for_tests([(
@@ -7779,13 +7843,46 @@ mod tests {
     }
 
     #[test]
+    fn a_router_path_to_an_exact_only_tier_does_not_take_the_base_models_limit() {
+        crate::test_support::install_pricing_snapshots();
+        let mut secondary = PricingMap::default();
+        assert_eq!(
+            secondary.load_models_dev_json_for_tests(
+                r#"{
+            "sample-1":{"cost":{"input":3,"output":4},"limit":{"context":123456}},
+            "sample-1-fast":{"cost":{"input":6,"output":8},"exactOnly":true},
+            "sample-2":{"cost":{"input":3,"output":4},"limit":{"context":123456}},
+            "sample-2-fast":{"cost":{"input":6,"output":8},"exactOnly":true,"limit":{"context":654321}}
+        }"#
+            ),
+            Some(4)
+        );
+        let pricing = layered(&PricingMap::default(), Some(&secondary));
+        assert_eq!(
+            pricing
+                .find_with_live("router/sample-1-fast", || None)
+                .unwrap()
+                .input,
+            6e-6
+        );
+        assert_eq!(
+            pricing.context_limit_entry("router/sample-1-fast", MatchKind::Fuzzy),
+            None
+        );
+        assert_eq!(
+            pricing.context_limit_entry("router/sample-2-fast", MatchKind::Fuzzy),
+            Some(654_321)
+        );
+    }
+
+    #[test]
     fn context_limits_keep_their_pre_wave_exact_only_boundaries() {
         crate::test_support::install_pricing_snapshots();
         let map = PricingMap::load_embedded();
         assert_eq!(map.context_limit("qwen_ai_platform/glm-5.1"), Some(200_000));
         assert_eq!(
             map.context_limit("novita/zai-org/glm-5-turbo"),
-            Some(204_800)
+            Some(200_000)
         );
     }
 
