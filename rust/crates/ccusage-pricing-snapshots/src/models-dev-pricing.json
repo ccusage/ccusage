@@ -2264,9 +2264,9 @@
 	},
 	"accounts/fireworks/routers/deepseek-v4p1-flash-1017-spot": {
 		"cost": {
-			"cache_read": 0.0042,
-			"input": 0.21,
-			"output": 0.84
+			"cache_read": 0.003,
+			"input": 0.15,
+			"output": 0.6
 		},
 		"limit": {
 			"context": 1000000
@@ -2274,9 +2274,9 @@
 	},
 	"accounts/fireworks/routers/deepseek-v4p1-flash-1017-ultrafast": {
 		"cost": {
-			"cache_read": 0.048,
-			"input": 2.4,
-			"output": 9.6
+			"cache_read": 0.024,
+			"input": 1.2,
+			"output": 4.8
 		},
 		"limit": {
 			"context": 1000000
@@ -2284,9 +2284,9 @@
 	},
 	"accounts/fireworks/routers/deepseek-v4p1-flash-spot": {
 		"cost": {
-			"cache_read": 0.0042,
-			"input": 0.21,
-			"output": 0.84
+			"cache_read": 0.003,
+			"input": 0.15,
+			"output": 0.6
 		},
 		"limit": {
 			"context": 1000000
@@ -2304,9 +2304,9 @@
 	},
 	"accounts/fireworks/routers/glm-5p3-spot": {
 		"cost": {
-			"cache_read": 0.182,
-			"input": 0.98,
-			"output": 3.08
+			"cache_read": 0.13,
+			"input": 0.7,
+			"output": 2.2
 		},
 		"limit": {
 			"context": 1048573
@@ -9117,26 +9117,6 @@
 			"context": 65536
 		}
 	},
-	"cloudflare/deepseek-v4-flash-0731": {
-		"cost": {
-			"cache_read": 0.014,
-			"input": 0.44,
-			"output": 1.32
-		},
-		"limit": {
-			"context": 1048576
-		}
-	},
-	"cloudflare/deepseek-v4-pro": {
-		"cost": {
-			"cache_read": 0.044,
-			"input": 1.32,
-			"output": 3.96
-		},
-		"limit": {
-			"context": 1048576
-		}
-	},
 	"cloudflare/deepseek-v4.1-flash-1017": {
 		"cost": {
 			"cache_read": 0.006,
@@ -9162,16 +9142,6 @@
 			"cache_read": 0.26,
 			"input": 1.4,
 			"output": 4.4
-		},
-		"limit": {
-			"context": 1048576
-		}
-	},
-	"cloudflare/glm-5.3-flash": {
-		"cost": {
-			"cache_read": 0.03,
-			"input": 0.15,
-			"output": 0.5
 		},
 		"limit": {
 			"context": 1048576
@@ -12035,9 +12005,9 @@
 	},
 	"deepseek/deepseek-v4-flash-0731:thinking": {
 		"cost": {
-			"cache_read": 0.001484,
-			"input": 0.04664,
-			"output": 0.13992
+			"cache_read": 0.013,
+			"input": 0.05,
+			"output": 0.16
 		},
 		"limit": {
 			"context": 1048576
@@ -12177,10 +12147,10 @@
 	},
 	"deepseek/deepseek-v4.1-flash-1017": {
 		"cost": {
-			"cache_read": 0.003,
+			"cache_read": 0.0025,
 			"cache_write": 0,
-			"input": 0.08,
-			"output": 0.52
+			"input": 0.045,
+			"output": 0.25
 		},
 		"limit": {
 			"context": 1048576
@@ -18876,7 +18846,7 @@
 			"context": 500000
 		}
 	},
-	"grok-build-0.1": {
+	"grok-build-0-1": {
 		"cost": {
 			"cache_read": 0.2,
 			"input": 1,
@@ -23778,6 +23748,16 @@
 			"context": 8192
 		}
 	},
+	"modaic/mo": {
+		"cost": {
+			"input": 0.04,
+			"output": 0
+		},
+		"exactOnly": true,
+		"limit": {
+			"context": 262144
+		}
+	},
 	"model-router": {
 		"cost": {
 			"input": 0.14,
@@ -25747,7 +25727,7 @@
 	},
 	"nvidia/Nemotron-3_5-Lightning": {
 		"cost": {
-			"cache_read": 0.06,
+			"cache_read": 0.03,
 			"input": 0.06,
 			"output": 0.24
 		},
@@ -32656,9 +32636,9 @@
 	},
 	"sciforium/deepseek-v4.1-flash-1017": {
 		"cost": {
-			"cache_read": 0.003,
-			"input": 0.15,
-			"output": 0.6
+			"cache_read": 0.004,
+			"input": 0.2,
+			"output": 0.8
 		},
 		"limit": {
 			"context": 1048576
@@ -32666,9 +32646,9 @@
 	},
 	"sciforium/deepseek-v4.1-flash-latest": {
 		"cost": {
-			"cache_read": 0.003,
-			"input": 0.15,
-			"output": 0.6
+			"cache_read": 0.004,
+			"input": 0.2,
+			"output": 0.8
 		},
 		"limit": {
 			"context": 1048576
@@ -33459,27 +33439,6 @@
 		},
 		"limit": {
 			"context": 500000
-		}
-	},
-	"spacexai/grok-build-0.1": {
-		"cost": {
-			"cache_read": 0.2,
-			"input": 1,
-			"output": 2,
-			"tiers": [
-				{
-					"cache_read": 0.4,
-					"input": 2,
-					"output": 4,
-					"tier": {
-						"size": 200001,
-						"type": "context"
-					}
-				}
-			]
-		},
-		"limit": {
-			"context": 256000
 		}
 	},
 	"speakleash/bielik-11b-v3.0-instruct": {
