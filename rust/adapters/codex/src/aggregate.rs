@@ -344,7 +344,7 @@ fn fold_rollout(
                 replay.is_replayed_compaction(path, event.response_id.as_deref())
             })
         {
-            result = seen.record(&event, &mut provenance);
+            result = seen.record(event, &mut provenance);
         }
     };
     let metadata = if let Some(replay) = replay {

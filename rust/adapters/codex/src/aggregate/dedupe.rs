@@ -75,12 +75,12 @@ pub(super) struct CodexAttribution {
 }
 
 impl CodexAttribution {
-    fn new(event: &CodexTokenUsageEvent, file_index: usize, session: StringId) -> Self {
+    fn new(event: CodexTokenUsageEvent, file_index: usize, session: StringId) -> Self {
         Self {
             file_index,
             rollout_count: 0,
             session,
-            last_activity: event.last_activity.clone(),
+            last_activity: event.last_activity,
             is_fallback: event.is_fallback_model,
             service_tier: event.service_tier,
         }
@@ -288,7 +288,7 @@ impl<'a> CodexDedupe<'a> {
 
     pub(super) fn record(
         &self,
-        event: &CodexTokenUsageEvent,
+        mut event: CodexTokenUsageEvent,
         provenance: &mut CodexEventProvenance,
     ) -> Result<()> {
         let session = if let Some(session) = provenance.session {
@@ -310,8 +310,10 @@ impl<'a> CodexDedupe<'a> {
             usage: event.raw_usage(),
             occurrence: 0,
         };
+        let response_id = event.response_id.take();
+        let record_response_id = event.record_response_id.take();
         let mut attribution = CodexAttribution::new(event, provenance.file_index, session);
-        if let Some(response) = &event.response_id {
+        if let Some(response) = &response_id {
             let mut shard = self
                 .shard(response)?
                 .lock()
@@ -328,7 +330,7 @@ impl<'a> CodexDedupe<'a> {
             }
         } else {
             let shard = self.shard(&key)?;
-            let recorded = event.record_response_id.is_some();
+            let recorded = record_response_id.is_some();
             let (occurrence, rollout_count) =
                 provenance.occurrences.entry(key).or_default().add(recorded);
             attribution.rollout_count = rollout_count;
@@ -338,15 +340,12 @@ impl<'a> CodexDedupe<'a> {
             let mut shard = shard
                 .lock()
                 .map_err(|_| crate::cli_error("codex dedupe poisoned"))?;
-            if let Some(id) = &event.record_response_id {
+            if let Some(id) = record_response_id {
                 let requests = shard.recorded.entry(key).or_default();
-                if let Some(request) = requests.iter_mut().find(|request| request.id == *id) {
+                if let Some(request) = requests.iter_mut().find(|request| request.id == id) {
                     request.attribution.merge(attribution);
                 } else {
-                    requests.push(CodexRecordedUsage {
-                        id: Arc::clone(id),
-                        attribution,
-                    });
+                    requests.push(CodexRecordedUsage { id, attribution });
                 }
             } else {
                 shard.record_legacy(key, attribution);

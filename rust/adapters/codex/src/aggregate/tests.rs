@@ -43,9 +43,9 @@ fn prices_the_configured_alias_target_when_both_models_have_rates() {
     };
     let seen = CodexDedupe::new(1, Some(&pricing));
     let mut provenance = CodexEventProvenance::new(0, "session".into());
-    seen.record(&event, &mut provenance).unwrap();
+    seen.record(event.clone(), &mut provenance).unwrap();
     event.model = "alias-model".into();
-    seen.record(&event, &mut provenance).unwrap();
+    seen.record(event.clone(), &mut provenance).unwrap();
     let groups = seen
         .fold(&SharedArgs::default(), AgentReportKind::Session)
         .unwrap();
@@ -86,7 +86,7 @@ fn tier_split_uses_the_supplied_pricing_entry_instead_of_embedded_rates() {
         service_tier: None,
     };
     let seen = CodexDedupe::new(1, Some(&pricing));
-    seen.record(&event, &mut CodexEventProvenance::new(0, "session".into()))
+    seen.record(event, &mut CodexEventProvenance::new(0, "session".into()))
         .unwrap();
     let groups = seen
         .fold(&SharedArgs::default(), AgentReportKind::Session)
@@ -205,7 +205,7 @@ fn usage_attribution_uses_file_order_when_workers_finish_in_reverse() {
     let seen = CodexDedupe::new(2, Some(&pricing));
     for (event, file_index) in [(&copied, 1), (&first, 0)] {
         seen.record(
-            event,
+            event.clone(),
             &mut CodexEventProvenance::new(file_index, "session".into()),
         )
         .unwrap();
@@ -258,7 +258,7 @@ fn compaction_attribution_uses_file_order_when_workers_finish_in_reverse() {
         [(&copied, 1, "copied-session"), (&first, 0, "first-session")]
     {
         seen.record(
-            event,
+            event.clone(),
             &mut CodexEventProvenance::new(file_index, session.into()),
         )
         .unwrap();
@@ -1983,7 +1983,7 @@ fn replaces_the_stand_in_attribution_regardless_of_arrival_order() {
         let seen = CodexDedupe::new(2, None);
         for file_index in order {
             seen.record(
-                &events[file_index],
+                events[file_index].clone(),
                 &mut CodexEventProvenance::new(
                     file_index,
                     ["session-b", "session-a"][file_index].into(),
