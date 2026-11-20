@@ -82,9 +82,8 @@ pub fn set_modified(path: &Path, modified: Instant) {
 pub fn install_pricing_snapshots() {
     ccusage_core::pricing::set_embedded_snapshots(ccusage_core::pricing::EmbeddedSnapshots {
         litellm_sources: ccusage_pricing_snapshots::LITELLM_SOURCES,
-        litellm_pricing: ccusage_pricing_snapshots::LITELLM_PRICING,
-        models_dev_pricing: ccusage_pricing_snapshots::MODELS_DEV_PRICING,
         models_dev_catalog_rules: ccusage_pricing_snapshots::MODELS_DEV_CATALOG_RULES,
+        pricing_table: ccusage_pricing_snapshots::PRICING_TABLE,
     });
 }
 

@@ -1,4 +1,51 @@
-use super::{MatchKind, PricingMap, build_time_pricing_json, embedded_models_dev_pricing, layered};
+use super::{
+    MatchKind, PricingMap, build_time_models_dev_json, build_time_pricing_json,
+    embedded_models_dev_pricing, layered,
+};
+use crate::pricing::PricingRows;
+
+fn sorted_rows(rows: &PricingRows) -> Vec<String> {
+    let mut rows: Vec<_> = rows
+        .entries
+        .rows
+        .iter()
+        .map(|row| {
+            format!(
+                "{} {:?} {:?} {:?} {:?} {} {:?} {:?}",
+                row.key,
+                row.rates(),
+                row.source,
+                row.schedule,
+                row.context_limit,
+                row.exact_only,
+                row.scope,
+                row.vendor_start
+            )
+        })
+        .collect();
+    rows.sort();
+    rows
+}
+
+#[test]
+fn embedded_table_matches_the_rows_loaded_from_its_snapshots() {
+    crate::test_support::install_pricing_snapshots();
+    let mut models_dev = PricingMap::default();
+    models_dev
+        .load_models_dev_json_missing(build_time_models_dev_json())
+        .unwrap();
+    let mut litellm = PricingMap::default();
+    litellm.load_json(build_time_pricing_json());
+    litellm.complete_layers(&models_dev);
+
+    let embedded = PricingMap::load_embedded();
+
+    assert_eq!(sorted_rows(&embedded.rows), sorted_rows(&litellm.rows));
+    assert_eq!(
+        sorted_rows(&embedded_models_dev_pricing().rows),
+        sorted_rows(&models_dev.rows)
+    );
+}
 
 #[test]
 fn loads_embedded_claude_pricing() {

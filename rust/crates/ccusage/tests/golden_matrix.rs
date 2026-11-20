@@ -551,6 +551,23 @@ fn malformed_test_clock_is_a_usage_error_not_a_panic() {
 }
 
 #[test]
+fn last_beyond_the_span_limits_is_a_usage_error_not_a_panic() {
+    let fixture = Fixture::new();
+    let output = golden::hermetic_command(fixture.root(), &[], golden::WIDE_COLUMNS)
+        .args(["daily", "--offline", "--json", "--last", "4294967295"])
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert_eq!(output.status.code(), Some(2), "{stderr}");
+    assert!(
+        stderr.starts_with("Could not resolve --last 4294967295 from today's date"),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("panicked"), "{stderr}");
+}
+
+#[test]
 fn claude_project_case_runs_a_successful_filtered_report() {
     let fixture = Fixture::new();
     let root = fixture.root();
