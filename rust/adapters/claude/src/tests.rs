@@ -1201,7 +1201,7 @@ fn single_and_multi_thread_keep_the_same_copy_from_invalid_utf8_project_dirs() {
             (
                 entries
                     .iter()
-                    .map(|entry| (entry.usage.input_tokens, entry.project.clone()))
+                    .map(|entry| (entry.usage.input_tokens, entry.project.to_string()))
                     .collect::<Vec<_>>(),
                 daily.iter().map(|day| day.input_tokens).collect::<Vec<_>>(),
             )
