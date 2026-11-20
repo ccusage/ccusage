@@ -1,5 +1,5 @@
 ---
-source: crates/ccusage/src/summary.rs
+source: crates/ccusage-core/src/summary/tests.rs
 expression: rows
 ---
 [
