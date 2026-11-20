@@ -52,7 +52,7 @@ const GEMINI_4: CacheDefaults = CacheDefaults {
     ..GEMINI
 };
 
-// NOTE(2026-11-20): DeepSeek lists cache hits and misses only, so writes cost the miss rate; V4 Flash hits are $0.006 against $0.30 (0.02×) and V4 Pro 0.033×, so 0.02× is an estimate from the default model at https://api-docs.deepseek.com/quick_start/pricing. Use these multipliers when a row omits cache rates.
+// NOTE(2026-11-20): DeepSeek lists cache hits and misses only, so writes cost the miss rate; deepseek-flash hits are $0.006 against $0.30 (0.02×) and V4 Pro 0.033×, so 0.02× is an estimate from the default model at https://api-docs.deepseek.com/quick_start/pricing. Use these multipliers when a row omits cache rates.
 const DEEPSEEK: CacheDefaults = CacheDefaults {
     write_x: 1.0,
     write_1h_x: 1.0,
