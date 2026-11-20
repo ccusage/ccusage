@@ -114,32 +114,31 @@ struct CodexLineage {
 }
 
 impl CodexLineage {
-    fn descends_from(&self, session: StringId, ancestor: StringId) -> bool {
-        let (Some(mut thread), Some(ancestor)) =
-            (self.threads.get(&session), self.threads.get(&ancestor))
-        else {
-            return false;
-        };
-        for _ in 0..self.parents.len() {
-            let Some(parent) = self.parents.get(thread) else {
-                return false;
-            };
-            if parent == ancestor {
-                return true;
+    fn ancestors(&self, session: StringId) -> Vec<&CompactString> {
+        let mut ancestors = Vec::new();
+        let mut thread = self.threads.get(&session);
+        while let Some(parent) = thread.and_then(|thread| self.parents.get(thread)) {
+            if ancestors.contains(&parent) {
+                break;
             }
-            thread = parent;
+            ancestors.push(parent);
+            thread = Some(parent);
         }
-        false
+        ancestors
     }
 
     // NOTE(2026-11-20, #2208): A fork and its ancestors each send their own requests after the fork, while unrelated sessions with the same recordless usage hold copies of one request. Matches at the same fork depth never descend from one another, so each depth counts once.
     fn collapse_copies(&self, attributions: Vec<CodexAttribution>) -> Vec<CodexAttribution> {
+        let threads = attributions
+            .iter()
+            .filter_map(|attribution| self.threads.get(&attribution.session))
+            .collect::<Vec<_>>();
         let depths = attributions
             .iter()
             .map(|attribution| {
-                attributions
-                    .iter()
-                    .filter(|other| self.descends_from(attribution.session, other.session))
+                self.ancestors(attribution.session)
+                    .into_iter()
+                    .filter(|ancestor| threads.contains(ancestor))
                     .count()
             })
             .collect::<Vec<_>>();

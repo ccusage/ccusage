@@ -1410,6 +1410,60 @@ fn collapses_a_parent_copy_while_keeping_the_fork_request() {
     }
 }
 
+fn fork_pair(parent: &str, fork: &str, prefix: u64) -> [String; 2] {
+    let request = fork_token_count_line("2026-05-12T09:00:00.000Z", 100, prefix + 100);
+    [
+        [
+            session_meta_line("2026-05-12T08:00:00.000Z", parent, None),
+            fork_token_count_line("2026-05-12T08:01:00.000Z", prefix, prefix),
+            request.clone(),
+        ]
+        .join("\n"),
+        [
+            session_meta_line("2026-05-12T08:30:00.000Z", fork, Some(parent)),
+            fork_token_count_line("2026-05-12T08:30:00.000Z", prefix, prefix),
+            request,
+        ]
+        .join("\n"),
+    ]
+}
+
+#[test]
+fn a_copy_of_an_ancestor_does_not_add_a_request_across_fork_pairs() {
+    ccusage_test_support::install_pricing_snapshots();
+    let [parent_a, fork_b] = fork_pair("parent-a", "fork-b", 1_000);
+    let [parent_c, fork_d] = fork_pair("parent-c", "fork-d", 2_000);
+
+    for with_copy in [false, true] {
+        let fixture = fs_fixture!({
+            "sessions/a.jsonl": &parent_a,
+            "sessions/b.jsonl": &fork_b,
+            "sessions/c.jsonl": &parent_c,
+            "sessions/d.jsonl": &fork_d,
+        });
+        if with_copy {
+            fixture.write_file("sessions/archived-a.jsonl", &parent_a);
+        }
+        let sessions = fixture.path("sessions");
+
+        for single_thread in [true, false] {
+            let context = format!("with_copy={with_copy} single_thread={single_thread}");
+            assert_eq!(
+                input_tokens_by_period(&sessions, AgentReportKind::Daily, single_thread),
+                [("2026-05-12".to_string(), 3_200)],
+                "{context}"
+            );
+            let by_session =
+                input_tokens_by_period(&sessions, AgentReportKind::Session, single_thread);
+            assert_eq!(
+                by_session.iter().map(|(_, input)| input).sum::<u64>(),
+                3_200,
+                "{context}"
+            );
+        }
+    }
+}
+
 const IDENTICAL_REQUESTS_ROLLOUT: &str = r#"{"timestamp":"2026-11-01T09:42:09.923Z","type":"session_meta","payload":{"id":"01a1967c-0000-7000-8000-00000000000a","forked_from_id":"01a1967b-0000-7000-8000-000000000001","timestamp":"2026-11-01T09:42:09.923Z","originator":"codex_vscode","cli_version":"0.164.0-alpha.11.1","source":{"subagent":{"thread_spawn":{"parent_thread_id":"01a1967b-0000-7000-8000-000000000001","depth":1}}},"model_provider":"openai"}}
 {"timestamp":"2026-11-01T09:42:09.923Z","type":"compacted","payload":{"message":"","replacement_history":[]}}
 {"timestamp":"2026-11-01T09:42:09.923Z","type":"turn_context","payload":{"model":"gpt-6-astra"}}
