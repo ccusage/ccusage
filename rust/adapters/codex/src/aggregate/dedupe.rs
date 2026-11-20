@@ -114,6 +114,12 @@ struct CodexLineage {
 }
 
 impl CodexLineage {
+    fn add_parent(&mut self, thread: &str, parent: &str) {
+        self.parents
+            .entry(CompactString::new(thread))
+            .or_insert_with(|| CompactString::new(parent));
+    }
+
     fn ancestors(&self, session: StringId) -> Vec<&CompactString> {
         let mut ancestors = Vec::new();
         let mut thread = self.threads.get(&session);
@@ -361,10 +367,18 @@ impl<'a> CodexDedupe<'a> {
             lineage.threads.insert(session, CompactString::new(thread));
         }
         if let Some(parent) = metadata.lineage_parent_id() {
-            lineage
-                .parents
-                .entry(CompactString::new(thread))
-                .or_insert_with(|| CompactString::new(parent));
+            lineage.add_parent(thread, parent);
+        }
+        Ok(())
+    }
+
+    pub(super) fn record_lineage_edges(&self, edges: &[(String, String)]) -> Result<()> {
+        let mut lineage = self
+            .lineage
+            .lock()
+            .map_err(|_| crate::cli_error("codex lineage poisoned"))?;
+        for (thread, parent) in edges {
+            lineage.add_parent(thread, parent);
         }
         Ok(())
     }

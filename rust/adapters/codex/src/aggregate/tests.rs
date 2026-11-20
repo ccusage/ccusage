@@ -1498,6 +1498,116 @@ fn counts_a_reference_backed_fork_and_its_parent_requesting_at_the_same_instant_
     }
 }
 
+fn bounded_input_tokens(
+    sessions_dir: &Path,
+    kind: AgentReportKind,
+    single_thread: bool,
+    bounded: bool,
+) -> Vec<(String, u64)> {
+    let day = bounded.then(|| "20260512".parse().unwrap());
+    let shared = SharedArgs {
+        single_thread,
+        since: day,
+        until: day,
+        timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+        ..SharedArgs::default()
+    };
+    load_groups_from_directory(sessions_dir, &shared, kind)
+        .unwrap()
+        .into_iter()
+        .filter(|(period, _)| kind == AgentReportKind::Session || period == "2026-05-12")
+        .map(|(period, group)| (period, group.input_tokens))
+        .collect()
+}
+
+#[test]
+fn bounded_loads_keep_lineage_through_an_out_of_window_ancestor() {
+    for reference_backed_leaf in [false, true] {
+        assert_bounded_lineage_through_an_out_of_window_ancestor(reference_backed_leaf);
+    }
+}
+
+fn assert_bounded_lineage_through_an_out_of_window_ancestor(reference_backed_leaf: bool) {
+    ccusage_test_support::install_pricing_snapshots();
+    let request = fork_token_count_line("2026-05-12T09:00:00.000Z", 100, 1_150);
+    let root = [
+        session_meta_line("2026-05-01T08:00:00.000Z", "root-a", None),
+        fork_token_count_line("2026-05-01T08:01:00.000Z", 1_000, 1_000),
+        request.clone(),
+    ];
+    let middle = [
+        session_meta_line("2026-05-01T09:00:00.000Z", "middle-b", Some("root-a")),
+        fork_token_count_line("2026-05-01T09:00:00.000Z", 1_000, 1_000),
+        fork_token_count_line("2026-05-01T10:00:00.000Z", 50, 1_050),
+    ];
+    let leaf = if reference_backed_leaf {
+        vec![
+            json!({
+                "timestamp": "2026-05-12T08:00:00.000Z",
+                "type": "session_meta",
+                "payload": {
+                    "id": "leaf-c",
+                    "forked_from_id": "middle-b",
+                    "history_base": {"thread_id": "middle-b", "end_ordinal_exclusive": 2},
+                },
+            })
+            .to_string(),
+            request,
+        ]
+    } else {
+        vec![
+            session_meta_line("2026-05-12T08:00:00.000Z", "leaf-c", Some("middle-b")),
+            fork_token_count_line("2026-05-12T08:00:00.000Z", 1_000, 1_000),
+            fork_token_count_line("2026-05-12T08:00:00.000Z", 50, 1_050),
+            request,
+        ]
+    };
+    let fixture = fs_fixture!({
+        "sessions/2026/05/01/rollout-2026-05-01T08-00-00-root-a.jsonl": root.join("\n"),
+        "sessions/2026/05/01/rollout-2026-05-01T09-00-00-middle-b.jsonl": middle.join("\n"),
+        "sessions/2026/05/12/rollout-2026-05-12T08-00-00-leaf-c.jsonl": leaf.join("\n"),
+    });
+    let modified = |path: &str, at: &str| {
+        ccusage_test_support::set_modified(&fixture.path(path), ccusage_test_support::instant(at));
+    };
+    modified(
+        "sessions/2026/05/01/rollout-2026-05-01T08-00-00-root-a.jsonl",
+        "2026-05-12T09:01:00Z",
+    );
+    modified(
+        "sessions/2026/05/01/rollout-2026-05-01T09-00-00-middle-b.jsonl",
+        "2026-05-01T10:01:00Z",
+    );
+    let sessions = fixture.path("sessions");
+
+    for single_thread in [true, false] {
+        for bounded in [false, true] {
+            let context = format!(
+                "reference_backed_leaf={reference_backed_leaf} single_thread={single_thread} bounded={bounded}"
+            );
+            assert_eq!(
+                bounded_input_tokens(&sessions, AgentReportKind::Daily, single_thread, bounded),
+                [("2026-05-12".to_string(), 200)],
+                "{context}"
+            );
+        }
+        assert_eq!(
+            bounded_input_tokens(&sessions, AgentReportKind::Session, single_thread, true),
+            [
+                (
+                    "2026/05/01/rollout-2026-05-01T08-00-00-root-a".to_string(),
+                    100
+                ),
+                (
+                    "2026/05/12/rollout-2026-05-12T08-00-00-leaf-c".to_string(),
+                    100
+                ),
+            ],
+            "reference_backed_leaf={reference_backed_leaf} single_thread={single_thread}"
+        );
+    }
+}
+
 const IDENTICAL_REQUESTS_ROLLOUT: &str = r#"{"timestamp":"2026-11-01T09:42:09.923Z","type":"session_meta","payload":{"id":"01a1967c-0000-7000-8000-00000000000a","forked_from_id":"01a1967b-0000-7000-8000-000000000001","timestamp":"2026-11-01T09:42:09.923Z","originator":"codex_vscode","cli_version":"0.164.0-alpha.11.1","source":{"subagent":{"thread_spawn":{"parent_thread_id":"01a1967b-0000-7000-8000-000000000001","depth":1}}},"model_provider":"openai"}}
 {"timestamp":"2026-11-01T09:42:09.923Z","type":"compacted","payload":{"message":"","replacement_history":[]}}
 {"timestamp":"2026-11-01T09:42:09.923Z","type":"turn_context","payload":{"model":"gpt-6-astra"}}

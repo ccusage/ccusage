@@ -20,6 +20,7 @@ use super::{
 pub(super) struct CodexReplayPlan {
     parent_by_child: HashMap<PathBuf, ParentReplay>,
     usage_by_parent: HashMap<PathBuf, ParentUsage>,
+    lineage_edges: Vec<(String, String)>,
 }
 
 struct ParentReplay {
@@ -96,6 +97,7 @@ impl CodexReplayPlan {
             return Self {
                 parent_by_child: HashMap::new(),
                 usage_by_parent: HashMap::new(),
+                lineage_edges: Vec::new(),
             };
         }
         let mut metadata = files
@@ -174,7 +176,12 @@ impl CodexReplayPlan {
         Self {
             usage_by_parent: read_parent_usage(&parents, single_thread, diagnostics),
             parent_by_child,
+            lineage_edges: files.iter().filter_map(lineage_edge).collect(),
         }
+    }
+
+    pub(super) fn lineage_edges(&self) -> &[(String, String)] {
+        &self.lineage_edges
     }
 
     pub(super) fn fork_replay(&self, child: &Path) -> Option<CodexForkReplay<'_>> {
@@ -248,6 +255,23 @@ fn collect_replay_files<'a>(
 }
 
 pub(super) type ReplayProbe<'a> = (PathBuf, &'a Path, Option<CodexSessionMetadata>);
+
+fn lineage_edge(file: &CodexReplayFile<'_>) -> Option<(String, String)> {
+    Some((
+        file.metadata.session_id.clone()?,
+        file.metadata.lineage_parent_id.clone()?,
+    ))
+}
+
+pub(super) fn read_lineage_edges(
+    files: &[(PathBuf, &Path)],
+    single_thread: bool,
+) -> Vec<(String, String)> {
+    read_replay_files(files, single_thread, None, &mut HashSet::new())
+        .iter()
+        .filter_map(lineage_edge)
+        .collect()
+}
 
 fn read_replay_files<'a>(
     files: &[(PathBuf, &'a Path)],
