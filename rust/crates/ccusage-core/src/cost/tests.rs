@@ -651,6 +651,30 @@ fn scheduled_rates_preserve_display_and_auto_cost_semantics() {
 }
 
 #[test]
+fn scheduled_base_only_override_bills_every_input_token_at_the_override() {
+    crate::test_support::install_pricing_snapshots();
+    let model = "deepseek-v4-flash".to_string();
+    let value = ccusage_cli::PricingOverride {
+        input_cost_per_token: Some(9e-6),
+        ..Default::default()
+    };
+    let pricing = PricingMap::load_with_overrides(true, false, [(&model, &value)]);
+    let cost = calculate_cost_for_usage_at(
+        Some("deepseek-v4-flash"),
+        TokenUsageRaw {
+            input_tokens: 300_000,
+            ..TokenUsageRaw::default()
+        },
+        None,
+        Some(timestamp("2026-08-17T01:00:00Z")),
+        CostMode::Calculate,
+        Some(&pricing),
+    );
+
+    assert!((cost - 2.7).abs() < 1e-12, "cost was {cost}");
+}
+
+#[test]
 fn legacy_cost_api_keeps_static_lookup_without_a_timestamp() {
     let pricing = deepseek_pricing();
     let usage = TokenUsageRaw {
