@@ -322,10 +322,28 @@ fn a_thinking_or_reasoning_run_bills_at_the_listed_rate_for_vendors_that_bill_it
 }
 
 #[test]
+fn a_qwen_thinking_run_bills_at_the_thinking_rate_where_alibaba_lists_one() {
+    crate::test_support::install_pricing_snapshots();
+    let pricing = PricingMap::load_embedded();
+    for (model, input, output) in [
+        ("qwen-plus-thinking", 0.4e-6, 4e-6),
+        ("dashscope/qwen-plus-thinking", 0.4e-6, 4e-6),
+        ("qwen-turbo-thinking", 0.05e-6, 0.5e-6),
+        ("qwen3-30b-a3b-thinking", 0.2e-6, 2.4e-6),
+        ("qwen3-14b-thinking", 0.35e-6, 4.2e-6),
+        ("qwen3-8b-thinking", 0.18e-6, 2.1e-6),
+    ] {
+        let found = pricing.find(model).unwrap_or_else(|| panic!("{model}"));
+        assert_eq!((found.input, found.output), (input, output), "{model}");
+    }
+}
+
+#[test]
 fn a_thinking_variant_without_a_documented_billing_rule_stays_unpriced() {
     crate::test_support::install_pricing_snapshots();
     let pricing = PricingMap::load_embedded();
     for model in [
+        "qwen-plus-latest-thinking",
         "gemma-4-31b-it-thinking",
         "mistral-large-4-reasoning",
         "claude-sonnet-5-5-reasoning",
