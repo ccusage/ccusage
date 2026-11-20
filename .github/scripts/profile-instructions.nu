@@ -98,7 +98,6 @@ def golden-env [dir: path]: nothing -> record<vars: record, cwd: string> {
             msg: $"Golden fixture at ($dir) has no store for ($missing | str join ', ')"
         }
     }
-    mkdir $manifest.cwd
     {
         vars: ($manifest.env | reject --optional LOG_LEVEL)
         cwd: $manifest.cwd
@@ -163,7 +162,8 @@ def "main run" [
         run-external env ...$args | complete
     }
     if $result.exit_code != 0 {
-        print --stderr (open --raw ($out | path join valgrind.log))
+        let log = $out | path join valgrind.log
+        if ($log | path exists) { print --stderr (open --raw $log) }
         error make {
             msg: $"ccusage ($command) exited with ($result.exit_code): ($result.stderr)"
         }
