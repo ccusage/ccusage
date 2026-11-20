@@ -276,6 +276,7 @@ pub struct AgentOptions {
     pub claude_project: Option<String>,
     pub codex_speed: CodexSpeed,
     pub pi_path: Option<String>,
+    pub pi_agent_dir: Option<String>,
     pub open_claw_path: Option<String>,
 }
 

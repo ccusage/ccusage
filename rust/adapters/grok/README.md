@@ -31,16 +31,16 @@ Completed turns use `agentTimestampMs` in milliseconds, then the envelope
 
 ## Token mapping
 
-Grok records OpenAI-style usage where `inputTokens` includes cache:
+Grok records OpenAI-style usage where `inputTokens` includes cache reads and cache writes:
 
-| Grok field                       | ccusage field                 | Rule                                                                     |
-| -------------------------------- | ----------------------------- | ------------------------------------------------------------------------ |
-| `inputTokens − cachedReadTokens` | `input_tokens`                | cache clamped ≤ input                                                    |
-| `cachedReadTokens`               | `cache_read_input_tokens`     |                                                                          |
-| `outputTokens`                   | `output_tokens`               | as recorded                                                              |
-| `reasoningTokens`                | dropped                       | already inside `outputTokens`; counting it again would inflate the total |
-| `cacheCreationTokens`            | `cache_creation_input_tokens` | carved out of the uncached remainder                                     |
-| `costUsdTicks`                   | `cost_usd`                    | fixed-point USD, one tick is 1e-10 USD                                   |
+| Grok field                                             | ccusage field                 | Rule                                                                                          |
+| ------------------------------------------------------ | ----------------------------- | --------------------------------------------------------------------------------------------- |
+| `inputTokens − cachedReadTokens − cacheCreationTokens` | `input_tokens`                | cache clamped ≤ input                                                                         |
+| `cachedReadTokens`                                     | `cache_read_input_tokens`     |                                                                                               |
+| `outputTokens`                                         | `output_tokens`               | as recorded                                                                                   |
+| `reasoningTokens`                                      | dropped                       | already inside `outputTokens`; counting it again would inflate the total                      |
+| `cacheCreationTokens`                                  | `cache_creation_input_tokens` | carved out of the uncached remainder; only requests sent through Anthropic Messages report it |
+| `costUsdTicks`                                         | `cost_usd`                    | fixed-point USD, one tick is 1e-10 USD                                                        |
 
 `costUsdTicks` is the invoice cost, so `display` and the default `auto` report what
 Grok billed. `calculate`, and `auto` for turns that recorded no ticks, fall back to

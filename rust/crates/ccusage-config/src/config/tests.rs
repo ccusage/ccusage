@@ -658,7 +658,7 @@ fn applies_schema_backed_agent_specific_options() {
     );
     assert_eq!(codex.agent_options("codex").codex_speed, CodexSpeed::Fast);
     let pi = context(
-        json!({"pi":{"defaults":{"piPath":"/tmp/pi-sessions"}}}),
+        json!({"pi":{"defaults":{"piPath":"/tmp/pi-sessions","piAgentDir":"/tmp/pi-agent"}}}),
         "pi daily",
         Some("pi"),
         "daily",
@@ -666,6 +666,10 @@ fn applies_schema_backed_agent_specific_options() {
     assert_eq!(
         pi.agent_options("pi").pi_path.as_deref(),
         Some("/tmp/pi-sessions")
+    );
+    assert_eq!(
+        pi.agent_options("pi").pi_agent_dir.as_deref(),
+        Some("/tmp/pi-agent")
     );
     let openclaw = context(
         json!({"openclaw":{"defaults":{"openClawPath":"/tmp/openclaw"}}}),

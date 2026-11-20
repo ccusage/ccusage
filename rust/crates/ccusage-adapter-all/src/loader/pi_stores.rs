@@ -3,15 +3,17 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use ccusage_adapter_common::source::SourceOptions;
+
 use super::ResolvedNamedPiStore;
 use crate::{Result, adapter::pi, cli::NamedPiStore};
 
 pub(super) fn resolve_named_pi_store_paths(
     stores: &[NamedPiStore],
-    default_pi_path: Option<&str>,
+    default_pi: SourceOptions<'_>,
 ) -> Result<Vec<ResolvedNamedPiStore>> {
     let mut owners = BTreeMap::<PathBuf, String>::new();
-    for path in pi::default_paths(default_pi_path)? {
+    for path in pi::default_paths(default_pi.pi_path, default_pi.pi_agent_dir)? {
         owners.insert(path_key(&path), "default pi store".to_string());
     }
 

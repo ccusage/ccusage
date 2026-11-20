@@ -6,13 +6,20 @@ use crate::Result;
 
 const PI_AGENT_DIR_ENV: &str = "PI_AGENT_DIR";
 
-pub fn paths(custom_path: Option<&str>) -> Result<Vec<PathBuf>> {
-    if let Some(paths) = custom_path.and_then(roots::from_list) {
-        return Ok(roots::directories(paths.into_iter().map(store_root)));
+pub fn paths(sessions_path: Option<&str>, agent_dir: Option<&str>) -> Result<Vec<PathBuf>> {
+    let stores = sessions_path.and_then(roots::from_list);
+    let agents = agent_dir.and_then(roots::from_list);
+    if stores.is_some() || agents.is_some() {
+        let agent_stores = agents
+            .into_iter()
+            .flatten()
+            .map(|agent| agent.join("sessions"));
+        return Ok(roots::directories(
+            stores.into_iter().flatten().chain(agent_stores),
+        ));
     }
     let candidates: Vec<PathBuf> = RootsEnv::List(PI_AGENT_DIR_ENV)
         .configured()
-        .map(|paths| paths.into_iter().map(store_root).collect())
         .unwrap_or_else(|| {
             roots::default_candidates(false, || {
                 crate::cli::home::home_dir()
@@ -25,15 +32,7 @@ pub fn paths(custom_path: Option<&str>) -> Result<Vec<PathBuf>> {
 }
 
 pub fn named_store_paths(raw: &str) -> Result<Vec<PathBuf>> {
-    Ok(roots::directories(
-        roots::from_list(raw).into_iter().flatten().map(store_root),
-    ))
-}
-
-// NOTE(2026-11-17): Pi writes session files to `<agent dir>/sessions/<encoded cwd>/`. When given the agent directory, use its `sessions` child to preserve the project boundary.
-fn store_root(path: PathBuf) -> PathBuf {
-    let sessions = path.join("sessions");
-    if sessions.is_dir() { sessions } else { path }
+    Ok(roots::from_list(raw).unwrap_or_default())
 }
 
 #[cfg(test)]
@@ -52,7 +51,7 @@ mod tests {
             (PI_AGENT_DIR_ENV, None),
         ])
         .run(|| {
-            assert_eq!(paths(None).unwrap(), vec![store]);
+            assert_eq!(paths(None, None).unwrap(), vec![store]);
         })
     }
 
@@ -68,16 +67,43 @@ mod tests {
     }
 
     #[test]
-    fn agent_directory_resolves_to_its_sessions_store() {
+    fn explicit_paths_keep_a_project_named_sessions() {
+        let fixture = fs_fixture!({});
+        let store = fixture.create_dir_all("pi-store");
+        fixture.create_dir_all("pi-store/sessions");
+        fixture.create_dir_all("pi-store/another-project");
+        let raw = store.display().to_string();
+
+        assert_eq!(paths(Some(&raw), None).unwrap(), vec![store.clone()]);
+        assert_eq!(named_store_paths(&raw).unwrap(), vec![store.clone()]);
+        Environment::with_var(PI_AGENT_DIR_ENV, &raw).run(|| {
+            assert_eq!(paths(None, None).unwrap(), vec![store]);
+        })
+    }
+
+    #[test]
+    fn agent_directory_option_reads_each_sessions_store() {
         let fixture = fs_fixture!({});
         let agent = fixture.create_dir_all(".pi/agent");
-        let sessions = fixture.create_dir_all(".pi/agent/sessions/project-a");
-        let sessions = sessions.parent().unwrap().to_path_buf();
-
-        let raw = format!("{},{}", agent.display(), sessions.display());
-
-        assert_eq!(named_store_paths(&raw).unwrap(), vec![sessions.clone()]);
-        assert_eq!(paths(Some(&raw)).unwrap(), vec![sessions]);
+        let sessions = fixture.create_dir_all(".pi/agent/sessions");
+        let other = fixture.create_dir_all("other-store");
+        let without_sessions = fixture.create_dir_all("empty-agent");
+        let agents = format!("{},{}", agent.display(), without_sessions.display());
+        Environment::with_vars([
+            ("HOME", Some(fixture.root().into())),
+            (PI_AGENT_DIR_ENV, Some(other.clone().into())),
+        ])
+        .run(|| {
+            assert_eq!(paths(None, Some(&agents)).unwrap(), vec![sessions.clone()]);
+            assert_eq!(
+                paths(None, Some("~/.pi/agent")).unwrap(),
+                vec![sessions.clone()]
+            );
+            assert_eq!(
+                paths(Some(&other.display().to_string()), Some(&agents)).unwrap(),
+                vec![other.clone(), sessions]
+            );
+        })
     }
 
     #[test]
@@ -100,18 +126,24 @@ mod tests {
     }
 
     #[test]
-    fn configured_and_environment_paths_expand_home_and_keep_the_sessions_root() {
+    fn configured_and_environment_paths_expand_home() {
         let fixture = fs_fixture!({});
         let store = fixture.create_dir_all(".pi/agent/sessions/project-a");
         let store = store.parent().unwrap().to_path_buf();
         ccusage_test_support::Environment::with_vars([
             ("HOME", Some(fixture.root().into())),
-            (PI_AGENT_DIR_ENV, Some(" ~/.pi/agent ".into())),
+            (PI_AGENT_DIR_ENV, Some(" ~/.pi/agent/sessions ".into())),
         ])
         .run(|| {
-            assert_eq!(paths(None).unwrap(), vec![store.clone()]);
-            assert_eq!(paths(Some(" , , ")).unwrap(), vec![store.clone()]);
-            assert_eq!(paths(Some("~/.pi/agent")).unwrap(), vec![store]);
+            assert_eq!(paths(None, None).unwrap(), vec![store.clone()]);
+            assert_eq!(
+                paths(Some(" , , "), Some(" , ")).unwrap(),
+                vec![store.clone()]
+            );
+            assert_eq!(
+                paths(Some("~/.pi/agent/sessions"), None).unwrap(),
+                vec![store]
+            );
         })
     }
 }
