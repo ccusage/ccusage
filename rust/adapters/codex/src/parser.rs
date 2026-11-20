@@ -2063,6 +2063,74 @@ mod diagnostic_tests {
     }
 
     #[test]
+    fn a_damaged_field_never_hides_the_cumulative_total_from_the_next_delta() {
+        use serde_json::json;
+
+        let pointers = [
+            "/timestamp",
+            "/model",
+            "/model_name",
+            "/metadata",
+            "/usage",
+            "/data",
+            "/result",
+            "/response",
+            "/payload/model",
+            "/payload/model_name",
+            "/payload/metadata",
+            "/payload/usage",
+            "/payload/thread_token_usage",
+            "/payload/thread_settings",
+            "/payload/response_id",
+            "/payload/compaction_response_id",
+            "/payload/info/model",
+            "/payload/info/model_name",
+            "/payload/info/metadata",
+            "/payload/info/last_token_usage",
+        ];
+        let damaged_values = [
+            json!(null),
+            json!(true),
+            json!(-1),
+            json!(1.5),
+            json!("SECRET_CANARY"),
+            json!([]),
+            json!([{"input_tokens": 1}]),
+            json!({}),
+            json!({"input_tokens": {"SECRET_CANARY": true}}),
+        ];
+        let total = |timestamp: &str, input_tokens: u64| {
+            json!({"timestamp": timestamp, "type": "event_msg", "payload": {
+                "type": "token_count",
+                "info": {"total_token_usage": {"input_tokens": input_tokens, "output_tokens": 1}},
+            }})
+        };
+        for pointer in pointers {
+            for damaged_value in &damaged_values {
+                let mut damaged = total("2026-01-02T00:00:01Z", 110);
+                let (parent, key) = pointer.rsplit_once('/').unwrap();
+                damaged
+                    .pointer_mut(parent)
+                    .and_then(serde_json::Value::as_object_mut)
+                    .unwrap()
+                    .insert(key.to_string(), damaged_value.clone());
+                let lines = [
+                    total("2026-01-02T00:00:00Z", 10),
+                    damaged,
+                    total("2026-01-02T00:00:02Z", 115),
+                ]
+                .map(|line| line.to_string());
+                let (events, _) = session_events(&lines.each_ref().map(String::as_str));
+                assert_eq!(
+                    events.last().map(|event| event.input_tokens),
+                    Some(5),
+                    "{pointer} = {damaged_value}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn numeric_timestamps_beyond_the_supported_range_do_not_date_usage() {
         let (events, diagnostics) = session_events(&[
             r#"{"type":"event_msg","timestamp":1767312000000000,"payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"output_tokens":2}}}}"#,
