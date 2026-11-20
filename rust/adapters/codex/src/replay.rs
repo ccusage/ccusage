@@ -1,4 +1,4 @@
-use ccusage_adapter_common::jsonl;
+use ccusage_adapter_common::{json::JsonText, jsonl};
 use std::{
     collections::{HashMap, HashSet},
     ops::ControlFlow,
@@ -428,7 +428,8 @@ fn read_codex_session_metadata(
 }
 
 pub(super) fn session_metadata_from_line(path: &Path, line: &[u8]) -> CodexSessionMetadata {
-    let Ok(value) = jsonl::parse::<CodexSessionMeta<'_>>(line) else {
+    let text = JsonText::new(line);
+    let Ok(value) = text.parse::<CodexSessionMeta<'_>>() else {
         return CodexSessionMetadata::default();
     };
     let payload = (value.entry_type.as_deref() == Some("session_meta"))

@@ -1,4 +1,4 @@
-use ccusage_adapter_common::jsonl;
+use ccusage_adapter_common::{json::JsonText, jsonl};
 use ccusage_core::{Diagnostics, Skip, SkipKind, fast::LinePrefilter};
 use std::{
     collections::{HashMap, HashSet},
@@ -227,12 +227,11 @@ fn visit_codex_session_file_inner(
             let Some(line_kind) = codex_line_usage_kind(line) else {
                 return ControlFlow::Continue(());
             };
-            let value = match jsonl::parse::<CodexLogEntry<'_>>(line) {
+            let text = JsonText::new(line);
+            let value = match text.parse::<CodexLogEntry<'_>>() {
                 Ok(value) => value,
                 Err(error) => {
-                    if line_kind == CodexLineKind::Escaped
-                        && verbatim_line_usage_kind(line).is_none()
-                    {
+                    if line_kind == CodexLineKind::Escaped {
                         return ControlFlow::Continue(());
                     }
                     jsonl::record_decode_error(
@@ -598,11 +597,11 @@ fn visit_codex_session_entry(
 }
 
 fn codex_line_usage_kind(line: &[u8]) -> Option<CodexLineKind> {
-    if ESCAPED_USAGE_MARKERS.matches_escaped(line) {
-        Some(CodexLineKind::Escaped)
-    } else {
-        verbatim_line_usage_kind(line)
-    }
+    verbatim_line_usage_kind(line).or_else(|| {
+        ESCAPED_USAGE_MARKERS
+            .matches_escaped(line)
+            .then_some(CodexLineKind::Escaped)
+    })
 }
 
 fn verbatim_line_usage_kind(line: &[u8]) -> Option<CodexLineKind> {

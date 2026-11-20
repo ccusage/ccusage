@@ -213,7 +213,7 @@ fn decode_document<T: DeserializeOwned>(
 pub fn decode_json<T: DeserializeOwned>(content: &[u8]) -> Result<T, UnitError> {
     use serde_json::error::Category;
 
-    serde_json::from_slice(content).map_err(|error| {
+    crate::json::parse(content).map_err(|error| {
         let (fault, category) = match error.classify() {
             Category::Eof if content.iter().all(u8::is_ascii_whitespace) => {
                 (Fault::Unwritten, "EOF")

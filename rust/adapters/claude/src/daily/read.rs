@@ -7,7 +7,6 @@ use std::{
 };
 
 use jiff::tz::TimeZone as JiffTimeZone;
-use memchr::memmem::Finder;
 
 use crate::{
     IteratedTokenUsage, Rejection, TimestampMs, TokenUsageRaw,
@@ -57,15 +56,9 @@ pub(super) struct Admitted {
 }
 
 fn has_usage_marker(line: &[u8]) -> bool {
-    const MARKER: &[u8] = br#""usage":{"#;
-    static VERBATIM: LazyLock<Finder<'static>> = LazyLock::new(|| Finder::new(MARKER));
-    // NOTE(2026-11-19, #2222): RFC 8259 lets a JSON string escape an ASCII letter only as `\u00XX`. A line without `\u00` cannot spell the usage key with escapes, so the escape-aware matcher can be skipped.
-    static ASCII_UNICODE_ESCAPE: LazyLock<Finder<'static>> =
-        LazyLock::new(|| Finder::new(br"\u00"));
-    static FALLBACK: LazyLock<LinePrefilter> = LazyLock::new(|| LinePrefilter::all(&[MARKER]));
-
-    VERBATIM.find(line).is_some()
-        || (ASCII_UNICODE_ESCAPE.find(line).is_some() && FALLBACK.matches(line))
+    static USAGE_MARKER: LazyLock<LinePrefilter> =
+        LazyLock::new(|| LinePrefilter::all(&[br#""usage":{"#]));
+    USAGE_MARKER.matches(line)
 }
 
 pub(super) fn admit(line: &[u8]) -> std::result::Result<Admitted, Refusal> {

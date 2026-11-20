@@ -1,11 +1,43 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, it } from 'node:test';
+import { zstdDecompressSync } from 'node:zlib';
 
 const generator = path.join(import.meta.dirname, 'generate-large-fixture.ts');
+
+type Row = Record<string, unknown>;
+
+function isRow(value: unknown): value is Row {
+	return typeof value === 'object' && value !== null;
+}
+
+function sessionMeta(row: Row | undefined): { id: unknown; forkedFromId?: unknown } {
+	assert.ok(row?.type === 'session_meta' && isRow(row.payload));
+	return { id: row.payload.id, forkedFromId: row.payload.forked_from_id };
+}
+
+async function readJsonlFiles(root: string): Promise<{ path: string; rows: Row[] }[]> {
+	const names = (await readdir(root, { recursive: true })).filter((name) =>
+		/\.jsonl(?:\.zst)?$/u.test(name),
+	);
+	return Promise.all(
+		names.map(async (name) => {
+			const file = path.join(root, name);
+			const data = await readFile(file);
+			const text = (name.endsWith('.zst') ? zstdDecompressSync(data) : data).toString('utf8');
+			return {
+				path: file,
+				rows: text
+					.trimEnd()
+					.split('\n')
+					.map((line): Row => JSON.parse(line)),
+			};
+		}),
+	);
+}
 
 void describe('generate-large-fixture', () => {
 	void it('matches the dominant Claude usage order and body statistics while exercising fallback shapes', async (t) => {
@@ -90,6 +122,116 @@ void describe('generate-large-fixture', () => {
 		assert.ok(escapesPerKiB >= 6 && escapesPerKiB <= 10, `Escapes per KiB: ${escapesPerKiB}`);
 		const nonAsciiShare = nonAsciiBytes / bodyBytes;
 		assert.ok(nonAsciiShare >= 0.02 && nonAsciiShare <= 0.04, `Non-ASCII share: ${nonAsciiShare}`);
+	});
+
+	void it('dates each file by its last record and forks some Codex rollouts', async (t) => {
+		const root = await mkdtemp(path.join(tmpdir(), 'ccusage-fixture-test-'));
+		t.after(async () => rm(root, { recursive: true, force: true }));
+		const claudeDir = path.join(root, 'claude');
+		const codexDir = path.join(root, 'codex');
+
+		const result = spawnSync(
+			process.execPath,
+			[
+				generator,
+				'--output-dir',
+				claudeDir,
+				'--codex-output-dir',
+				codexDir,
+				'--size-mib',
+				'8',
+				'--codex-size-mib',
+				'32',
+			],
+			{ encoding: 'utf8' },
+		);
+		assert.equal(result.status, 0, result.stderr);
+
+		let datedFiles = 0;
+		for (const file of await readJsonlFiles(claudeDir)) {
+			const times = file.rows.flatMap((row) =>
+				typeof row.timestamp === 'string' ? [Date.parse(row.timestamp)] : [],
+			);
+			if (times.length === 0) {
+				continue;
+			}
+			datedFiles += 1;
+			assert.equal((await stat(file.path)).mtimeMs, Math.max(...times), file.path);
+		}
+		assert.ok(datedFiles > 0);
+
+		const rollouts = (await readJsonlFiles(codexDir)).map((file) => ({
+			...file,
+			meta: sessionMeta(file.rows[0]),
+		}));
+		const ids = new Set(rollouts.map((rollout) => rollout.meta.id));
+		const forks = rollouts.filter((rollout) => rollout.meta.forkedFromId !== undefined);
+		assert.ok(forks.length > 0);
+		for (const fork of forks) {
+			assert.ok(
+				ids.has(fork.meta.forkedFromId ?? ''),
+				`parent ${String(fork.meta.forkedFromId)} is generated`,
+			);
+		}
+		assert.ok(
+			forks.some((fork) =>
+				fork.rows.some(
+					(row) =>
+						row.type === 'token_usage_record' &&
+						isRow(row.payload) &&
+						row.payload.thread_id === fork.meta.forkedFromId,
+				),
+			),
+			'a user fork carries usage records copied from its parent',
+		);
+	});
+
+	void it('writes requestless proxy transcripts whose lines chain through parentUuid', async (t) => {
+		const root = await mkdtemp(path.join(tmpdir(), 'ccusage-fixture-test-'));
+		t.after(async () => rm(root, { recursive: true, force: true }));
+
+		const result = spawnSync(
+			process.execPath,
+			[generator, '--output-dir', root, '--claude-shape', 'requestless-proxy', '--size-mib', '8'],
+			{ encoding: 'utf8' },
+		);
+		assert.equal(result.status, 0, result.stderr);
+
+		let assistantRows = 0;
+		for (const file of await readJsonlFiles(root)) {
+			let previousUuid: unknown = null;
+			for (const row of file.rows) {
+				if (row.uuid === undefined) {
+					continue;
+				}
+				assert.equal(row.parentUuid, previousUuid);
+				previousUuid = row.uuid;
+				if (row.type === 'assistant') {
+					assistantRows += 1;
+					assert.equal(row.requestId, undefined);
+				}
+			}
+		}
+		assert.ok(assistantRows > 0);
+	});
+
+	void it('spreads the many-small-files shape over many project directories', async (t) => {
+		const root = await mkdtemp(path.join(tmpdir(), 'ccusage-fixture-test-'));
+		t.after(async () => rm(root, { recursive: true, force: true }));
+
+		const result = spawnSync(
+			process.execPath,
+			[generator, '--output-dir', root, '--claude-shape', 'many-small-files', '--size-mib', '8'],
+			{ encoding: 'utf8' },
+		);
+		assert.equal(result.status, 0, result.stderr);
+
+		const files = await readJsonlFiles(root);
+		const projects = new Set(
+			files.map((file) => path.relative(root, file.path).split(path.sep)[1]),
+		);
+		assert.ok(files.length >= 500, `Files: ${files.length}`);
+		assert.ok(projects.size >= 400, `Projects: ${projects.size}`);
 	});
 
 	void it('refuses a non-empty Codex directory before writing the Claude fixture', async () => {
