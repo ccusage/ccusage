@@ -1062,6 +1062,19 @@ pub(crate) fn requestless_response_cases() -> Vec<(&'static str, Vec<String>, us
             1,
         ),
         (
+            "blocks around an interrupted write that the next record continued",
+            vec![
+                chained_assistant("a1", None, FIRST_BLOCK, "gateway-7f3a", 100, None),
+                [
+                    r#"{"parentUuid":"a1","isSidechain":false,"sessionId":"session-a","type":"attachment","uuid":"x1","times"#,
+                    r#"{"parentUuid":"a1","isSidechain":false,"sessionId":"session-a","type":"system","uuid":"s1","timestamp":"2026-05-22T02:34:40.250Z"}"#,
+                ]
+                .concat(),
+                chained_assistant("a2", Some("x1"), LATER_BLOCK, "gateway-7f3a", 100, None),
+            ],
+            2,
+        ),
+        (
             "blocks without transcript links",
             vec![
                 format!(

@@ -50,13 +50,27 @@ fn stops_reading_a_user_prompt_at_its_content() {
 }
 
 #[test]
-fn stops_once_a_non_user_line_has_its_links() {
-    let line = br#"{"parentUuid":"p","sessionId":"s","type":"attachment","uuid":"u","attachment":"#;
+fn reads_a_non_user_line_through_the_payload_after_its_links() {
+    let line = br#"{"parentUuid":"p","sessionId":"s","type":"attachment","uuid":"u","attachment":{"a":[1,"}"]}}"#;
 
     let parsed = read(skim(line, Want::Link, |_, _| true));
 
     assert_eq!(parsed.uuid, Some(&b"u"[..]));
     assert!(parsed.blocks.is_none());
+}
+
+#[test]
+fn leaves_a_line_continued_by_another_record_to_the_full_parse() {
+    let line = br#"{"parentUuid":"p","sessionId":"s","type":"attachment","uuid":"u","times{"parentUuid":"p","type":"system","uuid":"v","sessionId":"s"}"#;
+
+    assert!(matches!(skim(line, Want::Link, |_, _| true), Scan::Unsure));
+}
+
+#[test]
+fn leaves_a_line_with_bytes_after_its_object_to_the_full_parse() {
+    let line = br#"{"parentUuid":"p","sessionId":"s","type":"attachment","uuid":"u"}{"uuid":"v"}"#;
+
+    assert!(matches!(skim(line, Want::Link, |_, _| true), Scan::Unsure));
 }
 
 #[test]
@@ -106,4 +120,11 @@ fn stops_reading_content_once_no_tool_use_remains() {
     let line = br#"{"parentUuid":"p","uuid":"u","message":{"content":[{"type":"text","text":"a"},{"type":"text","text":"#;
 
     assert!(block_links(line).unwrap().tool_uses.is_empty());
+}
+
+#[test]
+fn leaves_a_line_cut_after_a_scalar_and_continued_to_the_full_parse() {
+    let line = br#"{"type":"attachment","parentUuid":"p","uuid":"u","isSidechain":false{"parentUuid":null,"sessionId":"s","type":"system","uuid":"v"}"#;
+
+    assert!(matches!(skim(line, Want::Link, |_, _| true), Scan::Unsure));
 }

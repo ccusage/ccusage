@@ -37,10 +37,14 @@ enum Step {
     Stop,
 }
 
+// NOTE(2026-11-20, #2255): Values the scanner skips still follow JSON grammar, so a write cut short and continued by the next record cannot pass for one object. Nesting deeper than `serde_json` accepts is left to the full parse.
 struct Cursor<'a> {
     line: &'a [u8],
     at: usize,
+    depth: usize,
 }
+
+const MAX_DEPTH: usize = 128;
 
 impl<'a> Cursor<'a> {
     fn peek(&mut self) -> Option<u8> {
@@ -88,41 +92,34 @@ impl<'a> Cursor<'a> {
     }
 
     fn skip_value(&mut self) -> Option<()> {
-        match self.peek()? {
+        self.depth = self.depth.checked_sub(1)?;
+        let skipped = match self.peek()? {
             b'"' => self.string().map(drop),
-            b'{' | b'[' => self.skip_container(),
-            _ => {
-                while let Some(byte) = self.line.get(self.at) {
-                    if matches!(byte, b',' | b'}' | b']') || byte.is_ascii_whitespace() {
-                        break;
-                    }
-                    self.at += 1;
-                }
+            b'{' => self.object(|_, _| Some(Step::Skip)),
+            b'[' => self.array(Self::skip_value),
+            b't' => self.literal(b"true"),
+            b'f' => self.literal(b"false"),
+            b'n' => self.literal(b"null"),
+            b'-' | b'0'..=b'9' => {
+                let digits = self.line[self.at..]
+                    .iter()
+                    .take_while(|byte| {
+                        matches!(byte, b'0'..=b'9' | b'-' | b'+' | b'.' | b'e' | b'E')
+                    })
+                    .count();
+                self.at += digits;
                 Some(())
             }
-        }
+            _ => None,
+        };
+        self.depth += 1;
+        skipped
     }
 
-    fn skip_container(&mut self) -> Option<()> {
-        let mut depth = 0_usize;
-        loop {
-            match *self.line.get(self.at)? {
-                b'"' => {
-                    self.string()?;
-                    continue;
-                }
-                b'{' | b'[' => depth += 1,
-                b'}' | b']' => {
-                    depth = depth.checked_sub(1)?;
-                    if depth == 0 {
-                        self.at += 1;
-                        return Some(());
-                    }
-                }
-                _ => {}
-            }
-            self.at += 1;
-        }
+    fn literal(&mut self, literal: &[u8]) -> Option<()> {
+        self.line[self.at..]
+            .starts_with(literal)
+            .then(|| self.at += literal.len())
     }
 
     fn object(
@@ -274,9 +271,14 @@ pub(super) fn skim<'a>(
     want: Want,
     keep_parent: impl Fn(Option<&[u8]>, Option<&[u8]>) -> bool,
 ) -> Scan<Skim<'a>> {
-    let mut cursor = Cursor { line, at: 0 };
+    let mut cursor = Cursor {
+        line,
+        at: 0,
+        depth: MAX_DEPTH,
+    };
     let mut skim = Skim::default();
     let rejected = Cell::new(false);
+    let mut stopped = false;
     let read = cursor.object(|key, cursor| {
         match key {
             b"type" => {
@@ -310,10 +312,19 @@ pub(super) fn skim<'a>(
             _ => return Some(Step::Skip),
         }
         Some(if skim.complete(want) {
+            stopped = true;
             Step::Stop
         } else {
             Step::Read
         })
+    });
+    // NOTE(2026-11-20, #2255): A write cut short and continued by the next record leaves one physical line that never closes its first object, which the full parse rejects. The scanner reads the rest of the line object even after it has its links and accepts the line only if that object closes at the line's end.
+    let read = read.and_then(|()| {
+        if stopped {
+            cursor.ends_object()
+        } else {
+            cursor.peek().is_none().then_some(())
+        }
     });
     match read {
         Some(()) if keep_parent(skim.parent, skim.session) => Scan::Read(skim),
@@ -411,6 +422,7 @@ fn top_level_uuid(line: &[u8]) -> Option<&[u8]> {
     let mut cursor = Cursor {
         line,
         at: at + UUID_MEMBER.len() - 1,
+        depth: MAX_DEPTH,
     };
     let uuid = cursor.plain()??;
     let rest = &line[cursor.at..];
@@ -423,7 +435,11 @@ fn top_level_uuid(line: &[u8]) -> Option<&[u8]> {
 }
 
 pub(super) fn block_links(line: &[u8]) -> Option<RawLinks<'_>> {
-    let mut cursor = Cursor { line, at: 0 };
+    let mut cursor = Cursor {
+        line,
+        at: 0,
+        depth: MAX_DEPTH,
+    };
     let mut links = RawLinks::default();
     let (mut seen_uuid, mut seen_parent) = (false, false);
     cursor.object(|key, cursor| {

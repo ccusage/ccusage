@@ -125,7 +125,7 @@ impl ResponseChains {
 
     // NOTE(2026-11-20, #2255): Parents precede children, so a line whose parent is not yet tracked can never lead a later block back to a response, and the scanner rejects it at `parentUuid`. A line the scanner cannot read for certain takes a full parse instead.
     #[inline(never)]
-    pub(super) fn link(&mut self, line: &[u8], may_carry_usage: bool) {
+    pub(super) fn link(&mut self, line: &[u8], may_carry_usage: bool, terminated: bool) {
         if !line.starts_with(br#"{"parentUuid":""#) && !may_spell_parent(line) {
             return;
         }
@@ -136,10 +136,16 @@ impl ResponseChains {
         };
         let nodes = &self.nodes;
         let path_session = self.path_session;
-        let links = match skim(line, want, |parent, session| {
-            let session = session.map_or(path_session, key);
-            parent.is_some_and(|parent| nodes.contains_key(&scoped(session, key(parent))))
-        }) {
+        // NOTE(2026-11-20, #2255): Only the last line of a read can lack its terminator, and such a line is usually a write cut short. The full parse decides it, since the scanner may stop before the cut.
+        let scanned = if terminated {
+            skim(line, want, |parent, session| {
+                let session = session.map_or(path_session, key);
+                parent.is_some_and(|parent| nodes.contains_key(&scoped(session, key(parent))))
+            })
+        } else {
+            Scan::Unsure
+        };
+        let links = match scanned {
             Scan::Read(parsed) => parsed.line_links(),
             Scan::Skip => return,
             Scan::Unsure => parse_line_links(line),

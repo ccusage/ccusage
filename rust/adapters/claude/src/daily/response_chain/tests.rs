@@ -659,3 +659,26 @@ fn the_scanner_and_a_full_parse_place_generated_blocks_in_the_same_responses() {
         );
     }
 }
+
+#[test]
+fn an_unterminated_tool_result_does_not_bridge_two_responses() {
+    let usage = ccusage_core::TokenUsageRaw {
+        input_tokens: 100,
+        ..ccusage_core::TokenUsageRaw::default()
+    };
+    let block = |uuid: &str, parent: &str| {
+        format!(
+            r#"{{"parentUuid":{parent},"isSidechain":false,"type":"assistant","uuid":"{uuid}","sessionId":"s","message":{{"id":"gw","content":[{{"type":"tool_use","id":"toolu_1","name":"Read","input":{{}}}}],"usage":{{"input_tokens":100}}}}}}"#
+        )
+    };
+    let mut chains = super::ResponseChains::new("s");
+    let first = chains.response_key(block("a1", "null").as_bytes(), "s", "gw", &usage);
+    chains.link(
+        br#"{"parentUuid":"a1","isSidechain":false,"sessionId":"s","type":"user","uuid":"u1","message":{"role":"user","content":[{"tool_use_id":"toolu_1","type":"tool_result","content":"ok"}]}"#,
+        false,
+        false,
+    );
+    let second = chains.response_key(block("a2", r#""u1""#).as_bytes(), "s", "gw", &usage);
+
+    assert_ne!(first, second);
+}

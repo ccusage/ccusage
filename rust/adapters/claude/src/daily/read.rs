@@ -157,7 +157,7 @@ pub(crate) fn read_usage_file<E>(
             Ok(admitted) => admitted,
             Err(Refusal::NotUsage) => {
                 if response_chains.is_tracking() {
-                    response_chains.link(line, false);
+                    response_chains.link(line, false, !current.unterminated());
                 }
                 return ControlFlow::Continue(());
             }
@@ -166,7 +166,7 @@ pub(crate) fn read_usage_file<E>(
             }
             Err(Refusal::Rejected(Rejection::Malformed)) => {
                 if response_chains.is_tracking() {
-                    response_chains.link(line, true);
+                    response_chains.link(line, true, !current.unterminated());
                 }
                 crate::diagnostics::rejected(path, current, diagnostics);
                 return ControlFlow::Continue(());
