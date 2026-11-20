@@ -122,7 +122,6 @@ dependencies = [
  "ccusage-core",
  "ccusage-environment",
  "ccusage-pricing-snapshots",
- "ccusage-report",
  "ccusage-test-support",
  "insta",
  "jiff",
@@ -163,7 +162,6 @@ dependencies = [
  "ccusage-adapter-zcode",
  "ccusage-cli",
  "ccusage-core",
- "ccusage-report",
  "ccusage-test-support",
  "insta",
  "serde",
@@ -204,8 +202,8 @@ dependencies = [
  "ccusage-cli-parser",
  "ccusage-config",
  "ccusage-core",
- "ccusage-report",
  "ccusage-test-support",
+ "insta",
  "jiff",
  "memchr",
  "rustc-hash",
@@ -510,16 +508,6 @@ dependencies = [
  "ccusage-environment",
  "miniz_oxide",
  "minreq",
- "serde_json",
-]
-
-[[package]]
-name = "ccusage-report"
-version = "0.0.0"
-dependencies = [
- "ccusage-core",
- "insta",
- "jiff",
  "serde_json",
 ]
 

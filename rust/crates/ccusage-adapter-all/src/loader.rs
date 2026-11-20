@@ -374,7 +374,7 @@ fn load_specs<'a>(
 fn finish_sessions(rows: Vec<SourceRow>, shared: &SharedArgs) -> Vec<ReportRow> {
     let mut rows = rows.into_iter().map(ReportRow::Source).collect::<Vec<_>>();
     rows.sort_by(|a, b| {
-        let cost_order = match ccusage_report::session_cost_ordering(shared) {
+        let cost_order = match crate::cli::session_cost_ordering(shared) {
             crate::cli::SortOrder::Asc => a.total_cost.total_cmp(&b.total_cost),
             crate::cli::SortOrder::Desc => b.total_cost.total_cmp(&a.total_cost),
         };
@@ -518,7 +518,7 @@ pub(super) fn load_opencode_entries(
         return Ok((entries.into_iter().map(|(entry, _)| entry).collect(), None));
     }
     let claude_shared = claude_source.map_or(shared, |source| &source.shared);
-    let diagnostics = Diagnostics::for_report("claude", claude_shared.clock);
+    let diagnostics = Diagnostics::new("claude");
     let project = claude_source.and_then(|source| source.options.claude_project.as_deref());
     let counted = claude::SOURCE.counted(claude_shared, project, &diagnostics)?;
     Ok((counted.retain_uncounted(entries), Some(diagnostics)))

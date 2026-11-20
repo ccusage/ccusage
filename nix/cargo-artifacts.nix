@@ -13,7 +13,6 @@ let
     "ccusage-cli"
     "ccusage-core"
     "ccusage-environment"
-    "ccusage-report"
     "ccusage-adapter-common"
     "ccusage-terminal"
   ];

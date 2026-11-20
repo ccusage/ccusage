@@ -177,7 +177,7 @@ mod tests {
     use super::*;
 
     fn diagnostics() -> Diagnostics {
-        Diagnostics::without_clock("openclaw")
+        Diagnostics::new("openclaw")
     }
 
     fn create_agent_db(path: &Path, rows: &[(&str, i64, &str)]) {

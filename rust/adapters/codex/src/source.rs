@@ -38,7 +38,7 @@ impl UsageSource for Codex {
 
 fn load_rows(request: &LoadRequest<'_>) -> Result<LoadedRows> {
     let shared = request.shared;
-    let diagnostics = Diagnostics::for_report("codex", shared.clock);
+    let diagnostics = Diagnostics::new("codex");
     let report_pricing = request.pricing_or_load();
     let sources = crate::paths::codex_usage_sources()?;
     let pricing = report_pricing.get();
@@ -306,7 +306,7 @@ mod diagnostic_tests {
                     &shared,
                     kind,
                     Some(&pricing),
-                    &Diagnostics::for_report("codex", shared.clock),
+                    &Diagnostics::new("codex"),
                 )
                 .unwrap()
                 .0
@@ -703,7 +703,7 @@ mod diagnostic_tests {
                     })
                     .unwrap();
                 assert_eq!(rows.rows.len(), 1);
-                let diagnostics = Diagnostics::for_report("codex", shared.clock);
+                let diagnostics = Diagnostics::new("codex");
                 let (groups, _) = load_groups_with_diagnostics(
                     &shared,
                     AgentReportKind::Daily,

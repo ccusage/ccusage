@@ -474,7 +474,7 @@ mod tests {
             fixture.path("first/sessions/group/old-b/wire.jsonl"),
             fixture.path("second/sessions/group/old/wire.jsonl"),
         ]);
-        let diagnostics = Diagnostics::without_clock("kimi");
+        let diagnostics = Diagnostics::new("kimi");
         assert_eq!(
             read_wire_file(&files[0], &diagnostics).unwrap()[0].model,
             "kimi-k2"
@@ -504,7 +504,7 @@ mod tests {
                 r#"{"message":{"type":"StatusUpdate","payload":{"token_usage":{"input_other":10,"output":2}}}}"#,
             ),
         });
-        let diagnostics = Diagnostics::without_clock("kimi");
+        let diagnostics = Diagnostics::new("kimi");
         let events = read_wire_file(
             &WireFile::from_paths(vec![fixture.path("sessions/group/session/wire.jsonl")])
                 .remove(0),
@@ -557,7 +557,7 @@ mod tests {
             &line,
             &WireFile::from_paths(vec![file]).remove(0),
             1,
-            &Diagnostics::without_clock("kimi"),
+            &Diagnostics::new("kimi"),
         )
         .unwrap();
 
@@ -575,8 +575,7 @@ mod tests {
                 "usage":{"inputOther":100}}"#,
         )
         .unwrap();
-        let entry =
-            entry_from_usage_record(&line, &file, 1, &Diagnostics::without_clock("kimi")).unwrap();
+        let entry = entry_from_usage_record(&line, &file, 1, &Diagnostics::new("kimi")).unwrap();
         let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(
             r#"{

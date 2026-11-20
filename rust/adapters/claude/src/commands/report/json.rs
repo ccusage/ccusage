@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use ccusage_core::UsageSummary;
 use serde_json::{Value, json};
 
-pub fn summary_json(row: &UsageSummary) -> Value {
+pub(super) fn summary_json(row: &UsageSummary) -> Value {
     let mut value = json!({
         "inputTokens": row.input_tokens,
         "outputTokens": row.output_tokens,
@@ -34,7 +34,7 @@ pub fn summary_json(row: &UsageSummary) -> Value {
     value
 }
 
-pub fn session_summary_json(row: &UsageSummary) -> Value {
+pub(super) fn session_summary_json(row: &UsageSummary) -> Value {
     let mut value = json!({
         "sessionId": row.session_id,
         "inputTokens": row.input_tokens,
@@ -55,7 +55,7 @@ pub fn session_summary_json(row: &UsageSummary) -> Value {
     value
 }
 
-pub fn group_project_output(rows: &[UsageSummary]) -> Value {
+pub(super) fn group_project_output(rows: &[UsageSummary]) -> Value {
     let mut projects: BTreeMap<String, Vec<Value>> = BTreeMap::new();
     for row in rows {
         projects

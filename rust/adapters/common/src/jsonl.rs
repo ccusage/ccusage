@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     cell::RefCell,
     fmt,
     fs::File,
@@ -18,7 +19,10 @@ use ccusage_core::{
     fast::{LinePrefilter, LineReader, newline_offsets},
 };
 
-use crate::{UnitError, units::being_written};
+use crate::{
+    UnitError,
+    units::{Completion, FileStamp},
+};
 
 const DEFAULT_BUFFER_SIZE: usize = 8 * 1024;
 
@@ -67,23 +71,44 @@ pub struct ReadFailure {
     pub error: io::Error,
     pub complete_lines: usize,
     pub tail_bytes: usize,
+    completion: Completion,
+}
+
+impl ReadFailure {
+    /// Classifies input that ends inside a record or frame by whether the file changed after it was opened.
+    pub fn incomplete(&self, detail: &'static str) -> UnitError {
+        UnitError::incomplete(self.completion, detail)
+    }
 }
 
 pub enum Interruption {
     Reject(UnitError),
     KeepUnit(UnitError),
     KeepRecords(SkipKind, &'static str),
-    RejectRecords(SkipKind, &'static str, UnitError),
+    RejectRecords(UnitError),
 }
 
-fn open_input(path: &Path, capacity: usize, compressed: bool) -> io::Result<Input> {
-    let file = File::open(path)?;
-    if compressed {
-        zstd::stream::read::Decoder::with_buffer(BufReader::with_capacity(capacity, file))
-            .map(Input::Zstd)
-    } else {
-        Ok(Input::Plain(file))
+struct Opened<'a> {
+    path: Cow<'a, Path>,
+    stamp: FileStamp,
+}
+
+impl Opened<'_> {
+    fn completion(&self) -> Completion {
+        self.stamp.completion(&self.path)
     }
+}
+
+fn open_input(path: &Path, capacity: usize, compressed: bool) -> io::Result<(Input, FileStamp)> {
+    let file = File::open(path)?;
+    let stamp = FileStamp::of(&file.metadata()?);
+    let input = if compressed {
+        zstd::stream::read::Decoder::with_buffer(BufReader::with_capacity(capacity, file))
+            .map(Input::Zstd)?
+    } else {
+        Input::Plain(file)
+    };
+    Ok((input, stamp))
 }
 
 #[inline(never)]
@@ -91,17 +116,32 @@ fn open<'a>(
     path: &'a Path,
     policy: ReadPolicy,
     diagnostics: Option<&Diagnostics>,
-) -> Result<(Input, std::borrow::Cow<'a, Path>), UnitError> {
-    use std::borrow::Cow;
+) -> Result<(Input, Opened<'a>), UnitError> {
     let (failure, error) = match (
         open_input(path, policy.capacity, policy.compressed),
         policy.retry_missing,
     ) {
-        (Ok(input), _) => return Ok((input, Cow::Borrowed(path))),
+        (Ok((input, stamp)), _) => {
+            return Ok((
+                input,
+                Opened {
+                    path: Cow::Borrowed(path),
+                    stamp,
+                },
+            ));
+        }
         (Err(error), Some(retry)) if error.kind() == io::ErrorKind::NotFound => {
             let alternate = retry(path);
             match open_input(&alternate, policy.capacity, !policy.compressed) {
-                Ok(input) => return Ok((input, Cow::Owned(alternate))),
+                Ok((input, stamp)) => {
+                    return Ok((
+                        input,
+                        Opened {
+                            path: Cow::Owned(alternate),
+                            stamp,
+                        },
+                    ));
+                }
                 Err(error) if error.kind() == io::ErrorKind::NotFound => {
                     (Cow::Borrowed(path), error)
                 }
@@ -132,9 +172,9 @@ fn finish(
                     error.record(path, diagnostics);
                 }
             }
-            Interruption::RejectRecords(kind, detail, error) => {
+            Interruption::RejectRecords(error) => {
                 if let Some(diagnostics) = diagnostics {
-                    diagnostics.record(Skip::unit(path, kind, detail));
+                    error.clone().record(path, diagnostics);
                 }
                 return Err(error);
             }
@@ -184,7 +224,7 @@ fn read_with(
     policy: ReadPolicy,
     visit: &mut LineVisitor<'_>,
 ) -> Result<(), UnitError> {
-    let (input, opened_path) = open(path, policy, diagnostics)?;
+    let (input, opened) = open(path, policy, diagnostics)?;
     let staged = if policy.stage_diagnostics {
         diagnostics.map(Diagnostics::isolated)
     } else {
@@ -197,7 +237,12 @@ fn read_with(
     let failure = loop {
         match reader.next_line() {
             Ok(Some(raw)) => {
-                if visit(Line { index, raw }, &opened_path, local).is_break() {
+                let line = Line {
+                    index,
+                    raw,
+                    opened: &opened,
+                };
+                if visit(line, &opened.path, local).is_break() {
                     break None;
                 }
             }
@@ -205,12 +250,18 @@ fn read_with(
             Err(error) => {
                 let tail = reader.rest();
                 if !tail.is_empty() && (policy.keep_interrupted_tail)(error.kind()) {
-                    let _ = visit(Line { index, raw: tail }, &opened_path, local);
+                    let line = Line {
+                        index,
+                        raw: tail,
+                        opened: &opened,
+                    };
+                    let _ = visit(line, &opened.path, local);
                 }
                 break Some(ReadFailure {
                     error,
                     complete_lines: index,
                     tail_bytes: tail.len(),
+                    completion: opened.completion(),
                 });
             }
         }
@@ -333,6 +384,15 @@ impl<'a> ReverseLine<'a> {
 pub struct Line<'a> {
     pub index: usize,
     pub raw: &'a [u8],
+    opened: &'a Opened<'a>,
+}
+
+/// Where a record's bytes stop: at a terminator, or at the end of the input read so far.
+#[derive(Clone, Copy)]
+pub struct Ending<'a>(Option<&'a Opened<'a>>);
+
+impl Ending<'_> {
+    pub const COMPLETE: Ending<'static> = Ending(None);
 }
 
 impl<'a> Line<'a> {
@@ -343,6 +403,10 @@ impl<'a> Line<'a> {
 
     pub fn unterminated(self) -> bool {
         !self.raw.ends_with(b"\n")
+    }
+
+    pub fn ending(self) -> Ending<'a> {
+        Ending(self.unterminated().then_some(self.opened))
     }
 
     pub fn number(self) -> u32 {
@@ -376,7 +440,7 @@ impl<'a> Line<'a> {
                     error,
                     path,
                     self.number(),
-                    self.unterminated(),
+                    self.ending(),
                     diagnostics,
                     is_usage,
                 );
@@ -445,7 +509,7 @@ pub fn decode_record<T: DeserializeOwned>(
                 error,
                 unit,
                 number,
-                false,
+                Ending::COMPLETE,
                 &diagnostics.for_row(row_id),
                 is_usage,
             );
@@ -461,30 +525,29 @@ pub fn record_decode_error(
     error: serde_json::Error,
     unit: &Path,
     number: u32,
-    unterminated: bool,
+    ending: Ending<'_>,
     diagnostics: &Diagnostics,
     is_usage: Option<impl Fn(&serde_json::Value) -> bool>,
 ) {
     use serde_json::error::Category;
     let (kind, category) = match error.classify() {
-        Category::Eof if unterminated && being_written(unit, diagnostics.assessment_instant()) => {
-            diagnostics.debug_note(
-                unit,
-                format!(
-                    "{}: {}:{number}: last line is incomplete, read as still being written",
-                    diagnostics.source(),
-                    unit.display()
+        Category::Eof if let Some(opened) = ending.0 => {
+            match opened.completion() {
+                Completion::Changing => diagnostics.debug_note(
+                    unit,
+                    format!(
+                        "{}: {}:{number}: last line is incomplete, read as still being written",
+                        diagnostics.source(),
+                        unit.display()
+                    ),
                 ),
-            );
-            return;
-        }
-        Category::Eof if unterminated => {
-            diagnostics.record(Skip::record(
-                unit,
-                number,
-                SkipKind::InvalidData,
-                format!("last line is truncated at column {}", error.column()),
-            ));
+                Completion::Unknown => diagnostics.record(Skip::record(
+                    unit,
+                    number,
+                    SkipKind::InvalidData,
+                    format!("last line is truncated at column {}", error.column()),
+                )),
+            }
             return;
         }
         Category::Io => (SkipKind::Unreadable, "I/O"),
@@ -794,10 +857,7 @@ mod tests {
 
     use serde::{Deserialize, de::DeserializeOwned};
 
-    use ccusage_core::{
-        Diagnostics, SkipKind,
-        cli::{ReportClock, SharedArgs},
-    };
+    use ccusage_core::{Diagnostics, SkipKind, cli::SharedArgs};
     use ccusage_test_support::{Environment, Fixture, instant, set_modified};
 
     use super::{
@@ -844,7 +904,7 @@ mod tests {
         let mut compressed = zstd::stream::encode_all(b"complete\npartial".as_slice(), 0).unwrap();
         compressed.extend_from_slice(b"invalid next frame");
         std::fs::write(&path, compressed).unwrap();
-        let diagnostics = Diagnostics::without_clock("test");
+        let diagnostics = Diagnostics::new("test");
         let mut lines = Vec::new();
         read(
             &path,
@@ -887,7 +947,7 @@ mod tests {
         let content =
             b"{\"model\":\"a\",\"tokens\":1}\n{\"other\":true}\n{\"model\":\"b\",\"tokens\":2}\n";
         let prefilter = LinePrefilter::all(&[b"model"]);
-        let diagnostics = Diagnostics::without_clock("test");
+        let diagnostics = Diagnostics::new("test");
         let parsed = decode_fixture::<Record>(
             content,
             Some(&prefilter),
@@ -915,65 +975,175 @@ mod tests {
     }
 
     const CUT_LAST_LINE: &str = "{\"tokens\":1}\n{\"tokens\":2,\"mod";
+    const NOW: &str = "2026-01-02T00:00:00Z";
+    const MTIMES: [&str; 4] = [
+        "2020-01-01T00:00:00Z",
+        "2026-01-01T23:58:00Z",
+        NOW,
+        "2026-01-02T00:00:30Z",
+    ];
 
-    #[test]
-    fn a_record_cut_short_by_the_end_of_a_file_being_written_is_noted_not_skipped() {
-        let fixture = Fixture::new();
-        let live = fixture.write_file("live.jsonl", CUT_LAST_LINE);
-        let now = instant("2026-01-02T00:00:00Z");
-        set_modified(&live, now);
-        let diagnostics = Diagnostics::for_report("test", ReportClock::Fixed(now.into()));
-        let records =
-            decode_fixture::<Record>(CUT_LAST_LINE.as_bytes(), None, &live, &diagnostics, None)
-                .map(|(_, record)| record.tokens)
-                .collect::<Vec<_>>();
+    fn append(path: &Path, bytes: &[u8]) {
+        use std::io::Write;
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(path)
+            .unwrap()
+            .write_all(bytes)
+            .unwrap();
+    }
 
-        assert_eq!(records, [1]);
+    fn debug_warnings(diagnostics: &Diagnostics) -> Vec<String> {
         Environment::with_var("LOG_LEVEL", "1").run(|| {
-            assert!(diagnostics.warnings(&SharedArgs::default()).is_empty());
-            assert_eq!(
-                diagnostics.warnings(&SharedArgs {
-                    debug: true,
-                    ..SharedArgs::default()
-                }),
-                [format!(
-                    "test: {}:2: last line is incomplete, read as still being written",
-                    live.display()
-                )]
-            );
+            diagnostics.warnings(&SharedArgs {
+                debug: true,
+                ..SharedArgs::default()
+            })
         })
     }
 
-    #[test]
-    fn a_record_cut_short_by_the_end_of_a_file_left_unchanged_is_skipped_as_truncated() {
-        let fixture = Fixture::new();
-        let stale = fixture.write_file("stale.jsonl", CUT_LAST_LINE);
-        let now = instant("2026-01-02T00:00:00Z");
-        set_modified(&stale, instant("2026-01-01T23:58:00Z"));
-        let diagnostics = Diagnostics::for_report("test", ReportClock::Fixed(now.into()));
-        let records =
-            decode_fixture::<Record>(CUT_LAST_LINE.as_bytes(), None, &stale, &diagnostics, None)
-                .map(|(_, record)| record.tokens)
-                .collect::<Vec<_>>();
+    fn read_tokens(
+        path: &Path,
+        diagnostics: &Diagnostics,
+        policy: ReadPolicy,
+        mut after_first_line: impl FnMut(),
+    ) -> Vec<u64> {
+        let mut tokens = Vec::new();
+        read(path, Some(diagnostics), policy, |line, _, _| {
+            if let Some(record) = line.record::<Record>(path, diagnostics, None) {
+                tokens.push(record.tokens);
+            }
+            if line.index == 0 {
+                after_first_line();
+            }
+            ControlFlow::<()>::Continue(())
+        })
+        .unwrap();
+        tokens
+    }
 
-        assert_eq!(records, [1]);
-        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
-        Environment::with_var("LOG_LEVEL", "1").run(|| {
-            let warnings = diagnostics
-                .warnings(&SharedArgs {
-                    debug: true,
-                    ..SharedArgs::default()
-                })
-                .join("\n");
+    #[test]
+    fn a_record_cut_short_while_the_file_grows_is_noted_not_skipped_whatever_its_mtime() {
+        for modified in MTIMES {
+            let fixture = Fixture::new();
+            let live = fixture.write_file("live.jsonl", CUT_LAST_LINE);
+            set_modified(&live, instant(modified));
+            let diagnostics = Diagnostics::new("test");
+
+            let tokens = read_tokens(&live, &diagnostics, ReadPolicy::PLAIN, || {
+                append(&live, b"el");
+                set_modified(&live, instant(modified));
+            });
+
+            assert_eq!(tokens, [1], "{modified}");
+            assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 0, "{modified}");
+            assert!(
+                diagnostics.warnings(&SharedArgs::default()).is_empty(),
+                "{modified}"
+            );
+            assert_eq!(
+                debug_warnings(&diagnostics),
+                [format!(
+                    "test: {}:2: last line is incomplete, read as still being written",
+                    live.display()
+                )],
+                "{modified}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_record_cut_short_in_a_file_left_unchanged_is_skipped_whatever_its_mtime() {
+        for modified in MTIMES {
+            let fixture = Fixture::new();
+            let quiet = fixture.write_file("quiet.jsonl", CUT_LAST_LINE);
+            set_modified(&quiet, instant(modified));
+            let diagnostics = Diagnostics::new("test");
+
+            let tokens = read_tokens(&quiet, &diagnostics, ReadPolicy::PLAIN, || {});
+
+            assert_eq!(tokens, [1], "{modified}");
+            assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1, "{modified}");
+            let warnings = debug_warnings(&diagnostics).join("\n");
             assert!(
                 warnings.contains(&format!(
                     "{}:2: last line is truncated at column 16",
-                    stale.display()
+                    quiet.display()
                 )),
-                "{warnings}"
+                "{modified}: {warnings}"
             );
-            assert!(!warnings.contains("still being written"), "{warnings}");
-        })
+            assert!(
+                !warnings.contains("still being written"),
+                "{modified}: {warnings}"
+            );
+        }
+    }
+
+    const TORN_ZSTD: ReadPolicy = ReadPolicy {
+        compressed: true,
+        interrupted: |failure| {
+            super::Interruption::KeepUnit(failure.incomplete("zstd stream ends inside a frame"))
+        },
+        ..ReadPolicy::PLAIN
+    };
+
+    fn torn_zstd_session(fixture: &Fixture, modified: &str) -> std::path::PathBuf {
+        let mut compressed = zstd::stream::encode_all(b"{\"tokens\":1}\n".as_slice(), 0).unwrap();
+        let torn = zstd::stream::encode_all(b"{\"tokens\":2}\n".as_slice(), 0).unwrap();
+        compressed.extend_from_slice(&torn[..torn.len() / 2]);
+        let path = fixture.path("session.jsonl.zst");
+        std::fs::write(&path, compressed).unwrap();
+        set_modified(&path, instant(modified));
+        path
+    }
+
+    #[test]
+    fn a_torn_zstd_frame_in_a_file_that_changes_is_noted_not_skipped_whatever_its_mtime() {
+        for modified in MTIMES {
+            let fixture = Fixture::new();
+            let path = torn_zstd_session(&fixture, modified);
+            let diagnostics = Diagnostics::new("test");
+
+            let tokens = read_tokens(&path, &diagnostics, TORN_ZSTD, || {
+                set_modified(
+                    &path,
+                    instant(modified).plus(std::time::Duration::from_secs(1)),
+                );
+            });
+
+            assert_eq!(tokens, [1], "{modified}");
+            assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 0, "{modified}");
+            assert_eq!(
+                debug_warnings(&diagnostics),
+                [format!(
+                    "test: {}: incomplete, read as still being written",
+                    path.display()
+                )],
+                "{modified}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_torn_zstd_frame_in_a_file_left_unchanged_is_skipped_whatever_its_mtime() {
+        for modified in MTIMES {
+            let fixture = Fixture::new();
+            let path = torn_zstd_session(&fixture, modified);
+            let diagnostics = Diagnostics::new("test");
+
+            let tokens = read_tokens(&path, &diagnostics, TORN_ZSTD, || {});
+
+            assert_eq!(tokens, [1], "{modified}");
+            assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1, "{modified}");
+            let warnings = debug_warnings(&diagnostics).join("\n");
+            assert!(
+                warnings.contains(&format!(
+                    "{}: zstd stream ends inside a frame",
+                    path.display()
+                )),
+                "{modified}: {warnings}"
+            );
+        }
     }
 
     #[test]
@@ -982,7 +1152,7 @@ mod tests {
             b"{\"tokens\":2,\"mod\n{\"tokens\":1}".as_slice(),
             b"{\"tokens\":1}\n{\"tokens\":2,\"mod\n",
         ] {
-            let diagnostics = Diagnostics::without_clock("test");
+            let diagnostics = Diagnostics::new("test");
             let _ = decode_fixture::<Record>(
                 content,
                 None,
@@ -999,7 +1169,7 @@ mod tests {
     #[test]
     fn records_skips_unparsable_lines() {
         let content = b"{\"tokens\":1}\nnot json\n{\"tokens\":2}\n";
-        let diagnostics = Diagnostics::without_clock("test");
+        let diagnostics = Diagnostics::new("test");
         let parsed = decode_fixture::<Record>(
             content,
             None,
@@ -1029,7 +1199,7 @@ mod tests {
 
         let content = b"{\"model\":\"before\",\"tokens\":1}\n{\"other\":\"SECRET_CANARY\",\"tokens\":}\n{\"model\":\"broken\",\"tokens\":\"SECRET_CANARY\"}\n{\"model\":\"after\",\"tokens\":2}";
         let prefilter = LinePrefilter::all(&[b"model"]);
-        let diagnostics = Diagnostics::without_clock("test");
+        let diagnostics = Diagnostics::new("test");
 
         let records = decode_fixture::<StrictRecord>(
             content,
@@ -1065,7 +1235,7 @@ mod tests {
         struct Record {
             tokens: u64,
         }
-        let diagnostics = Diagnostics::without_clock("test");
+        let diagnostics = Diagnostics::new("test");
         let records = decode_fixture::<Record>(
             b"{\"type\":\"user\",\"tokens\":\"text\"}\n{\"type\":\"usage\",\"tokens\":\"SECRET_CANARY\"}\n{\"type\":\"usage\",\"tokens\":3}",
             None,
@@ -1094,7 +1264,7 @@ mod tests {
             r#"{"kind":"usage","tokens":2}"#,
         )
         .as_bytes();
-        let diagnostics = Diagnostics::without_clock("test");
+        let diagnostics = Diagnostics::new("test");
         let records = decode_fixture::<UsageRecord>(
             content,
             None,
@@ -1120,7 +1290,7 @@ mod tests {
             assert!(!warnings.contains("/logs/session.jsonl:2:"));
             assert!(!warnings.contains("SECRET_CANARY"));
 
-            let database_diagnostics = Diagnostics::without_clock("test");
+            let database_diagnostics = Diagnostics::new("test");
             assert!(
                 super::decode_record::<UsageRecord>(
                     b" \t\r",

@@ -468,12 +468,25 @@ fn colon_commands_select_only_registered_reports() {
 
 use serde_json::{Value, json};
 
-use super::*;
+use super::{
+    apply::{
+        apply_config_to_blocks_args, apply_config_to_shared, apply_config_to_statusline_args,
+        apply_config_to_weekly_args,
+    },
+    discovery::load_config_paths,
+    pi_stores::{
+        parse_named_pi_stores, reserved_named_pi_store_names, validate_named_pi_store_name,
+    },
+    pricing::merge_pricing_overrides,
+    *,
+};
+use crate::config_schema::{ConfigPricingOverride, NAMED_PI_STORE_NAME_PATTERN};
 use ccusage_cli::{
-    BlocksArgs, CliConfig, CodexSpeed, CostMode, SortOrder, StatuslineArgs, VisualBurnRate,
-    WeekDay, WeeklyArgs,
+    BlocksArgs, CliConfig, CodexSpeed, ColorChoice, CostMode, SharedArgs, SortOrder,
+    StatuslineArgs, VisualBurnRate, WeekDay, WeeklyArgs,
 };
 use ccusage_test_support::{Environment, fs_fixture};
+use std::collections::BTreeSet;
 
 #[test]
 fn applies_schema_backed_shared_options() {

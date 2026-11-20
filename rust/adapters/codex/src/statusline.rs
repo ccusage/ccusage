@@ -50,7 +50,7 @@ fn summarize(args: &CodexStatuslineArgs, pricing: &ReportPricing<'_>) -> Result<
     } else {
         AgentReportKind::Daily
     };
-    let diagnostics = Diagnostics::for_report("codex", shared.clock);
+    let diagnostics = Diagnostics::new("codex");
     let pricing = pricing.get();
     let mut groups = if let Some(requested) = requested_session {
         let files =
