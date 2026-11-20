@@ -2404,6 +2404,43 @@ fn a_re_export_inherits_its_trace_model_from_another_file() {
 }
 
 #[test]
+fn a_kept_span_copy_takes_the_request_ids_of_a_later_copy() {
+    let unattributed = otel_call("span-1", "2026-01-02T09:00:00.000Z");
+    let attributed = otel_call_with(
+        "span-1",
+        "2026-01-02T09:05:00.000Z",
+        ("github.copilot.service_request_id", "request-1"),
+    );
+    let receipt = usage_record(
+        "record-1",
+        "2026-01-02T09:00:00.000Z",
+        json!({"serviceRequestId": "request-1"}),
+    );
+    for split in [false, true] {
+        let fixture = fs_fixture!({
+            "home/.copilot/session-state/session-1/events.jsonl": receipt.clone(),
+        });
+        if split {
+            fixture.write_file("home/.copilot/otel/0.jsonl", &unattributed);
+            fixture.write_file("home/.copilot/otel/1.jsonl", &attributed);
+        } else {
+            fixture.write_file(
+                "home/.copilot/otel/0.jsonl",
+                [unattributed.clone(), attributed.clone()].join("\n"),
+            );
+        }
+
+        let entries = load_copilot_home(&fixture, &utc_args());
+
+        assert_eq!(
+            usage_rows(&entries),
+            [("2026-01-02T09:00:00.000Z".to_string(), 100)],
+            "split={split}"
+        );
+    }
+}
+
+#[test]
 fn keeps_distinct_service_requests_of_one_response_in_one_file_or_several() {
     let call = |span_id: &str, request_id: &str| {
         let mut span: serde_json::Value = serde_json::from_str(&otel_call_with(

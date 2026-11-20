@@ -220,12 +220,38 @@ pub(crate) fn reconcile_otel_calls(files: Vec<OtelFileCalls>) -> Vec<CopilotUsag
             }
         }
     }
-    let earliest = earliest.into_values().collect::<HashSet<_>>();
+    let mut request_ids = HashMap::<&CallKey, (Option<String>, Option<String>)>::new();
+    for call in &calls {
+        if let Some(key) = &call.call_key {
+            let (response_id, service_request_id) = request_ids.entry(key).or_default();
+            if response_id.is_none() {
+                response_id.clone_from(&call.response_id);
+            }
+            if service_request_id.is_none() {
+                service_request_id.clone_from(&call.service_request_id);
+            }
+        }
+    }
+    let kept = earliest
+        .into_iter()
+        .map(|(key, index)| (index, request_ids.remove(key).unwrap_or_default()))
+        .collect::<HashMap<_, _>>();
     let candidates = calls
         .into_iter()
         .enumerate()
-        .filter(|(index, call)| call.call_key.is_none() || earliest.contains(index))
-        .map(|(_, call)| call)
+        .filter_map(|(index, mut call)| {
+            if call.call_key.is_none() {
+                return Some(call);
+            }
+            let (response_id, service_request_id) = kept.get(&index)?;
+            if call.response_id.is_none() {
+                call.response_id.clone_from(response_id);
+            }
+            if call.service_request_id.is_none() {
+                call.service_request_id.clone_from(service_request_id);
+            }
+            Some(call)
+        })
         .collect::<Vec<_>>();
     let sets = CandidateSets::new(&candidates);
     candidates
