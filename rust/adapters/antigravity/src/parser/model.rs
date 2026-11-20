@@ -159,7 +159,7 @@ pub(super) fn price_antigravity(
     } else {
         MatchKind::Fuzzy
     };
-    // NOTE(2026-11-20, #2236): The resolver treats `-thinking` as price-neutral only within the families it lists as billing thinking at the model's rates (`FAMILY_PRICE_NEUTRAL_SUFFIX_WORDS` in `ccusage-core`), so a `gpt-…` or passed-through id keeps the suffix and needs this stripped base, tried after every candidate that names the full id.
+    // NOTE(2026-11-20, #2236): The resolver treats `-thinking` as price-neutral only within the families it lists as billing thinking at the model's rates (`FAMILY_PRICE_NEUTRAL_SUFFIX_WORDS` in `ccusage-core`). A `gpt-…` or passed-through id keeps the suffix, so this stripped base prices it after every candidate that names the full id.
     let thinking_base = model
         .strip_suffix("-thinking")
         .into_iter()
