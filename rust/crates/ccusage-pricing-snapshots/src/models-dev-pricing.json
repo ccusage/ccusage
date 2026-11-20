@@ -3228,7 +3228,7 @@
 	"amazon.nova-2-lite-v1:0": {
 		"cost": {
 			"cache_read": 0.0825,
-			"cache_write": 0.33,
+			"cache_write": 0,
 			"input": 0.33,
 			"output": 2.75
 		},
@@ -3909,10 +3909,10 @@
 	},
 	"anthropic.claude-haiku-4-5-20251001-v1:0": {
 		"cost": {
-			"cache_read": 0.1,
-			"cache_write": 1.25,
-			"input": 1,
-			"output": 5
+			"cache_read": 0.11,
+			"cache_write": 1.375,
+			"input": 1.1,
+			"output": 5.5
 		},
 		"limit": {
 			"context": 200000
@@ -3954,10 +3954,10 @@
 	},
 	"anthropic.claude-opus-4-5-20251101-v1:0": {
 		"cost": {
-			"cache_read": 0.5,
-			"cache_write": 6.25,
-			"input": 5,
-			"output": 25
+			"cache_read": 0.55,
+			"cache_write": 6.875,
+			"input": 5.5,
+			"output": 27.5
 		},
 		"limit": {
 			"context": 200000
@@ -4020,10 +4020,10 @@
 	},
 	"anthropic.claude-sonnet-4-5-20250929-v1:0": {
 		"cost": {
-			"cache_read": 0.3,
-			"cache_write": 3.75,
-			"input": 3,
-			"output": 15
+			"cache_read": 0.33,
+			"cache_write": 4.125,
+			"input": 3.3,
+			"output": 16.5
 		},
 		"limit": {
 			"context": 200000
@@ -15636,7 +15636,7 @@
 	"global.amazon.nova-2-lite-v1:0": {
 		"cost": {
 			"cache_read": 0.075,
-			"cache_write": 0.3,
+			"cache_write": 0,
 			"input": 0.3,
 			"output": 2.5
 		},
@@ -34892,7 +34892,7 @@
 	"us.amazon.nova-2-lite-v1:0": {
 		"cost": {
 			"cache_read": 0.0825,
-			"cache_write": 0.33,
+			"cache_write": 0,
 			"input": 0.33,
 			"output": 2.75
 		},

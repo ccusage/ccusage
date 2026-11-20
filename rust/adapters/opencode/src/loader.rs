@@ -296,12 +296,21 @@ impl Table {
             Self::SessionV2 => "session_v2",
         }
     }
+
+    // NOTE(2026-11-19, #2244): OpenCode's own writers copy each message's time.created into time_created, and only its migrations create these indexes. Any other table gives the column no such guarantee, so the payload alone dates its rows.
+    fn opencode_time_index(self) -> Option<&'static str> {
+        match self {
+            Self::Message => Some("message_session_time_created_id_idx"),
+            Self::SessionMessage => Some("session_message_time_created_idx"),
+            Self::Session | Self::SessionV2 => None,
+        }
+    }
 }
 
 struct TableSchema {
     table: Table,
     columns: HashSet<String>,
-    millis_scaled: bool,
+    indexed_time: bool,
 }
 
 impl TableSchema {
@@ -337,12 +346,15 @@ impl TableSchema {
                 return None;
             }
         };
-        let millis_scaled =
-            columns.contains("time_created") && time_created_looks_like_millis(connection, table);
+        let indexed_time = columns.contains("time_created")
+            && table
+                .opencode_time_index()
+                .is_some_and(|index| index_exists(connection, table, index))
+            && time_created_looks_like_millis(connection, table);
         Some(Self {
             table,
             columns,
-            millis_scaled,
+            indexed_time,
         })
     }
 
@@ -362,13 +374,13 @@ impl TableSchema {
         if context.window.is_unbounded() {
             return DateWindow::UNBOUNDED;
         }
-        if self.millis_scaled {
-            return context.window.with_sql_timestamp_margin();
+        if self.indexed_time {
+            return context.window;
         }
         debug_log(
             context.shared,
             format!(
-                "OpenCode {}.time_created is missing or not millisecond-scale; scanning unfiltered: {}",
+                "OpenCode {}.time_created is not OpenCode's indexed millisecond time; scanning unfiltered: {}",
                 self.table.name(),
                 context.db_path.display()
             ),
@@ -660,6 +672,19 @@ fn read_message_file(
     message_value_to_entry(value, None, None, tz, mode, pricing).map_err(|MissingTimestamp| {
         UnitError::new(SkipKind::InvalidTimestamp, MissingTimestamp::REASON)
     })
+}
+
+fn index_exists(connection: &sqlite::Connection, table: Table, index: &str) -> bool {
+    connection
+        .prepare(
+            "SELECT 1 FROM sqlite_master WHERE type = 'index' AND tbl_name = ?1 AND name = ?2 LIMIT 1",
+        )
+        .and_then(|mut statement| {
+            statement.bind((1, table.name()))?;
+            statement.bind((2, index))?;
+            statement.next()
+        })
+        .is_ok_and(|state| state == sqlite::State::Row)
 }
 
 fn table_exists(
@@ -959,13 +984,6 @@ impl DateWindow {
 
     fn is_unbounded(self) -> bool {
         self == Self::UNBOUNDED
-    }
-
-    fn with_sql_timestamp_margin(self) -> Self {
-        Self {
-            start: self.start.map(|start| start - crate::MILLIS_PER_DAY),
-            end: self.end.map(|end| end + crate::MILLIS_PER_DAY),
-        }
     }
 
     fn contains(self, millis: i64) -> bool {
@@ -3283,32 +3301,173 @@ mod tests {
         assert_eq!(entries[0].date.to_string(), "2026-01-01");
     }
 
-    #[test]
-    fn pushdown_margin_keeps_rows_whose_column_drifts_from_the_payload() {
-        let fixture = fs_fixture!({});
-        create_db_message_with_time(
-            &fixture.path("opencode.db"),
-            "msg-drifted",
-            "session-a",
-            1_767_312_000_000 + 26 * 60 * 60 * 1000,
-            r#"{"providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767312000000},"tokens":{"input":1,"output":1}}"#,
-        );
+    const NOON_UTC_2026_01_01_V2: &str = r#"{"model":{"id":"claude-sonnet-4-20250514","providerID":"anthropic"},"time":{"created":1767268800000},"tokens":{"input":1,"output":1}}"#;
 
+    const NOON_UTC_2026_01_01_MS: i64 = 1_767_268_800_000;
+
+    #[derive(Clone, Copy, Debug)]
+    enum MessageTable {
+        Message,
+        SessionMessage,
+    }
+
+    fn create_message_with_time(path: &Path, table: MessageTable, time_created: i64) {
+        match table {
+            MessageTable::Message => create_db_message_with_time(
+                path,
+                "msg-drifted",
+                "session-a",
+                time_created,
+                NOON_UTC_2026_01_01,
+            ),
+            MessageTable::SessionMessage => {
+                create_db_session_message_table(path, true);
+                insert_db_session_message(
+                    path,
+                    "msg-drifted",
+                    "session-a",
+                    "assistant",
+                    time_created,
+                    NOON_UTC_2026_01_01_V2,
+                    true,
+                );
+            }
+        }
+    }
+
+    fn load_local_day(directory: &Path, timezone: &str, day: &str) -> Vec<LoadedEntry> {
         let shared = SharedArgs {
             mode: CostMode::Display,
-            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
-            since: Some("20260102".parse().unwrap()),
-            until: Some("20260102".parse().unwrap()),
+            timezone: Some(timezone.parse().unwrap()),
+            since: Some(day.parse().unwrap()),
+            until: Some(day.parse().unwrap()),
             ..SharedArgs::default()
         };
-        let entries = load_entries_from_directory(fixture.root(), &shared);
+        load_entries_from_directory(directory, &shared)
+    }
 
-        assert_eq!(
-            entries.len(),
-            1,
-            "the payload decides the window, so a drifting column must not exclude the row"
-        );
-        assert_eq!(entries[0].date.to_string(), "2026-01-02");
+    #[test]
+    fn a_time_created_column_far_from_the_payload_does_not_drop_the_row() {
+        const DAY: i64 = 24 * 60 * 60 * 1000;
+        for (table, timezone, day, date, drift) in [
+            (
+                MessageTable::Message,
+                "UTC",
+                "20260101",
+                "2026-01-01",
+                -4 * DAY,
+            ),
+            (
+                MessageTable::Message,
+                "Pacific/Kiritimati",
+                "20260102",
+                "2026-01-02",
+                4 * DAY,
+            ),
+            (
+                MessageTable::SessionMessage,
+                "UTC",
+                "20260101",
+                "2026-01-01",
+                4 * DAY,
+            ),
+            (
+                MessageTable::SessionMessage,
+                "Etc/GMT+12",
+                "20260101",
+                "2026-01-01",
+                -4 * DAY,
+            ),
+        ] {
+            let fixture = fs_fixture!({});
+            create_message_with_time(
+                &fixture.path("opencode.db"),
+                table,
+                NOON_UTC_2026_01_01_MS + drift,
+            );
+
+            let entries = load_local_day(fixture.root(), timezone, day);
+
+            let case = format!("{table:?} in {timezone} with time_created {drift} ms away");
+            assert_eq!(entries.len(), 1, "{case}");
+            assert_eq!(entries[0].date.to_string(), date, "{case}");
+        }
+    }
+
+    fn create_opencode_time_index(path: &Path, table: MessageTable) {
+        let db = sqlite::open(path).unwrap();
+        db.execute(match table {
+            MessageTable::Message => {
+                "CREATE INDEX message_session_time_created_id_idx ON message (session_id, time_created, id)"
+            }
+            MessageTable::SessionMessage => {
+                "CREATE INDEX session_message_time_created_idx ON session_message (time_created)"
+            }
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn opencode_indexed_tables_keep_rows_on_the_local_day_bounds() {
+        const TOKYO_2026_01_02_START: i64 = 1_767_279_600_000;
+        const TOKYO_2026_01_02_END: i64 = TOKYO_2026_01_02_START + 24 * 60 * 60 * 1000;
+        for table in [MessageTable::Message, MessageTable::SessionMessage] {
+            let fixture = fs_fixture!({});
+            let db_path = fixture.path("opencode.db");
+            if matches!(table, MessageTable::SessionMessage) {
+                create_db_session_message_table(&db_path, true);
+            }
+            for (id, created) in [
+                ("msg-before", TOKYO_2026_01_02_START - 1),
+                ("msg-first", TOKYO_2026_01_02_START),
+                ("msg-last", TOKYO_2026_01_02_END - 1),
+                ("msg-after", TOKYO_2026_01_02_END),
+            ] {
+                match table {
+                    MessageTable::Message => create_db_message_with_time(
+                        &db_path,
+                        id,
+                        "session-a",
+                        created,
+                        &format!(
+                            r#"{{"providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{{"created":{created}}},"tokens":{{"input":1,"output":1}}}}"#
+                        ),
+                    ),
+                    MessageTable::SessionMessage => insert_db_session_message(
+                        &db_path,
+                        id,
+                        "session-a",
+                        "assistant",
+                        created,
+                        &format!(
+                            r#"{{"model":{{"id":"claude-sonnet-4-20250514","providerID":"anthropic"}},"time":{{"created":{created}}},"tokens":{{"input":1,"output":1}}}}"#
+                        ),
+                        true,
+                    ),
+                }
+            }
+            create_opencode_time_index(&db_path, table);
+            let schema_table = match table {
+                MessageTable::Message => super::Table::Message,
+                MessageTable::SessionMessage => super::Table::SessionMessage,
+            };
+            let schema = super::TableSchema::probe(
+                &sqlite::open(&db_path).unwrap(),
+                schema_table,
+                &db_path,
+                &ccusage_core::Diagnostics::new("opencode"),
+            )
+            .unwrap();
+            assert!(schema.indexed_time, "{table:?}");
+
+            let entries = load_local_day(fixture.root(), "Asia/Tokyo", "20260102");
+
+            let ids = entries
+                .iter()
+                .map(|entry| entry.message_id.as_deref().unwrap())
+                .collect::<Vec<_>>();
+            assert_eq!(ids, ["msg-first", "msg-last"], "{table:?}");
+        }
     }
 
     #[test]
@@ -3321,6 +3480,7 @@ mod tests {
             1_767_312_000,
             r#"{"providerID":"anthropic","modelID":"claude-sonnet-4-20250514","time":{"created":1767312000000},"tokens":{"input":1,"output":1}}"#,
         );
+        create_opencode_time_index(&fixture.path("opencode.db"), MessageTable::Message);
 
         let shared = SharedArgs {
             mode: CostMode::Display,
