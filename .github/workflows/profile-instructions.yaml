@@ -1,8 +1,6 @@
 name: Profile instructions
 
 on:
-  push:
-    branches: [ci/profile-instruction-counts]
   workflow_dispatch:
     inputs:
       refs:
@@ -42,8 +40,8 @@ jobs:
           save: 'false'
       - id: plan
         env:
-          REFS: ${{ inputs.refs || 'main' }}
-          COMMANDS: ${{ github.event_name == 'push' && 'claude daily, amp daily' || inputs.commands }}
+          REFS: ${{ inputs.refs }}
+          COMMANDS: ${{ inputs.commands }}
         run: |
           nix shell --inputs-from . nixpkgs#nushell --command \
             nu .github/scripts/profile-instructions.nu plan --refs "$REFS" --commands "$COMMANDS"
@@ -132,7 +130,7 @@ jobs:
       - name: Generate large fixture
         if: matrix.run.fixture == 'large'
         env:
-          FIXTURE_MIB: ${{ github.event_name == 'push' && '64' || inputs.fixture-mib }}
+          FIXTURE_MIB: ${{ inputs.fixture-mib }}
         run: |
           just generate-large-fixture "$RUNNER_TEMP/ccusage-large-fixture/claude" "$RUNNER_TEMP/ccusage-large-fixture/codex" \
             --grok-output-dir "$RUNNER_TEMP/ccusage-large-fixture/grok" \
