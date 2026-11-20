@@ -1348,6 +1348,25 @@ fn requestless_message_id_reused_after_a_tool_result_with_new_input_is_counted_t
 }
 
 #[test]
+fn requestless_content_blocks_whose_tool_input_holds_a_uuid_are_counted_once_in_every_report() {
+    let fixture = Fixture::new();
+    let [first, second] = two_block_response("msg_01AbC2DeF3");
+    let first = first
+        .replace(
+            r#""content":[{"type":"text","text":"ok"}]"#,
+            r#""content":[{"type":"tool_use","id":"toolu_1","name":"Read","input":{"path":"a","uuid":"x"}}]"#,
+        );
+    fixture.write_file(
+        "projects/project-a/session-a.jsonl",
+        [first, second].join("\n"),
+    );
+
+    for (command, total) in claude_report_totals(&fixture) {
+        assert_eq!(total, 102, "claude {command}");
+    }
+}
+
+#[test]
 fn requestless_message_id_reused_after_a_user_prompt_is_counted_twice_in_every_report() {
     let fixture = Fixture::new();
     let lines = [

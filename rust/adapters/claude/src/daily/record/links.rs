@@ -1,6 +1,4 @@
-use std::{fmt, sync::LazyLock};
-
-use memchr::memmem::FinderRev;
+use std::fmt;
 
 use serde::{
     Deserialize, Deserializer,
@@ -71,30 +69,7 @@ struct LinkRecord {
     parent_uuid: Uuid,
 }
 
-// NOTE(2026-11-20, #2255): Decoding these links with serde costs a second full parse of every requestless usage line. Claude Code writes `parentUuid` first and `uuid` among the trailing scalar keys, and a JSON string cannot hold those byte sequences unescaped, so anchored searches find them. Other layouts take the serde parse.
 pub(in crate::daily) fn parse_links(line: &[u8]) -> Option<Links> {
-    static UUID: LazyLock<FinderRev<'static>> = LazyLock::new(|| FinderRev::new(br#","uuid":""#));
-    let Some(rest) = line.strip_prefix(br#"{"parentUuid":"#) else {
-        return parse_links_slowly(line);
-    };
-    let parent = match rest.first()? {
-        b'"' => Some(key(string_at(&rest[1..])?)),
-        b'n' if rest.starts_with(b"null") => None,
-        _ => return parse_links_slowly(line),
-    };
-    let uuid = UUID
-        .rfind(line)
-        .and_then(|at| string_at(&line[at + UUID.needle().len()..]))
-        .map(key);
-    Some(Links { uuid, parent })
-}
-
-fn string_at(bytes: &[u8]) -> Option<&[u8]> {
-    let end = memchr::memchr2(b'"', b'\\', bytes)?;
-    (bytes[end] == b'"').then(|| &bytes[..end])
-}
-
-fn parse_links_slowly(line: &[u8]) -> Option<Links> {
     let record = crate::deserialize_usage_line::<LinkRecord>(line).ok()?;
     Some(Links {
         uuid: record.uuid.0,

@@ -139,7 +139,12 @@ impl ResponseChains {
         message_id: &str,
         usage: &TokenUsageRaw,
     ) -> Option<NonZeroU64> {
-        let links = parse_links(line)?;
+        let links = skim(line, Want::Block, |_| true)
+            .map(|skimmed| Links {
+                uuid: skimmed.uuid.map(key),
+                parent: skimmed.parent.map(key),
+            })
+            .or_else(|| parse_links(line))?;
         let signature = signature(message_id, usage);
         let joined = links
             .parent

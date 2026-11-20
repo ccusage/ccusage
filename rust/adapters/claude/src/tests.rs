@@ -722,6 +722,10 @@ fn tool_result(tool_use_id: &str) -> String {
     format!(r#"[{{"type":"tool_result","tool_use_id":"{tool_use_id}","content":"ok"}}]"#)
 }
 
+fn with_tool_input(line: String, input: &str) -> String {
+    line.replace(r#""input":{}"#, &format!(r#""input":{input}"#))
+}
+
 const FIRST_BLOCK: &str = "2026-05-22T02:34:40.000Z";
 const LATER_BLOCK: &str = "2026-05-22T02:34:40.500Z";
 
@@ -810,6 +814,32 @@ pub(crate) fn requestless_response_cases() -> Vec<(&'static str, Vec<String>, us
                 chained_assistant("a1", None, FIRST_BLOCK, "gateway-7f3a", 100, Some("toolu_1")),
                 chained_user("u1", "a1", &tool_result("toolu_9")),
                 chained_assistant("a2", Some("u1"), LATER_BLOCK, "gateway-7f3a", 100, None),
+            ],
+            2,
+        ),
+        (
+            "blocks whose tool input holds a uuid",
+            vec![
+                with_tool_input(
+                    chained_assistant("a1", None, FIRST_BLOCK, "msg_01AbC2DeF3", 100, Some("toolu_1")),
+                    r#"{"path":"a","uuid":"x"}"#,
+                ),
+                chained_assistant("a2", Some("a1"), LATER_BLOCK, "msg_01AbC2DeF3", 100, None),
+            ],
+            1,
+        ),
+        (
+            "distinct responses whose tool inputs share a uuid",
+            vec![
+                with_tool_input(
+                    chained_assistant("a1", None, FIRST_BLOCK, "msg_01AbC2DeF3", 100, Some("toolu_1")),
+                    r#"{"uuid":"shared"}"#,
+                ),
+                chained_user("u1", "a1", r#""next question""#),
+                with_tool_input(
+                    chained_assistant("a2", Some("u1"), LATER_BLOCK, "msg_01AbC2DeF3", 100, Some("toolu_2")),
+                    r#"{"uuid":"shared"}"#,
+                ),
             ],
             2,
         ),

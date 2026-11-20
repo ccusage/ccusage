@@ -74,6 +74,14 @@ impl<'a> Cursor<'a> {
         }
     }
 
+    fn link(&mut self) -> Option<Option<&'a [u8]>> {
+        let link = self.nullable_string()?;
+        if link.is_some_and(|link| memchr(b'\\', link).is_some()) {
+            return None;
+        }
+        Some(link)
+    }
+
     fn skip_value(&mut self) -> Option<()> {
         match self.peek()? {
             b'"' => self.string().map(drop),
@@ -123,6 +131,9 @@ impl<'a> Cursor<'a> {
         }
         loop {
             let key = self.string()?;
+            if memchr(b'\\', key).is_some() {
+                return None;
+            }
             self.eat(b':')?;
             match member(key, self)? {
                 Step::Skip => self.skip_value()?,
@@ -231,11 +242,11 @@ pub(super) fn skim<'a>(
                 skim.seen_kind = true;
             }
             b"uuid" => {
-                skim.uuid = cursor.nullable_string()?;
+                skim.uuid = cursor.link()?;
                 skim.seen_uuid = true;
             }
             b"parentUuid" => {
-                skim.parent = cursor.nullable_string()?;
+                skim.parent = cursor.link()?;
                 if !keep_parent(skim.parent) {
                     return None;
                 }
