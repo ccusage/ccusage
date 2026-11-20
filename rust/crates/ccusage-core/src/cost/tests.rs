@@ -692,3 +692,31 @@ fn usage_entry_cost_wrapper_uses_event_timestamp() {
         assert!((cost - expected).abs() < 1e-12, "{cost}");
     }
 }
+
+#[test]
+fn prices_a_qwen_plus_thinking_request_above_256k_at_alibabas_long_context_rates() {
+    crate::test_support::install_pricing_snapshots();
+    let pricing = PricingMap::load_embedded();
+    let output_tokens = 1_000_u64;
+    for (case, input_tokens, (input_rate, output_rate)) in [
+        ("below the boundary", 255_999_u64, (0.4, 4.0)),
+        ("at the boundary", 256_000, (0.4, 4.0)),
+        ("above the boundary", 256_001, (1.2, 12.0)),
+    ] {
+        let usage = TokenUsageRaw {
+            input_tokens,
+            output_tokens,
+            ..TokenUsageRaw::default()
+        };
+        let cost = calculate_cost_for_usage(
+            Some("qwen-plus-thinking"),
+            usage,
+            None,
+            CostMode::Calculate,
+            Some(&pricing),
+        );
+        let expected =
+            (input_tokens as f64 * input_rate + output_tokens as f64 * output_rate) / 1_000_000.0;
+        assert!((cost - expected).abs() < 1e-12, "{case}: {cost}");
+    }
+}

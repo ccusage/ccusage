@@ -216,6 +216,34 @@ pub(super) static FAMILY_PRICE_NEUTRAL_SUFFIX_WORDS: &[(&str, &[&str])] = &[
     ("glm-", &["thinking"]),
     // NOTE(2026-11-20): xAI lists reasoning and non-reasoning ids at identical rates at https://docs.x.ai/developers/pricing. Either id bills at its model's rates.
     ("grok-", &["non-reasoning", "reasoning"]),
+    // NOTE(2026-11-20): Moonshot states that `reasoning_content` counts towards the input/output token quota at https://platform.kimi.ai/docs/guide/use-thinking-models.md and lists one output price per Kimi model at https://platform.kimi.ai/docs/pricing/chat. A thinking id bills at its model's rates.
+    ("kimi-", &["thinking"]),
+    // NOTE(2026-11-20): Mistral defines `reasoning_tokens` as output tokens at https://docs.mistral.ai/studio/agents/reference/turn-records.md, says reasoning only raises output token usage at https://docs.mistral.ai/inference/conversations/reasoning and lists one output price per model at https://docs.mistral.ai/inference/pricing. A thinking id bills at its model's rates.
+    ("mistral-", &["thinking"]),
+    // NOTE(2026-11-20): Alibaba lists these Qwen models under "Non-thinking and thinking modes" with one output price, or with equal non-thinking and thinking output prices, at https://www.alibabacloud.com/help/en/model-studio/model-pricing (qwen3-max at https://web.archive.org/web/20260802131610/https://www.alibabacloud.com/help/en/model-studio/model-pricing). A thinking id bills at its model's rates. qwen-plus, qwen-turbo and the open qwen3-8b/14b/30b-a3b/235b-a22b models charge more for thinking output, so they are absent here.
+    ("qwen4-max", &["thinking"]),
+    ("qwen3.8-max", &["thinking"]),
+    ("qwen3.7-max", &["thinking"]),
+    ("qwen3.6-max", &["thinking"]),
+    ("qwen3-max", &["thinking"]),
+    ("qwen3.7-plus", &["thinking"]),
+    ("qwen3.6-plus", &["thinking"]),
+    ("qwen3.5-plus", &["thinking"]),
+    ("qwen3.8-flash", &["thinking"]),
+    ("qwen3.7-flash", &["thinking"]),
+    ("qwen3.6-flash", &["thinking"]),
+    ("qwen3.5-flash", &["thinking"]),
+    ("qwen-flash", &["thinking"]),
+    ("qwen3-vl-plus", &["thinking"]),
+    ("qwen3-vl-flash", &["thinking"]),
+    ("qwen3.8-27b", &["thinking"]),
+    ("qwen3.6-35b-a3b", &["thinking"]),
+    ("qwen3.6-27b", &["thinking"]),
+    ("qwen3.5-397b-a17b", &["thinking"]),
+    ("qwen3.5-122b-a10b", &["thinking"]),
+    ("qwen3.5-35b-a3b", &["thinking"]),
+    ("qwen3.5-27b", &["thinking"]),
+    ("qwen3-32b", &["thinking"]),
 ];
 
 pub(super) static ALIASES: &[(&str, &str)] = &[

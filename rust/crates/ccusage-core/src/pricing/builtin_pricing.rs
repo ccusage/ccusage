@@ -19,6 +19,22 @@ const fn default_write_rates(
     }
 }
 
+// NOTE(2026-11-20): Alibaba bills a whole qwen-plus request above 256K input tokens at $1.2 input and $12 thinking output per 1M at https://www.alibabacloud.com/help/en/model-studio/model-pricing, with the same 125% cache-write and 20% cache-hit ratios at https://www.alibabacloud.com/help/en/model-studio/context-cache. A qwen-plus thinking request above that bills at the tier rates.
+const QWEN_PLUS_THINKING: Pricing = Pricing {
+    long_context: Some(LongContext {
+        threshold: 256_000,
+        mode: LongContextMode::WholeRequest,
+        rates: LongContextRates {
+            input: Some(1.2e-6),
+            output: Some(12e-6),
+            cache_create: Some(1.5e-6),
+            cache_read: Some(0.24e-6),
+            cache_create_1h: None,
+        },
+    }),
+    ..rates(0.4e-6, 4e-6, 0.5e-6, 0.08e-6)
+};
+
 pub(super) const BUILTIN_PRICING: &[Supplement] = &[
     Supplement {
         provider: "anthropic",
@@ -269,6 +285,81 @@ pub(super) const BUILTIN_PRICING: &[Supplement] = &[
         provider: "zai",
         model: "glm-5.1",
         pricing: rates(1.4e-6, 4.4e-6, 0.0, 0.26e-6),
+        context_limit: None,
+    },
+    // NOTE(2026-11-20): Alibaba lists a separate thinking-mode output price for qwen-plus at https://www.alibabacloud.com/help/en/model-studio/model-pricing ($0.4 input, $1.2 non-thinking and $4 thinking output) and for qwen-turbo ($0.05 / $0.2 / $0.5), qwen3-30b-a3b ($0.2 / $0.8 / $2.4), qwen3-14b ($0.35 / $1.4 / $4.2) and qwen3-8b ($0.18 / $0.7 / $2.1) at https://web.archive.org/web/20260802131610/https://www.alibabacloud.com/help/en/model-studio/model-pricing, all per 1M tokens in the lowest International tier. A thinking id bills at that rate.
+    // NOTE(2026-11-20): Alibaba bills an explicit-cache write at 125% of input and an implicit-cache hit, which every qwen-plus request gets without opting in, at 20% of input at https://www.alibabacloud.com/help/en/model-studio/context-cache. qwen-turbo and the Qwen3 open models are not on that page's supported list, so their cache rates are the default ratios and apply only if a host reports cached tokens.
+    Supplement {
+        provider: "dashscope",
+        model: "qwen-plus-thinking",
+        pricing: QWEN_PLUS_THINKING,
+        context_limit: None,
+    },
+    // NOTE(2026-11-20): Alibaba lists qwen-plus-latest and qwen-plus-2025-12-01 at https://www.alibabacloud.com/help/en/model-studio/model-pricing, and qwen-plus-2025-09-11 and qwen-plus-2025-07-28 at https://web.archive.org/web/20260802131610/https://www.alibabacloud.com/help/en/model-studio/model-pricing, at the same $0.4 / $1.2 / $4 rates and 256K tier as qwen-plus. Both pages list qwen-plus-2025-07-14 and qwen-plus-2025-04-28 at $0.4 / $1.2 / $4 with "No tiered pricing", and qwen-plus-2025-01-25 with no thinking price.
+    Supplement {
+        provider: "dashscope",
+        model: "qwen-plus-latest-thinking",
+        pricing: QWEN_PLUS_THINKING,
+        context_limit: None,
+    },
+    Supplement {
+        provider: "dashscope",
+        model: "qwen-plus-2025-12-01-thinking",
+        pricing: QWEN_PLUS_THINKING,
+        context_limit: None,
+    },
+    Supplement {
+        provider: "dashscope",
+        model: "qwen-plus-2025-09-11-thinking",
+        pricing: QWEN_PLUS_THINKING,
+        context_limit: None,
+    },
+    Supplement {
+        provider: "dashscope",
+        model: "qwen-plus-2025-07-28-thinking",
+        pricing: QWEN_PLUS_THINKING,
+        context_limit: None,
+    },
+    Supplement {
+        provider: "dashscope",
+        model: "qwen-plus-2025-07-14-thinking",
+        pricing: Pricing {
+            long_context: None,
+            ..QWEN_PLUS_THINKING
+        },
+        context_limit: None,
+    },
+    Supplement {
+        provider: "dashscope",
+        model: "qwen-plus-2025-04-28-thinking",
+        pricing: Pricing {
+            long_context: None,
+            ..QWEN_PLUS_THINKING
+        },
+        context_limit: None,
+    },
+    Supplement {
+        provider: "dashscope",
+        model: "qwen-turbo-thinking",
+        pricing: rates(0.05e-6, 0.5e-6, 0.0625e-6, 0.005e-6),
+        context_limit: None,
+    },
+    Supplement {
+        provider: "dashscope",
+        model: "qwen3-30b-a3b-thinking",
+        pricing: rates(0.2e-6, 2.4e-6, 0.25e-6, 0.02e-6),
+        context_limit: None,
+    },
+    Supplement {
+        provider: "dashscope",
+        model: "qwen3-14b-thinking",
+        pricing: rates(0.35e-6, 4.2e-6, 0.4375e-6, 0.035e-6),
+        context_limit: None,
+    },
+    Supplement {
+        provider: "dashscope",
+        model: "qwen3-8b-thinking",
+        pricing: rates(0.18e-6, 2.1e-6, 0.225e-6, 0.018e-6),
         context_limit: None,
     },
 ];
