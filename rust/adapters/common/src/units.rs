@@ -189,8 +189,9 @@ pub fn read_filtered_json<T: DeserializeOwned>(
 
 fn read_document(path: &Path) -> io::Result<(Vec<u8>, FileStamp)> {
     let mut file = File::open(path)?;
-    let opened = FileStamp::of(&file.metadata()?);
-    let mut content = Vec::new();
+    let metadata = file.metadata()?;
+    let opened = FileStamp::of(&metadata);
+    let mut content = Vec::with_capacity(usize::try_from(metadata.len()).unwrap_or(0));
     file.read_to_end(&mut content)?;
     Ok((content, opened))
 }
