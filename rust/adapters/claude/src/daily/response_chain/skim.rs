@@ -220,12 +220,10 @@ impl Skim<'_> {
     fn complete(&self, want: Want) -> bool {
         self.seen_uuid
             && self.seen_parent
+            && self.seen_kind
             && match want {
                 Want::Block => self.seen_message,
-                Want::Link => {
-                    self.seen_message
-                        || (self.seen_kind && self.kind.is_some_and(|kind| kind != b"user"))
-                }
+                Want::Link => self.seen_message || self.kind.is_some_and(|kind| kind != b"user"),
             }
     }
 }

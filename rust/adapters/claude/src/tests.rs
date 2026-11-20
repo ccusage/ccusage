@@ -856,6 +856,15 @@ pub(crate) fn requestless_response_cases() -> Vec<(&'static str, Vec<String>, us
             2,
         ),
         (
+            "reused id after a user prompt whose type follows its message",
+            vec![
+                chained_assistant("a1", None, FIRST_BLOCK, "gateway-7f3a", 100, None),
+                r#"{"parentUuid":"a1","uuid":"u1","message":{"role":"user","content":"next question"},"type":"user","timestamp":"2026-05-22T02:34:40.250Z","sessionId":"session-a"}"#.to_string(),
+                chained_assistant("a2", Some("u1"), LATER_BLOCK, "gateway-7f3a", 100, None),
+            ],
+            2,
+        ),
+        (
             "blocks without transcript links",
             vec![
                 format!(

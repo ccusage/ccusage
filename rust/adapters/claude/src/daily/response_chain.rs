@@ -95,14 +95,15 @@ impl ResponseChains {
         }) else {
             return;
         };
-        let (Some(uuid), Some(parent)) = (parsed.uuid, parsed.parent) else {
+        let (Some(uuid), Some(parent), Some(kind)) = (parsed.uuid, parsed.parent, parsed.kind)
+        else {
             return;
         };
         if parsed.has_usage {
             return;
         }
         let parent = key(parent);
-        let owner = if parsed.kind == Some(b"user") {
+        let owner = if kind == b"user" {
             let Some(answers) = parsed.tool_result_answers() else {
                 return;
             };

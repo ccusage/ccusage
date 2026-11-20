@@ -52,3 +52,12 @@ fn notices_usage_on_a_line_that_may_carry_it() {
 
     assert!(skim(line, Want::Block, |_| true).unwrap().has_usage);
 }
+
+#[test]
+fn reads_the_record_type_that_follows_the_message() {
+    let line = br#"{"parentUuid":"p","uuid":"u","message":{"content":"prompt"},"type":"user"}"#;
+
+    let parsed = skim(line, Want::Link, |_| true).unwrap();
+
+    assert_eq!(parsed.kind, Some(&b"user"[..]));
+}
