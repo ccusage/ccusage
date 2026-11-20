@@ -10,8 +10,8 @@ exit: 0
     "cacheReadTokens": 1310237,
     "inputTokens": 1364590,
     "outputTokens": 60446,
-    "totalCost": 4.397007425000002,
-    "totalTokens": 2756415,
+    "totalCost": 4.396007425000001,
+    "totalTokens": 2756305,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",
@@ -318,7 +318,7 @@ exit: 0
         {
           "cacheCreationTokens": 300,
           "cacheReadTokens": 33435,
-          "cost": 0.102585625,
+          "cost": 0.101985625,
           "inputTokens": 36606,
           "modelName": "gpt-5",
           "outputTokens": 7069
@@ -471,7 +471,7 @@ exit: 0
         {
           "cacheCreationTokens": 60,
           "cacheReadTokens": 6040,
-          "cost": 0.0070550000000000005,
+          "cost": 0.006655,
           "inputTokens": 1300,
           "modelName": "openai/gpt-5",
           "outputTokens": 420
@@ -992,8 +992,8 @@ exit: 0
       ],
       "outputTokens": 58299,
       "period": "2025-12-29",
-      "totalCost": 4.344468675000002,
-      "totalTokens": 2741467
+      "totalCost": 4.343468675000001,
+      "totalTokens": 2741357
     },
     {
       "agent": "all",

@@ -24,7 +24,7 @@ runs:
         cache-scope: ${{ inputs.cache-scope }}
         save: ${{ inputs.save-nix-cache }}
 
-    - name: Build macOS binary
+    - name: Build macOS binary and check its target under the unsafe_code forbid
       id: build
       shell: bash
       env:
@@ -32,7 +32,7 @@ runs:
       run: |
         package="ccusage-release-darwin-$ARCH"
         echo "package=$package" >> "$GITHUB_OUTPUT"
-        nix build ".#$package"
+        nix build ".#$package" ".#$package.passthru.unsafeCodeCheck"
 
     - name: Stage native package
       shell: bash

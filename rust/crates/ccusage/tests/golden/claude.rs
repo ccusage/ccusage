@@ -83,7 +83,7 @@ pub(crate) fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
                 "msg_a4",
                 SONNET,
                 r#""input_tokens":120,"output_tokens":10,"cache_read_input_tokens":2000"#,
-                "",
+                r#","uuid":"a4-text","parentUuid":null"#,
             ),
             entry(
                 "2025-12-31T09:00:02.000Z",
@@ -92,7 +92,7 @@ pub(crate) fn seed(root: &Path) -> Vec<(&'static str, Vec<OsString>)> {
                 "msg_a4",
                 SONNET,
                 r#""input_tokens":120,"output_tokens":340,"cache_read_input_tokens":2000"#,
-                "",
+                r#","uuid":"a4-tool","parentUuid":"a4-text""#,
             ),
             copied_turn(alpha),
             format!(

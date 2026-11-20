@@ -44,9 +44,14 @@ fn fixture_files(root: &Path) -> Vec<PathBuf> {
     let old = root.join("projects/p/old.jsonl");
     let margin = root.join("projects/p/margin.jsonl");
     let fresh = root.join("projects/p/fresh.jsonl");
-    set_modified(&old, instant("2026-09-18T12:00:00Z"));
-    set_modified(&margin, instant("2026-09-19T12:00:00Z"));
-    set_modified(&fresh, instant("2026-09-20T12:00:00Z"));
+    for (file, written) in [
+        (&old, "2026-09-18T12:00:00Z"),
+        (&margin, "2026-09-19T12:00:00Z"),
+        (&fresh, "2026-09-20T12:00:00Z"),
+    ] {
+        std::fs::write(file, record_at(written)).unwrap();
+        set_modified(file, instant(written));
+    }
     vec![fresh, margin, old]
 }
 
@@ -198,10 +203,10 @@ fn keeps_files_whose_metadata_cannot_be_read() {
 #[test]
 fn keeps_or_prunes_a_session_together_with_its_subagents() {
     let fixture = fs_fixture!({
-        "projects/p/live.jsonl": "{}",
+        "projects/p/live.jsonl": record_at("2026-09-01T12:00:00Z"),
         "projects/p/live/subagents/agent-a.jsonl": "{}",
-        "projects/p/stale.jsonl": "{}",
-        "projects/p/stale/subagents/agent-b.jsonl": "{}",
+        "projects/p/stale.jsonl": record_at("2026-09-01T12:00:00Z"),
+        "projects/p/stale/subagents/agent-b.jsonl": record_at("2026-09-02T12:00:00Z"),
     });
     let root = fixture.root();
     let live_parent = root.join("projects/p/live.jsonl");
@@ -234,7 +239,7 @@ fn keeps_legacy_flat_agent_transcripts_and_config_root_copies_with_their_session
         "a/projects/p/live.jsonl": "{}",
         "a/projects/p/agent-1234.jsonl": r#"{"sessionId":"live","timestamp":"2026-09-01T12:00:00Z"}"#,
         "a/projects/p/agent-5678.jsonl": r#"{"sessionId":"stale","timestamp":"2026-09-01T12:00:00Z"}"#,
-        "b/projects/p/live.jsonl": "{}",
+        "b/projects/p/live.jsonl": record_at("2026-09-01T12:00:00Z"),
     });
     let root = fixture.root();
     let live = root.join("a/projects/p/live.jsonl");
@@ -264,7 +269,7 @@ fn keeps_legacy_flat_agent_transcripts_and_config_root_copies_with_their_session
 #[test]
 fn keeps_sessions_linked_by_a_recorded_session_id_in_another_directory() {
     let fixture = fs_fixture!({
-        "projects/p/session-y.jsonl": r#"{"sessionId":"session-y"}"#,
+        "projects/p/session-y.jsonl": r#"{"sessionId":"session-y","timestamp":"2026-09-01T12:00:00Z"}"#,
         "projects/p/session-x/subagents/workflows/wf_1/agent-a.jsonl": "{\"type\":\"summary\"}\n{\"sessionId\" : \"session-y\"}",
     });
     let root = fixture.root();
@@ -317,8 +322,8 @@ fn reads_the_recorded_session_id_past_long_leading_lines() {
 fn keeps_a_stale_transcript_whose_recorded_session_links_it_after_its_live_sibling() {
     let fixture = fs_fixture!({
         "a/projects/p/live.jsonl": "{}",
-        "b/projects/p/live.jsonl": r#"{"sessionId":"resumed"}"#,
-        "b/projects/p/resumed.jsonl": "{}",
+        "b/projects/p/live.jsonl": r#"{"sessionId":"resumed","timestamp":"2026-09-01T12:00:00Z"}"#,
+        "b/projects/p/resumed.jsonl": record_at("2026-09-01T12:00:00Z"),
     });
     let root = fixture.root();
     let live = root.join("a/projects/p/live.jsonl");
@@ -355,4 +360,154 @@ fn splits_a_window_that_keeps_or_prunes_every_file() {
     assert!(keep_all.pruned.is_empty());
     assert!(prune_all.kept.is_empty());
     assert_eq!(prune_all.pruned, files);
+}
+
+fn stale_since_split(files: Vec<PathBuf>) -> Split {
+    for file in &files {
+        set_modified(file, instant("2026-09-01T12:00:00Z"));
+    }
+    split_files_before_since(
+        files,
+        &shared_since(Some("20260920")),
+        TimestampMs::from_millis(instant("2026-09-24T00:00:00Z").millis()),
+    )
+}
+
+fn record_at(timestamp: &str) -> String {
+    format!(r#"{{"timestamp":"{timestamp}","message":{{"id":"m","usage":{{"input_tokens":1}}}}}}"#)
+}
+
+#[test]
+fn keeps_a_stale_transcript_whose_tail_records_fall_inside_the_window() {
+    let fixture = fs_fixture!({
+        "projects/p/restored.jsonl": format!(
+            "{}\n{}\n",
+            record_at("2026-09-01T12:00:00Z"),
+            record_at("2026-09-21T12:00:00Z")
+        ),
+    });
+    let restored = fixture.path("projects/p/restored.jsonl");
+
+    let split = stale_since_split(vec![restored.clone()]);
+
+    assert_eq!(split.kept, [restored]);
+    assert!(split.pruned.is_empty());
+}
+
+#[test]
+fn keeps_stale_transcripts_with_in_window_tails_beside_live_and_pruned_ones() {
+    let fixture = fs_fixture!({
+        "projects/p/fresh.jsonl": record_at("2026-09-21T12:00:00Z"),
+        "projects/p/restored.jsonl": record_at("2026-09-21T12:00:00Z"),
+        "projects/p/old.jsonl": record_at("2026-09-01T12:00:00Z"),
+    });
+    let fresh = fixture.path("projects/p/fresh.jsonl");
+    let restored = fixture.path("projects/p/restored.jsonl");
+    let old = fixture.path("projects/p/old.jsonl");
+
+    set_modified(&fresh, instant("2026-09-21T12:00:00Z"));
+    set_modified(&restored, instant("2026-09-01T12:00:00Z"));
+    set_modified(&old, instant("2026-09-01T12:00:00Z"));
+
+    let split = split_files_before_since(
+        vec![fresh.clone(), restored.clone(), old.clone()],
+        &shared_since(Some("20260920")),
+        TimestampMs::from_millis(instant("2026-09-24T00:00:00Z").millis()),
+    );
+
+    assert_eq!(split.kept, [fresh, restored]);
+    assert_eq!(split.pruned, [old]);
+}
+
+#[test]
+fn judges_a_stale_transcript_by_the_records_in_its_last_16_kib_only() {
+    let padding = record_at("2026-09-01T12:00:00Z");
+    let lines = std::iter::once(record_at("2026-09-21T12:00:00Z"))
+        .chain(std::iter::repeat_n(padding, 32 * 1024 / 60))
+        .collect::<Vec<_>>();
+    let fixture = fs_fixture!({
+        "projects/p/old.jsonl": lines.join("\n"),
+    });
+    let old = fixture.path("projects/p/old.jsonl");
+
+    let split = stale_since_split(vec![old.clone()]);
+
+    assert!(split.kept.is_empty());
+    assert_eq!(split.pruned, [old]);
+}
+
+#[test]
+fn reads_the_latest_record_after_a_tail_that_starts_mid_line() {
+    let fixture = fs_fixture!({
+        "projects/p/restored.jsonl": format!(
+            r#"{{"timestamp":"2026-09-01T12:00:00Z","text":"{}"}}{}{}"#,
+            "x".repeat(32 * 1024),
+            "\n",
+            record_at("2026-09-21T12:00:00Z")
+        ),
+    });
+    let restored = fixture.path("projects/p/restored.jsonl");
+
+    let split = stale_since_split(vec![restored.clone()]);
+
+    assert_eq!(split.kept, [restored]);
+}
+
+#[test]
+fn keeps_a_stale_transcript_whose_tail_holds_no_whole_record() {
+    let fixture = fs_fixture!({
+        "projects/p/long.jsonl": format!(
+            r#"{{"timestamp":"2026-09-01T12:00:00Z","text":"{}"}}"#,
+            "x".repeat(32 * 1024)
+        ),
+        "projects/p/summary.jsonl": r#"{"type":"summary"}"#,
+    });
+    let long = fixture.path("projects/p/long.jsonl");
+    let summary = fixture.path("projects/p/summary.jsonl");
+
+    let split = stale_since_split(vec![long.clone(), summary.clone()]);
+
+    assert_eq!(split.kept, [long, summary]);
+    assert!(split.pruned.is_empty());
+}
+
+#[test]
+fn keeps_the_record_a_tail_starts_on_exactly() {
+    let in_window = format!("{}\n", record_at("2026-09-21T12:00:00Z"));
+    let old_line =
+        |text: &str| format!(r#"{{"timestamp":"2026-09-01T12:00:00Z","text":"{text}"}}"#) + "\n";
+    let padding = 16 * 1024 - in_window.len() - old_line("").len();
+    let tail = in_window + &old_line(&"x".repeat(padding));
+    assert_eq!(tail.len(), 16 * 1024);
+    let fixture = fs_fixture!({
+        "projects/p/restored.jsonl": old_line("") + &tail,
+    });
+    let restored = fixture.path("projects/p/restored.jsonl");
+
+    let split = stale_since_split(vec![restored.clone()]);
+
+    assert_eq!(split.kept, [restored]);
+}
+
+#[test]
+fn reads_a_file_from_its_first_byte_as_whole_lines() {
+    let fixture = fs_fixture!({ "projects/p/.keep": "" });
+    let in_window = format!("{}\n", record_at("2026-09-21T12:00:00Z"));
+    let old_line =
+        |text: &str| format!(r#"{{"timestamp":"2026-09-01T12:00:00Z","text":"{text}"}}"#) + "\n";
+    for (len, kept) in [
+        (16 * 1024, true),
+        (16 * 1024 + 1, true),
+        (16 * 1024 + 2, false),
+    ] {
+        let padding = len - in_window.len() - old_line("").len();
+        let content = in_window.clone() + &old_line(&"x".repeat(padding));
+        assert_eq!(content.len(), len);
+        let file = fixture.path(format!("projects/p/{len}.jsonl"));
+        std::fs::write(&file, content).unwrap();
+
+        let split = stale_since_split(vec![file.clone()]);
+
+        assert_eq!(split.kept.is_empty(), !kept, "{len} bytes");
+    }
 }

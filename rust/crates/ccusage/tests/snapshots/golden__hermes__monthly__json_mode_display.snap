@@ -45,7 +45,7 @@ exit: 0
       "month": "2025-12",
       "outputTokens": 1120,
       "totalCost": 1.25,
-      "totalTokens": 24350
+      "totalTokens": 24290
     },
     {
       "cacheCreationTokens": 50,
@@ -104,7 +104,7 @@ exit: 0
       "month": "2026-01",
       "outputTokens": 600,
       "totalCost": 0.3,
-      "totalTokens": 13065
+      "totalTokens": 13015
     }
   ],
   "totals": {
@@ -113,7 +113,7 @@ exit: 0
     "inputTokens": 6670,
     "outputTokens": 1720,
     "totalCost": 1.55,
-    "totalTokens": 37415
+    "totalTokens": 37305
   }
 }
 

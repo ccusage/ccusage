@@ -144,7 +144,7 @@ exit: 0
       "outputTokens": 150,
       "sessionId": "p-gpt5-estimated",
       "totalCost": 0.25,
-      "totalTokens": 3410
+      "totalTokens": 3350
     },
     {
       "cacheCreationTokens": 200,
@@ -191,7 +191,7 @@ exit: 0
       "outputTokens": 70,
       "sessionId": "p-mystery",
       "totalCost": 0.0,
-      "totalTokens": 380
+      "totalTokens": 370
     },
     {
       "cacheCreationTokens": 0,
@@ -202,7 +202,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 6000,
-          "cost": 0.00515,
+          "cost": 0.00475,
           "inputTokens": 800,
           "modelName": "openai/gpt-5",
           "outputTokens": 300
@@ -213,8 +213,8 @@ exit: 0
       ],
       "outputTokens": 300,
       "sessionId": "p-openrouter",
-      "totalCost": 0.00515,
-      "totalTokens": 7140
+      "totalCost": 0.00475,
+      "totalTokens": 7100
     },
     {
       "cacheCreationTokens": 50,
@@ -316,8 +316,8 @@ exit: 0
     "cacheReadTokens": 28045,
     "inputTokens": 6670,
     "outputTokens": 1720,
-    "totalCost": 1.585468925,
-    "totalTokens": 37415,
+    "totalCost": 1.585068925,
+    "totalTokens": 37305,
     "unpricedModels": [
       "hermes-mystery-1"
     ]

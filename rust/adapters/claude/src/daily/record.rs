@@ -6,9 +6,13 @@ use crate::{
     GuardedUsage, IteratedTokenUsage, Nullable, Rejection, TimestampMs, TokenUsageRaw,
     advisor::AdvisorLookup,
     cli::IsoDate,
-    dedupe::{DedupEntry, DedupKey},
+    dedupe::{DedupEntry, DedupKey, Request},
     deserialize_usage_line, non_null,
 };
+
+mod links;
+
+pub(super) use links::{parse_block_links, parse_line_links};
 
 #[derive(Debug)]
 pub(super) struct ClaudeEntry {
@@ -63,8 +67,8 @@ impl DedupEntry for ClaudeEntry {
         self.key.message_id.as_deref()
     }
 
-    fn request_id(&self) -> Option<&str> {
-        self.key.request_id.as_deref()
+    fn request(&self) -> &Request {
+        &self.key.request
     }
 
     fn is_sidechain(&self) -> bool {

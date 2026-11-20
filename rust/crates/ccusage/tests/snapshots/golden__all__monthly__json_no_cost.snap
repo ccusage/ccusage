@@ -465,7 +465,7 @@ exit: 0
       ],
       "outputTokens": 31767,
       "period": "2025-12",
-      "totalTokens": 474257
+      "totalTokens": 474197
     },
     {
       "agent": "all",
@@ -628,18 +628,18 @@ exit: 0
           "outputTokens": 1050
         },
         {
-          "cacheCreationTokens": 60,
-          "cacheReadTokens": 6040,
-          "inputTokens": 1300,
-          "modelName": "openai/gpt-5",
-          "outputTokens": 420
-        },
-        {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 1000,
           "inputTokens": 2100,
           "modelName": "[pi] claude-opus-4-20250514",
           "outputTokens": 550
+        },
+        {
+          "cacheCreationTokens": 60,
+          "cacheReadTokens": 6040,
+          "inputTokens": 1300,
+          "modelName": "openai/gpt-5",
+          "outputTokens": 420
         },
         {
           "cacheCreationTokens": 0,
@@ -1045,7 +1045,7 @@ exit: 0
       ],
       "outputTokens": 28292,
       "period": "2026-01",
-      "totalTokens": 2279840
+      "totalTokens": 2279790
     },
     {
       "agent": "all",
@@ -1079,7 +1079,7 @@ exit: 0
     "cacheReadTokens": 1310267,
     "inputTokens": 1365600,
     "outputTokens": 60566,
-    "totalTokens": 2757615,
+    "totalTokens": 2757505,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",

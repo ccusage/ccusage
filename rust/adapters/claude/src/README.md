@@ -33,10 +33,13 @@ Sidechain entries:
   [#913](https://github.com/ccusage/ccusage/issues/913).
 - When `requestId` is missing, all reports deduplicate by message ID, effective
   session ID, and timestamp. Repeated writes at the same timestamp still
-  collapse; distinct timestamps stay separate, except that real Anthropic
-  message IDs (`msg_` prefix) and OpenAI `resp_` IDs collapse across timestamps because Claude Code
-  writes one line per content block for a single response. All reports keep gateway
-  responses that reuse a message ID in different sessions separate.
+  collapse; distinct timestamps stay separate, except that content blocks of one
+  response collapse across timestamps because Claude Code writes one line per
+  content block. A later block belongs to an earlier one when its `parentUuid`
+  chain reaches it through non-usage lines and tool results for that response's
+  own `tool_use` blocks, and both report the same input and cache tokens. The
+  message ID's spelling plays no part. All reports keep gateway responses that
+  reuse a message ID in different sessions separate.
 - When `requestId` is present, all reports deduplicate matching message and
   request IDs across sessions because Claude Code can copy one response into
   multiple session transcripts.
