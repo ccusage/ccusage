@@ -339,6 +339,7 @@ dependencies = [
  "ccusage-core",
  "ccusage-test-support",
  "jiff",
+ "percent-encoding",
  "serde",
  "serde_json",
 ]

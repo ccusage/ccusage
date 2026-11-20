@@ -380,7 +380,7 @@ fn load_session_meta(updates: &Path, diagnostics: &Diagnostics) -> SessionMeta {
         .and_then(|session| session.parent())
         .and_then(|project| project.file_name())
         .and_then(|name| name.to_str())
-        .map(url_decode_lightweight)
+        .map(decode_project_path_segment)
         .unwrap_or_else(|| "unknown".to_string());
 
     let mut session_id = session_dir_name;
@@ -530,31 +530,11 @@ fn price_grok_usage(
 }
 
 // NOTE(2026-08-10, Grok CLI 1.0.0, #1593): Grok uses URL-encoded working directories as session parent names. Decode the name to recover the original project path.
-fn url_decode_lightweight(value: &str) -> String {
-    let bytes = value.as_bytes();
-    let mut out = Vec::with_capacity(value.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'%'
-            && i + 2 < bytes.len()
-            && let (Some(hi), Some(lo)) = (from_hex(bytes[i + 1]), from_hex(bytes[i + 2]))
-        {
-            out.push(hi * 16 + lo);
-            i += 3;
-            continue;
-        }
-        out.push(bytes[i]);
-        i += 1;
-    }
-    String::from_utf8_lossy_owned(out)
-}
-
-fn from_hex(byte: u8) -> Option<u8> {
-    match byte {
-        b'0'..=b'9' => Some(byte - b'0'),
-        b'a'..=b'f' => Some(byte - b'a' + 10),
-        b'A'..=b'F' => Some(byte - b'A' + 10),
-        _ => None,
+// NOTE(2026-11-19, Grok CLI 1.0.0, #2250): Names that do not decode to UTF-8 keep their encoded form. Two invalid byte paths would otherwise collapse into one project label.
+fn decode_project_path_segment(value: &str) -> String {
+    match percent_encoding::percent_decode_str(value).decode_utf8() {
+        Ok(decoded) => decoded.into_owned(),
+        Err(_) => value.to_owned(),
     }
 }
 
@@ -1180,16 +1160,25 @@ mod tests {
     }
 
     #[test]
-    fn url_decode_recombines_wide_scalars_and_tolerates_invalid_bytes() {
+    fn project_path_segment_keeps_distinct_names_for_invalid_utf8() {
         assert_eq!(
-            url_decode_lightweight("%2Ftmp%2F%E6%97%A5%E6%9C%AC"),
+            decode_project_path_segment("%2Ftmp%2F%E6%97%A5%E6%9C%AC"),
             "/tmp/日本"
         );
         assert_eq!(
-            url_decode_lightweight("D%3A%5Cwork%5Cproj"),
+            decode_project_path_segment("D%3A%5Cwork%5Cproj"),
             "D:\\work\\proj"
         );
-        assert_eq!(url_decode_lightweight("%2Ftmp%2F%FFx"), "/tmp/\u{fffd}x");
+        assert_eq!(decode_project_path_segment("%2Ftmp%2Fa+b"), "/tmp/a+b");
+        assert_eq!(decode_project_path_segment("%2Ftmp%2F%zz"), "/tmp/%zz");
+        assert_eq!(
+            decode_project_path_segment("%2Ftmp%2F%FFx"),
+            "%2Ftmp%2F%FFx"
+        );
+        assert_ne!(
+            decode_project_path_segment("%2Ftmp%2F%FFx"),
+            decode_project_path_segment("%2Ftmp%2F%FEx")
+        );
     }
 
     #[test]
