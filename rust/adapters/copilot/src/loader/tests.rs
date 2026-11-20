@@ -2326,6 +2326,61 @@ fn counts_an_otel_call_copied_to_another_line_of_another_file_once() {
     );
 }
 
+fn joined_and_split_otel_rows(lines: &[String]) -> [Vec<(String, u64)>; 2] {
+    let joined = fs_fixture!({ "home/.copilot/otel/a.jsonl": lines.join("\n") });
+    let split = fs_fixture!({});
+    for (index, line) in lines.iter().enumerate() {
+        split.write_file(format!("home/.copilot/otel/{index}.jsonl"), line);
+    }
+    [joined, split].map(|fixture| usage_rows(&load_copilot_home(&fixture, &utc_args())))
+}
+
+#[test]
+fn counts_an_exact_otel_span_identity_once_in_one_file_or_several() {
+    let span = otel_call("span-1", "2026-01-02T09:00:00.000Z");
+
+    let [joined, split] = joined_and_split_otel_rows(&[span.clone(), span]);
+
+    let once = [("2026-01-02T09:00:00.000Z".to_string(), 1)];
+    assert_eq!(joined, once);
+    assert_eq!(split, once);
+}
+
+#[test]
+fn counts_a_re_exported_chat_span_once_in_one_file_or_several() {
+    let response = ("gen_ai.response.id", "response-1");
+    let lines = [
+        otel_call_with("span-1", "2026-01-02T09:00:00.000Z", response),
+        otel_call_with("span-2", "2026-01-02T09:05:00.000Z", response),
+    ];
+
+    let [joined, split] = joined_and_split_otel_rows(&lines);
+
+    let earliest = [("2026-01-02T09:00:00.000Z".to_string(), 1)];
+    assert_eq!(joined, earliest);
+    assert_eq!(split, earliest);
+}
+
+#[test]
+fn keeps_distinct_calls_of_one_response_id_in_one_file_or_several() {
+    let call = |span_id: &str, input_tokens: u64| {
+        let mut span: serde_json::Value =
+            serde_json::from_str(&otel_call(span_id, "2026-01-02T09:00:00.000Z")).unwrap();
+        span["attributes"]["gen_ai.response.id"] = json!("turn-response");
+        span["attributes"]["gen_ai.usage.input_tokens"] = json!(input_tokens);
+        span.to_string()
+    };
+
+    let [joined, split] = joined_and_split_otel_rows(&[call("span-1", 1), call("span-2", 2)]);
+
+    let both = [
+        ("2026-01-02T09:00:00.000Z".to_string(), 1),
+        ("2026-01-02T09:00:00.000Z".to_string(), 2),
+    ];
+    assert_eq!(joined, both);
+    assert_eq!(split, both);
+}
+
 #[test]
 fn keeps_otel_calls_without_trace_and_span_ids_from_every_file() {
     let call = |input_tokens: u64| {

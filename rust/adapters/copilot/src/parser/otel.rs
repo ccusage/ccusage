@@ -60,7 +60,8 @@ struct TraceContext {
     session_id_priority: u8,
 }
 
-struct CopilotUsageCandidate {
+#[derive(Debug)]
+pub(crate) struct CopilotUsageCandidate {
     source: CopilotUsageSource,
     trace_id: Option<String>,
     response_id: Option<String>,
@@ -79,10 +80,10 @@ struct CopilotUsageCandidate {
     call_key: Option<CallKey>,
 }
 
-pub(crate) fn parse_otel_file(
+pub(crate) fn read_otel_calls(
     path: &Path,
     diagnostics: &Diagnostics,
-) -> Result<Vec<CopilotUsageEntry>, UnitError> {
+) -> Result<Vec<CopilotUsageCandidate>, UnitError> {
     let prefilter = LinePrefilter::all(&[br#""attributes""#]);
     let mut numbers = Vec::new();
     let mut records = Vec::new();
@@ -97,16 +98,28 @@ pub(crate) fn parse_otel_file(
         },
     )?;
     let trace_contexts = collect_trace_contexts(&records);
-    let candidates = records
+    Ok(records
         .iter()
         .enumerate()
         .zip(numbers)
         .filter_map(|((index, record), number)| {
             to_candidate(record, index, &trace_contexts, path, number, diagnostics)
         })
+        .collect())
+}
+
+pub(crate) fn reconcile_otel_calls(calls: Vec<CopilotUsageCandidate>) -> Vec<CopilotUsageEntry> {
+    let mut seen = HashSet::new();
+    let candidates = calls
+        .into_iter()
+        .filter(|call| {
+            call.call_key
+                .as_ref()
+                .is_none_or(|key| seen.insert(key.clone()))
+        })
         .collect::<Vec<_>>();
     let sets = CandidateSets::new(&candidates);
-    Ok(candidates
+    candidates
         .into_iter()
         .enumerate()
         .filter(|(index, candidate)| should_emit_candidate(*index, candidate, &sets))
@@ -124,13 +137,20 @@ pub(crate) fn parse_otel_file(
             request_count: 1,
             nano_aiu: None,
             dedup_key: candidate.dedup_key,
-            call_key: candidate.call_key,
             call_ids: CallIds {
                 response_id: candidate.response_id,
                 service_request_id: candidate.service_request_id,
             },
         })
-        .collect())
+        .collect()
+}
+
+#[cfg(test)]
+pub(crate) fn parse_otel_file(
+    path: &Path,
+    diagnostics: &Diagnostics,
+) -> Result<Vec<CopilotUsageEntry>, UnitError> {
+    read_otel_calls(path, diagnostics).map(reconcile_otel_calls)
 }
 
 const INPUT_TOKENS_ATTRIBUTE: &str = "gen_ai.usage.input_tokens";
