@@ -1,0 +1,295 @@
+use super::{MatchKind, Pricing, PricingMap, embedded_models_dev_pricing};
+
+#[test]
+fn long_context_view_names_the_existing_source_billing_modes() {
+    crate::test_support::install_pricing_snapshots();
+    let mut pricing = PricingMap::default();
+    pricing.load_json(
+        r#"{
+            "marginal": {"input_cost_per_token": 1, "output_cost_per_token": 2,
+                "input_cost_per_token_above_200k_tokens": 3},
+            "flat": {"input_cost_per_token": 1, "output_cost_per_token": 2}
+        }"#,
+    );
+    let marginal = pricing.find("marginal").unwrap().long_context.unwrap();
+    assert_eq!(marginal.mode, super::super::LongContextMode::Marginal);
+    assert_eq!(marginal.threshold, 200_000);
+    assert_eq!(marginal.rates.input, Some(3.0));
+    assert!(pricing.find("flat").unwrap().long_context.is_none());
+
+    pricing.load_models_dev_json_for_tests(
+        r#"{
+            "whole": {"cost": {"input": 1, "output": 2, "tiers": [{
+                "input": 3, "tier": {"type": "context", "size": 272000}
+            }]}}
+        }"#,
+    );
+    let whole = pricing.find("whole").unwrap().long_context.unwrap();
+    assert_eq!(whole.mode, super::super::LongContextMode::WholeRequest);
+    assert_eq!(whole.threshold, 272_000);
+    assert_eq!(whole.rates.input, Some(3e-6));
+}
+
+#[test]
+fn embedded_pricing_fills_gpt_long_context_tier_rates() {
+    crate::test_support::install_pricing_snapshots();
+    let pricing = PricingMap::load_embedded();
+
+    let gpt_55 = pricing.find("gpt-5.5").unwrap();
+    assert_eq!(
+        gpt_55.long_context.and_then(|context| context.rates.input),
+        Some(10e-6)
+    );
+    assert_eq!(
+        gpt_55.long_context.and_then(|context| context.rates.output),
+        Some(45e-6)
+    );
+    assert_eq!(
+        gpt_55
+            .long_context
+            .and_then(|context| context.rates.cache_read),
+        Some(1e-6)
+    );
+    assert_eq!(
+        gpt_55.long_context.map(|context| context.threshold),
+        Some(272_000)
+    );
+
+    let gpt_54 = pricing.find("gpt-5.4").unwrap();
+    assert_eq!(
+        gpt_54.long_context.and_then(|context| context.rates.input),
+        Some(5e-6)
+    );
+    assert_eq!(
+        gpt_54.long_context.and_then(|context| context.rates.output),
+        Some(22.5e-6)
+    );
+    assert_eq!(
+        gpt_54.long_context.map(|context| context.threshold),
+        Some(272_000)
+    );
+
+    let mini = pricing.find("gpt-5.4-mini").unwrap();
+    assert_eq!(
+        mini.long_context.and_then(|context| context.rates.input),
+        None
+    );
+    assert_eq!(mini.long_context.map(|context| context.threshold), None);
+}
+
+#[test]
+fn long_context_overlay_survives_litellm_refresh_and_defers_to_upstream() {
+    crate::test_support::install_pricing_snapshots();
+    let mut pricing = PricingMap::load_embedded();
+    pricing.load_json(
+        r#"{
+                "gpt-5.5": {
+                    "input_cost_per_token": 0.000006,
+                    "output_cost_per_token": 0.000031
+                },
+                "gpt-5.5-2026-04-23": {
+                    "input_cost_per_token": 0.000006,
+                    "output_cost_per_token": 0.000031
+                }
+            }"#,
+    );
+    pricing.fill_long_context_rates_from_models_dev(embedded_models_dev_pricing());
+
+    let gpt_55 = pricing.find("gpt-5.5").unwrap();
+    assert_eq!(gpt_55.input, 6e-6);
+    assert_eq!(
+        gpt_55.long_context.and_then(|context| context.rates.input),
+        Some(10e-6)
+    );
+    assert_eq!(
+        gpt_55.long_context.map(|context| context.threshold),
+        Some(272_000)
+    );
+    let dated = pricing
+        .resolve_at(None, &[("gpt-5.5-2026-04-23", MatchKind::Exact)], None)
+        .map(|(_, rates)| rates)
+        .unwrap();
+    assert_eq!(
+        dated.long_context.and_then(|context| context.rates.input),
+        Some(10e-6)
+    );
+
+    pricing.load_json(
+        r#"{
+                "gpt-5.5": {
+                    "input_cost_per_token": 0.000006,
+                    "output_cost_per_token": 0.000031,
+                    "input_cost_per_token_above_200k_tokens": 0.000012
+                }
+            }"#,
+    );
+    pricing.fill_long_context_rates_from_models_dev(embedded_models_dev_pricing());
+
+    let gpt_55 = pricing.find("gpt-5.5").unwrap();
+    assert_eq!(
+        gpt_55.long_context.and_then(|context| context.rates.input),
+        Some(12e-6)
+    );
+    assert_eq!(
+        gpt_55.long_context.unwrap().mode,
+        super::super::LongContextMode::Marginal
+    );
+    assert_eq!(gpt_55.long_context.unwrap().threshold, 200_000);
+}
+
+#[test]
+fn embedded_models_dev_carries_grok_long_context_tiers() {
+    crate::test_support::install_pricing_snapshots();
+    let pricing = PricingMap::load_embedded();
+
+    for model in ["grok-4.5", "grok-4.6"] {
+        let entry = pricing.find(model).unwrap();
+        assert!((entry.input * 1e6 - 2.0).abs() < 1e-9, "{model} base input");
+        assert!(
+            (entry
+                .long_context
+                .and_then(|context| context.rates.input)
+                .unwrap()
+                * 1e6
+                - 4.0)
+                .abs()
+                < 1e-9,
+            "{model} long-context input"
+        );
+        assert!(
+            (entry
+                .long_context
+                .and_then(|context| context.rates.output)
+                .unwrap()
+                * 1e6
+                - 12.0)
+                .abs()
+                < 1e-9,
+            "{model} long-context output"
+        );
+        assert_eq!(
+            entry.long_context.map(|context| context.threshold),
+            Some(200_000),
+            "{model}"
+        );
+    }
+    assert_eq!(
+        PricingMap::load_embedded()
+            .find("grok-4.5")
+            .unwrap()
+            .long_context_split_threshold(),
+        200_000
+    );
+}
+
+#[test]
+fn long_context_split_threshold_is_per_model() {
+    crate::test_support::install_pricing_snapshots();
+    assert_eq!(
+        PricingMap::load_embedded()
+            .find("gpt-5.6-sol")
+            .unwrap()
+            .long_context_split_threshold(),
+        272_000
+    );
+    assert_eq!(
+        PricingMap::load_embedded()
+            .find("gpt-5.5")
+            .unwrap()
+            .long_context_split_threshold(),
+        272_000
+    );
+    assert_eq!(
+        PricingMap::load_embedded()
+            .find("gpt-5.5-pro")
+            .unwrap()
+            .long_context_split_threshold(),
+        272_000
+    );
+    assert_eq!(
+        PricingMap::load_embedded()
+            .find("gpt-5.5-2026-04-23")
+            .unwrap()
+            .long_context_split_threshold(),
+        272_000
+    );
+    assert_eq!(
+        PricingMap::load_embedded()
+            .find("gpt-5")
+            .unwrap()
+            .long_context_split_threshold(),
+        200_000
+    );
+    assert_eq!(
+        PricingMap::load_embedded()
+            .find("gpt-5.4-mini")
+            .unwrap()
+            .long_context_split_threshold(),
+        200_000
+    );
+}
+
+#[test]
+fn split_threshold_comes_from_the_resolved_pricing_entry() {
+    crate::test_support::install_pricing_snapshots();
+    let _aliases = crate::model_aliases::set_model_aliases_for_tests([(
+        "private-boundary",
+        "custom-boundary",
+    )]);
+    let mut map = PricingMap::default();
+    map.insert_test_pricing(
+        "custom-boundary".into(),
+        Pricing {
+            input: 1e-6,
+            output: 2e-6,
+            long_context: Some(super::super::LongContext {
+                threshold: 123_456,
+                mode: super::super::LongContextMode::WholeRequest,
+                rates: crate::pricing::LongContextRates::default(),
+            }),
+            ..Pricing::empty()
+        },
+    );
+    assert_eq!(
+        map.find("private-boundary")
+            .unwrap()
+            .long_context_split_threshold(),
+        123_456
+    );
+    assert_eq!(
+        map.find("custom-boundary-high")
+            .unwrap()
+            .long_context_split_threshold(),
+        123_456
+    );
+    let embedded = PricingMap::load_embedded();
+    assert_eq!(
+        embedded
+            .find("gpt-5-4")
+            .unwrap()
+            .long_context_split_threshold(),
+        272_000
+    );
+    assert_eq!(Pricing::empty().long_context_split_threshold(), 200_000);
+}
+
+#[test]
+fn recorded_threshold_migration_groups_use_the_resolved_model_boundary() {
+    crate::test_support::install_pricing_snapshots();
+    let pricing = PricingMap::load_embedded();
+    for (model, expected) in [
+        ("GLM-5-1", 32_000),
+        ("anthropic-claude-5-5-haiku", 100_000),
+        ("spacexai/grok-4-5", 200_001),
+        ("qwen-3-6-plus-high", 256_000),
+        ("alibaba/qwen3-5-plus", 256_001),
+        ("aihubmix/gpt-5-4-high", 272_000),
+        ("minimax-m-3-0-high", 512_000),
+    ] {
+        assert_eq!(
+            pricing.find(model).unwrap().long_context_split_threshold(),
+            expected,
+            "{model}"
+        );
+    }
+}
