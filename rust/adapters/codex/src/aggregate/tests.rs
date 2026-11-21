@@ -62,7 +62,7 @@ fn prices_the_configured_alias_target_when_both_models_have_rates() {
         crate::report::calculate_group_cost(
             group,
             Some(&pricing),
-            CodexSpeedPolicy::Auto(CodexServiceTier::Standard)
+            CodexSpeedPolicy::Auto(CodexServiceTier::Standard.into())
         ),
         400.0,
     );
@@ -114,7 +114,7 @@ fn applies_a_chained_alias_once_like_every_other_adapter() {
         crate::report::calculate_group_cost(
             group,
             Some(&pricing),
-            CodexSpeedPolicy::Auto(CodexServiceTier::Standard)
+            CodexSpeedPolicy::Auto(CodexServiceTier::Standard.into())
         ),
         200.0,
     );
@@ -165,7 +165,7 @@ fn does_not_price_an_unpriced_alias_target_through_its_own_alias() {
         crate::report::calculate_group_cost(
             group,
             Some(&pricing),
-            CodexSpeedPolicy::Auto(CodexServiceTier::Standard)
+            CodexSpeedPolicy::Auto(CodexServiceTier::Standard.into())
         ),
         100.0,
     );
@@ -211,7 +211,7 @@ fn groups_under_the_alias_target_whose_fuzzy_row_priced_the_usage() {
         crate::report::calculate_group_cost(
             group,
             Some(&pricing),
-            CodexSpeedPolicy::Auto(CodexServiceTier::Standard)
+            CodexSpeedPolicy::Auto(CodexServiceTier::Standard.into())
         ),
         700.0,
     );
@@ -263,7 +263,7 @@ fn bills_a_fuzzy_priced_alias_target_once_even_when_it_has_its_own_alias() {
         crate::report::calculate_group_cost(
             group,
             Some(&pricing),
-            CodexSpeedPolicy::Auto(CodexServiceTier::Standard)
+            CodexSpeedPolicy::Auto(CodexServiceTier::Standard.into())
         ),
         200.0,
     );
@@ -319,7 +319,7 @@ fn keeps_differently_priced_requests_in_separate_groups() {
             crate::report::calculate_group_cost(
                 group,
                 Some(&pricing),
-                CodexSpeedPolicy::Auto(CodexServiceTier::Standard)
+                CodexSpeedPolicy::Auto(CodexServiceTier::Standard.into())
             ),
             700.0,
             "{order:?}"
@@ -918,7 +918,7 @@ fn dedupes_copied_token_usage_across_session_files() {
             costs.push(crate::calculate_group_cost(
                 group,
                 Some(&pricing),
-                CodexSpeedPolicy::Auto(CodexServiceTier::Standard),
+                CodexSpeedPolicy::Auto(CodexServiceTier::Standard.into()),
             ));
         }
     }

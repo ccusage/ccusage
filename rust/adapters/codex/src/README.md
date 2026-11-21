@@ -45,10 +45,11 @@ Relevant speed-setting event in Codex CLI 0.144.0 and later:
 
 Unclassified usage uses the top-level `service_tier` in each Codex home's
 `config.toml`, overridden by a legacy named profile only when the top-level
-`profile` selects it. Across Codex homes, the fallback preference is Ultrafast,
-Fast, Flex, then Standard. Inactive profiles and tier-like text inside strings do not
-affect pricing. Profile selections made through CLI flags or separate profile
-files require an explicit `--speed` override for unclassified usage.
+`profile` selects it. For each model, try configured Ultrafast, Fast, and Flex
+in that order and use the first tier with a rate. Use Standard when none applies. Inactive
+profiles and tier-like text inside strings do not affect pricing. Profile selections
+made through CLI flags or separate profile files require an explicit `--speed`
+override for unclassified usage.
 
 Forked rollouts:
 

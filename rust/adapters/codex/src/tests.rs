@@ -634,7 +634,7 @@ fn prices_mixed_speed_and_long_context_buckets_independently() {
         "gpt-long",
         &usage,
         Some(&pricing),
-        CodexSpeedPolicy::Auto(CodexServiceTier::Standard),
+        CodexSpeedPolicy::Auto(CodexServiceTier::Standard.into()),
     );
 
     let standard_cost = 40_000.0 * 5e-6 + 10_000.0 * 0.5e-6 + 200.0 * 30e-6;
@@ -845,7 +845,7 @@ fn uses_recorded_service_tiers_in_auto_mode() {
         "gpt-test",
         &usage,
         Some(&pricing),
-        CodexSpeedPolicy::Auto(CodexServiceTier::Standard),
+        CodexSpeedPolicy::Auto(CodexServiceTier::Standard.into()),
     );
     let forced_standard = calculate_codex_model_cost(
         "gpt-test",
@@ -900,7 +900,7 @@ fn prices_recorded_flex_usage_at_flex_rate() {
         "gpt-test",
         &usage,
         Some(&pricing),
-        CodexSpeedPolicy::Auto(CodexServiceTier::Standard),
+        CodexSpeedPolicy::Auto(CodexServiceTier::Standard.into()),
     );
 
     assert!((cost - 10e-6).abs() < f64::EPSILON);
@@ -955,7 +955,7 @@ fn prices_recorded_ultrafast_usage_at_published_rates() {
                 model,
                 usage,
                 Some(&pricing),
-                CodexSpeedPolicy::Auto(CodexServiceTier::Standard),
+                CodexSpeedPolicy::Auto(CodexServiceTier::Standard.into()),
             );
             assert!((cost - expected).abs() < 1e-12, "{model}: {cost}");
         }
@@ -998,7 +998,7 @@ fn keeps_standard_pricing_for_ultrafast_without_a_published_rate() {
             model,
             &usage,
             Some(&pricing),
-            CodexSpeedPolicy::Auto(CodexServiceTier::Standard),
+            CodexSpeedPolicy::Auto(CodexServiceTier::Standard.into()),
         );
 
         assert!(standard > 0.0, "{model} has pricing");
@@ -1063,7 +1063,7 @@ fn prices_ultrafast_from_the_same_entry_as_standard_rates() {
 
     let private_sol = cost(
         "private-sol",
-        CodexSpeedPolicy::Auto(CodexServiceTier::Standard),
+        CodexSpeedPolicy::Auto(CodexServiceTier::Standard.into()),
     );
     let standard_sol = cost(
         "gpt-6.1-sol",
@@ -1077,7 +1077,7 @@ fn prices_ultrafast_from_the_same_entry_as_standard_rates() {
 
     let terra = cost(
         "gpt-6.1-terra",
-        CodexSpeedPolicy::Auto(CodexServiceTier::Standard),
+        CodexSpeedPolicy::Auto(CodexServiceTier::Standard.into()),
     );
     let standard_terra = cost(
         "gpt-6.1-terra",
@@ -1171,15 +1171,15 @@ fn prices_rollout_service_tiers_across_loading_and_report_modes() {
                     load_groups_from_directory(&fixture.path("sessions"), &shared, kind).unwrap();
                 for (speed, expected) in [
                     (
-                        CodexSpeedPolicy::Auto(CodexServiceTier::Standard),
+                        CodexSpeedPolicy::Auto(CodexServiceTier::Standard.into()),
                         expected_costs[0],
                     ),
                     (
-                        CodexSpeedPolicy::Auto(CodexServiceTier::Flex),
+                        CodexSpeedPolicy::Auto(CodexServiceTier::Flex.into()),
                         expected_costs[1],
                     ),
                     (
-                        CodexSpeedPolicy::Auto(CodexServiceTier::Fast),
+                        CodexSpeedPolicy::Auto(CodexServiceTier::Fast.into()),
                         expected_costs[2],
                     ),
                     (
@@ -1240,7 +1240,7 @@ fn config_fallback_applies_only_to_unclassified_usage() {
             recorded,
         )
     };
-    let speed = CodexSpeedPolicy::Auto(CodexServiceTier::Fast);
+    let speed = CodexSpeedPolicy::Auto(CodexServiceTier::Fast.into());
 
     let cost = calculate_codex_model_cost("gpt-test", &usage, Some(&pricing), speed);
 
@@ -1273,7 +1273,7 @@ fn standard_config_fallback_leaves_unclassified_usage_at_standard_rate() {
             recorded,
         )
     };
-    let speed = CodexSpeedPolicy::Auto(CodexServiceTier::Standard);
+    let speed = CodexSpeedPolicy::Auto(CodexServiceTier::Standard.into());
 
     let cost = calculate_codex_model_cost("gpt-test", &usage, Some(&pricing), speed);
 

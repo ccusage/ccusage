@@ -217,7 +217,7 @@ fn all_report_modes_keep_the_first_compaction_copy_in_serial_and_parallel() {
                 &groups,
                 kind,
                 Some(&pricing),
-                CodexSpeedPolicy::Auto(Standard),
+                CodexSpeedPolicy::Auto(Standard.into()),
                 CostMode::Auto,
             )
         });

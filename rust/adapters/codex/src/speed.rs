@@ -1,27 +1,54 @@
 use std::fs;
 
-use crate::{CodexServiceTier, cli::CodexSpeed};
+use crate::{CodexServiceTier, Pricing, cli::CodexSpeed};
 
 use super::paths;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CodexSpeedPolicy {
-    Auto(CodexServiceTier),
+    Auto(ConfiguredTiers),
     Forced(CodexServiceTier),
 }
 
 pub(crate) fn resolve_codex_speed(requested: CodexSpeed) -> CodexSpeedPolicy {
     match requested {
-        CodexSpeed::Auto => CodexSpeedPolicy::Auto(detect_codex_service_tier()),
+        CodexSpeed::Auto => CodexSpeedPolicy::Auto(detect_configured_tiers()),
         CodexSpeed::Standard => CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
         CodexSpeed::Fast => CodexSpeedPolicy::Forced(CodexServiceTier::Fast),
         CodexSpeed::Flex => CodexSpeedPolicy::Forced(CodexServiceTier::Flex),
     }
 }
 
-fn detect_codex_service_tier() -> CodexServiceTier {
-    use CodexServiceTier::{Fast, Flex, Standard, Ultrafast};
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ConfiguredTiers(u8);
 
+impl From<CodexServiceTier> for ConfiguredTiers {
+    fn from(tier: CodexServiceTier) -> Self {
+        Self(1 << tier as u8)
+    }
+}
+
+impl ConfiguredTiers {
+    fn contains(self, tier: CodexServiceTier) -> bool {
+        self.0 & Self::from(tier).0 != 0
+    }
+
+    pub(crate) fn for_pricing(self, pricing: &Pricing) -> CodexServiceTier {
+        use CodexServiceTier::{Fast, Flex, Standard, Ultrafast};
+
+        if self.contains(Ultrafast) && pricing.has_ultrafast_rate() {
+            Ultrafast
+        } else if self.contains(Fast) && pricing.has_fast_rate() {
+            Fast
+        } else if self.contains(Flex) && pricing.has_flex_rate() {
+            Flex
+        } else {
+            Standard
+        }
+    }
+}
+
+fn detect_configured_tiers() -> ConfiguredTiers {
     codex_home_paths()
         .into_iter()
         .filter_map(|path| {
@@ -29,13 +56,9 @@ fn detect_codex_service_tier() -> CodexServiceTier {
                 .ok()
                 .and_then(|content| codex_config_service_tier(&content))
         })
-        .max_by_key(|tier| match tier {
-            Standard => 0,
-            Flex => 1,
-            Fast => 2,
-            Ultrafast => 3,
+        .fold(ConfiguredTiers::default(), |tiers, tier| {
+            ConfiguredTiers(tiers.0 | ConfiguredTiers::from(tier).0)
         })
-        .unwrap_or(Standard)
 }
 
 fn codex_home_paths() -> Vec<std::path::PathBuf> {
@@ -96,7 +119,7 @@ mod tests {
     }
 
     #[test]
-    fn configured_ultrafast_takes_precedence_over_fast_and_flex() {
+    fn retains_each_configured_tier_including_a_selected_ultrafast_profile() {
         let fixture = fs_fixture!({
             "fast/config.toml": r#"service_tier = "fast""#,
             "ultrafast/config.toml": r#"service_tier = "default"
@@ -109,10 +132,14 @@ mod tests {
             .map(|root| fixture.path(root).display().to_string())
             .join(",");
         Environment::with_var("CODEX_HOME", homes).run(|| {
-            assert_eq!(
-                super::resolve_codex_speed(crate::cli::CodexSpeed::Auto),
-                super::CodexSpeedPolicy::Auto(CodexServiceTier::Ultrafast)
-            );
+            let super::CodexSpeedPolicy::Auto(tiers) =
+                super::resolve_codex_speed(crate::cli::CodexSpeed::Auto)
+            else {
+                panic!("expected automatic pricing");
+            };
+            assert!(tiers.contains(CodexServiceTier::Ultrafast));
+            assert!(tiers.contains(CodexServiceTier::Fast));
+            assert!(tiers.contains(CodexServiceTier::Flex));
         })
     }
 

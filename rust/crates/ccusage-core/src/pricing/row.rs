@@ -68,6 +68,7 @@ pub(super) struct PublishedRates {
     pub(super) fast_multiplier: f64,
     pub(super) ultrafast_multiplier: f64,
     pub(super) flex_multiplier: f64,
+    pub(super) speed_mask: u8,
     pub(super) cache_defaults: &'static CacheDefaults,
 }
 
@@ -79,6 +80,7 @@ impl From<Pricing> for RowPricing {
                 fast_multiplier: rates.fast_multiplier,
                 ultrafast_multiplier: rates.ultrafast_multiplier,
                 flex_multiplier: rates.flex_multiplier,
+                speed_mask: rates.published_speed_mask,
                 cache_defaults: rates.cache_defaults,
             }),
         )
@@ -128,6 +130,7 @@ impl RowPricing {
                     fast_multiplier: speed.fast.unwrap_or(1.0),
                     ultrafast_multiplier: speed.ultrafast.unwrap_or(1.0),
                     flex_multiplier: speed.flex.unwrap_or(1.0),
+                    speed_mask: speed.mask(),
                     cache_defaults: model_cache_defaults(key).unwrap_or(cache_fallback),
                 }
             }),
@@ -143,6 +146,7 @@ impl RowPricing {
             fast_multiplier: published.fast_multiplier,
             ultrafast_multiplier: published.ultrafast_multiplier,
             flex_multiplier: published.flex_multiplier,
+            published_speed_mask: published.speed_mask,
             cache_defaults: published.cache_defaults,
             explicit_fields: self.explicit_fields,
             flat_long_context_in_fast_mode: false,

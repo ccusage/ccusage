@@ -914,6 +914,45 @@ fn prices_recorded_and_configured_ultrafast_usage() {
 }
 
 #[test]
+fn applies_fast_when_the_model_has_no_configured_ultrafast_rate() {
+    let request = |model: &str, timestamp: &str| {
+        json!({
+            "timestamp": timestamp,
+            "type": "event_msg",
+            "payload": {
+                "type": "token_count",
+                "info": {
+                    "model": model,
+                    "last_token_usage": { "input_tokens": 1000, "total_tokens": 1000 },
+                },
+            },
+        })
+        .to_string()
+    };
+    let fixture = fs_fixture!({
+        "codex/config.toml": r#"service_tier = "fast""#,
+        "ultrafast/config.toml": r#"service_tier = "ultrafast""#,
+        "codex/sessions/fast.jsonl": request("gpt-5.6-sol", "2026-10-27T10:00:01Z"),
+        "ultrafast/sessions/ultrafast.jsonl": request("gpt-6.1-sol", "2026-10-28T10:00:01Z"),
+    });
+    let homes = format!(
+        "{},{}",
+        fixture.path("codex").display(),
+        fixture.path("ultrafast").display()
+    );
+    let output = codex_command(support::hermetic_command(fixture.root()), &fixture)
+        .env("CODEX_HOME", homes)
+        .args(["codex", "daily", "--json"])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{:?}", output.stderr);
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["totals"]["totalTokens"], 2000);
+    assert_eq!(report["daily"][0]["costUSD"], 0.008);
+    assert_eq!(report["daily"][1]["costUSD"], 0.012);
+}
+
+#[test]
 fn reports_issue_2046_identical_fork_instant_requests_in_every_report_mode() {
     let fixture = fs_fixture!({
         "codex/sessions/2026/11/01/rollout-2026-11-01T09-42-09-01a1967c-0000-7000-8000-00000000000a.jsonl":
