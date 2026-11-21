@@ -83,6 +83,18 @@ opt-level = 3
 panic = "abort"
 strip = "symbols"
 
+[profile.release.package."*"]
+opt-level = "s"
+
+[profile.release.package.memchr]
+opt-level = 3
+
+[profile.release.package.serde_json]
+opt-level = 3
+
+[profile.release.package.zstd-sys]
+opt-level = 3
+
 [workspace.lints.cargo]
 unused_dependencies = "deny"
 unused_workspace_dependencies = "deny"
