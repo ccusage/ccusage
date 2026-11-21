@@ -15,8 +15,8 @@ static GLOBAL_ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
 #[cfg(all(target_os = "linux", target_env = "musl"))]
 fn configure_allocator() {
     const MI_OPTION_PURGE_DELAY: libmimalloc_sys::mi_option_t = 15;
-    // SAFETY: setting an option default has no preconditions, and no other thread exists yet.
     #[expect(unsafe_code)]
+    // SAFETY: setting an option default has no preconditions, and no other thread exists yet.
     unsafe {
         libmimalloc_sys::mi_option_set_default(MI_OPTION_PURGE_DELAY, 0);
     }

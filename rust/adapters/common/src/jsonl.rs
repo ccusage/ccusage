@@ -299,7 +299,7 @@ fn line_reader(capacity: usize, input: Input) -> Lines {
         Input::Zstd(reader) => return Lines::Zstd(reader),
     };
     let mut buffer = LINE_BUFFER.take();
-    // NOTE(2026-11-21, #2406): A buffer grown by a long line keeps its allocation, but each file starts with the policy's read size so a short probe still reads only that much.
+    // NOTE(2026-11-21, #2406): A long line grows the buffer, and the next file keeps that allocation. Each file still starts with the policy's read size, so a short probe reads only that much.
     buffer.resize(capacity, 0);
     Lines::Plain(LineReader::with_buffer(buffer, file))
 }

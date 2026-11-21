@@ -223,7 +223,7 @@ pub(crate) struct Direct {
 
 impl Direct {
     pub(crate) fn new(file: File, capacity: usize) -> io::Result<Self> {
-        // NOTE(2026-11-21, #2406): ZSTD_decompressBegin resets the context before every frame, so each worker keeps one instead of allocating a fresh 96 KB context per file.
+        // NOTE(2026-11-21, #2406): ZSTD_decompressBegin resets the context before every frame. Each worker therefore keeps one instead of allocating a fresh 96 KB context per file.
         let context = match CONTEXT.try_with(RefCell::take).ok().flatten() {
             Some(context) => context,
             None => Context::new()?,
