@@ -365,6 +365,30 @@ fn keeps_a_stale_transcript_whose_recorded_session_links_it_after_its_live_sibli
 }
 
 #[test]
+fn revives_a_stale_transcript_longer_than_its_tail_by_the_session_it_records() {
+    let old = record_at("2026-09-01T12:00:00Z");
+    let fixture = fs_fixture!({
+        "projects/p/live.jsonl": record_at("2026-09-21T12:00:00Z"),
+        "projects/p/agent-1.jsonl": format!(
+            "{{\"sessionId\":\"live\",\"timestamp\":\"2026-09-01T12:00:00Z\"}}\n{}",
+            vec![old; 32 * 1024 / 60].join("\n")
+        ),
+    });
+    let live = fixture.path("projects/p/live.jsonl");
+    let agent = fixture.path("projects/p/agent-1.jsonl");
+    set_modified(&live, instant("2026-09-21T12:00:00Z"));
+    set_modified(&agent, instant("2026-09-01T12:00:00Z"));
+
+    let split = split_files_before_since(
+        vec![live.clone(), agent.clone()],
+        &shared_since(Some("20260920")),
+        TimestampMs::from_millis(instant("2026-09-24T00:00:00Z").millis()),
+    );
+
+    assert_eq!(split.kept, [live, agent]);
+}
+
+#[test]
 fn splits_a_window_that_keeps_or_prunes_every_file() {
     let fixture = fs_fixture!({
         "projects/p/old.jsonl": "{}",
@@ -474,22 +498,147 @@ fn reads_the_latest_record_after_a_tail_that_starts_mid_line() {
     assert_eq!(split.kept, [restored]);
 }
 
+fn nested_time_line(timestamp: &str) -> String {
+    format!(
+        r#"{{"type":"file-history-snapshot","snapshot":{{"timestamp":"{timestamp}","text":"{}"}}}}"#,
+        "x".repeat(1024)
+    )
+}
+
+fn trailer_without_timestamps() -> String {
+    format!(
+        r#"{{"type":"file-history-snapshot","snapshot":{{"timestamp":"2026-09-21T12:00:00Z","text":"{}"}}}}"#,
+        "x".repeat(32 * 1024)
+    )
+}
+
 #[test]
-fn keeps_a_stale_transcript_whose_tail_holds_no_whole_record() {
-    let fixture = fs_fixture!({
-        "projects/p/long.jsonl": format!(
-            r#"{{"timestamp":"2026-09-01T12:00:00Z","text":"{}"}}"#,
+fn judges_a_stale_transcript_by_its_latest_record_before_a_tail_without_timestamps() {
+    let long_line = |timestamp: &str| {
+        format!(
+            r#"{{"timestamp":"{timestamp}","text":"{}"}}"#,
             "x".repeat(32 * 1024)
+        )
+    };
+    let cases = [
+        (
+            "in-window long line",
+            long_line("2026-09-21T12:00:00Z"),
+            true,
         ),
-        "projects/p/summary.jsonl": r#"{"type":"summary"}"#,
+        ("old long line", long_line("2026-09-01T12:00:00Z"), false),
+        (
+            "in-window record, then a trailer",
+            format!(
+                "{}\n{}\n",
+                record_at("2026-09-21T12:00:00Z"),
+                trailer_without_timestamps()
+            ),
+            true,
+        ),
+        (
+            "old record, then a trailer",
+            format!(
+                "{}\n{}\n",
+                record_at("2026-09-01T12:00:00Z"),
+                trailer_without_timestamps()
+            ),
+            false,
+        ),
+        (
+            "in-window record under an escaped key",
+            r#"{"\u0074imestamp":"2026-09-21T12:00:00Z"}"#.to_string(),
+            true,
+        ),
+        (
+            "in-window record under an escaped key after older records",
+            format!(
+                "{}\n{}",
+                record_at("2026-09-01T12:00:00Z"),
+                r#"{"\u0074imestamp":"2026-09-21T12:00:00Z"}"#
+            ),
+            true,
+        ),
+        (
+            "in-window record beside control-character escapes",
+            format!(
+                "{}\n{}",
+                r#"{"timestamp":"2026-09-01T12:00:00Z","text":"\u001b[0m"}"#,
+                record_at("2026-09-21T12:00:00Z")
+            ),
+            true,
+        ),
+        (
+            "in-window record before 16 KiB of older nested times",
+            format!(
+                "{}\n{}",
+                record_at("2026-09-21T12:00:00Z"),
+                vec![nested_time_line("2026-09-01T12:00:00Z"); 20].join("\n")
+            ),
+            true,
+        ),
+        (
+            "older record before 16 KiB of older nested times",
+            format!(
+                "{}\n{}",
+                record_at("2026-09-01T12:00:00Z"),
+                vec![nested_time_line("2026-09-01T12:00:00Z"); 20].join("\n")
+            ),
+            false,
+        ),
+        (
+            "no record timestamps",
+            r#"{"type":"summary"}"#.to_string(),
+            false,
+        ),
+    ];
+    let fixture = fs_fixture!({ "projects/p/.keep": "" });
+    for (index, (name, content, kept)) in cases.into_iter().enumerate() {
+        let file = fixture.path(format!("projects/p/{index}.jsonl"));
+        std::fs::write(&file, content).unwrap();
+
+        let split = stale_since_split(vec![file.clone()]);
+
+        assert_eq!(split.kept.is_empty(), !kept, "{name}");
+    }
+}
+
+#[test]
+fn reads_no_stale_session_group_for_a_transcript_whose_tail_has_no_timestamps() {
+    let old = record_at("2026-09-01T12:00:00Z");
+    let fixture = fs_fixture!({
+        "projects/p/live.jsonl": record_at("2026-09-21T12:00:00Z"),
+        "projects/p/stale.jsonl": format!("{old}\n{}\n", trailer_without_timestamps()),
+        "projects/p/stale/subagents/agent-a.jsonl": old.clone(),
+        "projects/p/stale/subagents/agent-b.jsonl": old.clone(),
+        "projects/p/stale/subagents/agent-c.jsonl": old,
     });
-    let long = fixture.path("projects/p/long.jsonl");
-    let summary = fixture.path("projects/p/summary.jsonl");
+    let files = [
+        "live.jsonl",
+        "stale.jsonl",
+        "stale/subagents/agent-a.jsonl",
+        "stale/subagents/agent-b.jsonl",
+        "stale/subagents/agent-c.jsonl",
+    ]
+    .map(|name| fixture.path(format!("projects/p/{name}")));
+    set_modified(&files[0], instant("2026-09-21T12:00:00Z"));
+    for stale in &files[1..] {
+        set_modified(stale, instant("2026-09-01T12:00:00Z"));
+    }
+    let parsed = std::sync::Mutex::new(Vec::new());
 
-    let split = stale_since_split(vec![long.clone(), summary.clone()]);
+    super::read_files_since(
+        false,
+        super::prune_threshold(
+            &shared_since(Some("20260920")),
+            TimestampMs::from_millis(instant("2026-09-24T00:00:00Z").millis()),
+        ),
+        &[fixture.path("projects")],
+        |visit| files.iter().cloned().for_each(visit),
+        |file| parsed.lock().unwrap().push(file.clone()),
+    );
 
-    assert_eq!(split.kept, [long, summary]);
-    assert!(split.pruned.is_empty());
+    assert_eq!(parsed.into_inner().unwrap(), [files[0].clone()]);
 }
 
 #[test]
