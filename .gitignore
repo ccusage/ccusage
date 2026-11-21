@@ -25,3 +25,4 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 !.envrc
 .pre-commit-config.yaml
 .claude/skills
+.cloudflare

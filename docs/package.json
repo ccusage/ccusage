@@ -9,9 +9,12 @@
 		"dev": "cp ../apps/ccusage/config-schema.json public/config-schema.json && vitepress dev"
 	},
 	"devDependencies": {
+		"@cloudflare/vite-plugin": "catalog:docs",
 		"@ryoppippi/vite-plugin-cloudflare-redirect": "catalog:docs",
 		"@types/node": "catalog:types",
 		"@types/react": "catalog:types",
+		"cf": "catalog:docs",
+		"vite": "catalog:docs",
 		"vitepress": "catalog:docs",
 		"vitepress-plugin-group-icons": "catalog:docs",
 		"vitepress-plugin-llms": "catalog:docs"
