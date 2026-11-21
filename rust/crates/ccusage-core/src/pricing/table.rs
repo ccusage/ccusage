@@ -59,6 +59,9 @@ const SOURCE_MODELS_DEV: u8 = 2;
 const SOURCE_MASK: u8 = 0b11;
 const SCOPE_DIRECT: u8 = 1 << 2;
 const EXACT_ONLY: u8 = 1 << 3;
+const HOST_SHIFT: u8 = 4;
+const HOST_MASK: u8 = 0b11 << HOST_SHIFT;
+const _: () = assert!(data::HOSTS.len() <= (HOST_MASK >> HOST_SHIFT) as usize);
 
 const NO_LONG_CONTEXT: u8 = 0;
 const LONG_CONTEXT_MARGINAL: u8 = 1;
@@ -161,7 +164,8 @@ impl Writer {
             0
         };
         let exact_only = if row.exact_only { EXACT_ONLY } else { 0 };
-        self.flags.push(source | scope | exact_only);
+        let host = row.host.map_or(0, |host| (host + 1) << HOST_SHIFT);
+        self.flags.push(source | scope | exact_only | host);
         varint(
             &mut self.flags,
             row.vendor_start.map_or(0, |start| start.get() as u64),
@@ -174,10 +178,6 @@ impl Writer {
                 + 1
         });
         varint(&mut self.flags, schedule as u64);
-        varint(
-            &mut self.flags,
-            row.host.map_or(0, |host| u64::from(host) + 1),
-        );
         let context_limit = row.context_limit.map_or(0, |limit| {
             limit.checked_add(1).expect("context limit fits the table")
         });
@@ -353,11 +353,7 @@ impl<'a> Reader<'a> {
             .usize()
             .checked_sub(1)
             .map(|index| &data::SCHEDULES[index].1);
-        let host = self
-            .flags
-            .usize()
-            .checked_sub(1)
-            .map(|host| u8::try_from(host).expect("embedded pricing table has a known host"));
+        let host = ((flags & HOST_MASK) >> HOST_SHIFT).checked_sub(1);
         let context_limit = self.limits.u64().checked_sub(1);
         Row {
             key: Arc::default(),
