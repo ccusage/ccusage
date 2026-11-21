@@ -148,12 +148,9 @@ fn rates_for(granularity: UsageGranularity, mut rates: Pricing) -> Pricing {
 }
 
 fn cost_at_speed(usage: crate::TokenUsageRaw, rates: &Pricing) -> f64 {
-    let multiplier = if matches!(usage.speed, Some(Speed::Fast)) {
-        rates.fast_multiplier
-    } else {
-        1.0
-    };
-    calculate_cost_from_pricing(usage, rates) * multiplier
+    let fast = matches!(usage.speed, Some(Speed::Fast));
+    let multiplier = if fast { rates.fast_multiplier } else { 1.0 };
+    calculate_cost_from_pricing(usage, &rates.at_speed(fast)) * multiplier
 }
 
 // NOTE(2026-11-21, #2199): Kilo, Hermes, and OpenCode write a cost of 0 both for free usage and when the provider returned no cost. A non-positive cost is treated as not recorded: the tokens are priced instead, which still comes to $0 for a model whose price is zero.
