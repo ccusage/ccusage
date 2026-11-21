@@ -30,7 +30,7 @@ pub use lenient::{
 };
 
 const DEFAULT_BUFFER_SIZE: usize = 8 * 1024;
-const RECYCLED_BUFFER_MAX: usize = 16 << 20;
+const RECYCLED_BUFFER_MAX: usize = 1 << 20;
 
 thread_local! {
     static LINE_BUFFER: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
@@ -299,7 +299,7 @@ fn line_reader(capacity: usize, input: Input) -> Lines {
         Input::Zstd(reader) => return Lines::Zstd(reader),
     };
     let mut buffer = LINE_BUFFER.take();
-    // NOTE(2026-11-21, #2406): A long line grows the buffer, and the next file keeps that allocation. Each file still starts with the policy's read size, so a short probe reads only that much.
+    // NOTE(2026-11-21, #2406): A metadata probe still starts with the policy's read size when reusing a buffer grown by an earlier file.
     buffer.resize(capacity, 0);
     Lines::Plain(LineReader::with_buffer(buffer, file))
 }
@@ -624,6 +624,25 @@ mod tests {
         lenient_i64, lenient_object, lenient_u64, lenient_vec, non_empty_string, read,
     };
     use ccusage_core::fast::LinePrefilter;
+
+    #[test]
+    fn reading_an_oversized_plain_line_releases_its_buffer() {
+        let fixture = Fixture::new();
+        let output = "x".repeat(2 << 20);
+        let record = format!(r#"{{"output":"{output}"}}"#);
+        let path = fixture.write_file("large.jsonl", format!("{record}\n"));
+        let mut lines = 0;
+
+        read(&path, None, ReadPolicy::PLAIN, |line, _, _| {
+            assert_eq!(line.bytes(), record.as_bytes());
+            lines += 1;
+            ControlFlow::<()>::Continue(())
+        })
+        .unwrap();
+
+        assert_eq!(lines, 1);
+        assert!(super::LINE_BUFFER.take().capacity() <= 1 << 20);
+    }
 
     fn decode_fixture<T: DeserializeOwned>(
         bytes: &[u8],
