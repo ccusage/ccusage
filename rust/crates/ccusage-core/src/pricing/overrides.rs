@@ -4,9 +4,11 @@ use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 
 use super::{
-    Candidate, LongContext, LongContextRates, Lookup, Name, Pricing, PricingMap, PricingOverride,
-    PricingRows, Row, RowMatch, Scope, Source, SpeedMultipliers, normalized_pricing_key,
-    row::cache_defaults, with_names,
+    Candidate, LongContext, LongContextMode, Lookup, Name, Pricing, PricingMap, PricingOverride,
+    PricingRows, Row, RowMatch, Scope, Source, SpeedMultipliers, last_segment,
+    normalized_pricing_key,
+    row::{cache_defaults, whole_request_threshold},
+    unlabeled_model, with_names,
 };
 
 #[derive(Debug, Default)]
@@ -86,15 +88,17 @@ impl Overrides {
             .map(|slot| (slot.key.as_ref(), slot.identity.as_ref()))
     }
 
-    fn published_tier(&self, id: usize) -> Option<LongContext> {
-        let mut base = self.rows.get(id)?.base.as_ref();
-        while let Some(Base::Override(dependency)) = base {
-            base = self.rows.get(*dependency)?.base.as_ref();
+    fn published_tier(&self, id: usize, secondary: Option<&PricingRows>) -> Option<LongContext> {
+        let mut slot = self.rows.get(id)?;
+        while let Some(Base::Override(dependency)) = &slot.base {
+            slot = self.rows.get(*dependency)?;
         }
-        match base? {
-            Base::Authority(row) => row.rates().long_context,
-            Base::Override(_) => None,
-        }
+        let row = match &slot.base {
+            Some(Base::Authority(row)) => row,
+            Some(Base::Override(_)) => return None,
+            None => secondary_base(secondary, &slot.key)?,
+        };
+        row.pricing.long_context.as_deref().copied()
     }
 
     fn has_authoritative_base(&self, id: usize) -> Option<bool> {
@@ -219,51 +223,19 @@ impl PricingMap {
                     ..authority.clone()
                 });
             }
-            let (mut pricing, mut context_limit, schedule) = match &slot.base {
-                Some(Base::Authority(row)) => (row.rates(), row.context_limit, row.schedule),
+            let base = match &slot.base {
+                Some(Base::Authority(row)) => Some(row.as_ref()),
                 Some(Base::Override(id)) => {
-                    let row = self.resolve_override(*id, models_dev, false)?.row;
-                    (row.rates(), row.context_limit, row.schedule)
+                    Some(self.resolve_override(*id, models_dev, false)?.row)
                 }
-                None => {
-                    let base = secondary.and_then(|rows| {
-                        with_names(&slot.key, |name| {
-                            rows.exact(Name::new(name, &OnceLock::new()), Lookup::Pricing)
-                        })
-                    });
-                    match base {
-                        Some(found) => (
-                            Pricing {
-                                long_context: None,
-                                ..found.row.rates()
-                            },
-                            found.row.context_limit,
-                            None,
-                        ),
-                        None => {
-                            let speed = SpeedMultipliers::get();
-                            let alias = crate::model_aliases::resolve_model_name(&slot.key);
-                            let model = super::unlabeled_model(&slot.key);
-                            (
-                                speed
-                                    .for_model(&slot.key)
-                                    .or(speed.for_model(&alias))
-                                    .applied_to(Pricing {
-                                        cache_defaults: cache_defaults(model, None),
-                                        ..Pricing::empty()
-                                    }),
-                                None,
-                                None,
-                            )
-                        }
-                    }
-                }
+                None => secondary_base(secondary, &slot.key),
             };
-            if matches!(slot.base, Some(Base::Override(_))) && pricing.long_context.is_none() {
-                pricing.long_context = self.overrides.published_tier(id).map(|tier| LongContext {
-                    rates: LongContextRates::default(),
-                    ..tier
-                });
+            let mut pricing = base.map_or_else(|| uncataloged_pricing(&slot.key), Row::rates);
+            let mut context_limit = base.and_then(|row| row.context_limit);
+            let mut whole_request_tiers = base.is_some_and(|row| row.whole_request_tiers);
+            let inherited_tier = pricing.long_context;
+            if slot.base.is_none() {
+                pricing.long_context = None;
             }
             let mut explicit_fields = pricing.explicit_long_rate_fields();
             for patch in &slot.patches {
@@ -272,6 +244,39 @@ impl PricingMap {
                 context_limit = patch.max_input_tokens.or(context_limit);
             }
             pricing.explicit_fields = explicit_fields;
+            if pricing.explicit_long_rate_fields() != 0
+                && let Some(tier) = &mut pricing.long_context
+            {
+                let model = unlabeled_model(&slot.key);
+                let catalog_row = base.or_else(|| {
+                    with_names(model, |name| {
+                        self.rows
+                            .authoritative(Name::new(name, &OnceLock::new()), true, Some)
+                            .map(|found| found.row)
+                    })
+                    .or_else(|| secondary_base(secondary, model))
+                });
+                let published_tier = inherited_tier.or_else(|| match slot.base {
+                    Some(Base::Override(parent)) => {
+                        self.overrides.published_tier(parent, secondary)
+                    }
+                    _ => catalog_row?.pricing.long_context.as_deref().copied(),
+                });
+                if let Some(published) = published_tier {
+                    tier.threshold = published.threshold;
+                    tier.mode = published.mode;
+                }
+                whole_request_tiers = whole_request_tiers
+                    || catalog_row.is_some_and(|row| row.whole_request_tiers)
+                    || with_names(model, |name| {
+                        let (path, _) = name.rsplit_once('/')?;
+                        whole_request_threshold(last_segment(path))
+                    })
+                    .is_some();
+                if whole_request_tiers {
+                    tier.mode = LongContextMode::WholeRequest;
+                }
+            }
             pricing.replace_tier_with_explicit_rates();
             pricing.long_context = pricing
                 .long_context
@@ -282,11 +287,34 @@ impl PricingMap {
                 scope: Scope::Direct,
                 vendor_start: super::vendor_start(&slot.key, &slot.key),
                 exact_only,
-                schedule,
+                whole_request_tiers,
+                schedule: base
+                    .filter(|_| slot.base.is_some())
+                    .and_then(|row| row.schedule),
                 context_limit,
                 pricing: pricing.into(),
             })
         });
         row.as_ref().map(|row| RowMatch::new(id, row))
     }
+}
+
+fn secondary_base<'a>(rows: Option<&'a PricingRows>, key: &str) -> Option<&'a Row> {
+    let rows = rows?;
+    with_names(key, |name| {
+        rows.exact(Name::new(name, &OnceLock::new()), Lookup::Pricing)
+            .map(|found| found.row)
+    })
+}
+
+fn uncataloged_pricing(key: &str) -> Pricing {
+    let speed = SpeedMultipliers::get();
+    let alias = crate::model_aliases::resolve_model_name(key);
+    speed
+        .for_model(key)
+        .or(speed.for_model(&alias))
+        .applied_to(Pricing {
+            cache_defaults: cache_defaults(unlabeled_model(key), None),
+            ..Pricing::empty()
+        })
 }

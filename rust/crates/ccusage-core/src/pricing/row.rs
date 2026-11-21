@@ -18,6 +18,7 @@ pub(super) struct Row {
     pub(super) schedule: Option<&'static PricingSchedule>,
     pub(super) context_limit: Option<u64>,
     pub(super) exact_only: bool,
+    pub(super) whole_request_tiers: bool,
     pub(super) scope: Scope,
     pub(super) vendor_start: Option<NonZeroUsize>,
 }
@@ -31,6 +32,7 @@ impl Default for Row {
             schedule: None,
             context_limit: None,
             exact_only: false,
+            whole_request_tiers: false,
             scope: Scope::Hosted,
             vendor_start: None,
         }
@@ -197,6 +199,12 @@ pub(super) fn row_scope<'a>(
 
 pub(super) fn vendor_start(key: &str, vendor_id: &str) -> Option<NonZeroUsize> {
     NonZeroUsize::new(key.len() - vendor_id.len() + 1)
+}
+
+pub(super) fn whole_request_threshold(provider: &str) -> Option<u64> {
+    data::WHOLE_REQUEST_LONG_CONTEXT_PROVIDERS
+        .iter()
+        .find_map(|(id, threshold)| (*id == provider).then_some(*threshold))
 }
 
 pub(super) fn cache_defaults(model: &str, provider: Option<&str>) -> &'static CacheDefaults {

@@ -1,6 +1,6 @@
 use super::{
-    CacheDefaults, LongContext, LongContextMode, LongContextRates, PricingSchedule, ScheduledRates,
-    Successor,
+    CacheDefaults, DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS, LongContext, LongContextMode,
+    LongContextRates, PricingSchedule, ScheduledRates, Successor,
 };
 
 // NOTE(2026-11-20): OpenAI charges no cache-write surcharge through GPT-5.5 and reads cached input at 0.1× on current models at https://developers.openai.com/api/docs/guides/prompt-caching. Use these multipliers when a row omits cache rates.
@@ -254,11 +254,12 @@ pub(super) static VENDOR_SPELLINGS: &[(&str, &str)] = &[("google", "gemini")];
 
 // NOTE(2026-11-21, #2227): xAI lists separate "(≥ 200k prompt tokens)" rows and bills every token of such a request at them at https://docs.x.ai/developers/pricing. LiteLLM's above-200k fields on xAI's own rows describe that tier, not a marginal one. A request is long when its context exceeds the threshold, so 199,999 makes a 200,000-token prompt long.
 const XAI_LONG_CONTEXT_THRESHOLD: u64 = 199_999;
-// NOTE(2026-11-21, #2226): Google bills every token of a prompt longer than 200K at the higher tier ("prompts > 200k tokens") at https://ai.google.dev/gemini-api/docs/pricing. LiteLLM's above-200k fields on Google's own `gemini` rows describe that tier, and a 200,000-token prompt is not yet long.
-const GEMINI_LONG_CONTEXT_THRESHOLD: u64 = 200_000;
+// NOTE(2026-11-21, #2472): Google prices Gemini prompts over 200K as whole requests (https://ai.google.dev/gemini-api/docs/pricing). The cutoff here applies to LiteLLM split fields. Models.dev supplies a cutoff per model.
 pub(super) static WHOLE_REQUEST_LONG_CONTEXT_PROVIDERS: &[(&str, u64)] = &[
+    ("anthropic", DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS),
+    ("gemini", DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS),
+    ("google", DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS),
     ("xai", XAI_LONG_CONTEXT_THRESHOLD),
-    ("gemini", GEMINI_LONG_CONTEXT_THRESHOLD),
 ];
 
 pub(super) struct CuratedLongContext {
