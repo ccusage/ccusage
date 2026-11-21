@@ -180,7 +180,10 @@
       (is (< cpu 100) (str "cpu " cpu))
       (is (pos? rss))))
   (testing "the timing line is parsed in milliseconds and the RSS in bytes"
-    (is (= {:wall 281.0 :cpu 748.0 :rss (* 57280 1024)} (benchmark/parse-timing "0.281 0.515 0.233\n" "57280\n"))))
+    (is (= {:wall 281.0 :cpu 748.0 :rss (* 57280 1024)} (benchmark/parse-timing "0.281000 0.515000 0.233000\n" "57280\n"))))
+  (testing "a time that rounds up to a whole second keeps its digits"
+    (let [{:keys [wall]} (benchmark/timed-run ["sleep" "0.9999"] "sleep")]
+      (is (< 999 wall 1500) (str "wall " wall))))
   (testing "a failing command stops the benchmark with its stderr"
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"(?s)broken.*boom"
                           (benchmark/timed-run ["bash" "-c" "echo boom >&2; exit 3"] "broken")))))
