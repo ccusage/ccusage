@@ -1,5 +1,6 @@
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
+use ccusage_adapter_common::json::JsonText;
 use serde::Deserialize;
 
 use crate::{
@@ -7,7 +8,8 @@ use crate::{
     advisor::AdvisorLookup,
     cli::IsoDate,
     dedupe::{DedupEntry, DedupKey, Request},
-    deserialize_usage_line, non_null,
+    non_null,
+    usage_wire::{Text, deserialize_borrowed_usage_line},
 };
 
 mod links;
@@ -85,11 +87,11 @@ impl DedupEntry for ClaudeEntry {
 }
 
 #[derive(Debug)]
-pub(crate) struct ClaudeUsageRecord {
-    pub(super) timestamp: String,
+pub(crate) struct ClaudeUsageRecord<'a> {
+    pub(super) timestamp: Cow<'a, str>,
     pub(crate) message: ClaudeUsageMessage,
-    pub(super) version: Option<String>,
-    pub(super) session_id: Option<String>,
+    pub(super) version: Option<Cow<'a, str>>,
+    pub(super) session_id: Option<Cow<'a, str>>,
     pub(super) cost_usd: Option<f64>,
     pub(super) request_id: Option<String>,
     pub(super) is_sidechain: Option<bool>,
@@ -103,15 +105,16 @@ pub(crate) struct ClaudeUsageMessage {
     pub(super) id: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct RawUsageRecord {
-    timestamp: String,
+struct RawUsageRecord<'a> {
+    #[serde(borrow)]
+    timestamp: Text<'a>,
     message: RawUsageMessage,
-    #[serde(default, deserialize_with = "crate::nullable")]
-    version: Nullable<String>,
-    #[serde(default, deserialize_with = "crate::nullable")]
-    session_id: Nullable<String>,
+    #[serde(borrow, default, deserialize_with = "crate::nullable")]
+    version: Nullable<Text<'a>>,
+    #[serde(borrow, default, deserialize_with = "crate::nullable")]
+    session_id: Nullable<Text<'a>>,
     #[serde(rename = "costUSD")]
     #[serde(default, deserialize_with = "crate::nullable")]
     cost_usd: Nullable<f64>,
@@ -122,13 +125,13 @@ struct RawUsageRecord {
     is_api_error_message: Nullable<bool>,
 }
 
-impl RawUsageRecord {
-    fn decode(self) -> std::result::Result<ClaudeUsageRecord, Rejection> {
+impl<'a> RawUsageRecord<'a> {
+    fn decode(self) -> std::result::Result<ClaudeUsageRecord<'a>, Rejection> {
         Ok(ClaudeUsageRecord {
-            timestamp: self.timestamp,
+            timestamp: self.timestamp.0,
             message: self.message.decode()?,
-            version: non_null(self.version)?,
-            session_id: non_null(self.session_id)?,
+            version: non_null(self.version)?.map(|version| version.0),
+            session_id: non_null(self.session_id)?.map(|session_id| session_id.0),
             cost_usd: non_null(self.cost_usd)?,
             request_id: non_null(self.request_id)?,
             is_sidechain: self.is_sidechain,
@@ -159,10 +162,10 @@ impl RawUsageMessage {
     }
 }
 
-pub(crate) fn parse_usage_line(
-    line: &[u8],
-) -> std::result::Result<(ClaudeUsageRecord, AdvisorLookup), Rejection> {
-    match deserialize_usage_line::<RawUsageRecord>(line) {
+pub(crate) fn parse_usage_line<'a>(
+    line: &'a JsonText<'a>,
+) -> std::result::Result<(ClaudeUsageRecord<'a>, AdvisorLookup), Rejection> {
+    match deserialize_borrowed_usage_line::<RawUsageRecord<'a>>(line) {
         Ok(raw) => {
             let entry = raw.decode()?;
             let lookup = if entry.message.usage.has_advisor_iteration {
@@ -172,7 +175,7 @@ pub(crate) fn parse_usage_line(
             };
             Ok((entry, lookup))
         }
-        Err(_) => deserialize_usage_line::<AgentProgressEntry>(line)
+        Err(_) => deserialize_borrowed_usage_line::<AgentProgressEntry<'a>>(line)
             .and_then(AgentProgressEntry::decode)
             .map(|entry| {
                 let lookup = if entry.message.usage.has_advisor_iteration {
@@ -186,23 +189,24 @@ pub(crate) fn parse_usage_line(
 }
 
 // NOTE(2026-05-19, #977): Claude Code also writes assistant usage under `data.message.message` in AgentProgress records. Read that envelope for subagent usage.
-#[derive(Debug, Deserialize)]
-struct AgentProgressEntry {
+#[derive(Deserialize)]
+struct AgentProgressEntry<'a> {
     #[serde(rename = "sessionId")]
-    #[serde(default, deserialize_with = "crate::nullable")]
-    session_id: Nullable<String>,
-    data: AgentProgressData,
+    #[serde(borrow, default, deserialize_with = "crate::nullable")]
+    session_id: Nullable<Text<'a>>,
+    #[serde(borrow)]
+    data: AgentProgressData<'a>,
 }
 
-impl AgentProgressEntry {
-    fn decode(self) -> std::result::Result<ClaudeUsageRecord, Rejection> {
+impl<'a> AgentProgressEntry<'a> {
+    fn decode(self) -> std::result::Result<ClaudeUsageRecord<'a>, Rejection> {
         let message = self.data.message;
         Ok(ClaudeUsageRecord {
-            timestamp: message.timestamp,
+            timestamp: message.timestamp.0,
             message: message.message.decode()?,
             version: None,
             is_api_error_message: non_null(message.is_api_error_message)?,
-            session_id: non_null(self.session_id)?,
+            session_id: non_null(self.session_id)?.map(|session_id| session_id.0),
             cost_usd: non_null(message.cost_usd)?,
             request_id: non_null(message.request_id)?,
             is_sidechain: message.is_sidechain,
@@ -210,17 +214,19 @@ impl AgentProgressEntry {
     }
 }
 
-#[derive(Debug, Deserialize)]
-struct AgentProgressData {
-    message: AgentProgressMessage,
+#[derive(Deserialize)]
+struct AgentProgressData<'a> {
+    #[serde(borrow)]
+    message: AgentProgressMessage<'a>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct AgentProgressMessage {
+struct AgentProgressMessage<'a> {
     #[serde(default, deserialize_with = "crate::nullable")]
     is_api_error_message: Nullable<bool>,
-    timestamp: String,
+    #[serde(borrow)]
+    timestamp: Text<'a>,
     message: RawUsageMessage,
     #[serde(rename = "costUSD")]
     #[serde(default, deserialize_with = "crate::nullable")]
@@ -230,7 +236,7 @@ struct AgentProgressMessage {
     is_sidechain: Option<bool>,
 }
 
-pub(super) fn is_valid_usage_record(data: &ClaudeUsageRecord) -> bool {
+pub(super) fn is_valid_usage_record(data: &ClaudeUsageRecord<'_>) -> bool {
     if data
         .version
         .as_deref()

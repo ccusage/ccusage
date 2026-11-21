@@ -468,7 +468,7 @@ Use the model label shown in the report, including any adapter prefix. The overr
 
 To find the exact name, run `ccusage <agent> daily --json` and look at the `modelName` field in each row's `modelBreakdowns`.
 Pi also accepts a bare model name as an override key; that key applies to the default store and any named Pi store using the same model. Use the prefixed label to price one store separately.
-A model alias can inherit unspecified fields from its target. Overrides inherit published long-context rates from LiteLLM or built-in base entries. A models.dev base supplies its flat rates and context limit. If no catalog row matches, ccusage uses the model family's cache defaults for any omitted cache-write rates. For an OpenAI-family model such as `gpt-5.5-private`, cache writes default to the input rate.
+A model alias can inherit unspecified fields from its target. Overrides inherit published long-context rates from LiteLLM or built-in base entries. For a model with a time-of-day pricing schedule, a base-rate override also applies above the 200K split unless the override sets its own `*Above200kTokens` rate. A models.dev base supplies its flat rates and context limit. If no catalog row matches, ccusage uses the model family's cache defaults for any omitted cache-write rates. For an OpenAI-family model such as `gpt-5.5-private`, cache writes default to the input rate.
 
 ### Supported Fields
 
