@@ -266,6 +266,7 @@ impl Pricing {
             return;
         }
         let kept = |bit: u16, rate: Option<f64>| rate.filter(|_| explicit & bit != 0);
+        let one_hour = self.one_hour_cache_creation_rate();
         self.long_context = self.long_context.and_then(|context| {
             LongContextRates {
                 input: kept(OverrideFields::LONG_INPUT, context.rates.input),
@@ -279,7 +280,10 @@ impl Pricing {
             }
             .marginal()
             .map(|marginal| LongContext {
-                rates: marginal.rates,
+                rates: LongContextRates {
+                    cache_create_1h: Some(one_hour),
+                    ..marginal.rates
+                },
                 ..context
             })
         });

@@ -807,6 +807,19 @@ fn an_override_tier_holds_only_the_above_threshold_rates_it_spells_out() {
 }
 
 #[test]
+fn an_override_tier_bills_omitted_one_hour_writes_at_the_base_one_hour_rate() {
+    let mut pricing = tiered_test_pricing();
+    let overrides = build_overrides("tiered", |o| {
+        o.cache_creation_input_token_cost_above_1hr = Some(0.0);
+        o.input_cost_per_token_above_200k_tokens = Some(2e-6);
+    });
+    pricing.apply_overrides(overrides.iter());
+
+    let entry = pricing.find("tiered").unwrap();
+    assert_eq!(entry.one_hour_cache_creation_rate_above_200k(), Some(0.0));
+}
+
+#[test]
 fn an_override_without_token_rates_keeps_the_published_tier() {
     let mut pricing = tiered_test_pricing();
     let overrides = build_overrides("tiered", |o| {
