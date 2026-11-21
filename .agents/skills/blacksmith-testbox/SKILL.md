@@ -19,7 +19,8 @@ description: Runs local changes on a Blacksmith testbox. Use for Linux builds, L
 - `dev` job of `testbox.yaml`: Linux builds, `nix build .#ccusage-static` size
   checks, Linux-only tests.
 - `bench` job: CI-like timing and instruction counts. Generated fixtures are
-  under `$CCUSAGE_FIXTURES`; `source ~/ccusage-fixtures.env` first.
+  under `$CCUSAGE_FIXTURES` on the box; start the remote command string with
+  `source ~/ccusage-fixtures.env &&`, never source it locally.
 - The owner's MacBook: timing that should reflect the owner's machine.
 - Local `just fmt`, `just typecheck`, and `just test` stay fine; a testbox is
   not required for them.
