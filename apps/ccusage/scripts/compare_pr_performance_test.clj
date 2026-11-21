@@ -314,7 +314,7 @@
   (let [result (fn [cpu rss & [wall]] {:command "daily" :comparison {:wall {:verdict (or wall :unchanged)} :cpu {:verdict cpu} :rss {:verdict rss}}})]
     (is (:regression? (report/overall-verdict [(result :unchanged :regression)] limits)))
     (is (:regression? (report/overall-verdict [(result :improvement :unchanged :regression)] limits)))
-    (is (= "**Verdict: no significant change** (every command within ±5% wall time and ±10% CPU time and peak RSS)."
+    (is (= "**Verdict: no significant change** (no command moved consistently beyond ±5% wall time or ±10% CPU time and peak RSS)."
            (:text (report/overall-verdict [(result :unchanged :unchanged)] limits))))
     (is (not (:regression? (report/overall-verdict [(result :improvement :unchanged)] limits))))
     (is (.contains (:text (report/overall-verdict [(result :unchanged :unchanged :regression)] limits))

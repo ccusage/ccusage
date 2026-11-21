@@ -43,7 +43,7 @@
                          :text (format "**Verdict: ⚠️ possible regression** in %s; wall time above +%d%% or CPU time or peak RSS above +%d%%, consistent across rounds."
                                        (commands regressions) wall-percent cpu-percent)}
       (seq improvements) {:text (format "**Verdict: ✅ improved** in %s; nothing regressed beyond the thresholds." (commands improvements))}
-      :else {:text (format "**Verdict: no significant change** (every command within ±%d%% wall time and ±%d%% CPU time and peak RSS)." wall-percent cpu-percent)})))
+      :else {:text (format "**Verdict: no significant change** (no command moved consistently beyond ±%d%% wall time or ±%d%% CPU time and peak RSS)." wall-percent cpu-percent)})))
 
 (defn fixture-line [{:keys [fixture-stats codex-fixture-stats grok-fixture-stats]}]
   (format "Fixture: generated Claude logs (%s on disk, %d files)%s Codex logs (%s on disk, %d files, mostly zstd-compressed)%s shaped like current real logs; every value is synthetic."
