@@ -9,7 +9,7 @@ use std::{
     fmt,
     fs::File,
     io::{self, Read},
-    mem,
+    mem::{self, ManuallyDrop},
     ops::Range,
     ptr::{self, NonNull},
     slice,
@@ -33,6 +33,7 @@ const RECYCLED_SIZE_MAX: usize = 16 << 20;
 
 thread_local! {
     static BUFFERS: RefCell<(Vec<u8>, Vec<u8>)> = const { RefCell::new((Vec::new(), Vec::new())) };
+    static CONTEXT: RefCell<Option<Context>> = const { RefCell::new(None) };
 }
 
 struct Ring(Vec<u8>);
@@ -186,6 +187,9 @@ struct Layout {
 
 impl Drop for Direct {
     fn drop(&mut self) {
+        // SAFETY: `drop` runs once, and nothing reads `self.context` after this.
+        let context = unsafe { ManuallyDrop::take(&mut self.context) };
+        let _ = CONTEXT.try_with(|recycled| recycled.replace(Some(context)));
         let input = mem::take(&mut self.input);
         let output = mem::take(&mut self.output.0);
         if input.len() <= RECYCLED_SIZE_MAX && output.len() <= RECYCLED_SIZE_MAX {
@@ -195,7 +199,7 @@ impl Drop for Direct {
 }
 
 pub(crate) struct Direct {
-    context: Context,
+    context: ManuallyDrop<Context>,
     file: File,
     stamp: Stamp,
     input: Vec<u8>,
@@ -219,7 +223,11 @@ pub(crate) struct Direct {
 
 impl Direct {
     pub(crate) fn new(file: File, capacity: usize) -> io::Result<Self> {
-        let context = Context::new()?;
+        // NOTE(2026-11-21, #2406): ZSTD_decompressBegin resets the context before every frame, so each worker keeps one instead of allocating a fresh 96 KB context per file.
+        let context = match CONTEXT.try_with(RefCell::take).ok().flatten() {
+            Some(context) => context,
+            None => Context::new()?,
+        };
         let stamp = Stamp::of(&file)?;
         // NOTE(2026-11-20): Each worker reuses its ring and input buffer across files. A fresh zero-filled ring per file cost more than the copy this decoder removes.
         let (mut input, output) = BUFFERS.try_with(RefCell::take).unwrap_or_default();
@@ -227,7 +235,7 @@ impl Direct {
             input = vec![0; capacity];
         }
         Ok(Self {
-            context,
+            context: ManuallyDrop::new(context),
             file,
             stamp,
             input,
