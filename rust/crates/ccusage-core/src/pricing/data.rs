@@ -316,6 +316,7 @@ const fn premium_until_1m_ga(input: f64, output: f64, tier: [f64; 5]) -> Pricing
         peak: standard,
         successor: None,
         follows_row: true,
+        flat_in_fast_mode: true,
     }
 }
 
@@ -332,7 +333,7 @@ const ANTHROPIC_HAIKU_5_5_LONG_CONTEXT: CuratedLongContext = whole_request_tier(
 );
 
 // NOTE(2026-11-21, #2451): Anthropic bills the full 1M window of Claude 4.6 and later models, other than Haiku 5.5, at standard rates ("A 900k-token request is billed at the same per-token rate as a 9k-token request") at https://platform.claude.com/docs/en/about-claude/pricing. models.dev still lists a 200K tier for some Sonnet 4.6, Opus 4.6 and Opus 4.7 spellings, so rows at these list rates drop it. Opus 4.7 and 4.8 launched after the change and never had a premium.
-// NOTE(2026-11-21, #2451): Until the 1M window left beta "at standard pricing" on March 13, 2026 (https://platform.claude.com/docs/en/release-notes/overview), Opus 4.6 and Sonnet 4.6 requests exceeding 200K input tokens paid the long context pricing that the February 2026 entry on the same page names: $10 / $37.50 for Opus 4.6 and $6 / $22.50 for Sonnet 4.6 per 1M, every token of the request, caching multipliers on top, at https://web.archive.org/web/20260301150515/https://platform.claude.com/docs/en/about-claude/pricing. The release note gives no hour, so the premium ends at 00:00 UTC that day.
+// NOTE(2026-11-21, #2451): Until the 1M window left beta "at standard pricing" on March 13, 2026 (https://platform.claude.com/docs/en/release-notes/overview), Opus 4.6 and Sonnet 4.6 requests exceeding 200K input tokens paid the long context pricing that the February 2026 entry on the same page names: $10 / $37.50 for Opus 4.6 and $6 / $22.50 for Sonnet 4.6 per 1M, every token of the request, caching multipliers on top, at https://web.archive.org/web/20260301150515/https://platform.claude.com/docs/en/about-claude/pricing. The release note gives no hour, so the premium ends at 00:00 UTC that day. Fast mode never paid it: the same capture says "Fast mode includes the full 1M context window at no additional long context charge", and https://platform.claude.com/docs/en/about-claude/pricing says "Fast mode pricing applies across the full context window, including requests over 200k input tokens", so a fast request bills its flat fast rate at every context size.
 const SONNET_4_6_1M_BETA: PricingSchedule =
     premium_until_1m_ga(3e-6, 15e-6, [6e-6, 22.5e-6, 7.5e-6, 12e-6, 0.6e-6]);
 const OPUS_4_6_1M_BETA: PricingSchedule =
@@ -399,6 +400,7 @@ const DEEPSEEK_V4_FLASH: PricingSchedule = PricingSchedule {
         schedule: &DEEPSEEK_FLASH,
     }),
     follows_row: false,
+    flat_in_fast_mode: false,
 };
 // NOTE(2026-11-20, #2401): DeepSeek planned to route `deepseek-v4-pro` to V4.1 Flash on September 14, 2026 but kept serving it with unchanged billing instead, and the pricing page still lists its own rates at https://api-docs.deepseek.com/quick_start/pricing/. Give it no successor so it keeps the V4 Pro schedule.
 const DEEPSEEK_V4_PRO: PricingSchedule = PricingSchedule {
@@ -428,6 +430,7 @@ const DEEPSEEK_V4_PRO: PricingSchedule = PricingSchedule {
     },
     successor: None,
     follows_row: false,
+    flat_in_fast_mode: false,
 };
 
 // NOTE(2026-11-20, #2268): DeepSeek launched deepseek-flash with V4.1 rates at 04:00 UTC on September 10, 2026: https://api-docs.deepseek.com/news/news260910/. Its rates differ from the retired V4 Flash schedule.
@@ -458,6 +461,7 @@ const DEEPSEEK_FLASH: PricingSchedule = PricingSchedule {
     },
     successor: None,
     follows_row: false,
+    flat_in_fast_mode: false,
 };
 
 pub(super) static SCHEDULES: &[(&str, PricingSchedule)] = &[

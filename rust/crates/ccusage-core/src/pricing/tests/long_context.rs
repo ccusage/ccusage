@@ -459,6 +459,45 @@ fn claude_4_6_long_requests_paid_the_premium_until_the_1m_window_left_beta() {
     }
 }
 
+#[test]
+fn fast_mode_claude_opus_4_6_bills_no_1m_beta_premium_before_ga() {
+    crate::test_support::install_pricing_snapshots();
+    let pricing = PricingMap::load_embedded();
+    let model = "claude-opus-4-6";
+    let candidates = [(model, MatchKind::Fuzzy)];
+    for (speed, expected) in [
+        (None, 300_000.0 * 10e-6 + 1_000.0 * 37.5e-6),
+        (
+            Some(crate::Speed::Fast),
+            (300_000.0 * 5e-6 + 1_000.0 * 25e-6) * 6.0,
+        ),
+    ] {
+        let cost = crate::cost::price_entry(
+            crate::cost::EntryPricing {
+                granularity: crate::cost::UsageGranularity::Request,
+                usage: crate::TokenUsageRaw {
+                    input_tokens: 300_000,
+                    output_tokens: 1_000,
+                    speed,
+                    ..Default::default()
+                },
+                reasoning_tokens: 0,
+                residual_tokens: 0,
+                reported_model: Some(model),
+                candidates: &candidates,
+                stored_cost: None,
+                timestamp: Some(super::timestamp("2026-03-12T12:00:00Z")),
+            },
+            crate::cost::PriceTable::Calculate(&pricing),
+        )
+        .cost;
+        assert!(
+            (cost - expected).abs() < 1e-9,
+            "{speed:?}: {cost} != {expected}"
+        );
+    }
+}
+
 fn long_request_cost_with_override(model: &str, input: f64, output: f64, instant: &str) -> f64 {
     crate::test_support::install_pricing_snapshots();
     let key = model.to_string();
