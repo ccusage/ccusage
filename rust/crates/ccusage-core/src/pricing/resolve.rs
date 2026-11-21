@@ -89,9 +89,9 @@ impl PricingHandle {
     fn new(row: &Row, hit: CachedHit) -> Self {
         Self {
             rates: row.rates(),
-            schedule: row.schedule.filter(|_| {
-                hit.scheduled() || (hit.is_models_dev() && row.source == super::Source::ModelsDev)
-            }),
+            schedule: row
+                .schedule
+                .filter(|schedule| schedule.follows_row || hit.scheduled()),
         }
     }
 
@@ -105,9 +105,7 @@ impl PricingHandle {
                         .into_iter()
                         .find_map(|name| schedule_for(last_segment(name)))
                 })
-                .or(row
-                    .schedule
-                    .filter(|_| row.source == super::Source::ModelsDev)),
+                .or(row.schedule.filter(|schedule| schedule.follows_row)),
             BillingRoute::Foreign => None,
         };
         Self {
