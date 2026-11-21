@@ -1,7 +1,7 @@
 use std::{
     hash::{Hash, Hasher},
     num::NonZeroU64,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::Arc,
 };
 
@@ -158,16 +158,26 @@ fn push_deduped_session_alias(
     }
 }
 
+fn usage_file_positions(paths: Vec<&Path>) -> Vec<usize> {
+    let mut positions = (0..paths.len()).collect::<Vec<_>>();
+    positions.sort_by(|&left, &right| usage_file_order(paths[left], paths[right]));
+    positions
+}
+
 pub(super) fn dedupe_files<E: DedupEntry>(
-    mut files: Vec<(PathBuf, Vec<E>)>,
+    files: Vec<(PathBuf, Vec<E>)>,
 ) -> (Vec<E>, Vec<(usize, Arc<str>)>) {
-    files.sort_by(|(left, _), (right, _)| usage_file_order(left, right));
-    let entry_count = files.iter().map(|(_, entries)| entries.len()).sum();
+    let positions = usage_file_positions(files.iter().map(|(path, _)| path.as_path()).collect());
+    let mut files = files
+        .into_iter()
+        .map(|(_, entries)| entries)
+        .collect::<Vec<_>>();
+    let entry_count = files.iter().map(Vec::len).sum();
     let mut deduped_indexes = DedupeIndexes::with_capacity(entry_count);
     let mut deduped = Vec::with_capacity(entry_count);
     let mut copies = Vec::new();
-    for (_, entries) in files {
-        for entry in entries {
+    for position in positions {
+        for entry in std::mem::take(&mut files[position]) {
             if let Some((index, discarded)) =
                 push_deduped_entry(entry, &mut deduped_indexes, &mut deduped)
                 && discarded.session_id() != deduped[index].session_id()
