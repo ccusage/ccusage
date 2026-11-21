@@ -33,7 +33,7 @@
 022-droid|deepseek-v3-2|F:deepseek-v3-2|0.28/0.4|S2|deepseek/deepseek-v3.2|
 023-hermes/deepseek|deepseek-v3.2|E:deepseek/deepseek-v3.2,F:deepseek-v3.2|0.28/0.4|S2|deepseek/deepseek-v3.2|
 024-hermes/deepseek|deepseek-v3-2|E:deepseek/deepseek-v3-2,F:deepseek-v3-2|0.28/0.4|S2|deepseek/deepseek-v3.2|
-025-hermes/bedrock|deepseek.v3.2|E:bedrock/deepseek.v3.2,F:deepseek.v3.2|0.28/0.4|S2|deepseek/deepseek-v3.2|
+025-hermes/bedrock|deepseek.v3.2|E:bedrock/deepseek.v3.2,F:deepseek.v3.2|0.62/1.85|S2|deepseek.v3.2|
 027-droid|deepseek-v3-2-251201|F:deepseek-v3-2-251201|0.28985507/0.43478261|S6|deepseek/deepseek-v3.2-251201|
 028-claude|deepseek-flash|F:deepseek-flash|0.15/0.6/0.003|S2|deepseek-flash|
 029-hermes/deepseek|deepseek-flash|E:deepseek/deepseek-flash,F:deepseek-flash|0.15/0.6/0.003|S2|deepseek/deepseek-flash|
@@ -132,3 +132,7 @@
 115-claude|deepseek-v4-flash-vision-exp|F:deepseek-v4-flash-vision-exp|0.15/0.6/0.003|S2|deepseek-v4-flash-vision-exp|
 118-kilo/azure-openai|mistral-large-latest|S:azure_openai/mistral-large-latest,F:mistral-large-latest|8/24|S2|azure/mistral-large-latest|
 118-opencode/azure|mistral-large-latest|F:mistral-large-latest,E:azure/mistral-large-latest|8/24|S2|azure/mistral-large-latest|
+122-claude|moonshotai.kimi-k2-thinking|F:moonshotai.kimi-k2-thinking|0.6/2.5|S2|bedrock/moonshotai.kimi-k2-thinking|
+122-hermes/bedrock|moonshotai.kimi-k2-thinking|E:bedrock/moonshotai.kimi-k2-thinking,F:moonshotai.kimi-k2-thinking|0.6/2.5|S2|bedrock/moonshotai.kimi-k2-thinking|
+123-claude|deepseek.v3.2|F:deepseek.v3.2|0.62/1.85|S2|deepseek.v3.2|
+123-claude|bedrock/us-east-1/deepseek.v3.2|F:bedrock/us-east-1/deepseek.v3.2|0.62/1.85|S2|deepseek.v3.2|

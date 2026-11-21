@@ -1,7 +1,7 @@
 use super::{MatchKind, PricingMap, layered, timestamp};
 
 #[test]
-fn direct_litellm_row_beats_the_bare_hosted_spelling() {
+fn vendor_spellings_bill_the_vendor_row_and_the_bedrock_spelling_bills_bedrock() {
     crate::test_support::install_pricing_snapshots();
     let mut pricing = PricingMap::default();
     pricing.load_json(
@@ -18,15 +18,14 @@ fn direct_litellm_row_beats_the_bare_hosted_spelling() {
             }
         }"#,
     );
-    for model in [
-        "deepseek-v3-2",
-        "deepseek-v3.2",
-        "deepseek.v3.2",
-        "deepseek/deepseek-v3.2",
+    for (model, input, output) in [
+        ("deepseek-v3-2", 0.28e-6, 0.40e-6),
+        ("deepseek-v3.2", 0.28e-6, 0.40e-6),
+        ("deepseek/deepseek-v3.2", 0.28e-6, 0.40e-6),
+        ("deepseek.v3.2", 0.62e-6, 1.85e-6),
     ] {
         let price = pricing.find(model).unwrap();
-        assert_eq!(price.input, 0.28e-6, "{model}");
-        assert_eq!(price.output, 0.40e-6, "{model}");
+        assert_eq!((price.input, price.output), (input, output), "{model}");
     }
 }
 

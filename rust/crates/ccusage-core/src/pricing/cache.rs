@@ -119,7 +119,7 @@ impl Pass {
     pub(super) fn allows(self, kind: MatchKind) -> bool {
         match self {
             Self::S2 => true,
-            Self::Host => matches!(kind, MatchKind::StrictExact | MatchKind::Exact),
+            Self::Host => true,
             Self::S34 | Self::S3f => kind != MatchKind::StrictExact,
             Self::S56 => matches!(kind, MatchKind::Fuzzy | MatchKind::Fallback),
             Self::Label => false,

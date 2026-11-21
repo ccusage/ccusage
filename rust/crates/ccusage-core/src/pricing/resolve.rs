@@ -4,8 +4,9 @@ use crate::TimestampMs;
 
 use super::{
     CachedHit, Candidate, HitKind, Lookup, Name, NameCache, Pass, Pricing, PricingMap, PricingRows,
-    PricingSchedule, RequestCache, RequestHit, Row, RowMatch, Scope, host_listing, is_host_segment,
-    last_segment, models_dev_pricing, names_pricing_key, pricing_key_matches, schedule_for,
+    PricingSchedule, RequestCache, RequestHit, Row, RowMatch, Scope, host_listing,
+    host_of_model_id, is_host_segment, last_segment, models_dev_pricing, names_pricing_key,
+    pricing_key_matches, schedule_for,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -312,6 +313,10 @@ impl PricingMap {
                 for (index, &(model, kind)) in candidates.iter().enumerate() {
                     if (kind == MatchKind::Fallback) == fallback
                         && pass.allows(kind)
+                        && (!matches!(pass, Pass::Host)
+                            || !model.contains('/')
+                            || reported == Some(model)
+                            || matches!(kind, MatchKind::StrictExact | MatchKind::Exact))
                         && let Some(row) = matching(model, pass)
                     {
                         return Some(RequestHit {
@@ -414,7 +419,7 @@ impl PricingMap {
         }
     }
 
-    // NOTE(2026-11-21, #2229): When an agent names the host that served a request, the host's own listing bills it ahead of the vendor's list price found through another candidate. A direct vendor in front of the id names no host. Only LiteLLM keys a listing by its host, so the pass reads LiteLLM rows keyed by that path, which models.dev's `owner/model` ids are not.
+    // NOTE(2026-11-21, #2229): When an agent names the host that served a request, in the logged id or as a logged-provider candidate (Exact or StrictExact), or logs a Bedrock-spelled id, the host's own listing bills it ahead of the vendor's list price found through another candidate. A direct vendor in front of the id names no host. Only LiteLLM keys a listing by its host, so the pass reads LiteLLM rows keyed by that path, which models.dev's `owner/model` ids are not.
     fn search_host<'a>(
         &'a self,
         model: &str,
@@ -422,40 +427,65 @@ impl PricingMap {
         lookup: Lookup,
         models_dev: &impl Fn() -> Option<&'a PricingRows>,
     ) -> Option<CachedHit> {
-        let (segment, _) = model.split_once('/')?;
-        if !is_host_segment(segment) {
-            return None;
-        }
         let name = slot.name(model);
-        let hosted = |row: &Row| row.scope == Scope::Hosted;
-        let listed = match host_listing(segment) {
-            Some((host, listing)) => {
-                let id = name.suffixes().next()?;
-                listing
-                    .prefixes
-                    .iter()
-                    .find_map(|prefix| {
-                        let key = format!("{prefix}/{}", id.raw());
-                        let identity = std::sync::OnceLock::new();
-                        self.authoritative(
-                            Name::new(&key, &identity),
-                            lookup,
-                            false,
-                            models_dev,
-                            hosted,
-                        )
-                    })
-                    .or_else(|| {
-                        let found = self.rows.host_row(id, host, lookup)?;
-                        match self.overrides.shadow(found) {
-                            Some(id) => self.resolve_override(id, models_dev, false),
-                            None => Some(found),
-                        }
-                    })
+        let listed = match model.split_once('/') {
+            Some((segment, _)) => {
+                if !is_host_segment(segment) {
+                    return None;
+                }
+                match host_listing(segment) {
+                    Some((host, listing)) => self.host_listing_row(
+                        name.suffixes().next()?,
+                        host,
+                        listing,
+                        lookup,
+                        models_dev,
+                    ),
+                    None => self.authoritative(name, lookup, false, models_dev, |row| {
+                        row.scope == Scope::Hosted
+                    }),
+                }
             }
-            None => self.authoritative(name, lookup, false, models_dev, hosted),
+            None => {
+                let (host, listing) = host_of_model_id(model)?;
+                self.host_listing_row(name, host, listing, lookup, models_dev)
+            }
         };
         listed.map(|found| CachedHit::new(found, HitKind::AuthoritativeIdentity))
+    }
+
+    // NOTE(2026-11-21, #2229): A host's default-region listing is its bare row, then its prefixed rows. A regional path missing from the catalogue, such as an offline `bedrock/us-east-1/<id>`, bills the host's default-region listing rather than falling to the vendor's price.
+    fn host_listing_row<'a>(
+        &'a self,
+        id: Name<'_>,
+        host: u8,
+        listing: &super::data::HostListing,
+        lookup: Lookup,
+        models_dev: &impl Fn() -> Option<&'a PricingRows>,
+    ) -> Option<RowMatch<'a>> {
+        self.rows
+            .host_row(id, host, lookup)
+            .and_then(|found| match self.overrides.shadow(found) {
+                Some(id) => self.resolve_override(id, models_dev, false),
+                None => Some(found),
+            })
+            .or_else(|| {
+                listing.prefixes.iter().find_map(|prefix| {
+                    let key = format!("{prefix}/{}", id.raw());
+                    let identity = std::sync::OnceLock::new();
+                    self.authoritative(
+                        Name::new(&key, &identity),
+                        lookup,
+                        false,
+                        models_dev,
+                        |row| row.scope == Scope::Hosted,
+                    )
+                })
+            })
+            .or_else(|| {
+                let default_region = id.suffixes().next()?;
+                self.host_listing_row(default_region, host, listing, lookup, models_dev)
+            })
     }
 
     fn search_fuzzy<'a>(

@@ -111,5 +111,15 @@
 		"input_cost_per_token": 3.5e-7,
 		"litellm_provider": "vertex_ai-language-models",
 		"output_cost_per_token": 2.6e-6
+	},
+	"bedrock/moonshotai.kimi-k2-thinking": {
+		"input_cost_per_token": 6e-7,
+		"litellm_provider": "bedrock",
+		"output_cost_per_token": 2.5e-6
+	},
+	"bedrock_mantle/ap-northeast-1/moonshotai.kimi-k2-thinking": {
+		"input_cost_per_token": 7.3e-7,
+		"litellm_provider": "bedrock_mantle",
+		"output_cost_per_token": 3.03e-6
 	}
 }

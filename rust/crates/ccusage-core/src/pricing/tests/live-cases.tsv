@@ -25,3 +25,4 @@
 118-kilo/amazon-bedrock|deepseek.v3.2|S:amazon_bedrock/deepseek.v3.2,F:deepseek.v3.2|0.62/1.85|S2|deepseek.v3.2|
 119-opencode/openrouter|deepseek/deepseek-v4-flash|F:deepseek/deepseek-v4-flash,E:openrouter/deepseek/deepseek-v4-flash|0.09/0.18|S2|openrouter/deepseek/deepseek-v4-flash|
 120-opencode/google-vertex|gemini-2.5-flash|F:gemini-2.5-flash,E:google_vertex/gemini-2.5-flash|0.35/2.6|S2|vertex_ai/gemini-2.5-flash|
+122-claude|moonshotai.kimi-k2-thinking|F:moonshotai.kimi-k2-thinking|0.6/2.5|S2|bedrock/moonshotai.kimi-k2-thinking|

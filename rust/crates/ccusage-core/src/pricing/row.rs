@@ -210,6 +210,15 @@ pub(super) fn is_host_segment(segment: &str) -> bool {
         .is_some_and(|sources| sources.direct_providers.iter().any(|id| id == segment))
 }
 
+pub(super) fn host_of_model_id(model: &str) -> Option<(u8, &'static data::HostListing)> {
+    let (word, _) = model.split_once('.')?;
+    data::HOSTS
+        .iter()
+        .zip(0..)
+        .find(|(listing, _)| listing.model_id_words.contains(&word))
+        .map(|(listing, index)| (index, listing))
+}
+
 pub(super) fn bare_host(key: &str, provider: &str) -> Option<u8> {
     if key.contains('/') {
         return None;
