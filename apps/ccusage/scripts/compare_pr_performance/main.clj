@@ -33,7 +33,7 @@
                 shapes (into {:large {:fixture :large :label "main" :env env :claude-dir fixture-dir}}
                              (keep (fn [{:keys [fixture option] :as shape}]
                                      (when-let [dir (some-> (get options option) system/expand)]
-                                       [fixture (assoc shape :env (system/fixture-env dir nil nil (str empty-home)) :claude-dir dir
+                                       [fixture (assoc shape :env (system/shape-env shape dir (str empty-home)) :claude-dir dir
                                                        :stats (system/summarize-directory dir))])))
                              data/shape-fixtures)
                 results (mapv #(compare-command variants % env options) data/default-commands)

@@ -439,6 +439,7 @@ jobs:
             --many-files-fixture-dir "$fixtures/many-files" \
             --proxy-fixture-dir "$fixtures/proxy" \
             --small-fixture-dir "$fixtures/small" \
+            --opencode-fixture-dir "$fixtures/opencode" \
             --warmup 2 \
             --runs 11 \
             --output "$RUNNER_TEMP/ccusage-perf-comment.md"
