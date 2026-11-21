@@ -359,7 +359,7 @@ impl Entries {
         }
     }
 
-    pub(super) fn append(&mut self, key: String, mut row: Row) -> &mut Row {
+    fn append(&mut self, key: String, mut row: Row) -> &mut Row {
         row.key = Arc::from(key);
         self.append_row(row)
     }
