@@ -169,7 +169,7 @@ fn embedded_models_dev_carries_grok_long_context_tiers() {
         );
         assert_eq!(
             entry.long_context.map(|context| context.threshold),
-            Some(200_000),
+            Some(199_999),
             "{model}"
         );
     }
@@ -178,7 +178,7 @@ fn embedded_models_dev_carries_grok_long_context_tiers() {
             .find("grok-4.5")
             .unwrap()
             .long_context_split_threshold(),
-        200_000
+        199_999
     );
 }
 
@@ -280,7 +280,7 @@ fn recorded_threshold_migration_groups_use_the_resolved_model_boundary() {
     for (model, expected) in [
         ("GLM-5-1", 32_000),
         ("anthropic-claude-5-5-haiku", 100_000),
-        ("spacexai/grok-4-5", 200_000),
+        ("spacexai/grok-4-5", 199_999),
         ("qwen-3-6-plus-high", 256_000),
         ("alibaba/qwen3-5-plus", 256_001),
         ("aihubmix/gpt-5-4-high", 272_000),

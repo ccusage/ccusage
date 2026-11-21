@@ -67,7 +67,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.00017999999999999998,
+          "cost": 0.000069,
           "inputTokens": 120,
           "modelName": "grok-code-fast-1",
           "outputTokens": 30
@@ -79,7 +79,7 @@ exit: 0
       "outputTokens": 30,
       "projectPath": "deeper",
       "sessionId": "eeeeeeee-0000-4000-8000-000000000005",
-      "totalCost": 0.00017999999999999998,
+      "totalCost": 0.000069,
       "totalTokens": 150
     },
     {
@@ -135,7 +135,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.00112,
+          "cost": 0.0004,
           "inputTokens": 800,
           "modelName": "grok-code-fast-1",
           "outputTokens": 160
@@ -167,7 +167,7 @@ exit: 0
       "outputTokens": 2230,
       "projectPath": "/work/alpha",
       "sessionId": "sess-alpha",
-      "totalCost": 0.43689,
+      "totalCost": 0.43617,
       "totalTokens": 259330
     },
     {
@@ -188,7 +188,7 @@ exit: 0
         {
           "cacheCreationTokens": 50,
           "cacheReadTokens": 700,
-          "cost": 0.0017399999999999998,
+          "cost": 0.0008290000000000001,
           "inputTokens": 650,
           "modelName": "grok-code-fast-1",
           "outputTokens": 450
@@ -201,7 +201,7 @@ exit: 0
       "outputTokens": 750,
       "projectPath": "/summary/beta",
       "sessionId": "summary-session-beta",
-      "totalCost": 0.008895,
+      "totalCost": 0.007984000000000002,
       "totalTokens": 2950
     }
   ],
@@ -210,7 +210,7 @@ exit: 0
     "cacheReadTokens": 53400,
     "inputTokens": 207415,
     "outputTokens": 3435,
-    "totalCost": 0.44728,
+    "totalCost": 0.445538,
     "totalTokens": 265100,
     "unpricedModels": [
       "grok-mystery-1",

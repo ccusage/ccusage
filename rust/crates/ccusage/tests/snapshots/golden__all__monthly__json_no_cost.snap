@@ -250,19 +250,19 @@ exit: 0
           "outputTokens": 730
         },
         {
-          "cacheCreationTokens": 50,
-          "cacheReadTokens": 700,
-          "inputTokens": 1070,
-          "modelName": "grok-code-fast-1",
-          "outputTokens": 550
-        },
-        {
           "cacheCreationTokens": 400,
           "cacheReadTokens": 600,
           "inputTokens": 1320,
           "missingPricing": true,
           "modelName": "GLM-5.3",
           "outputTokens": 350
+        },
+        {
+          "cacheCreationTokens": 50,
+          "cacheReadTokens": 700,
+          "inputTokens": 1070,
+          "modelName": "grok-code-fast-1",
+          "outputTokens": 550
         },
         {
           "cacheCreationTokens": 1200,
@@ -728,13 +728,6 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "inputTokens": 500,
-          "modelName": "grok-code-fast-1",
-          "outputTokens": 90
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
           "inputTokens": 200,
           "modelName": "gemini-3-pro-high",
           "outputTokens": 20
@@ -794,6 +787,13 @@ exit: 0
           "inputTokens": 500,
           "modelName": "qwen/qwen3-coder",
           "outputTokens": 100
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "inputTokens": 500,
+          "modelName": "grok-code-fast-1",
+          "outputTokens": 90
         },
         {
           "cacheCreationTokens": 0,

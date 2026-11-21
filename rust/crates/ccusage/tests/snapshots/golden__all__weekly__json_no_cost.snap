@@ -474,13 +474,6 @@ exit: 0
           "outputTokens": 420
         },
         {
-          "cacheCreationTokens": 50,
-          "cacheReadTokens": 700,
-          "inputTokens": 1570,
-          "modelName": "grok-code-fast-1",
-          "outputTokens": 640
-        },
-        {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 300,
           "inputTokens": 200,
@@ -493,6 +486,13 @@ exit: 0
           "inputTokens": 5350,
           "modelName": "deepseek-v4-pro",
           "outputTokens": 1193
+        },
+        {
+          "cacheCreationTokens": 50,
+          "cacheReadTokens": 700,
+          "inputTokens": 1570,
+          "modelName": "grok-code-fast-1",
+          "outputTokens": 640
         },
         {
           "cacheCreationTokens": 0,

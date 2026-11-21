@@ -1581,7 +1581,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.00017500000000000003,
+          "cost": 0.000175,
           "inputTokens": 500,
           "modelName": "grok-code-fast-1",
           "outputTokens": 50
@@ -2260,7 +2260,7 @@ exit: 0
         {
           "cacheCreationTokens": 50,
           "cacheReadTokens": 700,
-          "cost": 0.0036440000000000005,
+          "cost": 0.003644,
           "inputTokens": 1570,
           "modelName": "grok-code-fast-1",
           "outputTokens": 640,
@@ -3653,7 +3653,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.00023500000000000002,
+          "cost": 0.000235,
           "inputTokens": 500,
           "modelName": "grok-code-fast-1",
           "outputTokens": 90

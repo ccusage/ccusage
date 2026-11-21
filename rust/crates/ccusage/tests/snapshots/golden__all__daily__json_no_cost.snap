@@ -324,13 +324,6 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "inputTokens": 920,
-          "modelName": "grok-code-fast-1",
-          "outputTokens": 150
-        },
-        {
-          "cacheCreationTokens": 0,
           "cacheReadTokens": 200,
           "inputTokens": 500,
           "modelName": "GLM-5.2",
@@ -349,6 +342,13 @@ exit: 0
           "inputTokens": 1200,
           "modelName": "deepseek-v4-pro",
           "outputTokens": 300
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "inputTokens": 920,
+          "modelName": "grok-code-fast-1",
+          "outputTokens": 150
         },
         {
           "cacheCreationTokens": 0,
@@ -1361,13 +1361,6 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "inputTokens": 500,
-          "modelName": "grok-code-fast-1",
-          "outputTokens": 50
-        },
-        {
-          "cacheCreationTokens": 0,
           "cacheReadTokens": 30,
           "inputTokens": 610,
           "modelName": "gemini-2.5-flash",
@@ -1393,6 +1386,13 @@ exit: 0
           "inputTokens": 250,
           "modelName": "k2p6",
           "outputTokens": 25
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "inputTokens": 500,
+          "modelName": "grok-code-fast-1",
+          "outputTokens": 50
         },
         {
           "cacheCreationTokens": 0,

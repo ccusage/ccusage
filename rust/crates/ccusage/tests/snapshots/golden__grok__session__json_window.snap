@@ -86,7 +86,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.00007999999999999999,
+          "cost": 0.00006,
           "inputTokens": 0,
           "modelName": "grok-code-fast-1",
           "outputTokens": 40
@@ -118,7 +118,7 @@ exit: 0
       "outputTokens": 1610,
       "projectPath": "/work/alpha",
       "sessionId": "sess-alpha",
-      "totalCost": 0.6000800000000001,
+      "totalCost": 0.60006,
       "totalTokens": 254910
     },
     {
@@ -153,7 +153,7 @@ exit: 0
     "cacheReadTokens": 52300,
     "inputTokens": 203695,
     "outputTokens": 2375,
-    "totalCost": 0.6034050000000001,
+    "totalCost": 0.6033850000000001,
     "totalTokens": 258420,
     "unpricedModels": [
       "grok-mystery-1",

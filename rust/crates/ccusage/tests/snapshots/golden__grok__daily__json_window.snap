@@ -84,7 +84,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.00007999999999999999,
+          "cost": 0.00006,
           "inputTokens": 0,
           "modelName": "grok-code-fast-1",
           "outputTokens": 40
@@ -116,7 +116,7 @@ exit: 0
         "unknown"
       ],
       "outputTokens": 1405,
-      "totalCost": 0.40040500000000007,
+      "totalCost": 0.40038500000000005,
       "totalTokens": 253250
     }
   ],
@@ -125,7 +125,7 @@ exit: 0
     "cacheReadTokens": 52300,
     "inputTokens": 203695,
     "outputTokens": 2375,
-    "totalCost": 0.6034050000000001,
+    "totalCost": 0.6033850000000001,
     "totalTokens": 258420,
     "unpricedModels": [
       "grok-mystery-1",

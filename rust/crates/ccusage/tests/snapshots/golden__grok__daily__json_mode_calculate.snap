@@ -45,7 +45,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.00122,
+          "cost": 0.000409,
           "inputTokens": 920,
           "modelName": "grok-code-fast-1",
           "outputTokens": 150
@@ -56,7 +56,7 @@ exit: 0
         "grok-code-fast-1"
       ],
       "outputTokens": 450,
-      "totalCost": 0.006169999999999999,
+      "totalCost": 0.005358999999999999,
       "totalTokens": 3370
     },
     {
@@ -76,7 +76,7 @@ exit: 0
         {
           "cacheCreationTokens": 50,
           "cacheReadTokens": 700,
-          "cost": 0.0011399999999999997,
+          "cost": 0.0006540000000000001,
           "inputTokens": 150,
           "modelName": "grok-code-fast-1",
           "outputTokens": 400
@@ -106,7 +106,7 @@ exit: 0
         "grok-code-fast-1"
       ],
       "outputTokens": 970,
-      "totalCost": 0.00844,
+      "totalCost": 0.007954,
       "totalTokens": 5170
     },
     {
@@ -134,7 +134,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.00007999999999999999,
+          "cost": 0.00006,
           "inputTokens": 0,
           "modelName": "grok-code-fast-1",
           "outputTokens": 40
@@ -166,7 +166,7 @@ exit: 0
         "unknown"
       ],
       "outputTokens": 1405,
-      "totalCost": 0.42140500000000003,
+      "totalCost": 0.421385,
       "totalTokens": 253250
     },
     {
@@ -194,7 +194,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.0006000000000000001,
+          "cost": 0.000175,
           "inputTokens": 500,
           "modelName": "grok-code-fast-1",
           "outputTokens": 50
@@ -206,7 +206,7 @@ exit: 0
         "grok-4.5-build"
       ],
       "outputTokens": 410,
-      "totalCost": 0.008745000000000001,
+      "totalCost": 0.008320000000000001,
       "totalTokens": 2110
     }
   ],
@@ -215,7 +215,7 @@ exit: 0
     "cacheReadTokens": 53400,
     "inputTokens": 207415,
     "outputTokens": 3435,
-    "totalCost": 0.44728,
+    "totalCost": 0.445538,
     "totalTokens": 265100,
     "unpricedModels": [
       "grok-mystery-1",

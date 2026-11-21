@@ -98,10 +98,13 @@ impl PricingMap {
                     }
                     .marginal()
                     .map(|mut context| {
-                        if provider.is_some_and(|provider| {
-                            data::WHOLE_REQUEST_LONG_CONTEXT_PROVIDERS.contains(&provider)
+                        if let Some((_, threshold)) = provider.and_then(|provider| {
+                            data::WHOLE_REQUEST_LONG_CONTEXT_PROVIDERS
+                                .iter()
+                                .find(|(id, _)| *id == provider)
                         }) {
                             context.mode = LongContextMode::WholeRequest;
+                            context.threshold = *threshold;
                         }
                         context
                     }),
