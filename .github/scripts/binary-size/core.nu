@@ -6,7 +6,7 @@ export const targets = [
         target: linux-x64
         os: blacksmith-32vcpu-ubuntu-2404
         package: ccusage-release-linux-x64
-        # NOTE(2026-11-21, #2429): Refs older than the `ccusage-release-*` packages ship the same binary under the attribute release.yaml used before.
+        # NOTE(2026-11-21, #2429): Refs older than the `ccusage-release-*` packages ship the same binary under the attribute release.yaml used before. Measuring that attribute keeps those refs in the comparison instead of dropping their rows.
         fallback: ccusage-static
         cache_scope: build-linux-x64
         symbols: true
@@ -169,7 +169,7 @@ def target-report [
     let found = $refs | each {|ref|
         {ref: $ref build: ($builds | where ref == $ref.ref and target == $target.target | get --optional 0)}
     }
-    # NOTE(2026-11-21, #2429): A ref that predates the packages this workflow builds fails, so the first build that exists, not the requested base, anchors deltas and symbol diffs.
+    # NOTE(2026-11-21, #2429): A ref that predates the packages this workflow builds fails, so the first build that exists, not the requested base, anchors deltas and symbol diffs. The summary names that ref whenever it differs from the requested base.
     let base = $found | where {|pair| $pair.build != null } | get --optional 0.build
     let base_sections = $base.sections?
     let rows = $found | each {|pair|
