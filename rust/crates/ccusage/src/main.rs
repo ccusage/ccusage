@@ -7,7 +7,7 @@ use std::process::ExitCode;
 use ccusage_cli::Command;
 use ccusage_core::{Result, pricing, summary::Bucket};
 
-#[cfg(all(target_os = "linux", target_env = "musl"))]
+#[cfg(any(target_os = "macos", all(target_os = "linux", target_env = "musl")))]
 #[global_allocator]
 static GLOBAL_ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
