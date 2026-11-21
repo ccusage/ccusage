@@ -589,3 +589,26 @@ fn anthropic_billed_claude_4_6_usage_keeps_the_premium_before_ga() {
         }
     }
 }
+
+#[test]
+fn a_multiplier_only_override_keeps_the_claude_4_6_premium_tier() {
+    crate::test_support::install_pricing_snapshots();
+    let key = "claude-sonnet-4-6".to_string();
+    let override_value = ccusage_cli::PricingOverride {
+        fast_multiplier: Some(2.0),
+        ..Default::default()
+    };
+    let overridden = PricingMap::load_embedded().with_user_overrides([(&key, &override_value)]);
+    let plain = PricingMap::load_embedded();
+    let instant = super::timestamp("2026-03-12T00:00:00Z");
+    let scheduled = plain.find_at("claude-sonnet-4-6", instant).unwrap();
+    let rates = overridden.find_at("claude-sonnet-4-6", instant).unwrap();
+    assert_eq!(rates.long_context, scheduled.long_context);
+    assert_eq!(
+        rates
+            .long_context
+            .and_then(|context| context.rates.cache_create_1h),
+        Some(12e-6)
+    );
+    assert_eq!(rates.fast_multiplier, 2.0);
+}
