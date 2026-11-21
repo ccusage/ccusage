@@ -59,15 +59,8 @@ impl PublishedSpeed {
             fast_multiplier: self.fast.unwrap_or(1.0),
             ultrafast_multiplier: self.ultrafast.unwrap_or(1.0),
             flex_multiplier: self.flex.unwrap_or(1.0),
-            published_speed_mask: self.mask(),
             ..pricing
         }
-    }
-
-    pub(super) fn mask(self) -> u8 {
-        u8::from(self.fast.is_some()) * Pricing::FAST_RATE
-            + u8::from(self.ultrafast.is_some()) * Pricing::ULTRAFAST_RATE
-            + u8::from(self.flex.is_some()) * Pricing::FLEX_RATE
     }
 }
 

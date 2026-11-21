@@ -45,7 +45,7 @@ fn prices_the_configured_alias_target_when_both_models_have_rates() {
         service_tier: None,
     };
     let seen = CodexDedupe::new(1, Some(&pricing));
-    let mut provenance = CodexEventProvenance::new(0);
+    let mut provenance = CodexEventProvenance::new(0, None);
     seen.record(&event, &mut provenance).unwrap();
     event.model = "alias-model".into();
     seen.record(&event, &mut provenance).unwrap();
@@ -59,11 +59,7 @@ fn prices_the_configured_alias_target_when_both_models_have_rates() {
     );
     assert_eq!(group.input_tokens, 200);
     assert_eq!(
-        crate::report::calculate_group_cost(
-            group,
-            Some(&pricing),
-            CodexSpeedPolicy::Auto(CodexServiceTier::Standard.into())
-        ),
+        crate::report::calculate_group_cost(group, Some(&pricing), CodexSpeedPolicy::Auto),
         400.0,
     );
 }
@@ -100,7 +96,7 @@ fn applies_a_chained_alias_once_like_every_other_adapter() {
         service_tier: None,
     };
     let seen = CodexDedupe::new(1, Some(&pricing));
-    let mut provenance = CodexEventProvenance::new(0);
+    let mut provenance = CodexEventProvenance::new(0, None);
     seen.record(&event, &mut provenance).unwrap();
     let groups = seen
         .fold(&SharedArgs::default(), AgentReportKind::Session)
@@ -111,11 +107,7 @@ fn applies_a_chained_alias_once_like_every_other_adapter() {
         ["chain-first"]
     );
     assert_eq!(
-        crate::report::calculate_group_cost(
-            group,
-            Some(&pricing),
-            CodexSpeedPolicy::Auto(CodexServiceTier::Standard.into())
-        ),
+        crate::report::calculate_group_cost(group, Some(&pricing), CodexSpeedPolicy::Auto),
         200.0,
     );
 }
@@ -151,7 +143,7 @@ fn does_not_price_an_unpriced_alias_target_through_its_own_alias() {
         service_tier: None,
     };
     let seen = CodexDedupe::new(1, Some(&pricing));
-    let mut provenance = CodexEventProvenance::new(0);
+    let mut provenance = CodexEventProvenance::new(0, None);
     seen.record(&event, &mut provenance).unwrap();
     let groups = seen
         .fold(&SharedArgs::default(), AgentReportKind::Session)
@@ -162,11 +154,7 @@ fn does_not_price_an_unpriced_alias_target_through_its_own_alias() {
         ["chain-own-first"]
     );
     assert_eq!(
-        crate::report::calculate_group_cost(
-            group,
-            Some(&pricing),
-            CodexSpeedPolicy::Auto(CodexServiceTier::Standard.into())
-        ),
+        crate::report::calculate_group_cost(group, Some(&pricing), CodexSpeedPolicy::Auto),
         100.0,
     );
 }
@@ -197,7 +185,7 @@ fn groups_under_the_alias_target_whose_fuzzy_row_priced_the_usage() {
         service_tier: None,
     };
     let seen = CodexDedupe::new(1, Some(&pricing));
-    let mut provenance = CodexEventProvenance::new(0);
+    let mut provenance = CodexEventProvenance::new(0, None);
     seen.record(&event, &mut provenance).unwrap();
     let groups = seen
         .fold(&SharedArgs::default(), AgentReportKind::Session)
@@ -208,11 +196,7 @@ fn groups_under_the_alias_target_whose_fuzzy_row_priced_the_usage() {
         ["claude-codex-family-9-thinking"]
     );
     assert_eq!(
-        crate::report::calculate_group_cost(
-            group,
-            Some(&pricing),
-            CodexSpeedPolicy::Auto(CodexServiceTier::Standard.into())
-        ),
+        crate::report::calculate_group_cost(group, Some(&pricing), CodexSpeedPolicy::Auto),
         700.0,
     );
 }
@@ -249,7 +233,7 @@ fn bills_a_fuzzy_priced_alias_target_once_even_when_it_has_its_own_alias() {
         service_tier: None,
     };
     let seen = CodexDedupe::new(1, Some(&pricing));
-    let mut provenance = CodexEventProvenance::new(0);
+    let mut provenance = CodexEventProvenance::new(0, None);
     seen.record(&event, &mut provenance).unwrap();
     let groups = seen
         .fold(&SharedArgs::default(), AgentReportKind::Session)
@@ -260,11 +244,7 @@ fn bills_a_fuzzy_priced_alias_target_once_even_when_it_has_its_own_alias() {
         ["chain-hop-a"]
     );
     assert_eq!(
-        crate::report::calculate_group_cost(
-            group,
-            Some(&pricing),
-            CodexSpeedPolicy::Auto(CodexServiceTier::Standard.into())
-        ),
+        crate::report::calculate_group_cost(group, Some(&pricing), CodexSpeedPolicy::Auto),
         200.0,
     );
 }
@@ -290,7 +270,7 @@ fn keeps_differently_priced_requests_in_separate_groups() {
         ["group-b-target", "group-a-source"],
     ] {
         let seen = CodexDedupe::new(1, Some(&pricing));
-        let mut provenance = CodexEventProvenance::new(0);
+        let mut provenance = CodexEventProvenance::new(0, None);
         for (index, model) in order.into_iter().enumerate() {
             let event = CodexTokenUsageEvent {
                 session_id: "session".into(),
@@ -316,11 +296,7 @@ fn keeps_differently_priced_requests_in_separate_groups() {
         let group = &groups["session"];
         assert_eq!(group.models.len(), 2, "{order:?}");
         assert_eq!(
-            crate::report::calculate_group_cost(
-                group,
-                Some(&pricing),
-                CodexSpeedPolicy::Auto(CodexServiceTier::Standard.into())
-            ),
+            crate::report::calculate_group_cost(group, Some(&pricing), CodexSpeedPolicy::Auto),
             700.0,
             "{order:?}"
         );
@@ -349,7 +325,7 @@ fn tier_split_uses_the_supplied_pricing_entry_instead_of_embedded_rates() {
         service_tier: None,
     };
     let seen = CodexDedupe::new(1, Some(&pricing));
-    seen.record(&event, &mut CodexEventProvenance::new(0))
+    seen.record(&event, &mut CodexEventProvenance::new(0, None))
         .unwrap();
     let groups = seen
         .fold(&SharedArgs::default(), AgentReportKind::Session)
@@ -392,11 +368,11 @@ fn saturates_usage_totals_across_distinct_requests() {
     assert_eq!(usage.usage.output_tokens, u64::MAX);
     assert_eq!(usage.total_tokens, u64::MAX);
     assert_eq!(
-        usage.recorded_usage[crate::CodexServiceTier::Fast].input_tokens,
+        usage.tier_usage[crate::CodexServiceTier::Fast].input_tokens,
         u64::MAX
     );
     assert_eq!(
-        usage.recorded_usage[crate::CodexServiceTier::Fast].cached_input_tokens,
+        usage.tier_usage[crate::CodexServiceTier::Fast].cached_input_tokens,
         2
     );
     assert_eq!(
@@ -466,22 +442,43 @@ fn usage_attribution_uses_file_order_when_workers_finish_in_reverse() {
         ..SharedArgs::default()
     };
     let pricing = PricingMap::load_embedded();
-    let seen = CodexDedupe::new(2, Some(&pricing));
-    for (event, file_index) in [(&copied, 1), (&first, 0)] {
-        seen.record(event, &mut CodexEventProvenance::new(file_index))
+    for (first_tier, copied_tier, expected) in [
+        (
+            Some(CodexServiceTier::Standard),
+            Some(CodexServiceTier::Fast),
+            CodexServiceTier::Standard,
+        ),
+        (None, None, CodexServiceTier::Fast),
+        (
+            None,
+            Some(CodexServiceTier::Standard),
+            CodexServiceTier::Standard,
+        ),
+    ] {
+        let mut first = first.clone();
+        first.service_tier = first_tier;
+        let mut copied = copied.clone();
+        copied.service_tier = copied_tier;
+        let seen = CodexDedupe::new(2, Some(&pricing));
+        for (event, file_index, configured_tier) in [
+            (&copied, 1, CodexServiceTier::Flex),
+            (&first, 0, CodexServiceTier::Fast),
+        ] {
+            seen.record(
+                event,
+                &mut CodexEventProvenance::new(file_index, Some(configured_tier)),
+            )
             .unwrap();
-    }
-    let groups = seen.fold(&shared, AgentReportKind::Session).unwrap();
+        }
+        let groups = seen.fold(&shared, AgentReportKind::Session).unwrap();
 
-    assert_eq!(groups.len(), 1);
-    let group = &groups["session"];
-    assert_eq!(group.total_tokens, 320);
-    assert_eq!(group.last_activity.as_deref(), Some("2026-09-01T00:00:01Z"));
-    assert!(!group.models["gpt-5"].is_fallback);
-    assert_eq!(
-        group.models["gpt-5"].recorded_usage[crate::CodexServiceTier::Standard].input_tokens,
-        300
-    );
+        assert_eq!(groups.len(), 1);
+        let group = &groups["session"];
+        assert_eq!(group.total_tokens, 320);
+        assert_eq!(group.last_activity.as_deref(), Some("2026-09-01T00:00:01Z"));
+        assert!(!group.models["gpt-5"].is_fallback);
+        assert_eq!(group.models["gpt-5"].tier_usage[expected].input_tokens, 300);
+    }
 }
 
 #[test]
@@ -518,7 +515,7 @@ fn compaction_attribution_uses_file_order_when_workers_finish_in_reverse() {
     let pricing = PricingMap::load_embedded();
     let seen = CodexDedupe::new(2, Some(&pricing));
     for (event, file_index) in [(&copied, 1), (&first, 0)] {
-        seen.record(event, &mut CodexEventProvenance::new(file_index))
+        seen.record(event, &mut CodexEventProvenance::new(file_index, None))
             .unwrap();
     }
     let groups = seen.fold(&shared, AgentReportKind::Session).unwrap();
@@ -528,7 +525,7 @@ fn compaction_attribution_uses_file_order_when_workers_finish_in_reverse() {
     assert_eq!(group.total_tokens, 320);
     assert_eq!(group.last_activity.as_deref(), Some("2026-09-01T00:00:01Z"));
     assert_eq!(
-        group.models["gpt-5"].recorded_usage[crate::CodexServiceTier::Standard].input_tokens,
+        group.models["gpt-5"].tier_usage[crate::CodexServiceTier::Standard].input_tokens,
         300
     );
 }
@@ -614,19 +611,19 @@ fn records_flex_usage_in_model_buckets() {
 
     assert_eq!(usage.usage.input_tokens, 1_000);
     assert_eq!(
-        usage.recorded_usage[crate::CodexServiceTier::Flex].input_tokens,
+        usage.tier_usage[crate::CodexServiceTier::Flex].input_tokens,
         1_000
     );
     assert_eq!(
-        usage.recorded_usage[crate::CodexServiceTier::Flex].cached_input_tokens,
+        usage.tier_usage[crate::CodexServiceTier::Flex].cached_input_tokens,
         100
     );
     assert_eq!(
-        usage.recorded_usage[crate::CodexServiceTier::Flex].cache_creation_tokens,
+        usage.tier_usage[crate::CodexServiceTier::Flex].cache_creation_tokens,
         50
     );
     assert_eq!(
-        usage.recorded_usage[crate::CodexServiceTier::Flex].output_tokens,
+        usage.tier_usage[crate::CodexServiceTier::Flex].output_tokens,
         25
     );
 }
@@ -912,13 +909,13 @@ fn dedupes_copied_token_usage_across_session_files() {
             assert_eq!(group.reasoning_output_tokens, 20);
             assert_eq!(group.total_tokens, 1_200);
             assert_eq!(
-                group.models["gpt-5.2"].recorded_usage[crate::CodexServiceTier::Fast].input_tokens,
+                group.models["gpt-5.2"].tier_usage[crate::CodexServiceTier::Fast].input_tokens,
                 1_000
             );
             costs.push(crate::calculate_group_cost(
                 group,
                 Some(&pricing),
-                CodexSpeedPolicy::Auto(CodexServiceTier::Standard.into()),
+                CodexSpeedPolicy::Auto,
             ));
         }
     }
@@ -990,11 +987,11 @@ fn resolves_conflicting_duplicate_tiers_as_standard() {
 
             assert_eq!(usage.usage.input_tokens, 1_000);
             assert_eq!(
-                usage.recorded_usage[crate::CodexServiceTier::Standard].input_tokens,
+                usage.tier_usage[crate::CodexServiceTier::Standard].input_tokens,
                 1_000
             );
             assert_eq!(
-                usage.recorded_usage[crate::CodexServiceTier::Fast].input_tokens,
+                usage.tier_usage[crate::CodexServiceTier::Fast].input_tokens,
                 0
             );
         }
@@ -1067,39 +1064,39 @@ fn tracks_long_context_token_split_per_request() {
     assert_eq!(usage.usage.long_context_cached_input_tokens, 20_000);
     assert_eq!(usage.usage.long_context_output_tokens, 500);
     assert_eq!(
-        usage.recorded_usage[crate::CodexServiceTier::Fast].input_tokens,
+        usage.tier_usage[crate::CodexServiceTier::Fast].input_tokens,
         280_000
     );
     assert_eq!(
-        usage.recorded_usage[crate::CodexServiceTier::Fast].cached_input_tokens,
+        usage.tier_usage[crate::CodexServiceTier::Fast].cached_input_tokens,
         20_000
     );
     assert_eq!(
-        usage.recorded_usage[crate::CodexServiceTier::Fast].output_tokens,
+        usage.tier_usage[crate::CodexServiceTier::Fast].output_tokens,
         500
     );
     assert_eq!(
-        usage.recorded_usage[crate::CodexServiceTier::Fast].long_context_input_tokens,
+        usage.tier_usage[crate::CodexServiceTier::Fast].long_context_input_tokens,
         280_000
     );
     assert_eq!(
-        usage.recorded_usage[crate::CodexServiceTier::Fast].long_context_cached_input_tokens,
+        usage.tier_usage[crate::CodexServiceTier::Fast].long_context_cached_input_tokens,
         20_000
     );
     assert_eq!(
-        usage.recorded_usage[crate::CodexServiceTier::Fast].long_context_output_tokens,
+        usage.tier_usage[crate::CodexServiceTier::Fast].long_context_output_tokens,
         500
     );
     assert_eq!(
-        usage.recorded_usage[crate::CodexServiceTier::Standard].input_tokens,
+        usage.tier_usage[crate::CodexServiceTier::Standard].input_tokens,
         100_000
     );
     assert_eq!(
-        usage.recorded_usage[crate::CodexServiceTier::Standard].cached_input_tokens,
+        usage.tier_usage[crate::CodexServiceTier::Standard].cached_input_tokens,
         50_000
     );
     assert_eq!(
-        usage.recorded_usage[crate::CodexServiceTier::Standard].output_tokens,
+        usage.tier_usage[crate::CodexServiceTier::Standard].output_tokens,
         300
     );
 }
@@ -1185,36 +1182,36 @@ fn parallel_merge_preserves_speed_and_long_context_buckets() {
         assert_eq!(usage.usage.long_context_input_tokens, 280_000);
         assert_eq!(usage.usage.long_context_cache_creation_tokens, 30_000);
         assert_eq!(
-            usage.recorded_usage[crate::CodexServiceTier::Fast].input_tokens,
+            usage.tier_usage[crate::CodexServiceTier::Fast].input_tokens,
             280_000
         );
         assert_eq!(
-            usage.recorded_usage[crate::CodexServiceTier::Fast].cache_creation_tokens,
+            usage.tier_usage[crate::CodexServiceTier::Fast].cache_creation_tokens,
             30_000
         );
         assert_eq!(
-            usage.recorded_usage[crate::CodexServiceTier::Fast].long_context_input_tokens,
+            usage.tier_usage[crate::CodexServiceTier::Fast].long_context_input_tokens,
             280_000
         );
         assert_eq!(
-            usage.recorded_usage[crate::CodexServiceTier::Fast].long_context_cache_creation_tokens,
+            usage.tier_usage[crate::CodexServiceTier::Fast].long_context_cache_creation_tokens,
             30_000
         );
         assert_eq!(
-            usage.recorded_usage[crate::CodexServiceTier::Standard].input_tokens,
+            usage.tier_usage[crate::CodexServiceTier::Standard].input_tokens,
             100_000
         );
         assert_eq!(
-            usage.recorded_usage[crate::CodexServiceTier::Standard].cache_creation_tokens,
+            usage.tier_usage[crate::CodexServiceTier::Standard].cache_creation_tokens,
             10_000
         );
         assert_eq!(
-            usage.recorded_usage[crate::CodexServiceTier::Standard].long_context_input_tokens,
+            usage.tier_usage[crate::CodexServiceTier::Standard].long_context_input_tokens,
             0
         );
         observed.push((
-            usage.recorded_usage[crate::CodexServiceTier::Fast],
-            usage.recorded_usage[crate::CodexServiceTier::Standard],
+            usage.tier_usage[crate::CodexServiceTier::Fast],
+            usage.tier_usage[crate::CodexServiceTier::Standard],
         ));
     }
 
@@ -1242,7 +1239,7 @@ fn folds_cache_creation_usage_into_groups_and_recorded_buckets() {
     assert_eq!(group.cache_creation_tokens, 30);
     assert_eq!(usage.usage.cache_creation_tokens, 30);
     assert_eq!(
-        usage.recorded_usage[crate::CodexServiceTier::Standard].long_context_cache_creation_tokens,
+        usage.tier_usage[crate::CodexServiceTier::Standard].long_context_cache_creation_tokens,
         30
     );
 }
@@ -2174,8 +2171,8 @@ fn keeps_recorded_tiers_when_a_recordless_copy_cannot_name_its_request() {
             assert_eq!(
                 (
                     usage.usage.input_tokens,
-                    usage.recorded_usage[CodexServiceTier::Fast].input_tokens,
-                    usage.recorded_usage[CodexServiceTier::Flex].input_tokens,
+                    usage.tier_usage[CodexServiceTier::Fast].input_tokens,
+                    usage.tier_usage[CodexServiceTier::Flex].input_tokens,
                 ),
                 (2_000, 1_000, 1_000),
                 "order={order}, single_thread={single_thread}"
@@ -2270,7 +2267,7 @@ fn replaces_the_stand_in_attribution_regardless_of_arrival_order() {
         for file_index in order {
             seen.record(
                 &events[file_index],
-                &mut CodexEventProvenance::new(file_index),
+                &mut CodexEventProvenance::new(file_index, None),
             )
             .unwrap();
         }
@@ -2289,10 +2286,7 @@ fn replaces_the_stand_in_attribution_regardless_of_arrival_order() {
         );
         let model = &group.models["gpt-5.2"];
         assert!(!model.is_fallback);
-        assert_eq!(
-            model.recorded_usage[CodexServiceTier::Flex].input_tokens,
-            100
-        );
+        assert_eq!(model.tier_usage[CodexServiceTier::Flex].input_tokens, 100);
     }
 }
 
@@ -2370,9 +2364,9 @@ fn settles_mixed_recordless_tiers_independently_of_file_order() {
             assert_eq!(
                 (
                     usage.usage.input_tokens,
-                    usage.recorded_usage[CodexServiceTier::Fast].input_tokens,
-                    usage.recorded_usage[CodexServiceTier::Standard].input_tokens,
-                    usage.recorded_usage[CodexServiceTier::Flex].input_tokens,
+                    usage.tier_usage[CodexServiceTier::Fast].input_tokens,
+                    usage.tier_usage[CodexServiceTier::Standard].input_tokens,
+                    usage.tier_usage[CodexServiceTier::Flex].input_tokens,
                 ),
                 (2_000, 1_000, 1_000, 0),
                 "single_thread={single_thread}"

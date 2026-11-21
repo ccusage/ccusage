@@ -16,7 +16,6 @@ pub struct Pricing {
     pub fast_multiplier: f64,
     pub ultrafast_multiplier: f64,
     pub flex_multiplier: f64,
-    pub(super) published_speed_mask: u8,
     pub(super) cache_defaults: &'static CacheDefaults,
     pub(super) explicit_fields: u16,
     pub(super) flat_long_context_in_fast_mode: bool,
@@ -88,24 +87,6 @@ pub(super) struct CacheDefaults {
 }
 
 impl Pricing {
-    pub(super) const FAST_RATE: u8 = 1;
-    pub(super) const ULTRAFAST_RATE: u8 = 2;
-    pub(super) const FLEX_RATE: u8 = 4;
-
-    pub fn has_fast_rate(&self) -> bool {
-        self.published_speed_mask & Self::FAST_RATE != 0
-            || self.explicit_fields & OverrideFields::FAST != 0
-    }
-
-    pub fn has_ultrafast_rate(&self) -> bool {
-        self.published_speed_mask & Self::ULTRAFAST_RATE != 0
-    }
-
-    pub fn has_flex_rate(&self) -> bool {
-        self.published_speed_mask & Self::FLEX_RATE != 0
-            || self.explicit_fields & OverrideFields::FLEX != 0
-    }
-
     pub fn long_context_split_threshold(self) -> u64 {
         self.long_context
             .map_or(DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS, |context| {
@@ -149,7 +130,6 @@ impl Pricing {
             fast_multiplier: 1.0,
             ultrafast_multiplier: 1.0,
             flex_multiplier: 1.0,
-            published_speed_mask: 0,
             cache_defaults: &data::WRITES_SURCHARGED,
             explicit_fields: 0,
             flat_long_context_in_fast_mode: false,

@@ -7,7 +7,7 @@ pub(super) fn calculate_codex_usage_cost(
 ) -> f64 {
     let CodexTimestampedUsage {
         usage: total_usage,
-        mut recorded_usage,
+        tier_usage,
     } = usage;
     let standard_cost = calculate_codex_bucket_cost(&total_usage, pricing);
     let empty = CodexUsageBucket::default();
@@ -18,18 +18,11 @@ pub(super) fn calculate_codex_usage_cost(
         CodexSpeedPolicy::Forced(CodexServiceTier::Flex) => (total_usage, empty, empty),
         CodexSpeedPolicy::Forced(CodexServiceTier::Fast) => (empty, total_usage, empty),
         CodexSpeedPolicy::Forced(CodexServiceTier::Ultrafast) => (empty, empty, total_usage),
-        CodexSpeedPolicy::Auto(configured) => {
-            let tier = configured.for_pricing(pricing);
-            if tier != CodexServiceTier::Standard {
-                let unclassified_usage = total_usage.saturating_sub(recorded_usage.total());
-                recorded_usage[tier] += unclassified_usage;
-            }
-            (
-                recorded_usage[CodexServiceTier::Flex],
-                recorded_usage[CodexServiceTier::Fast],
-                recorded_usage[CodexServiceTier::Ultrafast],
-            )
-        }
+        CodexSpeedPolicy::Auto => (
+            tier_usage[CodexServiceTier::Flex],
+            tier_usage[CodexServiceTier::Fast],
+            tier_usage[CodexServiceTier::Ultrafast],
+        ),
     };
     standard_cost
         + calculate_codex_bucket_cost(&flex_usage, pricing) * (pricing.flex_multiplier - 1.0)

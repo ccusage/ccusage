@@ -236,7 +236,6 @@ impl Writer {
         let cache_defaults = match &pricing.published {
             Published::Known(rates) => {
                 self.flags.push(PUBLISHED_KNOWN);
-                self.flags.push(rates.speed_mask);
                 self.rates.extend(
                     [
                         rates.fast_multiplier,
@@ -429,7 +428,6 @@ impl<'a> Reader<'a> {
                 fast_multiplier: self.rate(),
                 ultrafast_multiplier: self.rate(),
                 flex_multiplier: self.rate(),
-                speed_mask: self.flags.u8(),
                 cache_defaults: self.cache_defaults(),
             })),
             PUBLISHED_BY_KEY => Some(Published::ByKey {

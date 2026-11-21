@@ -121,13 +121,13 @@ impl CodexTokenUsageEvent {
 #[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct CodexTimestampedUsage {
     pub(crate) usage: CodexUsageBucket,
-    pub(crate) recorded_usage: TierBuckets,
+    pub(crate) tier_usage: TierBuckets,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct CodexModelUsage {
     pub(crate) usage: CodexUsageBucket,
-    pub(crate) recorded_usage: TierBuckets,
+    pub(crate) tier_usage: TierBuckets,
     pub(crate) reasoning_output_tokens: u64,
     pub total_tokens: u64,
     pub(crate) timestamped_usage: BTreeMap<i64, CodexTimestampedUsage>,
@@ -135,10 +135,10 @@ pub struct CodexModelUsage {
 }
 
 impl CodexModelUsage {
-    pub fn from_buckets(usage: CodexUsageBucket, recorded_usage: TierBuckets) -> Self {
+    pub fn from_buckets(usage: CodexUsageBucket, tier_usage: TierBuckets) -> Self {
         Self {
             usage,
-            recorded_usage,
+            tier_usage,
             ..Self::default()
         }
     }
@@ -146,7 +146,7 @@ impl CodexModelUsage {
     pub(crate) fn add_usage(&mut self, usage: CodexUsageBucket, tier: Option<CodexServiceTier>) {
         self.usage += usage;
         if let Some(tier) = tier {
-            self.recorded_usage[tier] += usage;
+            self.tier_usage[tier] += usage;
         }
     }
 }
