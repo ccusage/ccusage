@@ -152,8 +152,6 @@ export default defineConfig({
 	},
 
 	vite: {
-		// NOTE(2026-11-21, cf 1.0.0-rc.2): docs/vite.config.ts is cf's deploy config, not VitePress's. Loading it here would replace the site's public dir with its own build output.
-		configFile: false,
 		plugins: [
 			cloudflareRedirect({
 				mode: 'generate',
