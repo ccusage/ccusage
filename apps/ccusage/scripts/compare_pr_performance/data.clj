@@ -43,18 +43,22 @@
    :runs {:coerce :long :default 11 :ref "N" :desc "Interleaved measured rounds; at least 3"}
    :warmup {:coerce :long :default 2 :ref "N" :desc "Interleaved warmup rounds"}
    :threshold {:coerce :double :default 0.1 :ref "RATIO" :desc "CPU-time and RSS change that counts as a regression"}
+;; NOTE(2026-11-21, #2449): Three 11-round byte-copy control runs on the Linux runner kept all 33 rows' median wall ratios within 4% of 1.00. Twice that stays clear of that noise and still catches #2407's 1.3x.
+   :wall-threshold {:coerce :double :default 0.08 :ref "RATIO" :desc "Wall-time change that counts as a regression"}
    :help {:alias :h :coerce :boolean}})
 
 (defn fail! [message data]
   (throw (ex-info message data)))
 
-(defn assert-sample-options [{:keys [runs warmup threshold]}]
+(defn assert-sample-options [{:keys [runs warmup threshold wall-threshold]}]
   (when (< runs 3)
     (fail! "--runs must be at least 3" {:kind :invalid-cli}))
   (when (< warmup 0)
     (fail! "--warmup must be a non-negative integer" {:kind :invalid-cli}))
   (when-not (< 0 threshold 1)
-    (fail! "--threshold must be between 0 and 1" {:kind :invalid-cli})))
+    (fail! "--threshold must be between 0 and 1" {:kind :invalid-cli}))
+  (when-not (< 0 wall-threshold 1)
+    (fail! "--wall-threshold must be between 0 and 1" {:kind :invalid-cli})))
 
 (defn parse-cli [argv]
   (let [options (cli/parse-opts argv {:spec cli-spec :restrict true})]
@@ -119,8 +123,9 @@
 (defn command-text-arg [value]
   (let [text (str value)]
     (if (re-matches safe-arg-pattern text) text (json/generate-string text))))
-(defn benchmark-command-text
+(defn benchmark-argv
   [{:keys [vars clean?]} argv]
-  (->> (concat ["env"] (when clean? ["-i"]) (map (fn [[k v]] (str k "=" v)) vars) argv)
-       (map command-text-arg)
-       (str/join " ")))
+  (vec (concat ["env"] (when clean? ["-i"]) (map (fn [[k v]] (str k "=" v)) vars) argv)))
+(defn benchmark-command-text
+  [env argv]
+  (str/join " " (map command-text-arg (benchmark-argv env argv))))

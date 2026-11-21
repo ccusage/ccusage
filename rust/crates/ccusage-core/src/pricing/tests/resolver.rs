@@ -1,6 +1,71 @@
 use super::{MatchKind, PricingMap, layered, timestamp};
 
 #[test]
+fn case_insensitive_identity_beats_a_hosted_fuzzy_hit() {
+    crate::test_support::install_pricing_snapshots();
+    let pricing = PricingMap::load_embedded();
+    let model = "GLM-4.7";
+    let found = pricing
+        .explain(Some(model), &[(model, MatchKind::Fuzzy)])
+        .unwrap();
+    assert_eq!(found.row_key, "glm-4.7");
+    let rates = pricing.find(model).unwrap();
+    assert_eq!((rates.input, rates.output), (0.60e-6, 2.20e-6));
+}
+
+#[test]
+fn case_sensitive_hosted_identity_beats_a_folded_vendor_match() {
+    crate::test_support::install_pricing_snapshots();
+    let mut primary = PricingMap::default();
+    primary.load_json(
+        r#"{"deepseek/deepseek-fixture.1": {
+            "litellm_provider": "deepseek", "input_cost_per_token": 1,
+            "output_cost_per_token": 2, "max_input_tokens": 1000
+        }}"#,
+    );
+    let mut hosted = PricingMap::default();
+    hosted.load_models_dev_json_for_tests(
+        r#"{
+            "host/DeepSeek-Fixture.1": {
+                "cost": {"input": 9000000, "output": 10000000}, "limit": {"context": 2000}
+            },
+            "host/Case-Only.1": {
+                "cost": {"input": 3000000, "output": 4000000}, "limit": {"context": 3000}
+            }
+        }"#,
+    );
+    let pricing = layered(&primary, Some(&hosted));
+    for (model, input, limit) in [
+        ("host/DeepSeek-Fixture.1", 9.0, 2000),
+        ("host/DeepSeek-Fixture-1", 9.0, 2000),
+        ("DEEPSEEK-FIXTURE.1", 1.0, 1000),
+        ("host/case-only.1", 3.0, 3000),
+    ] {
+        assert_eq!(pricing.find(model).unwrap().input, input, "{model}");
+        assert_eq!(pricing.context_limit(model), Some(limit), "{model}");
+    }
+}
+
+#[test]
+fn case_fallback_keeps_the_direct_vendors_schedule() {
+    use super::super::BillingRoute;
+
+    crate::test_support::install_pricing_snapshots();
+    let pricing = PricingMap::load_embedded();
+    let model = "DEEPSEEK-V4-PRO";
+    let instant = Some(timestamp("2026-11-17T03:00:00Z"));
+    let (_, rates) = pricing
+        .resolve_on_route_at(
+            Some(model),
+            &[(model, MatchKind::Fuzzy)],
+            BillingRoute::Direct("deepseek"),
+            instant,
+        )
+        .unwrap();
+    assert_eq!((rates.input, rates.output), (1.32e-6, 3.96e-6));
+}
+
+#[test]
 fn direct_litellm_row_beats_the_bare_hosted_spelling() {
     crate::test_support::install_pricing_snapshots();
     let mut pricing = PricingMap::default();
@@ -785,7 +850,7 @@ fn resolver_table() {
 }
 
 #[test]
-fn resolver_table_14_qualified_google_flash_uses_the_models_dev_rate() {
+fn resolver_table_14_qualified_google_flash_uses_googles_own_row() {
     crate::test_support::install_pricing_snapshots();
     let pricing = PricingMap::load_embedded();
     let model = "google/gemini-2.5-flash";
@@ -795,8 +860,11 @@ fn resolver_table_14_qualified_google_flash_uses_the_models_dev_rate() {
         .explain(Some(model), &[(model, MatchKind::Fuzzy)])
         .unwrap();
     assert_eq!(
-        resolved.step,
-        super::super::ResolutionStep::ModelsDevIdentity
+        (resolved.step, resolved.row_key),
+        (
+            super::super::ResolutionStep::AuthoritativeIdentity,
+            "gemini/gemini-2.5-flash"
+        )
     );
 }
 

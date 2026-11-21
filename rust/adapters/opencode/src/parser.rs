@@ -16,7 +16,11 @@ use crate::{
     pricing::MatchKind,
     stored_cost_for_mode,
 };
-use ccusage_adapter_common::{billing::price_entry_for_provider, json::JsonText, jsonl};
+use ccusage_adapter_common::{
+    billing::{host_provider, price_entry_for_provider},
+    json::JsonText,
+    jsonl,
+};
 
 #[derive(Debug, Default, Deserialize)]
 pub(crate) struct OpenCodeMessage {
@@ -507,7 +511,8 @@ fn open_code_model_candidates(model: &str, provider: &str) -> Vec<(String, Match
     base.extend(normalized.map(|name| (name, MatchKind::Fuzzy)));
     let mut candidates = base.clone();
     if provider != "unknown" {
-        let provider = provider.replace('-', "_");
+        let provider =
+            host_provider(provider).map_or_else(|| provider.replace('-', "_"), str::to_owned);
         candidates.extend(
             base.into_iter()
                 .map(|(model, kind)| (format!("{provider}/{model}"), kind)),

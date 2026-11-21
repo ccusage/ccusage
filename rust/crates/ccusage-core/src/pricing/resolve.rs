@@ -56,12 +56,20 @@ impl<'a> AgentModel<'a> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BillingRoute {
     Direct(&'static str),
+    Host(&'static str),
     Foreign,
 }
 
 /// The vendor whose own API a recorded provider ID names, if any.
 pub fn direct_billing_vendor(provider: &str) -> Option<&'static str> {
     super::data::DIRECT_BILLING_PROVIDERS
+        .iter()
+        .find_map(|(id, vendor)| (*id == provider).then_some(*vendor))
+}
+
+/// The vendor whose dated prices a recorded host follows, if any.
+pub fn host_billing_vendor(provider: &str) -> Option<&'static str> {
+    super::data::HOSTS_FOLLOWING_VENDOR_PRICES
         .iter()
         .find_map(|(id, vendor)| (*id == provider).then_some(*vendor))
 }
@@ -112,13 +120,18 @@ impl PricingHandle {
 
     fn on_route(
         row: &Row,
-        hit: CachedHit,
         route: BillingRoute,
         reported: &str,
         matched: &str,
+        hit: CachedHit,
     ) -> Self {
-        let schedule = match route {
-            BillingRoute::Direct(vendor) => [reported, matched]
+        let vendor = match route {
+            BillingRoute::Direct(vendor) => Some(vendor),
+            BillingRoute::Host(vendor) => (row.scope == Scope::Direct).then_some(vendor),
+            BillingRoute::Foreign => None,
+        };
+        let schedule = match vendor {
+            Some(vendor) => [reported, matched]
                 .into_iter()
                 .find_map(|name| {
                     let resolved = crate::model_aliases::resolve_model_name(name);
@@ -126,9 +139,11 @@ impl PricingHandle {
                         .into_iter()
                         .find_map(|name| schedule_for(last_segment(name)))
                 })
-                .or(row.schedule.filter(|schedule| schedule.follows_row))
+                .or(row
+                    .schedule
+                    .filter(|schedule| schedule.follows_row || hit.case_fallback()))
                 .filter(|schedule| schedule.vendor == vendor),
-            BillingRoute::Foreign => None,
+            None => None,
         };
         Self {
             rates: Pricing {
@@ -224,10 +239,10 @@ impl PricingMap {
         )?;
         let handle = PricingHandle::on_route(
             found.row,
-            hit,
             route,
             reported_model.unwrap_or(model),
             model,
+            hit,
         );
         Some((model, handle.with_rates_at(timestamp, |rates| *rates)))
     }
@@ -295,6 +310,7 @@ impl PricingMap {
         model: Name<'_>,
         lookup: Lookup,
         hosted: bool,
+        fold: bool,
         models_dev: &impl Fn() -> Option<&'a PricingRows>,
         visible: impl Fn(&Row) -> bool,
     ) -> Option<RowMatch<'a>> {
@@ -302,14 +318,14 @@ impl PricingMap {
             (lookup.includes(found.row) && visible(found.row)).then_some(found)
         };
         if self.overrides.is_empty() {
-            return self.rows.authoritative(model, hosted, project);
+            return self.rows.authoritative(model, hosted, fold, project);
         }
         self.overrides
             .id_identity(model.identity())
             .and_then(|id| self.resolve_override(id, models_dev, false))
             .and_then(project)
             .or_else(|| {
-                self.rows.authoritative(model, hosted, |found| {
+                self.rows.authoritative(model, hosted, fold, |found| {
                     let found = match self.overrides.shadow(found) {
                         Some(id) => self.resolve_override(id, models_dev, false)?,
                         None => found,
@@ -400,7 +416,7 @@ impl PricingMap {
             }
         }
         if let Some(alias) = reported.and_then(configured_alias)
-            && let Some(row) = self.identity_hit(alias.as_ref(), lookup, &models_dev)
+            && let Some(row) = self.identity_hit(alias.as_ref(), lookup, false, &models_dev)
         {
             return Some(RequestHit {
                 candidate: None,
@@ -414,20 +430,79 @@ impl PricingMap {
             if fallback && !has_fallback {
                 break;
             }
-            for pass in Pass::CANDIDATE {
+            let for_pass = |pass: Pass| {
                 if !pass.searches(lookup) {
-                    continue;
+                    return None;
                 }
-                for (index, &(model, kind)) in candidates.iter().enumerate() {
-                    if (kind == MatchKind::Fallback) == fallback
-                        && pass.allows(kind)
-                        && let Some(row) = matching(model, pass)
-                    {
-                        return Some(RequestHit {
-                            candidate: Some(index),
-                            row,
-                        });
-                    }
+                candidates
+                    .iter()
+                    .enumerate()
+                    .find_map(|(index, &(model, kind))| {
+                        ((kind == MatchKind::Fallback) == fallback && pass.allows(kind))
+                            .then(|| matching(model, pass))
+                            .flatten()
+                            .map(|row| RequestHit {
+                                candidate: Some(index),
+                                row,
+                            })
+                    })
+            };
+            if let Some(hit) = Pass::IDENTITY.into_iter().find_map(for_pass).or_else(|| {
+                self.search_case_fallback(
+                    reported,
+                    candidates,
+                    lookup,
+                    fallback,
+                    cache,
+                    &models_dev,
+                )
+                .or_else(|| for_pass(Pass::S56))
+            }) {
+                return Some(hit);
+            }
+        }
+        None
+    }
+
+    #[inline(never)]
+    fn search_case_fallback<'a>(
+        &'a self,
+        reported: Option<&str>,
+        candidates: &[(&str, MatchKind)],
+        lookup: Lookup,
+        fallback: bool,
+        cache: &NameCache,
+        models_dev: &impl Fn() -> Option<&'a PricingRows>,
+    ) -> Option<RequestHit> {
+        if !fallback
+            && let Some(alias) = reported.and_then(configured_alias)
+            && let Some(row) = self.identity_hit(alias.as_ref(), lookup, true, models_dev)
+        {
+            return Some(RequestHit {
+                candidate: None,
+                row: row.through_alias(true).through_case_fallback(),
+            });
+        }
+        for pass in Pass::IDENTITY {
+            if !pass.searches(lookup) {
+                continue;
+            }
+            for (index, &(model, kind)) in candidates.iter().enumerate() {
+                if (kind == MatchKind::Fallback) == fallback
+                    && pass.allows(kind)
+                    && let Some(row) = self.search_identity(
+                        model,
+                        &cache.candidate(),
+                        lookup,
+                        pass,
+                        true,
+                        models_dev,
+                    )
+                {
+                    return Some(RequestHit {
+                        candidate: Some(index),
+                        row: row.through_case_fallback(),
+                    });
                 }
             }
         }
@@ -438,11 +513,12 @@ impl PricingMap {
         &'a self,
         name: Name<'n>,
         lookup: Lookup,
+        fold: bool,
         models_dev: &impl Fn() -> Option<&'a PricingRows>,
     ) -> impl Iterator<Item = Name<'n>> {
         // NOTE(2026-11-20, #2238): An authoritative row for an id behind the path outranks the models.dev row for it. After S3 only a vendor's free row can be left there, and it must still answer through S3f.
         let unclaimed = move |suffix: &Name<'_>| {
-            self.authoritative(*suffix, lookup, false, models_dev, |_| true)
+            self.authoritative(*suffix, lookup, false, fold, models_dev, |_| true)
                 .is_none()
         };
         std::iter::once(name).chain(name.suffixes().take_while(unclaimed))
@@ -452,39 +528,34 @@ impl PricingMap {
         &'a self,
         model: &str,
         lookup: Lookup,
+        fold: bool,
         models_dev: &impl Fn() -> Option<&'a PricingRows>,
     ) -> Option<CachedHit> {
         let slot = Candidate::default();
         slot.own_names(model, |name| {
-            self.authoritative(name, lookup, true, models_dev, |_| true)
+            self.authoritative(name, lookup, true, fold, models_dev, |_| true)
         })
         .map(|found| CachedHit::new(found, HitKind::AuthoritativeIdentity))
         .or_else(|| {
             let rows = models_dev()?;
-            slot.own_names(model, |name| rows.exact(name, lookup))
+            slot.own_names(model, |name| rows.exact(name, lookup, fold))
                 .map(|found| CachedHit::new(found, HitKind::ModelsDevIdentity))
         })
     }
 
-    fn search_pass<'a>(
+    fn search_identity<'a>(
         &'a self,
         model: &str,
         slot: &Candidate<'_>,
         lookup: Lookup,
         pass: Pass,
+        fold: bool,
         models_dev: &impl Fn() -> Option<&'a PricingRows>,
     ) -> Option<CachedHit> {
         match pass {
-            Pass::Label => {
-                let id = self.overrides.label_id(model, slot)?;
-                let found = self.resolve_override(id, models_dev, false)?;
-                lookup
-                    .includes(found.row)
-                    .then(|| CachedHit::new(found, HitKind::ReportedOverride))
-            }
             Pass::S2 => slot
                 .names_marked(model, |name| {
-                    self.authoritative(name, lookup, true, models_dev, |_| true)
+                    self.authoritative(name, lookup, true, fold, models_dev, |_| true)
                 })
                 .map(|(found, aliased)| {
                     CachedHit::new(found, HitKind::AuthoritativeIdentity).through_alias(aliased)
@@ -496,7 +567,7 @@ impl PricingMap {
                 }
                 slot.names_marked(model, |name| {
                     name.suffixes().find_map(|suffix| {
-                        self.authoritative(suffix, lookup, false, models_dev, |row| {
+                        self.authoritative(suffix, lookup, false, fold, models_dev, |row| {
                             if free {
                                 row.scope == Scope::Direct && row.is_free()
                             } else {
@@ -516,20 +587,43 @@ impl PricingMap {
                     }
                     let rows = models_dev()?;
                     slot.names_marked(model, |name| {
-                        self.models_dev_names(name, lookup, models_dev)
-                            .find_map(|name| rows.exact(name, lookup))
+                        self.models_dev_names(name, lookup, fold, models_dev)
+                            .find_map(|name| rows.exact(name, lookup, fold))
                     })
                     .map(|(found, aliased)| {
                         CachedHit::new(found, HitKind::ModelsDevIdentity).through_alias(aliased)
                     })
                 })
             }
+            Pass::Label | Pass::S56 => unreachable!(),
+        }
+    }
+
+    fn search_pass<'a>(
+        &'a self,
+        model: &str,
+        slot: &Candidate<'_>,
+        lookup: Lookup,
+        pass: Pass,
+        models_dev: &impl Fn() -> Option<&'a PricingRows>,
+    ) -> Option<CachedHit> {
+        match pass {
+            Pass::Label => {
+                let id = self.overrides.label_id(model, slot)?;
+                let found = self.resolve_override(id, models_dev, false)?;
+                lookup
+                    .includes(found.row)
+                    .then(|| CachedHit::new(found, HitKind::ReportedOverride))
+            }
+            Pass::S2 | Pass::S34 | Pass::S3f => {
+                self.search_identity(model, slot, lookup, pass, false, models_dev)
+            }
             Pass::S56 => {
                 let secondary = models_dev();
                 if let Some(rows) = secondary
                     && slot
                         .names(model, |name| {
-                            self.models_dev_names(name, lookup, models_dev)
+                            self.models_dev_names(name, lookup, false, models_dev)
                                 .any(|name| {
                                     rows.contains_exact_only_identity(name.raw(), name.identity())
                                 })

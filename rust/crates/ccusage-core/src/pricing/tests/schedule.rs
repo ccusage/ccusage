@@ -877,6 +877,112 @@ fn user_overrides_take_precedence_over_the_route_schedule() {
 }
 
 #[test]
+fn google_spellings_follow_the_announced_gemini_price_changes() {
+    crate::test_support::install_pricing_snapshots();
+    let pricing = PricingMap::load_embedded();
+    for (model, instant, input, output) in [
+        ("gemini-4-argon", "2026-11-30T23:59:59Z", 2.0, 10.0),
+        ("gemini-4-argon", "2026-12-01T00:00:00Z", 4.0, 20.0),
+        ("google/gemini-4-argon", "2026-11-30T23:59:59Z", 2.0, 10.0),
+        ("google/gemini-4-argon", "2026-12-01T00:00:00Z", 4.0, 20.0),
+        ("google/gemini-4-carbon", "2026-12-01T00:00:00Z", 4.0, 20.0),
+        ("gemini-3.8-flash", "2026-12-31T23:59:59Z", 0.75, 3.75),
+        ("google/gemini-3.8-flash", "2027-01-01T00:00:00Z", 1.5, 7.5),
+        ("gemini-3.6-flash", "2027-01-01T00:00:00Z", 1.5, 7.5),
+        ("gemini-3.7-flash", "2026-12-31T23:59:59Z", 0.75, 3.75),
+        ("google/gemini-3.7-flash", "2027-01-01T00:00:00Z", 1.5, 7.5),
+        ("gemini-2.5-pro", "2026-11-30T23:59:59Z", 1.25, 10.0),
+        ("gemini-2.5-pro", "2026-12-02T00:00:00Z", 0.75, 3.75),
+        ("google/gemini-2.5-pro", "2027-01-02T00:00:00Z", 1.5, 7.5),
+        ("gemini-2.5-flash", "2026-12-02T00:00:00Z", 0.3, 2.5),
+        ("gemini-3.8-flash-tts", "2026-12-31T23:59:59Z", 0.5, 9.0),
+        ("gemini-3.8-flash-tts", "2027-01-01T00:00:00Z", 1.0, 18.0),
+        (
+            "gemini-3.8-flash-lite-tts",
+            "2027-01-01T00:00:00Z",
+            1.0,
+            12.0,
+        ),
+        (
+            "gemini-robotics-er-2-preview",
+            "2027-01-01T00:00:00Z",
+            2.0,
+            10.0,
+        ),
+        (
+            "gemini-robotics-er-2-streaming-preview",
+            "2026-12-31T23:59:59Z",
+            1.0,
+            5.0,
+        ),
+        (
+            "gemini-robotics-er-2-streaming-preview",
+            "2027-01-01T00:00:00Z",
+            2.0,
+            10.0,
+        ),
+    ] {
+        let rates = pricing.find_at(model, timestamp(instant)).unwrap();
+        assert_eq!(
+            (rates.input * 1e6, rates.output * 1e6),
+            (input, output),
+            "{model} at {instant}"
+        );
+    }
+}
+
+#[test]
+fn usage_billed_by_google_follows_the_gemini_price_change_and_foreign_hosts_stay_flat() {
+    crate::test_support::install_pricing_snapshots();
+    let pricing = PricingMap::load_embedded();
+    let route = |provider| {
+        super::super::direct_billing_vendor(provider)
+            .map_or(BillingRoute::Foreign, BillingRoute::Direct)
+    };
+    for (provider, instant, input) in [
+        ("google", "2026-11-30T23:59:59Z", 2.0),
+        ("google", "2026-12-01T00:00:00Z", 4.0),
+        ("gemini", "2026-12-01T00:00:00Z", 4.0),
+        ("openrouter", "2026-12-01T00:00:00Z", 2.0),
+    ] {
+        let candidates = [
+            (format!("{provider}/gemini-4-argon"), MatchKind::Exact),
+            ("gemini-4-argon".to_owned(), MatchKind::Fuzzy),
+        ];
+        let candidates: Vec<_> = candidates
+            .iter()
+            .map(|(name, kind)| (name.as_str(), *kind))
+            .collect();
+        let (_, rates) = pricing
+            .resolve_on_route_at(
+                Some("gemini-4-argon"),
+                &candidates,
+                route(provider),
+                Some(timestamp(instant)),
+            )
+            .unwrap();
+        assert_eq!(rates.input * 1e6, input, "{provider} at {instant}");
+    }
+}
+
+#[test]
+fn gemini_2_5_pro_keeps_its_long_context_tier_until_it_is_rebilled() {
+    crate::test_support::install_pricing_snapshots();
+    let pricing = PricingMap::load_embedded();
+    let tier = |instant| {
+        pricing
+            .find_at("gemini-2.5-pro", timestamp(instant))
+            .unwrap()
+            .long_context
+            .and_then(|context| context.rates.input)
+            .map(|rate| rate * 1e6)
+    };
+
+    assert_eq!(tier("2026-11-30T23:59:59Z"), Some(2.5));
+    assert_eq!(tier("2026-12-02T00:00:00Z"), Some(0.75));
+}
+
+#[test]
 fn a_scheduled_override_bills_one_hour_writes_above_the_split_at_its_base_rate() {
     let model = "deepseek-v4-flash".to_owned();
     let patch = ccusage_cli::PricingOverride {
@@ -945,6 +1051,37 @@ fn an_inherited_override_tier_bills_one_hour_writes_at_the_scheduled_base_rate()
         });
     assert_eq!((input, long_input), (0.22e-6, Some(1e-6)));
     assert_eq!(rate, Some(0.22e-6));
+}
+
+#[test]
+fn gemini_2_5_keeps_its_published_rates_before_the_rebilling_whatever_the_row_says() {
+    crate::test_support::install_pricing_snapshots();
+    let mut pricing = PricingMap::default();
+    pricing.load_json(
+        r#"{
+            "gemini/gemini-2.5-pro": {"litellm_provider": "gemini", "input_cost_per_token": 7.5e-7, "output_cost_per_token": 3.75e-6},
+            "gemini/gemini-2.5-flash": {"litellm_provider": "gemini", "input_cost_per_token": 9e-7, "output_cost_per_token": 9e-6}
+        }"#,
+    );
+    let rates = |model, instant| {
+        let found = pricing.find_at(model, timestamp(instant)).unwrap();
+        let tier = found
+            .long_context
+            .and_then(|context| context.rates.input)
+            .map(|rate| rate * 1e6);
+        (found.input * 1e6, found.output * 1e6, tier)
+    };
+
+    assert_eq!(
+        rates("gemini-2.5-pro", "2026-11-30T23:59:59Z"),
+        (1.25, 10.0, Some(2.5))
+    );
+    assert_eq!(
+        rates("gemini-2.5-pro", "2026-12-01T00:00:00Z"),
+        (0.75, 3.75, Some(0.75))
+    );
+    assert_eq!(rates("gemini-2.5-flash", "2026-11-30T23:59:59Z").0, 0.3);
+    assert_eq!(rates("gemini-2.5-flash", "2026-12-01T00:00:00Z").0, 0.3);
 }
 
 #[test]

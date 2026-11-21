@@ -1,5 +1,5 @@
 #!/usr/bin/env nix
-#! nix shell --inputs-from ../../.. nixpkgs#babashka-unwrapped --command bb
+#! nix shell --inputs-from ../../.. nixpkgs#babashka-unwrapped nixpkgs#bash nixpkgs#time --command bb
 
 (ns compare-pr-performance-test
   (:require [babashka.classpath :as cp]
@@ -33,8 +33,10 @@
 
 (deftest cli-parsing
   (testing "defaults"
-    (is (= {:runs 11 :warmup 2 :threshold 0.1}
-           (select-keys (data/parse-cli required-args) [:runs :warmup :threshold]))))
+    (is (= {:runs 11 :warmup 2 :threshold 0.1 :wall-threshold 0.08}
+           (select-keys (data/parse-cli required-args) [:runs :warmup :threshold :wall-threshold])))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"--wall-threshold must be between 0 and 1"
+                          (data/parse-cli (into required-args ["--wall-threshold" "0"])))))
   (testing "too few rounds to judge a regression"
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"--runs must be at least 3"
                           (data/parse-cli (conj required-args "--runs" "2")))))
@@ -117,14 +119,37 @@
   {"base" {:wall (* 0.2 base-cpu) :cpu base-cpu :rss 100 :instructions nil}
    "PR" {:wall (* 0.2 head-cpu) :cpu head-cpu :rss 100 :instructions nil}})
 
+(def limits {:threshold 0.1 :wall-threshold 0.05})
+
+(defn timed-round [[base-wall head-wall] [base-cpu head-cpu]]
+  {"base" {:wall base-wall :cpu base-cpu :rss 100 :instructions nil}
+   "PR" {:wall head-wall :cpu head-cpu :rss 100 :instructions nil}})
+
 (deftest paired-comparison
   (let [rounds [(round 1000 1500) (round 1100 1600) (round 900 1400) (round 1000 1550) (round 1050 1500)]
-        comparison (benchmark/compare-variants rounds "base" "PR" 0.1)]
+        comparison (benchmark/compare-variants rounds "base" "PR" limits)]
     (is (= :regression (get-in comparison [:cpu :verdict])))
+    (is (= :regression (get-in comparison [:wall :verdict])))
     (is (= :unchanged (get-in comparison [:rss :verdict])))
     (is (nil? (:instructions comparison)))
-    (is (= "⚠️ slower" (report/comparison-verdict comparison)))
+    (is (= "⚠️ slower, more CPU" (report/comparison-verdict comparison)))
     (is (= 1000 (get-in (benchmark/variant-summary rounds "base") [:cpu :median])))))
+
+(deftest wall-time-is-judged
+  (testing "a single-thread rewrite like #2407's state: slower wall, less CPU"
+    (let [rounds (mapv #(timed-round [280 (+ 380 %)] [750 370]) [0 4 -3 6 2 -1 5])
+          comparison (benchmark/compare-variants rounds "base" "PR" limits)]
+      (is (= :regression (get-in comparison [:wall :verdict])))
+      (is (= :improvement (get-in comparison [:cpu :verdict])))
+      (is (= "⚠️ slower, less CPU" (report/comparison-verdict comparison)))
+      (is (:regression? (report/overall-verdict [{:command "opencode daily" :comparison comparison}] limits)))))
+  (testing "wall time uses its own threshold"
+    (let [rounds (mapv (fn [_] (timed-round [1000 1040] [1000 1000])) (range 5))]
+      (is (= :unchanged (get-in (benchmark/compare-variants rounds "base" "PR" limits) [:wall :verdict])))
+      (is (= :regression (get-in (benchmark/compare-variants rounds "base" "PR" (assoc limits :wall-threshold 0.03)) [:wall :verdict])))))
+  (testing "a faster wall with more CPU, like #2412, reads as both"
+    (let [rounds (mapv (fn [_] (timed-round [380 280] [370 750])) (range 5))]
+      (is (= "⚠️ faster, more CPU" (report/comparison-verdict (benchmark/compare-variants rounds "base" "PR" limits)))))))
 
 (defn with-hyperfine-export [content f]
   (let [dir (babashka.fs/create-temp-dir {:prefix "ccusage-hyperfine-test."})
@@ -135,52 +160,95 @@
       (finally
         (babashka.fs/delete-tree dir)))))
 
-(defn hyperfine-result [name wall]
+(defn hyperfine-result [name instructions]
   {:name name :command "x"
-   :measurements [{:time_wall_clock {:value wall :unit "second"} :time_cpu {:value (* 4 wall) :unit "second"}
-                   :memory_peak_resident {:value 1048576.0 :unit "byte"} :exit_code 0}]})
+   :measurements [{:instructions {:value instructions :unit "count"} :exit_code 0}]})
 
 (defn hyperfine-export [results]
   (cheshire.core/generate-string {:schema_version 2 :results results}))
 
-(deftest hyperfine-runs
+(deftest hyperfine-instructions
   (with-hyperfine-export
-    (hyperfine-export [(hyperfine-result "PR" 0.2) (hyperfine-result "base" 0.1)])
+    (hyperfine-export [(hyperfine-result "PR" 200.0) (hyperfine-result "base" 100.0)])
     (fn [output]
-      (is (= {"base" {:wall 100.0 :cpu 400.0 :rss 1048576.0 :instructions nil}
-              "PR" {:wall 200.0 :cpu 800.0 :rss 1048576.0 :instructions nil}}
-             (benchmark/read-hyperfine-runs output ["base" "PR"])))))
+      (is (= {"base" 100.0 "PR" 200.0} (benchmark/read-hyperfine-instructions output ["base" "PR"])))))
+  (testing "a runner without hardware counters reports no instructions"
+    (with-hyperfine-export
+      (hyperfine-export [{:name "base" :command "x" :measurements [{:exit_code 0}]}])
+      (fn [output]
+        (is (= {"base" nil} (benchmark/read-hyperfine-instructions output ["base"]))))))
   (with-hyperfine-export
     "not json"
     (fn [output]
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Malformed hyperfine output"
-                            (benchmark/read-hyperfine-runs output ["base"])))))
+                            (benchmark/read-hyperfine-instructions output ["base"])))))
   (with-hyperfine-export
     (cheshire.core/generate-string {:results []})
     (fn [output]
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"schema version"
-                            (benchmark/read-hyperfine-runs output ["base"])))))
+                            (benchmark/read-hyperfine-instructions output ["base"])))))
   (with-hyperfine-export
-    (hyperfine-export [(hyperfine-result "base" 0.1)])
+    (hyperfine-export [(hyperfine-result "base" 1.0)])
     (fn [output]
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"0 results named PR"
-                            (benchmark/read-hyperfine-runs output ["base" "PR"])))))
+                            (benchmark/read-hyperfine-instructions output ["base" "PR"])))))
   (with-hyperfine-export
-    (hyperfine-export [(hyperfine-result "base" 0.1) (hyperfine-result "base" 0.2)])
+    (hyperfine-export [(hyperfine-result "base" 1.0) (hyperfine-result "base" 2.0)])
     (fn [output]
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"2 results named base"
-                            (benchmark/read-hyperfine-runs output ["base"])))))
-  (with-hyperfine-export
-    (hyperfine-export [(assoc-in (hyperfine-result "base" 0.1) [:measurements 0 :time_cpu :unit] "millisecond")])
-    (fn [output]
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unexpected hyperfine time unit"
-                            (benchmark/read-hyperfine-runs output ["base"]))))))
+                            (benchmark/read-hyperfine-instructions output ["base"]))))))
+
+(deftest instruction-pass-tolerates-missing-counters
+  (let [argv (atom nil)]
+    (with-redefs [system/run-checked (fn [a _ _]
+                                       (reset! argv a)
+                                       (spit (second (drop-while #(not= "--export-json" %) a))
+                                             (hyperfine-export [{:name "base" :command "x" :measurements [{:exit_code 0}]}
+                                                                {:name "PR" :command "x" :measurements [{:exit_code 0}]}]))
+                                       {:exit 0})]
+      (is (= {"base" nil "PR" nil}
+             (benchmark/instruction-counts [{:label "base" :bin "/b"} {:label "PR" :bin "/p"}] "daily" {:vars {}} "t")))
+      (testing "hyperfine is asked for every metric, so it skips counters the runner lacks instead of failing"
+        (is (= "all" (second (drop-while #(not= "--metrics" %) @argv))))))))
+
+(deftest timed-runs
+  (testing "wall, CPU, and peak RSS come from the process itself, not from hyperfine"
+    (let [{:keys [wall cpu rss]} (benchmark/timed-run ["sleep" "0.2"] "sleep")]
+      (is (<= 200 wall 1000) (str "wall " wall))
+      (is (< cpu 100) (str "cpu " cpu))
+      (is (pos? rss))))
+  (testing "the timing line is parsed in milliseconds and the RSS in bytes"
+    (is (= {:wall 281.0 :cpu 748.0 :rss (* 57280 1024)} (benchmark/parse-timing "0.281000 0.515000 0.233000\n" "57280\n"))))
+  (testing "a time that rounds up to a whole second keeps its digits"
+    (let [{:keys [wall]} (benchmark/timed-run ["sleep" "0.9999"] "sleep")]
+      (is (< 999 wall 1500) (str "wall " wall))))
+  (testing "a failing command stops the benchmark with its stderr"
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"(?s)broken.*boom"
+                          (benchmark/timed-run ["bash" "-c" "echo boom >&2; exit 3"] "broken")))))
+
+(deftest rounds-carry-one-instruction-count
+  (let [calls (atom [])]
+    (with-redefs [benchmark/timed-run (fn [argv _] (swap! calls conj (some #{"/b" "/p"} argv)) {:wall 10.0 :cpu 20.0 :rss 1024})
+                  benchmark/instruction-counts (fn [variants _ _ _] (zipmap (map :label variants) [100.0 150.0]))]
+      (let [{:keys [rounds]} (benchmark/measure-command [{:label "base" :bin "/b"} {:label "PR" :bin "/p"}] "daily" {:vars {}}
+                                                        {:runs 3 :warmup 1 :title "t"})]
+        (is (= 3 (count rounds)))
+        (is (every? #(= 150.0 (get-in % ["PR" :instructions])) rounds))
+        (is (= 1.5 (get-in (benchmark/compare-variants rounds "base" "PR" limits) [:instructions :median])))
+        (testing "the one instruction count renders as a single ratio, not a spread"
+          (let [comparison (benchmark/compare-variants rounds "base" "PR" limits)
+                markdown (report/table-md (report/comparison-rows [{:command "daily" :base (benchmark/variant-summary rounds "base")
+                                                                    :head (benchmark/variant-summary rounds "PR") :comparison comparison}]))]
+            (is (.contains markdown "| 1.50 |"))
+            (is (not (.contains markdown "1.50 (1.50–1.50)")))))
+        (testing "every warmup and measured round runs both binaries, alternating which goes first"
+          (is (= ["/b" "/p" "/b" "/p" "/p" "/b" "/b" "/p"] @calls)))))))
 
 (deftest report-rendering
   (let [rounds [(round 1000 600) (round 1000 620) (round 1000 610)]
         result {:command "claude daily" :base (benchmark/variant-summary rounds "base") :head (benchmark/variant-summary rounds "PR")
-                :comparison (benchmark/compare-variants rounds "base" "PR" 0.1)}
-        context {:base-sha (apply str (repeat 40 "1")) :head-sha (apply str (repeat 40 "2")) :threshold 0.1 :runs 3 :warmup 1
+                :comparison (benchmark/compare-variants rounds "base" "PR" limits)}
+        context {:base-sha (apply str (repeat 40 "1")) :head-sha (apply str (repeat 40 "2")) :threshold 0.1 :wall-threshold 0.05 :runs 3 :warmup 1
                  :fixture-stats {:bytes 1073741824 :files 10} :codex-fixture-stats {:bytes 1048576 :files 2}}
         markdown (report/render-report context [result] [] {:base 2048 :head 1024})
         header (slurp (system/path (.getParent (babashka.fs/file *file*)) "testdata" "perf-comment-header.txt"))]
@@ -189,7 +257,11 @@
     (testing "a report without a head commit carries no comment marker"
       (is (.startsWith (report/render-report (dissoc context :head-sha) [result] [] {:base 2048 :head 1024})
                        "## ccusage performance comparison\n")))
-    (is (.contains markdown "**Verdict: ✅ improved** in `claude daily` (faster)"))
+    (is (.contains markdown "**Verdict: ✅ improved** in `claude daily` (faster, less CPU)"))
+    (testing "the method line says wall time is judged, with its own threshold"
+      (is (.contains markdown "median wall-time ratio moves past 5%"))
+      (is (not (.contains markdown "not judged"))))
+    (is (.contains markdown "| Wall ratio |"))
     (is (.contains markdown "| `claude daily` | 1.00s | 610ms | 0.61 (0.60–0.62) |"))
     (is (.contains markdown "| release binary | 2.00 KiB | 1.00 KiB | -1.00 KiB |"))
     (is (.contains markdown "Claude logs (1.00 GiB on disk, 10 files) and Codex logs"))
@@ -201,14 +273,14 @@
       (let [shapes [{:label "main"} {:label "tiny" :desc "startup dominates" :stats {:bytes 4194304 :files 5}}]
             slower {:command "daily" :fixture-label "tiny" :base (benchmark/variant-summary rounds "PR")
                     :head (benchmark/variant-summary rounds "base")
-                    :comparison (benchmark/compare-variants rounds "PR" "base" 0.1)}
+                    :comparison (benchmark/compare-variants rounds "PR" "base" limits)}
             markdown (report/render-report (assoc context :shapes shapes) [result] [slower] {:base 2048 :head 1024})]
         (is (.contains markdown "### Targeted shapes"))
         (is (.contains markdown "- **tiny** (4.00 MiB on disk, 5 files): startup dominates."))
         (is (.contains markdown "- **main**: the fixture above."))
         (is (.contains markdown "| Fixture | Command | CPU base |"))
         (is (.contains markdown "| tiny | `daily` | 610ms | 1.00s |"))
-        (is (.contains markdown "**Verdict: ⚠️ possible regression** in `daily` on tiny (slower)"))))))
+        (is (.contains markdown "**Verdict: ⚠️ possible regression** in `daily` on tiny (slower, more CPU)"))))))
 
 (deftest since-cut-off-follows-the-fixture
   (let [dir (babashka.fs/create-temp-dir {:prefix "ccusage-since."})
@@ -239,20 +311,24 @@
       (finally (babashka.fs/delete-tree dir)))))
 
 (deftest overall-verdicts
-  (let [result (fn [cpu rss] {:command "daily" :comparison {:cpu {:verdict cpu} :rss {:verdict rss}}})]
-    (is (:regression? (report/overall-verdict [(result :unchanged :regression)] 0.1)))
-    (is (.contains (:text (report/overall-verdict [(result :unchanged :unchanged)] 0.1)) "no significant change"))
-    (is (not (:regression? (report/overall-verdict [(result :improvement :unchanged)] 0.1))))
+  (let [result (fn [cpu rss & [wall]] {:command "daily" :comparison {:wall {:verdict (or wall :unchanged)} :cpu {:verdict cpu} :rss {:verdict rss}}})]
+    (is (:regression? (report/overall-verdict [(result :unchanged :regression)] limits)))
+    (is (:regression? (report/overall-verdict [(result :improvement :unchanged :regression)] limits)))
+    (is (= "**Verdict: no significant change** (no command moved consistently beyond ±5% wall time or ±10% CPU time and peak RSS)."
+           (:text (report/overall-verdict [(result :unchanged :unchanged)] limits))))
+    (is (not (:regression? (report/overall-verdict [(result :improvement :unchanged)] limits))))
+    (is (.contains (:text (report/overall-verdict [(result :unchanged :unchanged :regression)] limits))
+                   "wall time above +5% or CPU time or peak RSS above +10%"))
     (testing "a memory-only improvement is reported"
-      (is (= "**Verdict: ✅ improved** in `daily` (less memory); nothing regressed beyond 10%."
-             (:text (report/overall-verdict [(result :unchanged :improvement)] 0.1)))))))
+      (is (= "**Verdict: ✅ improved** in `daily` (less memory); nothing regressed beyond the thresholds."
+             (:text (report/overall-verdict [(result :unchanged :improvement)] limits)))))))
 
 (deftest history-instruction-columns
   (let [with-instructions (fn [r n] (-> r (assoc-in ["base" :instructions] 100) (assoc-in ["PR" :instructions] n)))
         variants [{:label "base"} {:label "PR"}]
         rounds [(round 1000 1000) (round 1000 1000) (round 1000 1000)]]
-    (is (not (.contains (history/render-history-table {:command "daily" :rounds rounds} variants 0.1) "Instructions")))
-    (is (.contains (history/render-history-table {:command "daily" :rounds (mapv #(with-instructions % 50) rounds)} variants 0.1)
+    (is (not (.contains (history/render-history-table {:command "daily" :rounds rounds} variants limits) "Instructions")))
+    (is (.contains (history/render-history-table {:command "daily" :rounds (mapv #(with-instructions % 50) rounds)} variants limits)
                    "| Instructions vs prev |"))))
 
 (deftest github-warning-goes-to-stdout
@@ -356,6 +432,10 @@
                                              :err ""}
                                 "merge-base" (do (swap! checks conj (vec (take-last 2 argv)))
                                                  {:exit (if (= old-commit (last argv)) 1 0) :out "" :err ""}))
+                              "bash"
+                              (do (spit (nth argv 4) "0.100 0.050 0.010\n")
+                                  (spit (nth argv 10) "1024\n")
+                                  {:exit 0 :out "" :err ""})
                               "hyperfine"
                               (let [export (second (drop-while #(not= "--export-json" %) argv))]
                                 (spit export (hyperfine-export [(hyperfine-result "old" 0.1) (hyperfine-result "new" 0.1)]))

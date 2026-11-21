@@ -7,7 +7,9 @@ use rustc_hash::{FxHashMap, FxHasher};
 
 #[cfg(feature = "resolver-trace")]
 use super::ResolutionStep;
-use super::{Lookup, MatchKind, Row, RowMatch, Source, normalized_pricing_key, pricing_alias};
+use super::{
+    Lookup, MatchKind, Row, RowMatch, Source, alternate_spellings, normalized_pricing_key,
+};
 
 pub(super) enum HitKind {
     ReportedOverride,
@@ -27,7 +29,8 @@ impl CachedHit {
     const STEP_SHIFT: usize = 2;
     const ALIASED: usize = 1 << 5;
     const ESTIMATED: usize = 1 << 6;
-    const ROW_SHIFT: usize = 7;
+    const FOLDED: usize = 1 << 7;
+    const ROW_SHIFT: usize = 8;
     const STEP_MASK: usize = 7;
     #[cfg(feature = "resolver-trace")]
     const STEPS: [ResolutionStep; 6] = [
@@ -73,6 +76,14 @@ impl CachedHit {
         self.0 & Self::ESTIMATED != 0
     }
 
+    pub(super) fn through_case_fallback(self) -> Self {
+        Self(self.0 | Self::FOLDED)
+    }
+
+    pub(super) fn case_fallback(self) -> bool {
+        self.0 & Self::FOLDED != 0
+    }
+
     pub(super) fn same_row(self, other: Self) -> bool {
         self.id() == other.id()
             && self.overridden() == other.overridden()
@@ -107,7 +118,8 @@ impl CachedHit {
 }
 
 const _: () = assert!(size_of::<CachedHit>() <= 8);
-const _: () = assert!(size_of::<Row>() >= 1 << CachedHit::ROW_SHIFT);
+// NOTE(2026-11-21, #2228): A row index is below `isize::MAX / size_of::<Row>()`, the most rows a `Vec<Row>` can hold, so shifting it left by `ROW_SHIFT` must still fit in a `usize`.
+const _: () = assert!(isize::MAX as usize / size_of::<Row>() <= usize::MAX >> CachedHit::ROW_SHIFT);
 
 #[derive(Clone, Copy, Debug, Default)]
 struct ResultCell(usize);
@@ -143,7 +155,7 @@ pub(super) enum Pass {
 }
 
 impl Pass {
-    pub(super) const CANDIDATE: [Self; 4] = [Self::S2, Self::S34, Self::S3f, Self::S56];
+    pub(super) const IDENTITY: [Self; 3] = [Self::S2, Self::S34, Self::S3f];
 
     pub(super) fn searches(self, lookup: Lookup) -> bool {
         !matches!((lookup, self), (Lookup::Context | Lookup::Paid, Self::S3f))
@@ -244,9 +256,9 @@ impl<T: AsRef<str>> Alias<T> {
 #[derive(Debug)]
 struct NameForms {
     normalized: Option<Box<str>>,
-    builtin: Option<Alias<&'static str>>,
+    spellings: Box<[Alias<Cow<'static, str>>]>,
     configured: Option<Alias<Box<str>>>,
-    configured_builtin: Option<Alias<&'static str>>,
+    configured_spellings: Box<[Alias<Cow<'static, str>>]>,
 }
 
 #[derive(Debug, Default)]
@@ -287,21 +299,21 @@ impl NameSlot {
 impl NameForms {
     fn new(text: &str) -> Option<Arc<Self>> {
         let normalized = normalized(text);
-        let builtin = pricing_alias(text).map(Alias::new);
+        let spellings = |text: &str| alternate_spellings(text).map(Alias::new).collect();
+        let own: Box<[_]> = spellings(text);
         let alias = crate::model_aliases::resolve_model_name(text);
         let configured = (alias != text).then(|| Alias::new(alias.into_owned().into_boxed_str()));
-        if normalized.is_none() && builtin.is_none() && configured.is_none() {
+        if normalized.is_none() && own.is_empty() && configured.is_none() {
             return None;
         }
-        let configured_builtin = configured
+        let configured_spellings = configured
             .as_ref()
-            .and_then(|alias| pricing_alias(&alias.text))
-            .map(Alias::new);
+            .map_or_else(Box::default, |alias| spellings(&alias.text));
         Some(Arc::new(Self {
             normalized,
-            builtin,
+            spellings: own,
             configured,
-            configured_builtin,
+            configured_spellings,
         }))
     }
 }
@@ -338,7 +350,10 @@ impl Candidate<'_> {
         text: &str,
         mut select: impl FnMut(Name<'_>) -> Option<T>,
     ) -> Option<T> {
-        select(self.name(text)).or_else(|| select(self.forms(text)?.builtin.as_ref()?.name()))
+        select(self.name(text)).or_else(|| {
+            let forms = self.forms(text)?;
+            forms.spellings.iter().map(Alias::name).find_map(select)
+        })
     }
 
     pub(super) fn names<T>(
@@ -358,14 +373,13 @@ impl Candidate<'_> {
             return Some((found, false));
         }
         let forms = self.forms(text)?;
-        [
-            forms.configured.as_ref().map(Alias::name),
-            forms.configured_builtin.as_ref().map(Alias::name),
-        ]
-        .into_iter()
-        .flatten()
-        .find_map(select)
-        .map(|found| (found, true))
+        forms
+            .configured
+            .iter()
+            .map(Alias::name)
+            .chain(forms.configured_spellings.iter().map(Alias::name))
+            .find_map(select)
+            .map(|found| (found, true))
     }
 }
 
@@ -373,6 +387,13 @@ impl Candidate<'_> {
 pub(super) struct NameCache(RwLock<FxHashMap<Box<str>, NameSlot>>);
 
 impl NameCache {
+    pub(super) fn candidate(&self) -> Candidate<'_> {
+        Candidate {
+            cache: Some(self),
+            forms: OnceCell::new(),
+        }
+    }
+
     fn with_slot<T>(&self, text: &str, update: impl FnOnce(&mut NameSlot) -> T) -> T {
         let mut guard = self.0.write().unwrap_or_else(|error| error.into_inner());
         if let Some(slot) = guard.get_mut(text) {
@@ -410,11 +431,7 @@ impl NameCache {
         if let Some(hit) = self.get(name, lookup, pass) {
             return hit;
         }
-        let candidate = Candidate {
-            cache: Some(self),
-            forms: OnceCell::new(),
-        };
-        let result = init(&candidate);
+        let result = init(&self.candidate());
         self.with_slot(name, |slot| slot.insert(lookup, pass, result))
     }
 }
@@ -610,6 +627,7 @@ mod tests {
             assert_eq!(table.find("provider/literal").unwrap().input, 3.0);
         }
         assert!(table.rows.indexes.get().is_none());
+        assert!(table.rows.folded_indexes.get().is_none());
         assert!(
             table.find_cache.get().unwrap().0.read().unwrap()["provider/literal"]
                 .forms
