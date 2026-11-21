@@ -362,6 +362,49 @@ mod tests {
     }
 
     #[test]
+    fn prices_the_first_positive_recorded_output_before_zeroes_and_totals() {
+        ccusage_test_support::install_pricing_snapshots();
+        let fixture = fs_fixture!({
+            "projects/p/chats/2026-01-02T03-04-05.000Z/chat-messages.json": r#"[
+                {"role":"assistant","timestamp":"2026-01-02T03:04:01Z","metadata":{"model":"sample","usage":{"inputTokens":100,"outputTokens":0},"codebuff":{"usage":{"outputTokens":50}}}},
+                {"role":"assistant","timestamp":"2026-01-02T03:04:02Z","metadata":{"model":"sample","usage":{"inputTokens":100,"outputTokens":0,"completionTokens":50}}},
+                {"role":"assistant","timestamp":"2026-01-02T03:04:03Z","metadata":{"model":"sample","usage":{"inputTokens":100,"outputTokens":25,"completionTokens":50},"codebuff":{"usage":{"outputTokens":75}}}},
+                {"role":"assistant","timestamp":"2026-01-02T03:04:04Z","metadata":{"model":"sample","usage":{"inputTokens":100,"totalTokens":150},"codebuff":{"usage":{"outputTokens":0}}}}
+            ]"#,
+        });
+        let mut pricing = ccusage_core::PricingMap::default();
+        pricing.load_json(r#"{"sample":{"input_cost_per_token":1,"output_cost_per_token":2}}"#);
+        Environment::with_var(CODEBUFF_DATA_DIR_ENV, fixture.root()).run(|| {
+            let entries = ccusage_adapter_common::testing::entries(
+                &crate::SOURCE,
+                &SharedArgs::default(),
+                Default::default(),
+                Some(&pricing),
+            )
+            .unwrap();
+            let rows = entries
+                .iter()
+                .map(|entry| {
+                    (
+                        entry.usage.output_tokens,
+                        entry.extra_total_tokens,
+                        entry.cost,
+                    )
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(
+                rows,
+                [
+                    (50, 0, 200.0),
+                    (50, 0, 200.0),
+                    (25, 0, 150.0),
+                    (0, 50, 100.0)
+                ]
+            );
+        });
+    }
+
+    #[test]
     fn falls_back_to_total_tokens_when_codebuff_parts_are_missing() {
         let fixture = fs_fixture!({
             "projects/p/chats/2026-01-02T03-04-05.000Z/chat-messages.json": r#"[

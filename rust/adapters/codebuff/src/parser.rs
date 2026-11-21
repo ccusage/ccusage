@@ -237,7 +237,8 @@ fn parse_usage_object(value: Option<&Value>) -> AssistantUsage {
         "completion_tokens",
     ]
     .iter()
-    .find_map(|key| record.get(*key).and_then(Value::as_u64));
+    .map(|key| record.get(*key).and_then(Value::as_u64))
+    .fold(None, prefer_recorded_output);
     usage.cache_read_input_tokens =
         pick_u64(record, &["cacheReadInputTokens", "cache_read_input_tokens"])
             .max(pick_nested_u64(
@@ -271,9 +272,7 @@ fn merge_fallback(target: &mut AssistantUsage, fallback: AssistantUsage) {
     if target.input_tokens == 0 {
         target.input_tokens = fallback.input_tokens;
     }
-    if target.output_tokens.is_none() {
-        target.output_tokens = fallback.output_tokens;
-    }
+    target.output_tokens = prefer_recorded_output(target.output_tokens, fallback.output_tokens);
     if target.cache_creation_input_tokens == 0 {
         target.cache_creation_input_tokens = fallback.cache_creation_input_tokens;
     }
@@ -289,6 +288,10 @@ fn merge_fallback(target: &mut AssistantUsage, fallback: AssistantUsage) {
     if target.model.is_none() {
         target.model = fallback.model;
     }
+}
+
+fn prefer_recorded_output(primary: Option<u64>, fallback: Option<u64>) -> Option<u64> {
+    primary.filter(|count| *count > 0).or(fallback).or(primary)
 }
 
 fn has_signal(usage: &AssistantUsage) -> bool {
