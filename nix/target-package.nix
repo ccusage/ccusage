@@ -82,7 +82,7 @@ craneLib.buildPackage (
         workspaceArtifacts
         ;
       cargoArtifacts = workspaceArtifacts.adapters;
-      # The instrumented dependencies depend only on Cargo.lock, so they are the PGO build's reusable cache.
+      # NOTE(2026-11-21, #2440): The instrumented dependencies depend only on Cargo.lock. Root them so the PGO build reuses them across commits.
       cacheRoot = pkgs.linkFarm "ccusage-release-cache-root" (
         [
           {
