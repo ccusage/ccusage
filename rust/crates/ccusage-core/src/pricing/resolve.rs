@@ -493,7 +493,10 @@ impl PricingMap {
     }
 
     #[inline(never)]
-    #[expect(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "The host scan uses the same request state as the identity passes."
+    )]
     fn search_host_candidates<'a>(
         &'a self,
         reported: Option<&str>,
