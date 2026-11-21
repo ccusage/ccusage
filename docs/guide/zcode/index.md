@@ -8,12 +8,13 @@ supported sources.
 
 ```bash
 ccusage zcode daily
+ccusage zcode weekly
 ccusage zcode monthly
 ccusage zcode session
 ```
 
-Use `ccusage daily`, `ccusage monthly`, or `ccusage session` when ZCode should
-be included with every other detected source.
+Use `ccusage daily`, `ccusage weekly`, `ccusage monthly`, or `ccusage session`
+to include ZCode alongside every other detected source.
 
 ## Data Source
 
@@ -97,6 +98,7 @@ configuration setting.
 | Focused view            | Description                  | See also                                |
 | ----------------------- | ---------------------------- | --------------------------------------- |
 | `ccusage zcode daily`   | Aggregate usage by date      | [Daily Usage](/guide/daily-reports)     |
+| `ccusage zcode weekly`  | Aggregate usage by week      | [Weekly Usage](/guide/weekly-reports)   |
 | `ccusage zcode monthly` | Aggregate usage by month     | [Monthly Usage](/guide/monthly-reports) |
 | `ccusage zcode session` | Group usage by ZCode session | [Session Usage](/guide/session-reports) |
 
