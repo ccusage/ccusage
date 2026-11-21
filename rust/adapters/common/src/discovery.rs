@@ -134,7 +134,7 @@ fn read_discovered_in_parallel(
 
 const GROUPED_EVERY_CORE_UP_TO: usize = 16;
 
-// NOTE(2026-11-21, #2476): Codex parsing gets faster with every core on 2-, 4- and 12-core machines, but on a 32-vCPU box it stops at about 22 parsers, and 32 parsers only add 23-29% CPU. Above 16 cores keep two thirds of them until the contention past that point is understood.
+// NOTE(2026-11-21, #2476): Codex parsing gets faster with every core on 2-, 4- and 12-core machines, but on a 32-vCPU box it stops at about 22 parsers, and 32 parsers only add 23-29% CPU. Above 16 cores use 16 parsers, or two thirds of the cores once that is more (25 cores and up), until the contention past that point is understood.
 fn grouped_workers(parallelism: usize) -> usize {
     parallelism
         .min(GROUPED_EVERY_CORE_UP_TO)
