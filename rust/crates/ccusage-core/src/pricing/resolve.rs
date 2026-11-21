@@ -390,11 +390,16 @@ impl PricingMap {
         lookup: Lookup,
         models_dev: &impl Fn() -> Option<&'a PricingRows>,
     ) -> Option<CachedHit> {
-        Candidate::default()
-            .own_names(model, |name| {
-                self.authoritative(name, lookup, true, models_dev, |_| true)
-            })
-            .map(|found| CachedHit::new(found, HitKind::AuthoritativeIdentity))
+        let slot = Candidate::default();
+        slot.own_names(model, |name| {
+            self.authoritative(name, lookup, true, models_dev, |_| true)
+        })
+        .map(|found| CachedHit::new(found, HitKind::AuthoritativeIdentity))
+        .or_else(|| {
+            let rows = models_dev()?;
+            slot.own_names(model, |name| rows.exact(name, lookup))
+                .map(|found| CachedHit::new(found, HitKind::ModelsDevIdentity))
+        })
     }
 
     fn search_pass<'a>(

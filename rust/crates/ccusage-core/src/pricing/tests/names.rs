@@ -276,3 +276,23 @@ fn an_unpriced_alias_target_is_not_priced_through_its_own_alias() {
         "chain-own-first"
     );
 }
+
+#[test]
+fn an_alias_target_priced_only_by_models_dev_beats_the_logged_id() {
+    crate::test_support::install_pricing_snapshots();
+    let _aliases =
+        crate::model_aliases::set_model_aliases_for_tests([("md-alias-logged", "md-alias-target")]);
+    let mut primary = PricingMap::default();
+    primary.load_json(
+        r#"{"md-alias-logged": {"input_cost_per_token": 1e-6, "output_cost_per_token": 2e-6}}"#,
+    );
+    let mut models_dev = PricingMap::default();
+    models_dev.load_models_dev_json_for_tests(
+        r#"{"md-alias-target": {"cost": {"input": 7, "output": 9}}}"#,
+    );
+    let pricing = online(&primary);
+    let found = pricing
+        .find_with_live("md-alias-logged", || Some(&models_dev))
+        .unwrap();
+    assert_eq!((found.input, found.output), (7e-6, 9e-6));
+}
