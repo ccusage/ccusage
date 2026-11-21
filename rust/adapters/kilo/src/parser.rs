@@ -448,7 +448,7 @@ mod recorded_zero_cost {
         let value: KiloMessage = serde_json::from_value(serde_json::json!({
             "role": "assistant", "modelID": model, "providerID": provider, "cost": 0,
             "time": {"created": 1_767_312_000_000_i64},
-            "tokens": {"input": 1_000_000, "output": 1_000_000}
+            "tokens": {"input": 100_000, "output": 10_000}
         }))
         .unwrap();
         let (_, entry) = message_value_to_entry(
@@ -468,7 +468,8 @@ mod recorded_zero_cost {
 
     #[test]
     fn a_recorded_zero_cost_on_a_priced_model_is_priced_from_tokens() {
-        assert!((auto_cost("gpt-5.5", "openai") - 35.0).abs() < 1e-9);
+        let cost = auto_cost("gpt-5.5", "openai");
+        assert!((cost - 0.8).abs() < 1e-9, "{cost}");
     }
 
     #[test]
