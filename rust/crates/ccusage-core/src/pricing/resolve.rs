@@ -56,12 +56,20 @@ impl<'a> AgentModel<'a> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BillingRoute {
     Direct(&'static str),
+    Host(&'static str),
     Foreign,
 }
 
 /// The vendor whose own API a recorded provider ID names, if any.
 pub fn direct_billing_vendor(provider: &str) -> Option<&'static str> {
     super::data::DIRECT_BILLING_PROVIDERS
+        .iter()
+        .find_map(|(id, vendor)| (*id == provider).then_some(*vendor))
+}
+
+/// The vendor whose dated prices a recorded host follows, if any.
+pub fn host_billing_vendor(provider: &str) -> Option<&'static str> {
+    super::data::HOSTS_FOLLOWING_VENDOR_PRICES
         .iter()
         .find_map(|(id, vendor)| (*id == provider).then_some(*vendor))
 }
@@ -114,8 +122,13 @@ impl PricingHandle {
         matched: &str,
         hit: CachedHit,
     ) -> Self {
-        let schedule = match route {
-            BillingRoute::Direct(vendor) => [reported, matched]
+        let vendor = match route {
+            BillingRoute::Direct(vendor) => Some(vendor),
+            BillingRoute::Host(vendor) => (row.scope == Scope::Direct).then_some(vendor),
+            BillingRoute::Foreign => None,
+        };
+        let schedule = match vendor {
+            Some(vendor) => [reported, matched]
                 .into_iter()
                 .find_map(|name| {
                     let resolved = crate::model_aliases::resolve_model_name(name);
@@ -127,7 +140,7 @@ impl PricingHandle {
                     .schedule
                     .filter(|schedule| schedule.follows_row || hit.case_fallback()))
                 .filter(|schedule| schedule.vendor == vendor),
-            BillingRoute::Foreign => None,
+            None => None,
         };
         Self {
             rates: row.rates(),

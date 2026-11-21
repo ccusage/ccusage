@@ -12,7 +12,10 @@ use crate::{
     LoadedEntry, TimestampMs, TokenUsageRaw, apply_total_token_fallback, cli::CostMode, date_at,
     stored_cost_for_mode,
 };
-use ccusage_adapter_common::{billing::price_entry_for_provider, jsonl};
+use ccusage_adapter_common::{
+    billing::{host_provider, price_entry_for_provider},
+    jsonl,
+};
 
 #[derive(Debug, Default, Deserialize)]
 pub(super) struct KiloMessage {
@@ -194,7 +197,7 @@ fn model_candidates(model: &str, provider: Option<&str>) -> Vec<(String, MatchKi
 }
 
 fn normalize_provider(provider: &str) -> String {
-    provider.replace('-', "_")
+    host_provider(provider).map_or_else(|| provider.replace('-', "_"), str::to_owned)
 }
 
 #[cfg(test)]

@@ -1,11 +1,15 @@
 use ccusage_core::cost::PriceTable;
 use ccusage_core::{
     cost::{EntryPricing, UsageGranularity},
-    pricing::AgentModel,
+    pricing::{AgentModel, MatchKind},
 };
 use std::{path::Path, sync::Arc};
 
-use ccusage_adapter_common::{billing::price_entry_for_provider, jsonl, units::UnitError};
+use ccusage_adapter_common::{
+    billing::{host_provider, price_entry_for_provider},
+    jsonl,
+    units::UnitError,
+};
 use ccusage_core::{Diagnostics, Skip, SkipKind};
 use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
@@ -407,7 +411,16 @@ pub(super) fn entry_to_loaded(
         speed: None,
         cache_creation: None,
     };
-    let candidates = identity.candidates();
+    let host_model = entry
+        .provider
+        .as_deref()
+        .and_then(host_provider)
+        .map(|host| format!("{host}/{}", entry.model));
+    let [display, raw] = identity.candidates();
+    let candidates: Vec<_> = std::iter::once(display)
+        .chain(host_model.as_deref().map(|name| (name, MatchKind::Exact)))
+        .chain(std::iter::once(raw))
+        .collect();
     let entry_pricing = EntryPricing {
         granularity: UsageGranularity::Request,
         usage,
@@ -876,6 +889,50 @@ mod pricing_identity_tests {
                 rows[0].cost
             );
             assert_eq!(rows[0].missing_pricing_model, None, "{name}");
+        }
+    }
+
+    #[test]
+    fn a_vertex_provider_bills_the_vertex_listing_in_every_spelling() {
+        ccusage_test_support::install_pricing_snapshots();
+        let mut pricing = ccusage_core::PricingMap::default();
+        pricing.load_json(
+            r#"{
+                "gemini/gemini-4-argon": {"litellm_provider": "gemini", "input_cost_per_token": 2e-6, "output_cost_per_token": 1e-5},
+                "vertex_ai/gemini-4-argon": {"litellm_provider": "vertex_ai-language-models", "input_cost_per_token": 2.5e-6, "output_cost_per_token": 1.2e-5}
+            }"#,
+        );
+        for logged in [
+            "vertex",
+            "vertex_ai",
+            "Vertex-AI",
+            "google-vertex",
+            "google_vertex",
+        ] {
+            let entry = OpenClawEntry {
+                timestamp: ccusage_core::parse_ts_timestamp("2026-11-02T00:00:00Z").unwrap(),
+                session_id: "session".to_string(),
+                model: "gemini-4-argon".to_string(),
+                provider: Some(logged.to_string()),
+                input_tokens: 1_000_000,
+                output_tokens: 0,
+                cache_creation_tokens: 0,
+                cache_read_tokens: 0,
+                total_tokens: 1_000_000,
+                cost: None,
+                event_id: None,
+            };
+            let loaded = entry_to_loaded(
+                entry,
+                &JiffTimeZone::UTC,
+                CostMode::Calculate,
+                PriceTable::Calculate(&pricing),
+            );
+            assert!(
+                (loaded.cost - 2.5).abs() < 1e-9,
+                "{logged}: {}",
+                loaded.cost
+            );
         }
     }
 }

@@ -57,7 +57,18 @@ impl PricingMap {
             } else {
                 (Scope::Hosted, None)
             };
-            if scope == Scope::Hosted && !model.contains('/') && input == 0.0 && output == 0.0 {
+            let free = input == 0.0 && output == 0.0;
+            if free && scope == Scope::Hosted && !model.contains('/') {
+                continue;
+            }
+            if free
+                && provider.is_some_and(|provider| {
+                    sources
+                        .zero_token_rate_unpriced_providers
+                        .iter()
+                        .any(|id| id == provider)
+                })
+            {
                 continue;
             }
 

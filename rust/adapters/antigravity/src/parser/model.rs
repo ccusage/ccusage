@@ -1,6 +1,7 @@
+use ccusage_adapter_common::billing::{host_provider, price_entry_for_provider};
 use ccusage_core::cost::PriceTable;
 use ccusage_core::{
-    cost::{EntryPricing, UsageGranularity, price_entry},
+    cost::{EntryPricing, UsageGranularity},
     pricing::MatchKind,
 };
 
@@ -9,7 +10,7 @@ use crate::{TimestampMs, TokenUsageRaw};
 use super::DEFAULT_MODEL;
 
 const PROVIDER_PREFIXES: [&str; 4] = ["google", "gemini", "vertex_ai", "openrouter/google"];
-const API_PROVIDER_GOOGLE_VERTEX: u64 = 3;
+pub(super) const API_PROVIDER_GOOGLE_VERTEX: u64 = 3;
 pub(super) const API_PROVIDER_GOOGLE_GEMINI: u64 = 24;
 const API_PROVIDER_GOOGLE_EVERGREEN: u64 = 30;
 
@@ -179,7 +180,7 @@ pub(super) fn price_antigravity(
         .into_iter()
         .chain(candidates.iter().map(|(name, kind)| (name.as_str(), *kind)))
         .collect();
-    let priced = price_entry(
+    let priced = price_entry_for_provider(
         EntryPricing {
             granularity: UsageGranularity::Request,
             usage,
@@ -190,6 +191,7 @@ pub(super) fn price_antigravity(
             stored_cost: None,
             timestamp: Some(timestamp),
         },
+        recorded_host(provider),
         pricing,
     );
     (
@@ -226,26 +228,33 @@ fn gemini_flash_effort_variant(display_name: &str) -> Option<String> {
         .then_some(variant)
 }
 
+// NOTE(2026-11-21, #2226): Antigravity records the serving API as a number, not a name. A Vertex request bills through the same shared host route as an agent that logs `vertex_ai`, so its Vertex listing answers first and a fallback to Google's row takes Google's dated schedule; other requests keep the unrouted pricing.
+fn recorded_host(provider: Option<u64>) -> Option<&'static str> {
+    provider
+        .filter(|provider| *provider == API_PROVIDER_GOOGLE_VERTEX)
+        .and_then(|_| host_provider("vertex"))
+}
+
 pub(super) fn model_candidates(model: &str, provider: Option<u64>) -> Vec<String> {
     let mut models = vec![model];
     models.extend(gemini_flash_pricing_alias(model));
 
-    let use_google_prefixes = matches!(
-        provider,
-        Some(
-            API_PROVIDER_GOOGLE_VERTEX | API_PROVIDER_GOOGLE_GEMINI | API_PROVIDER_GOOGLE_EVERGREEN
-        )
-    );
+    let vertex = recorded_host(provider);
+    let (host, google): (&[&str], &[&str]) = match provider {
+        Some(API_PROVIDER_GOOGLE_VERTEX) => (vertex.as_slice(), &[]),
+        Some(API_PROVIDER_GOOGLE_GEMINI | API_PROVIDER_GOOGLE_EVERGREEN) => {
+            (&[], &PROVIDER_PREFIXES)
+        }
+        _ => (&[], &[]),
+    };
     let mut candidates = models
         .into_iter()
         .flat_map(|model| {
-            std::iter::once(model.to_string()).chain(
-                use_google_prefixes
-                    .then_some(PROVIDER_PREFIXES)
-                    .into_iter()
-                    .flatten()
-                    .map(move |prefix| format!("{prefix}/{model}")),
-            )
+            let prefixed = move |prefix: &&str| format!("{prefix}/{model}");
+            host.iter()
+                .map(prefixed)
+                .chain(std::iter::once(model.to_string()))
+                .chain(google.iter().map(prefixed))
         })
         .collect::<Vec<_>>();
     let mut seen = std::collections::HashSet::new();

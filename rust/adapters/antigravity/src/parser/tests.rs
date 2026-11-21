@@ -1,6 +1,6 @@
 use super::model::{
-    API_PROVIDER_GOOGLE_GEMINI, model_candidates, model_from_id, normalize_antigravity_model,
-    price_antigravity,
+    API_PROVIDER_GOOGLE_GEMINI, API_PROVIDER_GOOGLE_VERTEX, model_candidates, model_from_id,
+    normalize_antigravity_model, price_antigravity,
 };
 use super::proto::{
     ProtoField, ProtoValue, field_bytes, field_bytes_all, field_text, field_varint,
@@ -207,6 +207,13 @@ fn only_google_providers_receive_google_model_candidates() {
             "gemini/gemini-unpriced".to_string(),
             "vertex_ai/gemini-unpriced".to_string(),
             "openrouter/google/gemini-unpriced".to_string(),
+        ]
+    );
+    assert_eq!(
+        model_candidates("gemini-unpriced", Some(API_PROVIDER_GOOGLE_VERTEX)),
+        vec![
+            "vertex_ai/gemini-unpriced".to_string(),
+            "gemini-unpriced".to_string(),
         ]
     );
 }
@@ -646,4 +653,35 @@ fn legacy_models_keep_timestamp_aware_pricing() {
 
     assert!((cost_at("2026-08-17T01:00:00Z") - 0.44).abs() < 1e-12);
     assert!((cost_at("2026-08-17T12:00:00Z") - 0.22).abs() < 1e-12);
+}
+
+#[test]
+fn a_vertex_request_bills_vertex_or_falls_back_to_googles_dated_rate() {
+    ccusage_test_support::install_pricing_snapshots();
+    let after_the_step = parse_ts_timestamp("2026-12-02T00:00:00Z").unwrap();
+    let price = |rows: &str, provider| {
+        let mut pricing = ccusage_core::PricingMap::default();
+        pricing.load_json(rows);
+        price_antigravity(
+            "gemini-4-argon",
+            None,
+            Some(provider),
+            TokenUsageRaw {
+                input_tokens: 1_000_000,
+                ..TokenUsageRaw::default()
+            },
+            after_the_step,
+            ccusage_core::cost::PriceTable::Calculate(&pricing),
+        )
+        .0
+    };
+    let google = r#"{"gemini/gemini-4-argon": {"litellm_provider": "gemini", "input_cost_per_token": 2e-6, "output_cost_per_token": 1e-5}}"#;
+    let with_vertex = r#"{
+        "gemini/gemini-4-argon": {"litellm_provider": "gemini", "input_cost_per_token": 2e-6, "output_cost_per_token": 1e-5},
+        "vertex_ai/gemini-4-argon": {"litellm_provider": "vertex_ai-language-models", "input_cost_per_token": 2.5e-6, "output_cost_per_token": 1.2e-5}
+    }"#;
+
+    assert!((price(with_vertex, API_PROVIDER_GOOGLE_VERTEX) - 2.5).abs() < 1e-9);
+    assert!((price(google, API_PROVIDER_GOOGLE_VERTEX) - 4.0).abs() < 1e-9);
+    assert!((price(google, API_PROVIDER_GOOGLE_GEMINI) - 4.0).abs() < 1e-9);
 }

@@ -850,7 +850,7 @@ fn resolver_table() {
 }
 
 #[test]
-fn resolver_table_14_qualified_google_flash_uses_the_models_dev_rate() {
+fn resolver_table_14_qualified_google_flash_uses_googles_own_row() {
     crate::test_support::install_pricing_snapshots();
     let pricing = PricingMap::load_embedded();
     let model = "google/gemini-2.5-flash";
@@ -860,8 +860,11 @@ fn resolver_table_14_qualified_google_flash_uses_the_models_dev_rate() {
         .explain(Some(model), &[(model, MatchKind::Fuzzy)])
         .unwrap();
     assert_eq!(
-        resolved.step,
-        super::super::ResolutionStep::ModelsDevIdentity
+        (resolved.step, resolved.row_key),
+        (
+            super::super::ResolutionStep::AuthoritativeIdentity,
+            "gemini/gemini-2.5-flash"
+        )
     );
 }
 
