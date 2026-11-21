@@ -9,6 +9,27 @@ use super::{
     pricing_key_matches, schedule_for,
 };
 
+#[derive(Clone, Copy)]
+enum RowSelection {
+    Any,
+    Hosted,
+    PaidSuffix,
+    FreeDirectSuffix,
+}
+
+impl RowSelection {
+    fn includes(self, row: &Row, lookup: Lookup) -> bool {
+        match self {
+            Self::Any => true,
+            Self::Hosted => row.scope == Scope::Hosted,
+            Self::PaidSuffix => {
+                !row.is_free() || (matches!(lookup, Lookup::Context) && row.scope == Scope::Direct)
+            }
+            Self::FreeDirectSuffix => row.scope == Scope::Direct && row.is_free(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MatchKind {
     StrictExact,
@@ -293,17 +314,18 @@ impl PricingMap {
         self.available_models_dev()
     }
 
+    #[inline(never)]
     fn authoritative<'a>(
         &'a self,
         model: Name<'_>,
         lookup: Lookup,
         hosted: bool,
         fold: bool,
-        models_dev: &impl Fn() -> Option<&'a PricingRows>,
-        visible: impl Fn(&Row) -> bool,
+        models_dev: &dyn Fn() -> Option<&'a PricingRows>,
+        selection: RowSelection,
     ) -> Option<RowMatch<'a>> {
         let project = |found: RowMatch<'a>| {
-            (lookup.includes(found.row) && visible(found.row)).then_some(found)
+            (lookup.includes(found.row) && selection.includes(found.row, lookup)).then_some(found)
         };
         if self.overrides.is_empty() {
             return self.rows.authoritative(model, hosted, fold, project);
@@ -436,9 +458,22 @@ impl PricingMap {
                         })
                     })
             };
-            if let Some(hit) = std::iter::once(Pass::Host)
-                .chain(Pass::IDENTITY)
-                .find_map(for_pass)
+            let host = |qualified, fold| {
+                self.search_host_candidates(
+                    reported,
+                    candidates,
+                    lookup,
+                    fallback,
+                    cache,
+                    &models_dev,
+                    qualified,
+                    fold,
+                )
+            };
+            if let Some(hit) = host(true, false)
+                .or_else(|| host(true, true))
+                .or_else(|| host(false, false))
+                .or_else(|| Pass::IDENTITY.into_iter().find_map(for_pass))
                 .or_else(|| {
                     self.search_case_fallback(
                         reported,
@@ -455,6 +490,44 @@ impl PricingMap {
             }
         }
         None
+    }
+
+    #[inline(never)]
+    #[expect(clippy::too_many_arguments)]
+    fn search_host_candidates<'a>(
+        &'a self,
+        reported: Option<&str>,
+        candidates: &[(&str, MatchKind)],
+        lookup: Lookup,
+        fallback: bool,
+        cache: &NameCache,
+        models_dev: &impl Fn() -> Option<&'a PricingRows>,
+        qualified: bool,
+        fold: bool,
+    ) -> Option<RequestHit> {
+        candidates
+            .iter()
+            .enumerate()
+            .find_map(|(index, &(model, kind))| {
+                if (kind == MatchKind::Fallback) != fallback
+                    || model.contains('/') != qualified
+                    || !Pass::Host.allows(model, kind, reported)
+                {
+                    return None;
+                }
+                let row = if fold {
+                    self.search_host(model, &cache.candidate(), lookup, true, models_dev)?
+                        .through_case_fallback()
+                } else {
+                    cache.get_or_init(model, lookup, Pass::Host, |slot| {
+                        self.search_host(model, slot, lookup, false, models_dev)
+                    })?
+                };
+                Some(RequestHit {
+                    candidate: Some(index),
+                    row,
+                })
+            })
     }
 
     #[inline(never)]
@@ -476,7 +549,12 @@ impl PricingMap {
                 row: row.through_alias(true).through_case_fallback(),
             });
         }
-        for pass in std::iter::once(Pass::Host).chain(Pass::IDENTITY) {
+        if let Some(hit) = self.search_host_candidates(
+            reported, candidates, lookup, fallback, cache, models_dev, false, true,
+        ) {
+            return Some(hit);
+        }
+        for pass in Pass::IDENTITY {
             if !pass.searches(lookup) {
                 continue;
             }
@@ -511,7 +589,7 @@ impl PricingMap {
     ) -> impl Iterator<Item = Name<'n>> {
         // NOTE(2026-11-20, #2238): An authoritative row for an id behind the path outranks the models.dev row for it. After S3 only a vendor's free row can be left there, and it must still answer through S3f.
         let unclaimed = move |suffix: &Name<'_>| {
-            self.authoritative(*suffix, lookup, false, fold, models_dev, |_| true)
+            self.authoritative(*suffix, lookup, false, fold, models_dev, RowSelection::Any)
                 .is_none()
         };
         std::iter::once(name).chain(name.suffixes().take_while(unclaimed))
@@ -526,7 +604,7 @@ impl PricingMap {
     ) -> Option<CachedHit> {
         let slot = Candidate::default();
         slot.own_names(model, |name| {
-            self.authoritative(name, lookup, true, fold, models_dev, |_| true)
+            self.authoritative(name, lookup, true, fold, models_dev, RowSelection::Any)
         })
         .map(|found| CachedHit::new(found, HitKind::AuthoritativeIdentity))
         .or_else(|| {
@@ -546,10 +624,9 @@ impl PricingMap {
         models_dev: &impl Fn() -> Option<&'a PricingRows>,
     ) -> Option<CachedHit> {
         match pass {
-            Pass::Host => self.search_host(model, slot, lookup, fold, models_dev),
             Pass::S2 => slot
                 .names_marked(model, |name| {
-                    self.authoritative(name, lookup, true, fold, models_dev, |_| true)
+                    self.authoritative(name, lookup, true, fold, models_dev, RowSelection::Any)
                 })
                 .map(|(found, aliased)| {
                     CachedHit::new(found, HitKind::AuthoritativeIdentity).through_alias(aliased)
@@ -559,17 +636,14 @@ impl PricingMap {
                 if free && matches!(lookup, Lookup::Context) {
                     return None;
                 }
+                let selection = if free {
+                    RowSelection::FreeDirectSuffix
+                } else {
+                    RowSelection::PaidSuffix
+                };
                 slot.names_marked(model, |name| {
                     name.suffixes().find_map(|suffix| {
-                        self.authoritative(suffix, lookup, false, fold, models_dev, |row| {
-                            if free {
-                                row.scope == Scope::Direct && row.is_free()
-                            } else {
-                                !row.is_free()
-                                    || (matches!(lookup, Lookup::Context)
-                                        && row.scope == Scope::Direct)
-                            }
-                        })
+                        self.authoritative(suffix, lookup, false, fold, models_dev, selection)
                     })
                 })
                 .map(|(found, aliased)| {
@@ -589,7 +663,7 @@ impl PricingMap {
                     })
                 })
             }
-            Pass::Label | Pass::S56 => unreachable!(),
+            Pass::Host | Pass::Label | Pass::S56 => unreachable!(),
         }
     }
 
@@ -609,7 +683,7 @@ impl PricingMap {
                     .includes(found.row)
                     .then(|| CachedHit::new(found, HitKind::ReportedOverride))
             }
-            Pass::Host | Pass::S2 | Pass::S34 | Pass::S3f => {
+            Pass::S2 | Pass::S34 | Pass::S3f => {
                 self.search_identity(model, slot, lookup, pass, false, models_dev)
             }
             Pass::S56 => {
@@ -632,10 +706,12 @@ impl PricingMap {
                 })
                 .map(|(hit, aliased)| hit.through_alias(aliased))
             }
+            Pass::Host => unreachable!(),
         }
     }
 
     // NOTE(2026-11-21, #2229): When an agent names the host that served a request, in the logged id or as a logged-provider candidate (Exact or StrictExact), or logs a Bedrock-spelled id, the host's own listing bills it ahead of the vendor's list price found through another candidate. A direct vendor in front of the id names no host. Only LiteLLM keys a listing by its host, so the pass reads LiteLLM rows keyed by that path, which models.dev's `owner/model` ids are not.
+    #[inline(never)]
     fn search_host<'a>(
         &'a self,
         model: &str,
@@ -659,9 +735,14 @@ impl PricingMap {
                         fold,
                         models_dev,
                     ),
-                    None => self.authoritative(name, lookup, false, fold, models_dev, |row| {
-                        row.scope == Scope::Hosted
-                    }),
+                    None => self.authoritative(
+                        name,
+                        lookup,
+                        false,
+                        fold,
+                        models_dev,
+                        RowSelection::Hosted,
+                    ),
                 }
             }
             None => {
@@ -698,7 +779,7 @@ impl PricingMap {
                         false,
                         fold,
                         models_dev,
-                        |row| row.scope == Scope::Hosted,
+                        RowSelection::Hosted,
                     )
                 })
             })

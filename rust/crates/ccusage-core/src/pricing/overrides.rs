@@ -200,7 +200,7 @@ impl PricingMap {
     pub(super) fn resolve_override<'a>(
         &'a self,
         id: usize,
-        models_dev: &impl Fn() -> Option<&'a PricingRows>,
+        models_dev: &dyn Fn() -> Option<&'a PricingRows>,
         needs_fuzzy_flag: bool,
     ) -> Option<RowMatch<'a>> {
         let slot = self.overrides.rows.get(id)?;

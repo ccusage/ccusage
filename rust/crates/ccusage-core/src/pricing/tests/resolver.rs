@@ -162,6 +162,38 @@ fn direct_vendor_requests_do_not_use_bedrock_rows_for_dotted_ids() {
 }
 
 #[test]
+fn logged_host_precedes_inference_from_a_dotted_model_id() {
+    crate::test_support::install_pricing_snapshots();
+    let mut pricing = PricingMap::default();
+    pricing.load_json(
+        r#"{
+            "deepseek.v3.2":{"litellm_provider":"bedrock_converse","input_cost_per_token":2,"output_cost_per_token":2},
+            "azure/deepseek.v3.2":{"litellm_provider":"azure","input_cost_per_token":3,"output_cost_per_token":3},
+            "azure/DeepSeek.v3.1":{"litellm_provider":"azure","input_cost_per_token":4,"output_cost_per_token":4},
+            "deepseek.v3.1":{"litellm_provider":"bedrock_converse","input_cost_per_token":2,"output_cost_per_token":2},
+            "deepseek.v3":{"litellm_provider":"bedrock_converse","input_cost_per_token":2,"output_cost_per_token":2}
+        }"#,
+    );
+    for (model, kind, expected) in [
+        ("deepseek.v3.2", MatchKind::Exact, 3.0),
+        ("deepseek.v3.1", MatchKind::StrictExact, 4.0),
+        ("deepseek.v3", MatchKind::Exact, 2.0),
+    ] {
+        let qualified = format!("azure/{model}");
+        let candidates = [(model, MatchKind::Fuzzy), (qualified.as_str(), kind)];
+        assert_eq!(
+            pricing
+                .resolve_at(Some(model), &candidates, None)
+                .unwrap()
+                .1
+                .input,
+            expected,
+            "{model}",
+        );
+    }
+}
+
+#[test]
 fn mixed_case_dotted_ids_and_host_prefixes_select_the_same_listing() {
     crate::test_support::install_pricing_snapshots();
     let mut pricing = PricingMap::default();

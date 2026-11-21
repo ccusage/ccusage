@@ -280,27 +280,23 @@ impl PricingRows {
         lookup: Lookup,
         fold: bool,
     ) -> Option<RowMatch<'_>> {
-        let on_host = |found: &RowMatch<'_>| found.row.host == Some(host);
-        if !fold && let Some(found) = self.literal(name.raw(), lookup).filter(on_host) {
-            return Some(found);
-        }
-        let identity = if fold {
-            fold_case(name.identity())
-        } else {
-            Cow::Borrowed(name.identity())
-        };
-        self.indexed_rows(&identity, Index::BareHosted, fold)
-            .filter(|found| lookup.includes(found.row) && on_host(found))
-            .min_by_key(|found| {
-                (
-                    fold && !found.key.eq_ignore_ascii_case(name.raw()),
-                    found.key,
-                )
-            })
+        self.exact_on_index(name, lookup, fold, Some(host))
     }
 
     pub(super) fn exact(&self, name: Name<'_>, lookup: Lookup, fold: bool) -> Option<RowMatch<'_>> {
-        if !fold && let Some(literal) = self.literal(name.raw(), lookup) {
+        self.exact_on_index(name, lookup, fold, None)
+    }
+
+    #[inline(never)]
+    fn exact_on_index(
+        &self,
+        name: Name<'_>,
+        lookup: Lookup,
+        fold: bool,
+        host: Option<u8>,
+    ) -> Option<RowMatch<'_>> {
+        let on_host = |found: &RowMatch<'_>| host.is_none() || found.row.host == host;
+        if !fold && let Some(literal) = self.literal(name.raw(), lookup).filter(on_host) {
             return Some(literal);
         }
         let identity = if fold {
@@ -308,8 +304,13 @@ impl PricingRows {
         } else {
             Cow::Borrowed(name.identity())
         };
-        self.indexed_rows(&identity, Index::Identity, fold)
-            .filter(|found| lookup.includes(found.row))
+        let index = if host.is_some() {
+            Index::BareHosted
+        } else {
+            Index::Identity
+        };
+        self.indexed_rows(&identity, index, fold)
+            .filter(|found| lookup.includes(found.row) && on_host(found))
             .min_by_key(|found| {
                 (
                     fold && !found.key.eq_ignore_ascii_case(name.raw()),
