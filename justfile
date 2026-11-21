@@ -61,6 +61,19 @@ test-node:
 generate-large-fixture output_dir codex_output_dir *args:
     output_dir="$1" codex_output_dir="$2"; shift 2; apps/ccusage/scripts/generate-large-fixture.ts --output-dir "$output_dir" --codex-output-dir "$codex_output_dir" "$@"
 
+# Generate every fixture the CI perf job and the bench testbox measure, one directory per fixture under `root`
+[positional-arguments]
+[script('bash')]
+generate-benchmark-fixtures root:
+    set -euo pipefail
+    root="$1"
+    generator=apps/ccusage/scripts/generate-large-fixture.ts
+    "$generator" --output-dir "$root/large" --codex-output-dir "$root/large-codex" \
+        --grok-output-dir "$root/large-grok"
+    "$generator" --output-dir "$root/many-files" --claude-shape many-small-files
+    "$generator" --output-dir "$root/proxy" --claude-shape requestless-proxy --size-mib 1024
+    "$generator" --output-dir "$root/small" --size-mib 4
+
 # Build git refs (or take binary paths) and compare their report performance; `--real` adds local logs
 [positional-arguments]
 bench-history *args:
