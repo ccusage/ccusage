@@ -190,19 +190,22 @@ impl PricingMap {
         Some((model, handle.with_rates_at(timestamp, |rates| *rates)))
     }
 
-    /// The model id a request for `logged` is priced as: `logged` itself when a
-    /// pricing override matches it, otherwise its configured alias target when
-    /// that target has a price of its own.
+    /// The model id whose row prices a request for `logged`: its configured
+    /// alias target when the row was found through that alias, otherwise
+    /// `logged` itself, including when a pricing override matches it.
     pub fn pricing_identity<'a>(&self, logged: &'a str) -> std::borrow::Cow<'a, str> {
-        if self.has_user_override(logged) {
-            return std::borrow::Cow::Borrowed(logged);
-        }
-        let models_dev = || self.select_models_dev(models_dev_pricing);
-        configured_alias(logged)
-            .filter(|alias| {
-                self.identity_hit(alias, Lookup::Pricing, &models_dev)
-                    .is_some()
-            })
+        let aliased = !self.has_user_override(logged)
+            && self
+                .resolve_row_with(
+                    Some(logged),
+                    &[(logged, MatchKind::Fuzzy)],
+                    Lookup::Pricing,
+                    models_dev_pricing,
+                )
+                .is_some_and(|(_, _, hit)| hit.aliased());
+        aliased
+            .then(|| configured_alias(logged))
+            .flatten()
             .unwrap_or(std::borrow::Cow::Borrowed(logged))
     }
 
@@ -340,7 +343,7 @@ impl PricingMap {
         {
             return Some(RequestHit {
                 candidate: None,
-                row,
+                row: row.through_alias(true),
             });
         }
         let has_fallback = candidates
@@ -414,16 +417,18 @@ impl PricingMap {
                     .then(|| CachedHit::new(found, HitKind::ReportedOverride))
             }
             Pass::S2 => slot
-                .names(model, |name| {
+                .names_marked(model, |name| {
                     self.authoritative(name, lookup, true, models_dev, |_| true)
                 })
-                .map(|found| CachedHit::new(found, HitKind::AuthoritativeIdentity)),
+                .map(|(found, aliased)| {
+                    CachedHit::new(found, HitKind::AuthoritativeIdentity).through_alias(aliased)
+                }),
             Pass::S34 | Pass::S3f => {
                 let free = matches!(pass, Pass::S3f);
                 if free && matches!(lookup, Lookup::Context) {
                     return None;
                 }
-                slot.names(model, |name| {
+                slot.names_marked(model, |name| {
                     name.suffixes().find_map(|suffix| {
                         self.authoritative(suffix, lookup, false, models_dev, |row| {
                             if free {
@@ -436,17 +441,21 @@ impl PricingMap {
                         })
                     })
                 })
-                .map(|found| CachedHit::new(found, HitKind::AuthoritativeSuffix))
+                .map(|(found, aliased)| {
+                    CachedHit::new(found, HitKind::AuthoritativeSuffix).through_alias(aliased)
+                })
                 .or_else(|| {
                     if free {
                         return None;
                     }
                     let rows = models_dev()?;
-                    slot.names(model, |name| {
+                    slot.names_marked(model, |name| {
                         self.models_dev_names(name, lookup, models_dev)
                             .find_map(|name| rows.exact(name, lookup))
                     })
-                    .map(|found| CachedHit::new(found, HitKind::ModelsDevIdentity))
+                    .map(|(found, aliased)| {
+                        CachedHit::new(found, HitKind::ModelsDevIdentity).through_alias(aliased)
+                    })
                 })
             }
             Pass::S56 => {
@@ -464,9 +473,10 @@ impl PricingMap {
                 {
                     return None;
                 }
-                slot.names(model, |name| {
+                slot.names_marked(model, |name| {
                     self.search_fuzzy(name, lookup, secondary, models_dev)
                 })
+                .map(|(hit, aliased)| hit.through_alias(aliased))
             }
         }
     }

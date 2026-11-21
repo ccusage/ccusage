@@ -25,7 +25,8 @@ impl CachedHit {
     const OVERRIDDEN: usize = 1;
     const PRESENT: usize = 2;
     const STEP_SHIFT: usize = 2;
-    const ROW_SHIFT: usize = 5;
+    const ALIASED: usize = 1 << 5;
+    const ROW_SHIFT: usize = 6;
     const STEP_MASK: usize = 7;
     #[cfg(feature = "resolver-trace")]
     const STEPS: [ResolutionStep; 6] = [
@@ -49,6 +50,18 @@ impl CachedHit {
                 | Self::PRESENT
                 | overridden,
         )
+    }
+
+    pub(super) fn through_alias(self, aliased: bool) -> Self {
+        if aliased {
+            Self(self.0 | Self::ALIASED)
+        } else {
+            self
+        }
+    }
+
+    pub(super) fn aliased(self) -> bool {
+        self.0 & Self::ALIASED != 0
     }
 
     pub(super) fn id(self) -> usize {
@@ -313,19 +326,28 @@ impl Candidate<'_> {
     pub(super) fn names<T>(
         &self,
         text: &str,
-        mut select: impl FnMut(Name<'_>) -> Option<T>,
+        select: impl FnMut(Name<'_>) -> Option<T>,
     ) -> Option<T> {
-        select(self.name(text)).or_else(|| {
-            let forms = self.forms(text)?;
-            [
-                forms.builtin.as_ref().map(Alias::name),
-                forms.configured.as_ref().map(Alias::name),
-                forms.configured_builtin.as_ref().map(Alias::name),
-            ]
-            .into_iter()
-            .flatten()
-            .find_map(select)
-        })
+        self.names_marked(text, select).map(|(found, _)| found)
+    }
+
+    pub(super) fn names_marked<T>(
+        &self,
+        text: &str,
+        mut select: impl FnMut(Name<'_>) -> Option<T>,
+    ) -> Option<(T, bool)> {
+        if let Some(found) = self.own_names(text, &mut select) {
+            return Some((found, false));
+        }
+        let forms = self.forms(text)?;
+        [
+            forms.configured.as_ref().map(Alias::name),
+            forms.configured_builtin.as_ref().map(Alias::name),
+        ]
+        .into_iter()
+        .flatten()
+        .find_map(select)
+        .map(|found| (found, true))
     }
 }
 
