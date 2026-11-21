@@ -5924,6 +5924,15 @@
 			"context": 8192
 		}
 	},
+	"aws-bedrock/pixtral-large-2502": {
+		"cost": {
+			"input": 2,
+			"output": 6
+		},
+		"limit": {
+			"context": 131072
+		}
+	},
 	"aws-mantle/gpt-5.6-luna": {
 		"cost": {
 			"cache_read": 0.022,
@@ -20569,15 +20578,6 @@
 			"context": 262144
 		}
 	},
-	"liquid/d1": {
-		"cost": {
-			"input": 0.02,
-			"output": 0
-		},
-		"limit": {
-			"context": 65536
-		}
-	},
 	"liquid/d1-ultra": {
 		"cost": {
 			"cache_read": 0.042,
@@ -31952,9 +31952,9 @@
 	},
 	"radixark/daisyrose-27b": {
 		"cost": {
-			"cache_read": 0.0375,
-			"input": 0.15,
-			"output": 1.875
+			"cache_read": 0.05,
+			"input": 0.2,
+			"output": 2.5
 		},
 		"limit": {
 			"context": 262144
@@ -34236,6 +34236,16 @@
 		},
 		"limit": {
 			"context": 262144
+		}
+	},
+	"thinkingmachines/inkling-2-mini": {
+		"cost": {
+			"cache_read": 0.02,
+			"input": 0.1,
+			"output": 0.4
+		},
+		"limit": {
+			"context": 1048576
 		}
 	},
 	"thinkingmachines/inkling-2-small": {
