@@ -49,7 +49,7 @@ use speed::SpeedMultipliers;
 mod table;
 pub use table::encode_pricing_table;
 
-use builtin_pricing::BUILTIN_PRICING;
+use builtin_pricing::{BUILTIN_PRICING, CURATED_LIST_PRICES};
 
 #[derive(Debug)]
 pub struct PricingMap {
@@ -108,6 +108,7 @@ impl PricingMap {
 
     fn complete_layers(&mut self, embedded_models_dev: &Self) {
         self.put_builtin_pricing();
+        self.put_curated_list_prices();
         self.curate_long_context();
         self.fill_long_context_rates_from_models_dev(embedded_models_dev);
         self.models_dev = Some(Arc::clone(&embedded_models_dev.rows));
@@ -163,15 +164,16 @@ impl PricingMap {
         self.override_shadows.take();
     }
 
-    fn supplement_pricing(
+    fn supplement_row(
         &mut self,
         model: &str,
         pricing: Pricing,
         context_limit: Option<u64>,
         provider: &str,
-    ) {
+    ) -> Option<&mut Row> {
         let pricing = SpeedMultipliers::get().for_model(model).applied_to(pricing);
-        let Some(row) = self
+        self.clear_find_cache();
+        let row = self
             .rows_mut()
             .entries
             .get_or_insert(model.to_string(), || Row {
@@ -182,14 +184,23 @@ impl PricingMap {
                 vendor_start: vendor_start(model, vendor_id(model, provider)),
                 schedule: schedule_for(vendor_id(model, provider)),
                 ..Row::default()
-            })
-        else {
+            })?;
+        row.context_limit = row.context_limit.or(context_limit);
+        Some(row)
+    }
+
+    fn supplement_pricing(
+        &mut self,
+        model: &str,
+        pricing: Pricing,
+        context_limit: Option<u64>,
+        provider: &str,
+    ) {
+        let Some(row) = self.supplement_row(model, pricing, context_limit, provider) else {
             return;
         };
-        row.context_limit = row.context_limit.or(context_limit);
         row.pricing.cache_read = row.pricing.cache_read.or(pricing.cache_read);
         row.pricing.cache_create = row.pricing.cache_create.or(pricing.cache_create);
-        self.clear_find_cache();
     }
 
     fn put_builtin_pricing(&mut self) {
@@ -200,6 +211,26 @@ impl PricingMap {
                 supplement.context_limit,
                 supplement.provider,
             );
+        }
+    }
+
+    fn put_curated_list_prices(&mut self) {
+        for supplement in CURATED_LIST_PRICES {
+            let curated = supplement.pricing;
+            let Some(row) = self.supplement_row(
+                supplement.model,
+                curated,
+                supplement.context_limit,
+                supplement.provider,
+            ) else {
+                continue;
+            };
+            row.pricing.input = curated.input;
+            row.pricing.output = curated.output;
+            row.pricing.cache_read = curated.cache_read;
+            row.pricing.cache_create = row.pricing.cache_create.or(curated.cache_create);
+            row.source = Source::Curated;
+            row.scope = Scope::Direct;
         }
     }
 }

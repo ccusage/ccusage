@@ -168,7 +168,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.000165,
+          "cost": 0.000185,
           "inputTokens": 100,
           "modelName": "kimi-k2-thinking",
           "outputTokens": 50
@@ -215,7 +215,7 @@ exit: 0
       ],
       "outputTokens": 1218,
       "period": "2025-12-28",
-      "totalCost": 0.4541175,
+      "totalCost": 0.45413749999999997,
       "totalTokens": 5099
     },
     {
@@ -321,14 +321,6 @@ exit: 0
           "storedCost": 0.0123
         },
         {
-          "cacheCreationTokens": 900,
-          "cacheReadTokens": 12000,
-          "cost": 0.007975,
-          "inputTokens": 3000,
-          "modelName": "kimi-k2-thinking",
-          "outputTokens": 610
-        },
-        {
           "cacheCreationTokens": 50,
           "cacheReadTokens": 4500,
           "cost": 0.0066,
@@ -343,6 +335,14 @@ exit: 0
           "inputTokens": 1800,
           "modelName": "qwen3-coder-plus",
           "outputTokens": 601
+        },
+        {
+          "cacheCreationTokens": 900,
+          "cacheReadTokens": 12000,
+          "cost": 0.005665,
+          "inputTokens": 3000,
+          "modelName": "kimi-k2-thinking",
+          "outputTokens": 610
         },
         {
           "cacheCreationTokens": 0,
@@ -432,7 +432,7 @@ exit: 0
       ],
       "outputTokens": 7549,
       "period": "2025-12-30",
-      "totalCost": 5.4338425500000005,
+      "totalCost": 5.43153255,
       "totalTokens": 137171
     },
     {
@@ -564,7 +564,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.00010190000000000001,
+          "cost": 0.00010410000000000001,
           "inputTokens": 11,
           "modelName": "kimi-k2-thinking",
           "outputTokens": 39
@@ -636,7 +636,7 @@ exit: 0
       ],
       "outputTokens": 5935,
       "period": "2025-12-31",
-      "totalCost": 0.48818551000000004,
+      "totalCost": 0.48818771000000005,
       "totalTokens": 73493
     },
     {
@@ -892,19 +892,19 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 5000,
-          "cost": 0.004555,
-          "inputTokens": 1500,
-          "modelName": "kimi-k2-thinking",
-          "outputTokens": 782
-        },
-        {
-          "cacheCreationTokens": 0,
           "cacheReadTokens": 3000,
           "cost": 0.0042,
           "inputTokens": 600,
           "modelName": "[openclaw] claude-sonnet-4-20250514",
           "outputTokens": 100
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 5000,
+          "cost": 0.003605,
+          "inputTokens": 1500,
+          "modelName": "kimi-k2-thinking",
+          "outputTokens": 782
         },
         {
           "cacheCreationTokens": 50,
@@ -1262,7 +1262,7 @@ exit: 0
       ],
       "outputTokens": 33560,
       "period": "2026-01-01",
-      "totalCost": 15.046713165,
+      "totalCost": 15.045763165,
       "totalTokens": 1751943
     },
     {
@@ -1703,7 +1703,7 @@ exit: 0
     "cacheReadTokens": 1308300,
     "inputTokens": 1262107,
     "outputTokens": 60566,
-    "totalCost": 28.077993425,
+    "totalCost": 28.074755625,
     "totalTokens": 2652038,
     "unpricedModels": [
       "GLM-5.3",

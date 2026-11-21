@@ -209,20 +209,20 @@ exit: 0
           "outputTokens": 530
         },
         {
-          "cacheCreationTokens": 900,
-          "cacheReadTokens": 12000,
-          "cost": 0.0082419,
-          "inputTokens": 3111,
-          "modelName": "kimi-k2-thinking",
-          "outputTokens": 699
-        },
-        {
           "cacheCreationTokens": 50,
           "cacheReadTokens": 4500,
           "cost": 0.0066,
           "inputTokens": 1000,
           "modelName": "gemini-3-pro",
           "outputTokens": 200
+        },
+        {
+          "cacheCreationTokens": 900,
+          "cacheReadTokens": 12000,
+          "cost": 0.0059541,
+          "inputTokens": 3111,
+          "modelName": "kimi-k2-thinking",
+          "outputTokens": 699
         },
         {
           "cacheCreationTokens": 20,
@@ -379,7 +379,7 @@ exit: 0
       ],
       "outputTokens": 15244,
       "period": "2025-12",
-      "totalCost": 9.753395560000003,
+      "totalCost": 9.751107760000002,
       "totalTokens": 223294
     },
     {
@@ -662,19 +662,19 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 5000,
-          "cost": 0.004555,
-          "inputTokens": 1500,
-          "modelName": "kimi-k2-thinking",
-          "outputTokens": 782
-        },
-        {
-          "cacheCreationTokens": 0,
           "cacheReadTokens": 3000,
           "cost": 0.0042,
           "inputTokens": 600,
           "modelName": "[openclaw] claude-sonnet-4-20250514",
           "outputTokens": 100
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 5000,
+          "cost": 0.003605,
+          "inputTokens": 1500,
+          "modelName": "kimi-k2-thinking",
+          "outputTokens": 782
         },
         {
           "cacheCreationTokens": 1500,
@@ -1109,7 +1109,7 @@ exit: 0
       ],
       "outputTokens": 44815,
       "period": "2026-01",
-      "totalCost": 18.321244115,
+      "totalCost": 18.320294115,
       "totalTokens": 2425226
     },
     {
@@ -1146,7 +1146,7 @@ exit: 0
     "cacheReadTokens": 1308300,
     "inputTokens": 1262107,
     "outputTokens": 60566,
-    "totalCost": 28.077993425000003,
+    "totalCost": 28.074755625,
     "totalTokens": 2652038,
     "unpricedModels": [
       "GLM-5.3",
