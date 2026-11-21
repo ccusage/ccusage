@@ -87,7 +87,6 @@ where
     }
 }
 
-/// Returns whether the line took the picked path.
 fn check(text: &str) -> bool {
     let Some(picked) = Picked::new(text, LINE) else {
         return false;

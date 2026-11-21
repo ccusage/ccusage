@@ -13,13 +13,12 @@ use serde::{
 /// The members of one JSON object that a record type reads.
 pub type Fields = &'static [(&'static str, Member)];
 
-/// How a picked member's value reaches the record type.
+/// How a picked member's value reaches the record type: `Value` hands its text to `serde_json`
+/// as it is, and `Object` reduces an object to the listed members, keeping any other value as
+/// `Value`. Reduce only members that every record type reads as a derived struct.
 #[derive(Clone, Copy)]
 pub enum Member {
-    /// The value's text, parsed by `serde_json` as it is.
     Value,
-    /// An object reduced to these members; any other value is kept as [`Member::Value`].
-    /// Only a member the record types read as a struct may be reduced.
     Object(Fields),
 }
 
@@ -38,7 +37,7 @@ enum Slot<'a> {
     Object(Vec<Node<'a>>),
 }
 
-// NOTE: A line nested deeper than this goes to the full parse, so neither path reaches the 128-level limit `serde_json` puts on typed values.
+// NOTE(2026-11-21): serde_json 1.0.154 stops typed values at 128 levels but ignored ones at none. A line nested deeper than this goes to the full parse, so the two paths never disagree at the limit.
 const MAX_DEPTH: usize = 64;
 
 impl<'a> Picked<'a> {
@@ -99,7 +98,6 @@ impl<'a> Scan<'a> {
         (self.peek()? == byte).then(|| self.at += 1)
     }
 
-    /// Skips a string whose opening quote is already eaten; returns whether it holds an escape.
     fn string(&mut self) -> Option<bool> {
         let mut escaped = false;
         loop {

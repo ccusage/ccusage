@@ -171,7 +171,7 @@ const USAGE_MESSAGE: Fields = &[
     ("id", Member::Value),
 ];
 
-// NOTE: Lists every member `RawUsageRecord` and `AgentProgressEntry` read, nested ones included, so the long message content is skipped unparsed. Reduce only members those types read as derived structs.
+// NOTE(2026-11-21): Usage lines spend most of their bytes in message content that no report reads. These lists name every member `RawUsageRecord` and `AgentProgressEntry` read, so the picker skips the rest unparsed.
 const USAGE_LINE: Fields = &[
     ("timestamp", Member::Value),
     ("message", Member::Object(USAGE_MESSAGE)),
