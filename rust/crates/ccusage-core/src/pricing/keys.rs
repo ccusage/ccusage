@@ -56,13 +56,31 @@ fn names_same_model((model, raw_model): (&str, &str), (key, raw_key): (&str, &st
 }
 
 fn contains_pricing_key((value, raw_value): (&str, &str), (key, raw_key): (&str, &str)) -> bool {
-    value.match_indices(key).any(|(index, _)| {
+    key_positions(value, key).any(|index| {
         let before = index
             .checked_sub(1)
             .and_then(|before| raw_value.as_bytes().get(before))
             .copied();
         before.is_none_or(is_qualifier_end)
             && is_price_neutral_suffix(&value[index + key.len()..], family_words(raw_key))
+    })
+}
+
+// NOTE(2026-11-21, #2226): The fuzzy pass tests every catalogue key against a short model id, and building a substring searcher per pair cost more than the search. Scanning for the key's first byte and comparing from there finds the same non-overlapping positions as `str::match_indices`.
+fn key_positions<'a>(value: &'a str, key: &'a str) -> impl Iterator<Item = usize> + 'a {
+    let (value, key) = (value.as_bytes(), key.as_bytes());
+    let mut start = 0;
+    std::iter::from_fn(move || {
+        let (&first, _) = key.split_first()?;
+        while start + key.len() <= value.len() {
+            let index = start + memchr::memchr(first, &value[start..=value.len() - key.len()])?;
+            if value[index..].starts_with(key) {
+                start = index + key.len();
+                return Some(index);
+            }
+            start = index + 1;
+        }
+        None
     })
 }
 
@@ -177,7 +195,17 @@ pub(super) fn dash_pricing_key_separators(chars: impl Iterator<Item = char>) -> 
 
 pub(super) fn normalized_pricing_key(value: &str) -> Cow<'_, str> {
     if value.bytes().any(is_pricing_key_separator) {
-        Cow::Owned(dash_pricing_key_separators(value.chars()))
+        let dashed = value
+            .bytes()
+            .map(|byte| {
+                if is_pricing_key_separator(byte) {
+                    b'-'
+                } else {
+                    byte
+                }
+            })
+            .collect();
+        Cow::Owned(String::from_utf8(dashed).expect("replacing ASCII bytes keeps UTF-8"))
     } else {
         Cow::Borrowed(value)
     }
@@ -235,4 +263,26 @@ pub(super) fn matches_model_suffix(part: &str, base: &str) -> bool {
             .as_bytes()
             .get(index + base.len())
             .is_none_or(|&next| next == b'-')
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn key_positions_match_str_match_indices() {
+        for (value, key) in [
+            ("gemini-mystery-1", "gemini-"),
+            ("openrouter/google/gemini-2-5-flash", "gemini-2-5-flash"),
+            ("aaaa", "aa"),
+            ("abc", "abcd"),
+            ("gpt-5-4-codex", "gpt-5-4"),
+            ("x", "x"),
+        ] {
+            let expected: Vec<_> = value.match_indices(key).map(|(index, _)| index).collect();
+            assert_eq!(
+                super::key_positions(value, key).collect::<Vec<_>>(),
+                expected,
+                "{value} {key}"
+            );
+        }
+    }
 }
