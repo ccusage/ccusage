@@ -515,7 +515,7 @@ const DEEPSEEK_V4_PRO: PricingSchedule = PricingSchedule {
     vendor: "deepseek",
 };
 
-// NOTE(2026-11-21, #2167): The V4.1 Flash rates at https://api-docs.deepseek.com/quick_start/pricing/ took effect at 04:00 UTC on September 10, 2026, per https://api-docs.deepseek.com/news/news260910/.
+// NOTE(2026-11-21, #2167): DeepSeek lists the V4.1 Flash rates at https://api-docs.deepseek.com/quick_start/pricing/. Apply them from the 04:00 UTC cutoff on September 10, 2026 announced at https://api-docs.deepseek.com/news/news260910/.
 const DEEPSEEK_FLASH: PricingSchedule = PricingSchedule {
     cutoff_ms: DEEPSEEK_V4_1_FLASH_MS,
     peak_weekdays: 1..=5,
