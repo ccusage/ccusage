@@ -381,21 +381,58 @@ fn disputed_list_prices_bill_the_vendor_rate_online_and_offline() {
 }
 
 #[test]
-fn curated_deepseek_row_keeps_the_write_rate_its_loaded_row_publishes() {
+fn curated_rows_keep_the_write_rate_their_loaded_row_publishes() {
     crate::test_support::install_pricing_snapshots();
-    for (published, expected) in [("0", 0.0), ("5e-7", 0.5e-6)] {
+    for (key, model, provider, input, output, published, expected) in [
+        (
+            "deepseek/deepseek-v3.2",
+            "deepseek-v3.2",
+            "deepseek",
+            "2.8e-7",
+            0.42e-6,
+            "0",
+            0.0,
+        ),
+        (
+            "deepseek/deepseek-v3.2",
+            "deepseek-v3.2",
+            "deepseek",
+            "2.8e-7",
+            0.42e-6,
+            "5e-7",
+            0.5e-6,
+        ),
+        (
+            "moonshot/kimi-k2-thinking",
+            "kimi-k2-thinking",
+            "moonshot",
+            "6e-7",
+            2.5e-6,
+            "0",
+            0.0,
+        ),
+        (
+            "moonshot/kimi-k2-thinking",
+            "kimi-k2-thinking",
+            "moonshot",
+            "6e-7",
+            2.5e-6,
+            "7e-7",
+            0.7e-6,
+        ),
+    ] {
         let mut pricing = PricingMap::load_embedded();
         pricing.refresh_litellm(|load| {
             assert!(load(&format!(
-                r#"{{"deepseek/deepseek-v3.2": {{"input_cost_per_token": 2.8e-7, "output_cost_per_token": 4e-7, "cache_creation_input_token_cost": {published}, "litellm_provider": "deepseek"}}}}"#
+                r#"{{"{key}": {{"input_cost_per_token": {input}, "output_cost_per_token": 4e-7, "cache_creation_input_token_cost": {published}, "litellm_provider": "{provider}"}}}}"#
             )));
             Ok(())
         });
-        let rates = pricing.find("deepseek-v3.2").unwrap();
+        let rates = pricing.find(model).unwrap();
         assert_eq!(
             (rates.output, rates.cache_creation_rate()),
-            (0.42e-6, expected),
-            "{published}"
+            (output, expected),
+            "{key} {published}"
         );
     }
 }

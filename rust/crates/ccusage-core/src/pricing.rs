@@ -228,7 +228,7 @@ impl PricingMap {
             row.pricing.input = curated.input;
             row.pricing.output = curated.output;
             row.pricing.cache_read = curated.cache_read;
-            row.pricing.cache_create = curated.cache_create.or(row.pricing.cache_create);
+            row.pricing.cache_create = row.pricing.cache_create.or(curated.cache_create);
             row.source = Source::Curated;
             row.scope = Scope::Direct;
         }

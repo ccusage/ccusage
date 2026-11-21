@@ -352,7 +352,7 @@ pub(super) const BUILTIN_PRICING: &[Supplement] = &[
 ];
 
 pub(super) const CURATED_LIST_PRICES: &[Supplement] = &[
-    // NOTE(2026-11-21, #2231): Moonshot listed kimi-k2-thinking at $0.60 input (cache miss), $0.15 cache hit and $2.50 output per 1M, and kimi-k2-turbo-preview at $1.15 / $0.15 / $8.00, in the USD price data of https://web.archive.org/web/20260125004043/https://platform.moonshot.ai/docs/pricing/chat. K2 caching is automatic and bills no write charge, so a write costs the cache-miss rate. Moonshot retired the K2 series in May 2026 (https://platform.kimi.ai/docs/llms-full.txt changelog).
+    // NOTE(2026-11-21, #2231): Moonshot listed kimi-k2-thinking at $0.60 input (cache miss), $0.15 cache hit and $2.50 output per 1M, and kimi-k2-turbo-preview at $1.15 / $0.15 / $8.00, in the USD price data of https://web.archive.org/web/20260125004043/https://platform.moonshot.ai/docs/pricing/chat. K2 caching is automatic and bills no write charge, so a write costs the cache-miss rate unless the loaded row publishes its own write rate, an explicit 0 included. Moonshot retired the K2 series in May 2026 (https://platform.kimi.ai/docs/llms-full.txt changelog).
     Supplement {
         provider: "moonshot",
         model: "moonshot/kimi-k2-thinking",
