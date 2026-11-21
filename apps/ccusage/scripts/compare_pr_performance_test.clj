@@ -318,7 +318,7 @@
            (:text (report/overall-verdict [(result :unchanged :unchanged)] limits))))
     (is (not (:regression? (report/overall-verdict [(result :improvement :unchanged)] limits))))
     (is (.contains (:text (report/overall-verdict [(result :unchanged :unchanged :regression)] limits))
-                   "wall time above +5%, CPU time or peak RSS above +10%"))
+                   "wall time above +5% or CPU time or peak RSS above +10%"))
     (testing "a memory-only improvement is reported"
       (is (= "**Verdict: ✅ improved** in `daily` (less memory); nothing regressed beyond the thresholds."
              (:text (report/overall-verdict [(result :unchanged :improvement)] limits)))))))

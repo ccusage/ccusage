@@ -40,7 +40,7 @@
         commands (fn [rs] (str/join ", " (map #(format "%s (%s)" (result-name %) (str/replace (comparison-verdict (:comparison %)) #"^\S+ " "")) rs)))]
     (cond
       (seq regressions) {:regression? true
-                         :text (format "**Verdict: ⚠️ possible regression** in %s; wall time above +%d%%, CPU time or peak RSS above +%d%%, consistent across rounds."
+                         :text (format "**Verdict: ⚠️ possible regression** in %s; wall time above +%d%% or CPU time or peak RSS above +%d%%, consistent across rounds."
                                        (commands regressions) wall-percent cpu-percent)}
       (seq improvements) {:text (format "**Verdict: ✅ improved** in %s; nothing regressed beyond the thresholds." (commands improvements))}
       :else {:text (format "**Verdict: no significant change** (every command within ±%d%% wall time and ±%d%% CPU time and peak RSS)." wall-percent cpu-percent)})))
