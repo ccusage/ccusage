@@ -1,5 +1,5 @@
 use ccusage_core::cost::PriceTable;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use jiff::tz::TimeZone as JiffTimeZone;
 use serde::{
@@ -384,9 +384,9 @@ impl OpenCodeUsage {
         Ok(Some(LoadedEntry {
             date: date_at(timestamp, tz),
             timestamp,
-            project: Arc::from("opencode"),
+            project: Arc::clone(&PROJECT),
             session_id: Arc::from(loaded_session_id),
-            project_path: Arc::from("OpenCode"),
+            project_path: Arc::clone(&PROJECT_PATH),
             cost: priced.cost,
             extra_total_tokens,
             credits: None,
@@ -402,6 +402,9 @@ impl OpenCodeUsage {
         }))
     }
 }
+
+static PROJECT: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("opencode"));
+static PROJECT_PATH: LazyLock<Arc<str>> = LazyLock::new(|| Arc::from("OpenCode"));
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct MissingTimestamp;
