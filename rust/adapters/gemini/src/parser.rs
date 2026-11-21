@@ -177,7 +177,7 @@ enum TokenRejection {
 
 #[derive(Debug, Clone)]
 pub(super) struct GeminiUsageEvent {
-    pub(super) timestamp: TimestampMs,
+    timestamp: TimestampMs,
 
     session_id: String,
     model: String,

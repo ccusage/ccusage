@@ -21,7 +21,7 @@ const DEFAULT_MODEL: &str = "gemini-internal-model";
 
 #[derive(Debug, Clone)]
 pub(super) struct AntigravityUsageEvent {
-    pub(super) timestamp: TimestampMs,
+    timestamp: TimestampMs,
 
     session_id: String,
     model: String,
