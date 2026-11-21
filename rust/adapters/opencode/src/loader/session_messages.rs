@@ -252,7 +252,7 @@ fn pin_snapshots(
     let version = data_version(&probe)?;
     let pinned = || {
         let connection = open().ok()?;
-        // NOTE(2026-11-21): Each overflow page is read once, so a default-sized cache per connection only holds memory.
+        // NOTE(2026-11-21): Each overflow page is read once. A default-sized cache per connection would only hold memory.
         step(&connection, "PRAGMA cache_size = -64")?;
         step(&connection, "BEGIN")?;
         data_version(&connection)?;
@@ -276,7 +276,7 @@ fn data_version(connection: &sqlite::Connection) -> Option<i64> {
     step(connection, "PRAGMA data_version")?.read(0).ok()
 }
 
-// NOTE(2026-11-21): Each worker reads one batch per round, so payload sizes stay even across workers as newer rows grow, and only one round of outcomes is held at a time.
+// NOTE(2026-11-21): Newer OpenCode rows carry larger payloads, and adjacent rows carry similar ones. One batch per worker per round keeps workers even and holds only one round of outcomes.
 const PENDING_BATCH_ROWS: usize = 256;
 
 fn apply_round(
