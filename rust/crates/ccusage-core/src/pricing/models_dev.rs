@@ -17,13 +17,6 @@ use catalog::{
     normalized_models_dev_model_id,
 };
 
-pub(super) fn is_host_segment(segment: &str) -> bool {
-    let direct = super::embedded::litellm_sources()
-        .is_some_and(|sources| sources.direct_providers.iter().any(|id| id == segment));
-    let rules = models_dev_catalog_rules();
-    !direct && !rules.is_owner(segment) && !rules.is_owner(&segment.replace('_', "-"))
-}
-
 #[derive(Debug, Deserialize)]
 struct ModelsDevProvider {
     id: Option<String>,

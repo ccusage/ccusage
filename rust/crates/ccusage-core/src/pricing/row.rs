@@ -205,6 +205,11 @@ pub(super) fn host_listing(segment: &str) -> Option<(u8, &'static data::HostList
         .map(|(listing, index)| (index, listing))
 }
 
+pub(super) fn is_host_segment(segment: &str) -> bool {
+    !super::embedded::litellm_sources()
+        .is_some_and(|sources| sources.direct_providers.iter().any(|id| id == segment))
+}
+
 pub(super) fn bare_host(key: &str, provider: &str) -> Option<u8> {
     if key.contains('/') {
         return None;

@@ -414,7 +414,7 @@ impl PricingMap {
         }
     }
 
-    // NOTE(2026-11-21, #2229): When an agent names the host that served a request, the host's own listing bills it ahead of the vendor's list price found through another candidate. A model owner or a direct vendor in front of the id names no host. Only LiteLLM keys a listing by its host, so models.dev's `owner/model` ids are not host listings.
+    // NOTE(2026-11-21, #2229): When an agent names the host that served a request, the host's own listing bills it ahead of the vendor's list price found through another candidate. A direct vendor in front of the id names no host. Only LiteLLM keys a listing by its host, so the pass reads LiteLLM rows keyed by that path, which models.dev's `owner/model` ids are not.
     fn search_host<'a>(
         &'a self,
         model: &str,

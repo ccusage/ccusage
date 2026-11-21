@@ -24,7 +24,7 @@ use keys::{
 };
 mod litellm;
 mod models_dev;
-use models_dev::{embedded_models_dev_pricing, is_host_segment};
+use models_dev::embedded_models_dev_pricing;
 mod overrides;
 use overrides::Overrides;
 mod rates;
@@ -39,8 +39,8 @@ pub use resolve::{Explanation, ResolutionStep};
 mod row;
 pub use row::Source;
 use row::{
-    Entries, Row, RowPricing, Scope, bare_host, host_listing, provider_cache_defaults, row_scope,
-    schedule_for, vendor_id, vendor_start,
+    Entries, Row, RowPricing, Scope, bare_host, host_listing, is_host_segment,
+    provider_cache_defaults, row_scope, schedule_for, vendor_id, vendor_start,
 };
 mod rows;
 use rows::{Lookup, PricingRows, RowMatch};
