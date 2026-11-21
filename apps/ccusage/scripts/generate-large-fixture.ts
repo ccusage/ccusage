@@ -12,7 +12,9 @@ const FIXTURE_START_MS = Date.UTC(2026, 5, 1);
 const FIXTURE_DAYS = 120;
 const CLAUDE_PROJECT_COUNT = 48;
 const CLAUDE_MANY_SMALL_FILES_PROJECT_COUNT = 1600;
-const SUBAGENT_FILE_EVERY = 4;
+const SUBAGENT_BURST_EVERY = 16;
+const SUBAGENT_BURST_FILES = 4;
+const FILE_HISTORY_TRACKED_FILES = 160;
 const LEGACY_PROGRESS_FILE_EVERY = 6;
 const LEGACY_PROGRESS_USAGE_CHANCE = 0.08;
 const METADATA_FIRST_ASSISTANT_CHANCE = 0.01;
@@ -1191,6 +1193,7 @@ type PlannedFile = {
 	compressed?: boolean;
 	sidecar?: { path: string; value: Line };
 	keepLines?: number;
+	trailer?: Line;
 };
 
 function claudeProxy(random: Random): ClaudeSession['proxy'] {
@@ -1216,7 +1219,8 @@ function planClaudeFile(
 	const random = new Random(1000 + fileIndex);
 	const day = fileIndex % FIXTURE_DAYS;
 	const startMs = FIXTURE_START_MS + day * DAY_MS + random.int(DAY_MS / 2);
-	if (previous && fileIndex % SUBAGENT_FILE_EVERY === SUBAGENT_FILE_EVERY - 1) {
+	const burstSlot = fileIndex % SUBAGENT_BURST_EVERY;
+	if (previous && burstSlot >= SUBAGENT_BURST_EVERY - SUBAGENT_BURST_FILES) {
 		const agentId = random.hex(17);
 		const session: ClaudeSession = {
 			...previous,
@@ -1262,8 +1266,36 @@ function planClaudeFile(
 			path: join(directory, 'projects', projectDir, `${session.sessionId}.jsonl`),
 			startMs,
 			lines: claudeSessionLines(session),
+			trailer:
+				burstSlot === SUBAGENT_BURST_EVERY - SUBAGENT_BURST_FILES - 1
+					? claudeFileHistoryUpdate(session, startMs, new Random(2_000_000 + fileIndex))
+					: undefined,
 		},
 		session,
+	};
+}
+
+// NOTE(2026-11-21, #2431): A file-history update repeats an earlier snapshot's time only inside `snapshot`, so a transcript ending in a large one has no record timestamp in its last 16 KiB. Its session's subagent transcripts make `--since` pay for any rule that revives them.
+function claudeFileHistoryUpdate(session: ClaudeSession, startMs: number, random: Random): Line {
+	const trackedFileBackups = Object.fromEntries(
+		Array.from({ length: FILE_HISTORY_TRACKED_FILES }, (_, index) => [
+			`${session.cwd}/src/${random.hex(6)}/${random.hex(8)}.ts`,
+			{
+				backupFileName: `${random.hex(16)}@v${(index % 5) + 1}`,
+				version: (index % 5) + 1,
+				backupTime: new Date(startMs + index * 1000).toISOString(),
+			},
+		]),
+	);
+	return {
+		type: 'file-history-snapshot',
+		messageId: random.uuid(),
+		snapshot: {
+			messageId: random.uuid(),
+			trackedFileBackups,
+			timestamp: new Date(startMs).toISOString(),
+		},
+		isSnapshotUpdate: true,
 	};
 }
 
@@ -1380,6 +1412,12 @@ async function writePlannedFile(
 		if (kept.length < (file.keepLines ?? 0)) {
 			kept.push(next.value);
 		}
+	}
+	if (file.trailer !== undefined) {
+		const line = `${JSON.stringify(file.trailer)}\n`;
+		chunks.push(line);
+		bytes += Buffer.byteLength(line);
+		lines += 1;
 	}
 	const content = Buffer.from(chunks.join(''));
 	const data = file.compressed ? zstdCompressSync(content) : content;
