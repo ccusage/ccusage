@@ -28,6 +28,8 @@
         ccusage-release-darwin-arm64 = darwinPackage "aarch64-apple-darwin" {
           doInstallCheck = true;
           llvmProfdata = "${rustToolchain}/lib/rustlib/aarch64-apple-darwin/bin/llvm-profdata";
+          # NOTE(2026-11-21, #2457): A fresh profile still lacks 6,683 generic instantiations that only the Apple silicon profile-use build creates, with no hash mismatch. A profile that stopped matching leaves nearly every function missing.
+          maxMissingFunctions = 10000;
           description = "Apple silicon macOS build of ccusage";
         };
         ccusage-release-darwin-x64 = config.packages.ccusage-darwin-x64;
