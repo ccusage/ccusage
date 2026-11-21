@@ -177,9 +177,7 @@ fn skips_replayed_parent_token_history_in_thread_spawn_subagent_files() {
         .join("\n"),
     });
 
-    for single_thread in [true, false] {
-        let events = crate::test_support::rollout_events(fixture.root());
-
+    check_replay_modes(fixture.root(), |single_thread, events| {
         assert_eq!(
             events.len(),
             4,
@@ -205,7 +203,7 @@ fn skips_replayed_parent_token_history_in_thread_spawn_subagent_files() {
         assert_eq!(subagent_events[0].output_tokens, 20);
         assert_eq!(subagent_events[1].input_tokens, 50);
         assert_eq!(subagent_events[1].output_tokens, 10);
-    }
+    });
 }
 
 #[test]
@@ -357,9 +355,7 @@ fn skips_replayed_parent_token_history_in_forked_session_files() {
         .join("\n"),
     });
 
-    for single_thread in [true, false] {
-        let events = crate::test_support::rollout_events(fixture.root());
-
+    check_replay_modes(fixture.root(), |single_thread, events| {
         assert_eq!(
             events.len(),
             3,
@@ -377,7 +373,7 @@ fn skips_replayed_parent_token_history_in_forked_session_files() {
         assert_eq!(fork_events[0].cached_input_tokens, 10);
         assert_eq!(fork_events[0].output_tokens, 20);
         assert_eq!(fork_events[0].total_tokens, 120);
-    }
+    });
 }
 
 #[test]
@@ -493,16 +489,18 @@ fn keeps_cumulative_baseline_when_skipping_subagent_replay() {
         .join("\n"),
     });
 
-    let events = crate::test_support::rollout_events(fixture.root())
-        .into_iter()
-        .filter(|event| event.session_id.contains("subagent"))
-        .collect::<Vec<_>>();
+    check_replay_modes(fixture.root(), |single_thread, events| {
+        let events = events
+            .iter()
+            .filter(|event| event.session_id.contains("subagent"))
+            .collect::<Vec<_>>();
 
-    assert_eq!(events.len(), 1);
-    assert_eq!(events[0].input_tokens, 100);
-    assert_eq!(events[0].cached_input_tokens, 10);
-    assert_eq!(events[0].output_tokens, 20);
-    assert_eq!(events[0].total_tokens, 120);
+        assert_eq!(events.len(), 1, "single_thread={single_thread}");
+        assert_eq!(events[0].input_tokens, 100);
+        assert_eq!(events[0].cached_input_tokens, 10);
+        assert_eq!(events[0].output_tokens, 20);
+        assert_eq!(events[0].total_tokens, 120);
+    });
 }
 
 #[test]
@@ -666,9 +664,7 @@ fn skips_replayed_history_across_multiple_subagent_files() {
         ),
     });
 
-    for single_thread in [true, false] {
-        let events = crate::test_support::rollout_events(fixture.root());
-
+    check_replay_modes(fixture.root(), |single_thread, events| {
         assert_eq!(
             events.len(),
             5,
@@ -677,12 +673,26 @@ fn skips_replayed_history_across_multiple_subagent_files() {
             single_thread
         );
 
-        let total_input: u64 = events.iter().map(|e| e.input_tokens).sum();
+        let total_input: u64 = events.iter().map(|event| event.input_tokens).sum();
         assert_eq!(
             total_input, 1_150,
             "expected 1150 total input (1000 parent + 50 + 75 + 25 subagents)"
         );
-    }
+
+        let mut input_by_session = replay_input_tokens_by_session(events);
+        input_by_session.sort_unstable();
+        assert_eq!(
+            input_by_session,
+            [
+                ("2026-05-12T08-01-00-parent".to_string(), 300),
+                ("2026-05-12T08-01-00-parent".to_string(), 700),
+                ("2026-05-12T08-02-00-subagent-a".to_string(), 50),
+                ("2026-05-12T08-06-00-subagent-b".to_string(), 75),
+                ("2026-05-12T08-10-00-subagent-c".to_string(), 25),
+            ],
+            "single_thread={single_thread}"
+        );
+    });
 }
 
 #[test]
@@ -707,14 +717,17 @@ fn bounds_the_replay_at_a_numeric_fork_timestamp() {
         .join("\n"),
     });
 
-    assert_eq!(
-        replay_input_tokens_by_session(fixture.root()),
-        [
-            ("01-parent".to_string(), 100),
-            ("01-parent".to_string(), 50),
-            ("02-child".to_string(), 50),
-        ]
-    );
+    check_replay_modes(fixture.root(), |single_thread, events| {
+        assert_eq!(
+            replay_input_tokens_by_session(events),
+            [
+                ("01-parent".to_string(), 100),
+                ("01-parent".to_string(), 50),
+                ("02-child".to_string(), 50),
+            ],
+            "single_thread={single_thread}"
+        );
+    });
 }
 
 #[test]
@@ -736,15 +749,18 @@ fn skips_a_replayed_parent_suffix_that_starts_mid_stream() {
         .join("\n"),
     });
 
-    assert_eq!(
-        replay_input_tokens_by_session(fixture.root()),
-        [
-            ("01-parent".to_string(), 100),
-            ("01-parent".to_string(), 200),
-            ("01-parent".to_string(), 300),
-            ("02-child".to_string(), 400),
-        ]
-    );
+    check_replay_modes(fixture.root(), |single_thread, events| {
+        assert_eq!(
+            replay_input_tokens_by_session(events),
+            [
+                ("01-parent".to_string(), 100),
+                ("01-parent".to_string(), 200),
+                ("01-parent".to_string(), 300),
+                ("02-child".to_string(), 400),
+            ],
+            "single_thread={single_thread}"
+        );
+    });
 }
 
 #[test]
@@ -755,13 +771,13 @@ fn counts_first_response_when_missing_parent_history_begins_after_fork() {
 {"timestamp":"2026-01-05T15:00:02.000Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":1000,"cached_input_tokens":400,"output_tokens":10,"reasoning_output_tokens":0,"total_tokens":1010},"total_token_usage":{"input_tokens":1000,"cached_input_tokens":400,"output_tokens":10,"reasoning_output_tokens":0,"total_tokens":1010}}}}
 {"timestamp":"2026-01-05T15:00:02.150Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":1000,"cached_input_tokens":400,"output_tokens":10,"reasoning_output_tokens":0,"total_tokens":1010},"total_token_usage":{"input_tokens":1000,"cached_input_tokens":400,"output_tokens":10,"reasoning_output_tokens":0,"total_tokens":1010}}}}"#,
     });
-    let events = crate::test_support::rollout_events(fixture.root());
-
-    assert_eq!(events.len(), 1);
-    assert_eq!(events[0].model.as_str(), "gpt-5");
-    assert_eq!(events[0].input_tokens, 1_000);
-    assert_eq!(events[0].cached_input_tokens, 400);
-    assert_eq!(events[0].output_tokens, 10);
-    assert_eq!(events[0].reasoning_output_tokens, 0);
-    assert_eq!(events[0].total_tokens, 1_010);
+    check_replay_modes(fixture.root(), |single_thread, events| {
+        assert_eq!(events.len(), 1, "single_thread={single_thread}");
+        assert_eq!(events[0].model.as_str(), "gpt-5");
+        assert_eq!(events[0].input_tokens, 1_000);
+        assert_eq!(events[0].cached_input_tokens, 400);
+        assert_eq!(events[0].output_tokens, 10);
+        assert_eq!(events[0].reasoning_output_tokens, 0);
+        assert_eq!(events[0].total_tokens, 1_010);
+    });
 }

@@ -157,15 +157,27 @@ fn counts_spawned_responses_once_across_duplicate_snapshot_controls() {
         for (path, contents) in files {
             fixture.write_file(path, contents);
         }
-        let mut events = crate::test_support::rollout_events(fixture.root())
-            .into_iter()
-            .map(|event| (event.session_id, event.input_tokens, event.total_tokens))
-            .collect::<Vec<_>>();
-        events.sort_unstable();
         let mut expected = expected;
         expected.sort_unstable();
 
-        assert_eq!(events, expected, "scenario: {name}");
+        check_replay_modes(fixture.root(), |single_thread, events| {
+            let mut events = events
+                .iter()
+                .map(|event| {
+                    (
+                        event.session_id.clone(),
+                        event.input_tokens,
+                        event.total_tokens,
+                    )
+                })
+                .collect::<Vec<_>>();
+            events.sort_unstable();
+
+            assert_eq!(
+                events, expected,
+                "scenario: {name}, single_thread={single_thread}"
+            );
+        });
     }
 }
 
@@ -232,19 +244,20 @@ fn counts_spawned_child_requests_stamped_with_the_fork_instant() {
         .join("\n"),
     });
 
-    let events = crate::test_support::rollout_events(fixture.root());
-
-    assert_eq!(
-        events
-            .iter()
-            .map(|event| (
-                event.input_tokens,
-                event.cached_input_tokens,
-                event.output_tokens
-            ))
-            .collect::<Vec<_>>(),
-        [(10_000, 2_000, 100), (20_000, 3_000, 200)]
-    );
+    check_replay_modes(fixture.root(), |single_thread, events| {
+        assert_eq!(
+            events
+                .iter()
+                .map(|event| (
+                    event.input_tokens,
+                    event.cached_input_tokens,
+                    event.output_tokens
+                ))
+                .collect::<Vec<_>>(),
+            [(10_000, 2_000, 100), (20_000, 3_000, 200)],
+            "single_thread={single_thread}"
+        );
+    });
 }
 
 #[test]
@@ -273,14 +286,17 @@ fn keeps_own_usage_a_spawned_child_wrote_before_its_first_usage_record() {
         .join("\n"),
     });
 
-    assert_eq!(
-        replay_input_tokens_by_session(fixture.root()),
-        [
-            ("child".to_string(), 100),
-            ("child".to_string(), 200),
-            ("child".to_string(), 300),
-        ]
-    );
+    check_replay_modes(fixture.root(), |single_thread, events| {
+        assert_eq!(
+            replay_input_tokens_by_session(events),
+            [
+                ("child".to_string(), 100),
+                ("child".to_string(), 200),
+                ("child".to_string(), 300),
+            ],
+            "single_thread={single_thread}"
+        );
+    });
 }
 
 #[test]
@@ -315,10 +331,13 @@ fn skips_usage_between_a_copied_record_and_the_forks_own_settings() {
         .join("\n"),
     });
 
-    assert_eq!(
-        replay_input_tokens_by_session(fixture.root()),
-        [("child".to_string(), 100), ("child".to_string(), 500)]
-    );
+    check_replay_modes(fixture.root(), |single_thread, events| {
+        assert_eq!(
+            replay_input_tokens_by_session(events),
+            [("child".to_string(), 100), ("child".to_string(), 500)],
+            "single_thread={single_thread}"
+        );
+    });
 }
 
 #[test]
@@ -338,8 +357,7 @@ fn keeps_child_usage_matching_parent_event_after_fork() {
         .join("\n"),
     });
 
-    for single_thread in [true, false] {
-        let events = crate::test_support::rollout_events(fixture.root());
+    check_replay_modes(fixture.root(), |single_thread, events| {
         let child_events = events
             .iter()
             .filter(|event| event.session_id == "child")
@@ -347,7 +365,7 @@ fn keeps_child_usage_matching_parent_event_after_fork() {
 
         assert_eq!(child_events.len(), 1, "single_thread={single_thread}");
         assert_eq!(child_events[0].input_tokens, 50);
-    }
+    });
 }
 
 #[test]
@@ -372,16 +390,19 @@ fn keeps_full_parent_stream_when_the_parent_itself_replayed_a_missing_session() 
         .join("\n"),
     });
 
-    assert_eq!(
-        replay_input_tokens_by_session(fixture.root()),
-        [
-            ("01-parent".to_string(), 100),
-            ("01-parent".to_string(), 200),
-            ("01-parent".to_string(), 300),
-            ("01-parent".to_string(), 400),
-            ("02-child".to_string(), 500),
-        ]
-    );
+    check_replay_modes(fixture.root(), |single_thread, events| {
+        assert_eq!(
+            replay_input_tokens_by_session(events),
+            [
+                ("01-parent".to_string(), 100),
+                ("01-parent".to_string(), 200),
+                ("01-parent".to_string(), 300),
+                ("01-parent".to_string(), 400),
+                ("02-child".to_string(), 500),
+            ],
+            "single_thread={single_thread}"
+        );
+    });
 }
 
 #[test]
@@ -399,8 +420,7 @@ fn keeps_usage_of_a_session_that_lists_itself_as_its_own_parent() {
         .join("\n"),
     });
 
-    for single_thread in [true, false] {
-        let events = crate::test_support::rollout_events(fixture.root());
+    check_replay_modes(fixture.root(), |single_thread, events| {
         assert_eq!(
             events
                 .iter()
@@ -409,7 +429,7 @@ fn keeps_usage_of_a_session_that_lists_itself_as_its_own_parent() {
             [("self".to_string(), 100), ("self".to_string(), 200)],
             "single_thread={single_thread}"
         );
-    }
+    });
 }
 
 #[test]
@@ -451,11 +471,11 @@ fn keeps_first_child_response_after_zero_usage_initialization() {
         .join("\n"),
     });
 
-    let events = crate::test_support::rollout_events(fixture.root());
-
-    assert_eq!(events.len(), 1);
-    assert_eq!(events[0].input_tokens, 50);
-    assert_eq!(events[0].output_tokens, 1);
+    check_replay_modes(fixture.root(), |single_thread, events| {
+        assert_eq!(events.len(), 1, "single_thread={single_thread}");
+        assert_eq!(events[0].input_tokens, 50);
+        assert_eq!(events[0].output_tokens, 1);
+    });
 }
 
 #[test]
@@ -508,15 +528,16 @@ fn skips_nested_replays_against_immutable_parent_streams() {
         .join("\n"),
     });
 
-    let events = crate::test_support::rollout_events(fixture.root());
-
-    assert_eq!(
-        events
-            .iter()
-            .map(|event| (event.session_id.as_str(), event.input_tokens))
-            .collect::<Vec<_>>(),
-        [("01-root", 100), ("02-parent", 50), ("03-child", 25)]
-    );
+    check_replay_modes(fixture.root(), |single_thread, events| {
+        assert_eq!(
+            events
+                .iter()
+                .map(|event| (event.session_id.as_str(), event.input_tokens))
+                .collect::<Vec<_>>(),
+            [("01-root", 100), ("02-parent", 50), ("03-child", 25)],
+            "single_thread={single_thread}"
+        );
+    });
 }
 
 #[test]
@@ -554,10 +575,10 @@ fn skips_repeated_last_usage_when_cumulative_total_is_unchanged() {
         .join("\n"),
     });
 
-    let events = crate::test_support::rollout_events(fixture.root());
-
-    assert_eq!(events.len(), 1);
-    assert_eq!(events[0].total_tokens, 110);
+    check_replay_modes(fixture.root(), |single_thread, events| {
+        assert_eq!(events.len(), 1, "single_thread={single_thread}");
+        assert_eq!(events[0].total_tokens, 110);
+    });
 }
 
 #[test]
@@ -568,7 +589,8 @@ fn releases_a_forks_single_usage_observation_at_end_of_file() {
             replay_token_count("2026-01-02T00:00:00Z", 100),
         ].join("\n"),
     });
-    let events = crate::test_support::rollout_events(&fixture.path("sessions"));
-    assert_eq!(events.len(), 1);
-    assert_eq!(events[0].input_tokens, 100);
+    check_replay_modes(&fixture.path("sessions"), |single_thread, events| {
+        assert_eq!(events.len(), 1, "single_thread={single_thread}");
+        assert_eq!(events[0].input_tokens, 100);
+    });
 }

@@ -9,6 +9,7 @@ use crate::{
     paths::CodexUsageSource,
     replay::CodexReplayPlan,
     test_support::load_groups_from_directory,
+    types::CodexTokenUsageEvent,
 };
 
 mod archived;
@@ -48,11 +49,18 @@ fn replay_token_count(timestamp: &str, input_tokens: u64) -> String {
     .to_string()
 }
 
-fn replay_input_tokens_by_session(dir: &Path) -> Vec<(String, u64)> {
-    crate::test_support::rollout_events(dir)
+fn replay_input_tokens_by_session(events: &[CodexTokenUsageEvent]) -> Vec<(String, u64)> {
+    events
         .iter()
         .map(|event| (event.session_id.clone(), event.input_tokens))
         .collect()
+}
+
+fn check_replay_modes(dir: &Path, mut check: impl FnMut(bool, &[CodexTokenUsageEvent])) {
+    for single_thread in [true, false] {
+        let events = crate::test_support::rollout_events_with_single_thread(dir, single_thread);
+        check(single_thread, &events);
+    }
 }
 
 fn session_input_tokens(

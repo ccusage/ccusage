@@ -1688,16 +1688,17 @@ fn counts_identical_requests_within_one_rollout() {
     let sessions = fixture.path("sessions");
 
     for single_thread in [true, false] {
-        let events = crate::test_support::rollout_events(&sessions)
-            .into_iter()
-            .map(|event| {
-                (
-                    event.input_tokens,
-                    event.cached_input_tokens,
-                    event.output_tokens,
-                )
-            })
-            .collect::<Vec<_>>();
+        let events =
+            crate::test_support::rollout_events_with_single_thread(&sessions, single_thread)
+                .into_iter()
+                .map(|event| {
+                    (
+                        event.input_tokens,
+                        event.cached_input_tokens,
+                        event.output_tokens,
+                    )
+                })
+                .collect::<Vec<_>>();
         assert_eq!(
             events,
             [(10_000, 2_000, 100), (10_000, 2_000, 100)],
