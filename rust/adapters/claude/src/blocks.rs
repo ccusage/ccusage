@@ -40,7 +40,8 @@ pub(crate) fn identify_session_blocks(
         return Vec::new();
     }
     let session_duration = session_duration.as_millis();
-    LoadedEntry::sort_by_timestamp(&mut entries);
+    // NOTE(2026-11-21): Blocks sort every Claude entry. Keep this sort instantiated in this crate, built at opt-level "s"; the shared LoadedEntry::sort_by_timestamp is built with ccusage-core at "z" and costs claude blocks 3.4% more instructions.
+    entries.sort_by_key(|entry| entry.timestamp);
     let mut blocks = Vec::new();
     let mut current_start: Option<TimestampMs> = None;
     let mut current_entries = Vec::new();
