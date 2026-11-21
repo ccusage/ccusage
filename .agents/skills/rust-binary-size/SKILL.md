@@ -20,7 +20,7 @@ changing the profile. Measure `bin/ccusage` for platform package size.
 
 ## Investigation
 
-Measure before editing code or dependencies, with the shipped artefacts on
+Measure before editing code or dependencies, with the shipped artifacts on
 CI rather than a local build:
 
 ```sh
