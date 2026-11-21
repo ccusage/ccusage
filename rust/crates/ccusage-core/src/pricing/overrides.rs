@@ -252,6 +252,7 @@ impl PricingMap {
                 context_limit = patch.max_input_tokens.or(context_limit);
             }
             pricing.explicit_fields = explicit_fields;
+            pricing.replace_tier_with_explicit_rates();
             Some(Row {
                 key: Arc::clone(&slot.key),
                 source: Source::Override,
