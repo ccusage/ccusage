@@ -18,7 +18,7 @@ pub fn report_json(
     start_of_week: WeekDay,
 ) -> Result<Value> {
     let mut rows = summarize_entries(entries, kind, start_of_week)?;
-    sort_summaries(&mut rows, order, summary_period);
+    sort_summaries(&mut rows, order, &summary_period);
     Ok(ccusage_adapter_common::report::report_json(
         &rows, kind, false,
     ))

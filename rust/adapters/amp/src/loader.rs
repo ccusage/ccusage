@@ -20,6 +20,6 @@ pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
             |file| parser::read_thread(file, cx.window.timezone(), pricing, cx.diagnostics),
         ));
     }
-    entries.sort_by_key(|entry| entry.timestamp);
+    LoadedEntry::sort_by_timestamp(&mut entries);
     Ok(entries)
 }

@@ -25,7 +25,7 @@ pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
         .into_iter()
         .map(|(_, entry)| entry)
         .collect::<Vec<_>>();
-    entries.sort_by_key(|entry| entry.timestamp);
+    LoadedEntry::sort_by_timestamp(&mut entries);
     Ok(entries)
 }
 

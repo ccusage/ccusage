@@ -97,6 +97,37 @@ fn session_id_deduplicates_repeated_message_usage() {
     assert_eq!(json["entries"].as_array().unwrap().len(), 1);
 }
 
+#[test]
+fn session_counts_usage_written_with_json_whitespace() {
+    let fixture = Fixture::new();
+    fixture.write_file(
+        "projects/project-a/session-a/chat.jsonl",
+        r#"{"type":"assistant","timestamp":"2026-09-11T12:00:00.000Z","sessionId":"session-a","message":{"id":"m1","model":"claude-sonnet-4-20250514","usage": {"input_tokens":100,"output_tokens":2}}}"#,
+    );
+
+    let output = claude_command(&fixture)
+        .args([
+            "claude",
+            "session",
+            "--offline",
+            "--json",
+            "--mode",
+            "display",
+        ])
+        .output()
+        .expect("failed to run ccusage");
+
+    assert!(
+        output.status.success(),
+        "ccusage claude session --offline failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["sessions"][0]["inputTokens"], 100);
+    assert_eq!(json["sessions"][0]["outputTokens"], 2);
+    assert_eq!(json["totals"]["totalTokens"], 102);
+}
+
 fn write_two_model_session(fixture: &Fixture) {
     let messages = [
         r#"{"timestamp":"2026-09-15T12:00:00.000Z","sessionId":"session-a","requestId":"request-a","costUSD":0.25,"message":{"id":"message-a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":2}}}"#,

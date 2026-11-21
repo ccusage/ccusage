@@ -79,7 +79,7 @@ impl DailyAccumulator {
             let breakdown = &mut self.breakdowns[index];
             breakdown.add_usage(&entry.usage);
             breakdown.cost += entry.cost;
-            if entry.missing_pricing_model.is_some() {
+            if entry.missing_pricing {
                 breakdown.missing_pricing = true;
             }
             breakdown.add_stored_cost(entry.recorded_cost.billed());
@@ -87,7 +87,7 @@ impl DailyAccumulator {
     }
 
     fn into_summary(mut self) -> UsageSummary {
-        self.breakdowns.sort_by(|a, b| b.cost.total_cmp(&a.cost));
+        ModelBreakdown::sort_by_cost_desc(&mut self.breakdowns);
         UsageSummary {
             date: None,
             month: None,

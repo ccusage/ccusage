@@ -1,5 +1,5 @@
 use ccusage_core::Diagnostics;
-use std::{path::PathBuf, sync::Arc};
+use std::{borrow::Cow, path::PathBuf, sync::Arc};
 
 use crate::{
     Result, Speed, TokenUsageRaw, UsageSummary,
@@ -123,8 +123,9 @@ fn sessions(deduped: &DedupedDailyEntries) -> MainThreadSessions {
     )
 }
 
-pub(super) struct ParsedUsage {
+pub(super) struct ParsedUsage<'a> {
     pub(super) key: DedupKey,
+    pub(super) is_sidechain: bool,
     pub(super) date: IsoDate,
     pub(super) project: Arc<str>,
     pub(super) usage: TokenUsageRaw,
@@ -132,14 +133,14 @@ pub(super) struct ParsedUsage {
     pub(super) missing_pricing_model: Option<String>,
     pub(super) stored_cost: Option<f64>,
     pub(super) raw_model: Option<String>,
-    pub(super) timestamp_text: String,
-    pub(super) version: Option<String>,
-    pub(super) recorded_session_id: Option<String>,
+    pub(super) timestamp_text: Cow<'a, str>,
+    pub(super) version: Option<Cow<'a, str>>,
+    pub(super) recorded_session_id: Option<Arc<str>>,
     pub(super) cost_usd: Option<f64>,
     pub(super) is_api_error_message: Option<bool>,
 }
 
-impl ParsedUsage {
+impl ParsedUsage<'_> {
     pub(super) fn display_model(
         raw_model: Option<String>,
         usage: &TokenUsageRaw,
@@ -155,17 +156,49 @@ impl ParsedUsage {
         })
     }
 
-    fn into_daily(self) -> ClaudeEntry {
+    fn into_daily(self, models: &mut DisplayModels) -> ClaudeEntry {
         ClaudeEntry {
-            model: Self::display_model(self.raw_model, &self.usage),
+            model: models.intern(self.raw_model.as_deref(), &self.usage),
             key: self.key,
+            is_sidechain: self.is_sidechain,
             date: self.date,
             project: self.project,
             usage: self.usage,
             cost: self.cost,
-            missing_pricing_model: self.missing_pricing_model,
+            missing_pricing: self.missing_pricing_model.is_some(),
             recorded_cost: RecordedCost::new(self.cost_usd, self.stored_cost),
         }
+    }
+}
+
+struct DisplayModel {
+    raw: Box<str>,
+    fast: bool,
+    display: Option<Arc<str>>,
+}
+
+#[derive(Default)]
+struct DisplayModels(smallvec::SmallVec<[DisplayModel; 2]>);
+
+impl DisplayModels {
+    fn intern(&mut self, raw_model: Option<&str>, usage: &TokenUsageRaw) -> Option<Arc<str>> {
+        let raw_model = raw_model?;
+        let fast = matches!(usage.speed, Some(Speed::Fast));
+        if let Some(known) = self
+            .0
+            .iter()
+            .find(|known| known.fast == fast && known.raw.as_ref() == raw_model)
+        {
+            return known.display.clone();
+        }
+        let display =
+            ParsedUsage::display_model(Some(raw_model.to_owned()), usage).map(Arc::<str>::from);
+        self.0.push(DisplayModel {
+            raw: raw_model.into(),
+            fast,
+            display: display.clone(),
+        });
+        display
     }
 }
 

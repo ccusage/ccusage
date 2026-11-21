@@ -1,4 +1,7 @@
-use ccusage_adapter_common::jsonl::{self, Interruption, ReadPolicy};
+use ccusage_adapter_common::{
+    json::JsonText,
+    jsonl::{self, Interruption, ReadPolicy},
+};
 use ccusage_core::{Diagnostics, SkipKind};
 use std::{
     ops::ControlFlow,
@@ -20,7 +23,7 @@ use crate::{
 };
 
 use super::{
-    ClaudeEntry, ParsedUsage, parse_usage_line,
+    ClaudeEntry, DisplayModels, ParsedUsage, parse_usage_line,
     record::{ClaudeUsageRecord, is_valid_usage_record},
     response_chain::ResponseChains,
 };
@@ -35,7 +38,7 @@ pub(super) const READ_POLICY: ReadPolicy = ReadPolicy {
 
 pub(crate) fn has_usage(path: &Path) -> bool {
     jsonl::read(path, None, READ_POLICY, |line, _, _| {
-        if admit(line.bytes()).is_ok() {
+        if admit(line.json()).is_ok() {
             ControlFlow::Break(())
         } else {
             ControlFlow::Continue(())
@@ -51,8 +54,8 @@ pub(super) enum Refusal {
     UnrepresentableUsage,
 }
 
-pub(super) struct Admitted {
-    pub(super) record: ClaudeUsageRecord,
+pub(super) struct Admitted<'a> {
+    pub(super) record: ClaudeUsageRecord<'a>,
     timestamp: TimestampMs,
     advisors: crate::AdvisorUsages,
 }
@@ -63,11 +66,12 @@ fn has_usage_marker(line: &[u8]) -> bool {
     USAGE_MARKER.matches(line)
 }
 
-pub(super) fn admit(line: &[u8]) -> std::result::Result<Admitted, Refusal> {
+pub(super) fn admit<'a>(json: &'a JsonText<'a>) -> std::result::Result<Admitted<'a>, Refusal> {
+    let line = json.bytes();
     if !has_usage_marker(line) {
         return Err(Refusal::NotUsage);
     }
-    let (record, advisor_lookup) = parse_usage_line(line).map_err(Refusal::Rejected)?;
+    let (record, advisor_lookup) = parse_usage_line(json).map_err(Refusal::Rejected)?;
     let timestamp = parse_ts_timestamp(&record.timestamp).ok_or(Refusal::InvalidTimestamp)?;
     if !is_valid_usage_record(&record) {
         return Err(Refusal::Rejected(Rejection::Malformed));
@@ -97,13 +101,14 @@ pub(super) fn read_daily_usage_file_with_diagnostics(
     pricing: PriceTable<'_>,
     diagnostics: &Diagnostics,
 ) -> Vec<ClaudeEntry> {
+    let mut models = DisplayModels::default();
     read_usage_file(
         path,
         projects_root,
         tz,
         pricing,
         diagnostics,
-        |parsed, _| parsed.into_daily(),
+        |parsed, _| parsed.into_daily(&mut models),
     )
 }
 
@@ -146,7 +151,7 @@ pub(crate) fn read_usage_file<E>(
     tz: &JiffTimeZone,
     pricing: PriceTable<'_>,
     diagnostics: &Diagnostics,
-    build: impl Fn(ParsedUsage, &[u8]) -> E,
+    mut build: impl FnMut(ParsedUsage<'_>, &[u8]) -> E,
 ) -> Vec<E> {
     let project: Arc<str> = Arc::from(extract_project(path, projects_root));
     let (path_session_id, _) = crate::paths::extract_session_parts(path, projects_root);
@@ -164,7 +169,7 @@ pub(crate) fn read_usage_file<E>(
             record: data,
             timestamp,
             advisors,
-        } = match admit(line) {
+        } = match admit(current.json()) {
             Ok(admitted) => admitted,
             Err(Refusal::NotUsage) => {
                 if response_chains.is_tracking() {
@@ -229,10 +234,10 @@ pub(crate) fn read_usage_file<E>(
             key: DedupKey {
                 timestamp,
                 session_id,
-                message_id: data.message.id,
+                message_id: data.message.id.map(String::into_boxed_str),
                 request: Request::new(data.request_id, response),
-                is_sidechain: data.is_sidechain,
             },
+            is_sidechain: data.is_sidechain == Some(true),
             date: date_at(timestamp, tz),
             project: Arc::clone(&project),
             usage,
@@ -244,7 +249,10 @@ pub(crate) fn read_usage_file<E>(
             raw_model,
             timestamp_text: data.timestamp,
             version: data.version,
-            recorded_session_id: data.session_id,
+            recorded_session_id: data
+                .session_id
+                .is_some()
+                .then(|| Arc::clone(&recorded_session_id)),
             cost_usd: data.cost_usd,
             is_api_error_message: data.is_api_error_message,
         };
@@ -263,10 +271,10 @@ pub(crate) fn read_usage_file<E>(
                             .key
                             .message_id
                             .as_ref()
-                            .map(|id| format!("{id}:advisor:{index}")),
+                            .map(|id| format!("{id}:advisor:{index}").into_boxed_str()),
                         request: parent.key.request.clone(),
-                        is_sidechain: parent.key.is_sidechain,
                     },
+                    is_sidechain: parent.is_sidechain,
                     date: parent.date,
                     project: Arc::clone(&project),
                     usage: advisor.usage,

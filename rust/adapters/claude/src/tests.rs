@@ -7,6 +7,7 @@ use super::{
     paths::is_project_path_segment,
 };
 use crate::ClaudeEntry;
+use ccusage_adapter_common::json::JsonText;
 use ccusage_core::{
     Diagnostics, LoadedEntry, ModelBreakdown, PricingMap, Speed, TimestampMs, TokenUsageRaw,
     cli::{CostMode, SharedArgs},
@@ -440,7 +441,7 @@ fn rejects_null_in_each_read_non_nullable_field() {
         *record.pointer_mut(pointer).unwrap() = serde_json::Value::Null;
         let bytes = serde_json::to_vec(&record).unwrap();
         assert_eq!(
-            super::daily::parse_usage_line(&bytes).unwrap_err(),
+            super::daily::parse_usage_line(&JsonText::new(&bytes)).unwrap_err(),
             super::Rejection::NullContract,
             "{pointer}"
         );
@@ -448,7 +449,10 @@ fn rejects_null_in_each_read_non_nullable_field() {
             serde_json::json!({"sessionId":record["sessionId"], "data":{"message":record}});
         if pointer != "/version" {
             assert_eq!(
-                super::daily::parse_usage_line(&serde_json::to_vec(&wrapped).unwrap()).unwrap_err(),
+                super::daily::parse_usage_line(&JsonText::new(
+                    &serde_json::to_vec(&wrapped).unwrap()
+                ))
+                .unwrap_err(),
                 super::Rejection::NullContract,
                 "wrapped {pointer}"
             );
@@ -467,7 +471,7 @@ fn allows_missing_optional_fields_and_nullable_unread_members() {
             r#"{{"timestamp":"2026-01-02T10:00:00Z","message":{{"usage":{{"input_tokens":1,"output_tokens":2,"iterations":[{{"type":"message","model":null}}]}}}}{extra}}}"#
         );
         assert!(
-            super::daily::parse_usage_line(line.as_bytes()).is_ok(),
+            super::daily::parse_usage_line(&JsonText::new(line.as_bytes())).is_ok(),
             "{line}"
         );
     }
@@ -480,14 +484,14 @@ fn rejects_null_under_escaped_read_field_names() {
         br#"{"timestamp":"2026-01-02T10:00:00Z","message":{"usage":{"input_tokens":1,"output_tokens":2,"sp\u0065ed":null}}}"#,
     ] {
         assert_eq!(
-            super::daily::parse_usage_line(line).unwrap_err(),
+            super::daily::parse_usage_line(&JsonText::new(line)).unwrap_err(),
             super::Rejection::NullContract
         );
     }
-    let (record, _) = super::daily::parse_usage_line(
+    let line = JsonText::new(
         br#"{"timestamp":"2026-01-02T10:00:00Z","message":{"usage":{"input_tokens":1,"output_tokens":2,"cache_r\u0065ad_input_tokens":7,"sp\u0065ed":"fast"}}}"#,
-    )
-    .unwrap();
+    );
+    let (record, _) = super::daily::parse_usage_line(&line).unwrap();
     assert_eq!(record.message.usage.usage.cache_read_input_tokens, 7);
     assert!(matches!(
         record.message.usage.usage.speed,
@@ -505,7 +509,7 @@ fn malformed_required_usage_is_diagnosed_separately_from_null_contract() {
         let line =
             format!(r#"{{"timestamp":"2026-01-02T10:00:00Z","message":{{"usage":{usage}}}}}"#);
         assert_eq!(
-            super::daily::parse_usage_line(line.as_bytes()).unwrap_err(),
+            super::daily::parse_usage_line(&JsonText::new(line.as_bytes())).unwrap_err(),
             super::Rejection::Malformed
         );
     }
@@ -531,11 +535,11 @@ fn handles_duplicate_members_the_same_with_or_without_nulls() {
         );
 
         assert!(
-            super::daily::parse_usage_line(duplicate_known.as_bytes()).is_err(),
+            super::daily::parse_usage_line(&JsonText::new(duplicate_known.as_bytes())).is_err(),
             "{duplicate_known}"
         );
         assert!(
-            super::daily::parse_usage_line(duplicate_unknown.as_bytes()).is_ok(),
+            super::daily::parse_usage_line(&JsonText::new(duplicate_unknown.as_bytes())).is_ok(),
             "{duplicate_unknown}"
         );
     }
@@ -556,19 +560,19 @@ fn rejects_duplicate_known_usage_fields_but_keeps_unknown_duplicates() {
             r#"{{"timestamp":"2026-01-02T10:00:00Z","message":{{"usage":{{"input_tokens":1,"output_tokens":2,"{field}":{value},"{field}":{value}}}}}}}"#
         );
         assert!(
-            super::daily::parse_usage_line(line.as_bytes()).is_err(),
+            super::daily::parse_usage_line(&JsonText::new(line.as_bytes())).is_err(),
             "{field}"
         );
     }
     let line = br#"{"timestamp":"2026-01-02T10:00:00Z","message":{"usage":{"input_tokens":1,"output_tokens":2,"metadata":null,"metadata":{}}}}"#;
-    assert!(super::daily::parse_usage_line(line).is_ok());
+    assert!(super::daily::parse_usage_line(&JsonText::new(line)).is_ok());
 }
 
 #[test]
 fn rejects_duplicate_members_before_typed_deserialization() {
-    assert!(super::daily::parse_usage_line(
+    assert!(super::daily::parse_usage_line(&JsonText::new(
         br#"{"type":"assistant","timestamp":"2026-09-12T04:38:42.296Z","sessionId":"session-a","message":{"id":"msg_1","model":"first","model":"second","usage":{"input_tokens":2,"output_tokens":289,"iterations":[{"type":"message","model":null,"input_tokens":2,"output_tokens":289}]}}}"#
-    )
+))
     .is_err());
 }
 
@@ -838,10 +842,42 @@ pub(crate) fn requestless_response_cases() -> Vec<(&'static str, Vec<String>, us
             chained_assistant("a2", Some("a1"), LATER_BLOCK, message_id, 100, None),
         ]
     };
+    let spaced_usage = |line: String| line.replace(r#""usage":{"#, r#""usage": {"#);
     vec![
         ("chained anthropic message id", two_blocks("msg_01AbC2DeF3"), 1),
         ("chained response message id", two_blocks("resp_0123456789abcdef"), 1),
         ("chained proxy message id", two_blocks("gateway-7f3a"), 1),
+        (
+            "chained blocks written with JSON whitespace",
+            two_blocks("gateway-7f3a")
+                .into_iter()
+                .map(spaced_usage)
+                .collect(),
+            1,
+        ),
+        (
+            "a block written with JSON whitespace does not bridge a response chain",
+            vec![
+                chained_assistant("a1", None, FIRST_BLOCK, "gateway-1", 100, None),
+                spaced_usage(chained_assistant(
+                    "b1",
+                    Some("a1"),
+                    LATER_BLOCK,
+                    "gateway-2",
+                    200,
+                    None,
+                )),
+                chained_assistant(
+                    "a2",
+                    Some("b1"),
+                    "2026-05-22T02:34:41.000Z",
+                    "gateway-1",
+                    100,
+                    None,
+                ),
+            ],
+            3,
+        ),
         (
             "blocks around their own tool result",
             vec![
@@ -1381,7 +1417,7 @@ fn dedupes_sidechain_replay_after_an_equal_copy_from_another_session() {
         cache_read_tokens: 20,
         output_tokens: 10,
     });
-    copied_parent.recorded_session_id = Some("session-b".to_string());
+    copied_parent.recorded_session_id = Some(Arc::from("session-b"));
     copied_parent.entry.session_id = Arc::from("session-b");
     push_deduped_entry(copied_parent, &mut deduped_indexes, &mut deduped);
 
@@ -1425,7 +1461,7 @@ fn dedupes_sidechain_replay_after_cross_session_survivor_replacement() {
         cache_read_tokens: 20,
         output_tokens: 10,
     });
-    copied_parent.recorded_session_id = Some("session-b".to_string());
+    copied_parent.recorded_session_id = Some(Arc::from("session-b"));
     copied_parent.entry.session_id = Arc::from("session-b");
     push_deduped_entry(copied_parent, &mut deduped_indexes, &mut deduped);
 
@@ -1448,7 +1484,7 @@ fn dedupes_sidechain_replay_after_cross_session_survivor_replacement() {
         cache_read_tokens: 50_000,
         output_tokens: 10,
     });
-    copied_session_replay.recorded_session_id = Some("session-b".to_string());
+    copied_session_replay.recorded_session_id = Some(Arc::from("session-b"));
     copied_session_replay.entry.session_id = Arc::from("session-b");
     push_deduped_entry(copied_session_replay, &mut deduped_indexes, &mut deduped);
 
@@ -1563,10 +1599,10 @@ struct UsageEntryFixture {
 fn loaded_usage_entry(fixture: UsageEntryFixture) -> ClaudeEntry {
     ClaudeEntry {
         source_timestamp: "2026-03-29T07:00:00.000Z".to_string(),
-        recorded_session_id: Some("session-a".to_string()),
+        recorded_session_id: Some(Arc::from("session-a")),
         original_model: Some("claude-sonnet-4-20250514".to_string()),
-        request: crate::dedupe::Request::Id(fixture.request_id.to_string()),
-        is_sidechain: Some(fixture.is_sidechain),
+        request: crate::dedupe::Request::Id(fixture.request_id.into()),
+        is_sidechain: fixture.is_sidechain,
         entry: LoadedEntry {
             usage: TokenUsageRaw {
                 input_tokens: 0,

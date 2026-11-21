@@ -98,7 +98,7 @@ pub fn unified_row_from_group(
             }
         })
         .collect::<Vec<_>>();
-    model_breakdowns.sort_by(|left, right| right.cost.total_cmp(&left.cost));
+    ModelBreakdown::sort_by_cost_desc(&mut model_breakdowns);
 
     SourceRow {
         agent: "codex",
