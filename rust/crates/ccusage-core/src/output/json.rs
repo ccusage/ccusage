@@ -64,7 +64,7 @@ pub(crate) fn estimated_models<'a>(
 }
 
 /// Adds `estimatedModels` to JSON totals when any model's cost is an estimate.
-pub fn attach_estimated_models(totals: &mut Value, models: Vec<String>) {
+fn attach_estimated_models(totals: &mut Value, models: Vec<String>) {
     if !models.is_empty() {
         totals["estimatedModels"] = json!(models);
     }

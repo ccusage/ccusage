@@ -28,9 +28,8 @@ pub use date_utils::*;
 pub use diagnostics::{Diagnostics, Skip, SkipKind};
 pub use error::{CliError, Context, Result, cli_error};
 pub use output::{
-    UsageTableOptions, agent_summary_json, attach_estimated_models, attach_unpriced_models,
-    first_column, format_currency, format_models_multiline, format_number, json_float,
-    json_value_u64, non_empty_json_string, print_estimated_pricing_notes_for_models,
+    UsageTableOptions, agent_summary_json, attach_unpriced_models, first_column, format_currency,
+    format_models_multiline, format_number, json_float, json_value_u64, non_empty_json_string,
     print_json_or_jq, print_missing_pricing_warnings_for_models, print_usage_table,
     print_usage_table_with_options, sanitize_terminal_text, should_use_compact_layout,
     summary_period, totals_json, wants_json,
