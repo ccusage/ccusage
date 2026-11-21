@@ -384,8 +384,6 @@ impl PricingMap {
         std::iter::once(name).chain(name.suffixes().take_while(unclaimed))
     }
 
-    /// Answers only from rows for `model` itself or its built-in respelling,
-    /// never through the model's own configured alias or a fuzzy match.
     fn identity_hit<'a>(
         &'a self,
         model: &str,
