@@ -30,6 +30,7 @@ pub use lenient::{
 };
 
 const DEFAULT_BUFFER_SIZE: usize = 8 * 1024;
+const RECYCLED_BUFFER_MAX: usize = 16 << 20;
 
 thread_local! {
     static LINE_BUFFER: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
@@ -287,7 +288,7 @@ fn read_with(
         }
         index += 1;
     };
-    recycle_line_buffer(capacity, reader);
+    recycle_line_buffer(reader);
     finish(path, diagnostics, staged.as_ref(), policy, failure)
 }
 
@@ -298,20 +299,18 @@ fn line_reader(capacity: usize, input: Input) -> Lines {
         Input::Zstd(reader) => return Lines::Zstd(reader),
     };
     let mut buffer = LINE_BUFFER.take();
-    if buffer.capacity() > capacity {
-        buffer = Vec::new();
-    }
+    // NOTE(2026-11-21, #2406): A long line grows the buffer, and the next file keeps that allocation. Each file still starts with the policy's read size, so a short probe reads only that much.
     buffer.resize(capacity, 0);
     Lines::Plain(LineReader::with_buffer(buffer, file))
 }
 
 #[inline(never)]
-fn recycle_line_buffer(capacity: usize, reader: Lines) {
+fn recycle_line_buffer(reader: Lines) {
     let Lines::Plain(reader) = reader else {
         return;
     };
     let buffer = reader.into_buffer();
-    if buffer.capacity() <= capacity {
+    if buffer.capacity() <= RECYCLED_BUFFER_MAX {
         LINE_BUFFER.set(buffer);
     }
 }
