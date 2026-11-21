@@ -22,7 +22,7 @@ pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<Load
         .into_iter()
         .map(|entry| to_loaded_entry(entry, tz, cx.shared.mode, pricing))
         .collect();
-    entries.sort_by_key(|entry| entry.timestamp);
+    LoadedEntry::sort_by_timestamp(&mut entries);
     Ok(entries)
 }
 
