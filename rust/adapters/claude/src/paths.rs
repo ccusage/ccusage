@@ -2,6 +2,8 @@ use std::{
     fs::{self, File},
     io::{self, BufRead, BufReader},
     path::{Path, PathBuf},
+    sync::mpsc,
+    thread,
     time::UNIX_EPOCH,
 };
 
@@ -18,6 +20,7 @@ use crate::{
     usage_wire::Text,
 };
 use ccusage_adapter_common::{read_discovered_paths, visit_usage_files as visit_usage_files_in};
+use ccusage_core::parallel::spawn_scoped_worker;
 
 pub(crate) fn claude_paths() -> Result<Vec<PathBuf>> {
     let (env_value, dirs) = match home::claude_config_dirs() {
@@ -119,6 +122,8 @@ const MTIME_PRUNE_MARGIN_MS: i64 = MILLIS_PER_DAY;
 const TAIL_PROBE_BYTES: u64 = 16 * 1024;
 const PROBE_READ_LIMIT: u64 = 1024 * 1024;
 const HEAD_PROBE_BYTES: u64 = 64 * 1024;
+const WALK_BACKLOG: usize = 1024;
+const WALK_BATCH: usize = 64;
 
 pub(super) struct SinceFiles<T> {
     pub(super) kept: Vec<(PathBuf, T)>,
@@ -155,7 +160,7 @@ fn read_files_since<T: Send>(
     single_thread: bool,
     threshold: Option<i64>,
     projects_roots: &[PathBuf],
-    discover: impl FnMut(&mut dyn FnMut(PathBuf)),
+    discover: impl FnMut(&mut dyn FnMut(PathBuf)) + Send,
     read: impl Fn(&PathBuf) -> T + Sync,
 ) -> SinceFiles<T> {
     let Some(threshold) = threshold else {
@@ -166,21 +171,22 @@ fn read_files_since<T: Send>(
     };
     // NOTE(2026-11-20, #2355): Stat'ing and probing from the parallel readers contends in the kernel. The walker checks each mtime and probes stale files before queuing; live files' session probes run serially after parsing.
     let mut discovered = Vec::new();
-    let mut discover = discover;
     let mut probe = StaleProbe::new(threshold);
-    let mut kept = read_discovered_paths(
-        single_thread,
-        |visit| {
-            discover(&mut |file| {
-                let (live, recorded_session) = probe.file(&file);
-                if live {
-                    visit(file.clone());
-                }
-                discovered.push((file, live, recorded_session));
-            });
-        },
-        &read,
-    );
+    let mut kept = walk_beside(single_thread, discover, |files| {
+        read_discovered_paths(
+            single_thread,
+            |visit| {
+                files(&mut |file| {
+                    let (live, recorded_session) = probe.file(&file);
+                    if live {
+                        visit(file.clone());
+                    }
+                    discovered.push((file, live, recorded_session));
+                });
+            },
+            &read,
+        )
+    });
     if kept.is_empty() || kept.len() == discovered.len() {
         return SinceFiles {
             kept,
@@ -220,6 +226,34 @@ fn read_files_since<T: Send>(
         kept,
         pruned: pruned.into_iter().map(|(file, _)| file).collect(),
     }
+}
+
+// NOTE(2026-11-21): Directory reads and stale-file probes are both blocking syscalls on one thread. Walking on its own thread overlaps them. Paths cross in batches because one wake-up per path cost macOS more than the overlap saved.
+fn walk_beside<R>(
+    single_thread: bool,
+    mut discover: impl FnMut(&mut dyn FnMut(PathBuf)) + Send,
+    consume: impl FnOnce(&mut dyn FnMut(&mut dyn FnMut(PathBuf))) -> R,
+) -> R {
+    if single_thread {
+        return consume(&mut discover);
+    }
+    thread::scope(|scope| {
+        let (sender, batches) = mpsc::sync_channel::<Vec<PathBuf>>(WALK_BACKLOG / WALK_BATCH);
+        spawn_scoped_worker(scope, move || {
+            let mut batch = Vec::with_capacity(WALK_BATCH);
+            discover(&mut |file| {
+                batch.push(file);
+                if batch.len() == WALK_BATCH {
+                    let _ = sender.send(std::mem::replace(
+                        &mut batch,
+                        Vec::with_capacity(WALK_BATCH),
+                    ));
+                }
+            });
+            let _ = sender.send(batch);
+        });
+        consume(&mut |visit| batches.iter().flatten().for_each(&mut *visit))
+    })
 }
 
 #[derive(Default)]

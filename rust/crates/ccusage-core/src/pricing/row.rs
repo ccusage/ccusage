@@ -142,6 +142,7 @@ impl RowPricing {
             flex_multiplier: published.flex_multiplier,
             cache_defaults: published.cache_defaults,
             explicit_fields: self.explicit_fields,
+            flat_long_context_in_fast_mode: false,
         }
     }
 }

@@ -79,18 +79,18 @@ zstd-sys = { version = "2.1.3", default-features = false, features = ["experimen
 [profile.release]
 codegen-units = 1
 lto = "fat"
-opt-level = "z"
+opt-level = 3
 panic = "abort"
 strip = "symbols"
 
 [profile.release.package."*"]
 opt-level = "s"
 
-[profile.release.package.ccusage-adapter-claude]
-opt-level = "s"
+[profile.release.package.memchr]
+opt-level = 3
 
-[profile.release.package.ccusage-adapter-codex]
-opt-level = "s"
+[profile.release.package.serde_json]
+opt-level = 3
 
 [profile.release.package.zstd-sys]
 opt-level = 3

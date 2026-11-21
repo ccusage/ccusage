@@ -770,3 +770,38 @@ fn reads_a_file_from_its_first_byte_as_whole_lines() {
         assert_eq!(split.kept.is_empty(), !kept, "{len} bytes");
     }
 }
+
+#[test]
+fn walk_beside_hands_over_every_path_once_in_walk_order() {
+    let batch = super::WALK_BATCH;
+    let backlog = super::WALK_BACKLOG;
+    for count in [
+        0,
+        1,
+        batch - 1,
+        batch,
+        batch + 1,
+        2 * batch,
+        2 * batch + 1,
+        backlog + batch + 1,
+    ] {
+        let walked = (0..count)
+            .map(|index| PathBuf::from(format!("{index}.jsonl")))
+            .collect::<Vec<_>>();
+        for single_thread in [false, true] {
+            let consumed = super::walk_beside(
+                single_thread,
+                |visit| walked.iter().cloned().for_each(visit),
+                |files| {
+                    let mut consumed = Vec::new();
+                    files(&mut |file| consumed.push(file));
+                    consumed
+                },
+            );
+            assert_eq!(
+                consumed, walked,
+                "count {count}, single_thread {single_thread}"
+            );
+        }
+    }
+}
