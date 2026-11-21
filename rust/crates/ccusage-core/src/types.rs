@@ -283,7 +283,7 @@ pub struct Totals {
     pub total_cost: f64,
     pub credits: Option<f64>,
     pub unpriced_models: Vec<String>,
-    pub(crate) estimated_models: Vec<String>,
+    pub estimated_models: Vec<String>,
 }
 
 impl Totals {

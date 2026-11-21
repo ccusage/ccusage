@@ -5,8 +5,8 @@ use crate::{
     Color, ColumnKind, ModelBreakdown, Result, SimpleTable,
     cli::{AgentReportKind, SharedArgs},
     color, first_column, format_breakdown_model_label, format_currency, format_models_multiline,
-    format_number, print_box_title, print_missing_pricing_warnings_for_models,
-    should_use_compact_layout,
+    format_number, print_box_title, print_estimated_pricing_notes_for_models,
+    print_missing_pricing_warnings_for_models, should_use_compact_layout,
     types::ReportRow,
 };
 use ccusage_adapter_common::rows::{RowUsage, SourceRow};
@@ -87,6 +87,7 @@ pub(crate) fn print_table(
         totals.unpriced_models.iter().map(String::as_str),
         shared.offline,
     );
+    print_estimated_pricing_notes_for_models(totals.estimated_models.iter().map(String::as_str));
     if compact {
         ccusage_core::errln!("\nRunning in Compact Mode");
         ccusage_core::errln!("Expand terminal width to see cache metrics and total tokens");

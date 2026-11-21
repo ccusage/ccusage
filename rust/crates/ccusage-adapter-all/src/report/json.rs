@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 
 use super::totals;
 use crate::{
-    Result, attach_unpriced_models,
+    Result, attach_estimated_models, attach_unpriced_models,
     cli::AgentReportKind,
     json_float,
     output::{strip_cost_json, write_json_or_jq},
@@ -143,6 +143,7 @@ fn totals_json(rows: &[ReportRow]) -> Value {
         "totalCost": json_float(totals.total_cost),
     });
     attach_unpriced_models(&mut value, totals.unpriced_models);
+    attach_estimated_models(&mut value, totals.estimated_models);
     value
 }
 
