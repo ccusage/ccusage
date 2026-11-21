@@ -161,9 +161,7 @@ fn push_deduped_session_alias(
 pub(super) fn dedupe_files<E: DedupEntry>(
     mut files: Vec<(PathBuf, Vec<E>)>,
 ) -> (Vec<E>, Vec<(usize, Arc<str>)>) {
-    ccusage_core::sort::stable_by(&mut files, |(left, _), (right, _)| {
-        usage_file_order(left, right)
-    });
+    files.sort_by(|(left, _), (right, _)| usage_file_order(left, right));
     let entry_count = files.iter().map(|(_, entries)| entries.len()).sum();
     let mut deduped_indexes = DedupeIndexes::with_capacity(entry_count);
     let mut deduped = Vec::with_capacity(entry_count);

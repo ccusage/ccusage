@@ -53,7 +53,7 @@ pub(super) fn paths(diagnostics: &Diagnostics) -> Result<Vec<CopilotSourceFile>>
     if let Some(path) = copilot_exporter_path() {
         add_file(&mut files, &mut seen, CopilotSourceKind::Otel, path);
     }
-    ccusage_core::sort::stable_by(&mut files, |left, right| left.path.cmp(&right.path));
+    files.sort_by(|left, right| left.path.cmp(&right.path));
     Ok(files)
 }
 

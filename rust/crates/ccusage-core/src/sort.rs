@@ -3,8 +3,10 @@ use std::cmp::Ordering;
 /// Stable sort that shares one sort instantiation across every caller.
 ///
 /// `slice::sort_by` compiles the whole sort again for each element type and
-/// comparator. Use this for sorts over files, rows, models and other short
-/// lists, and keep `slice::sort_by` where a report sorts every entry.
+/// comparator. Use this for sorts over report rows, sessions, models and other
+/// short lists. Keep `slice::sort_by` for sorts that grow with loaded entries
+/// or discovered files, or that run once per record, where the indirect
+/// comparator and the extra position vector cost measurable time.
 pub fn stable_by<T>(items: &mut [T], mut compare: impl FnMut(&T, &T) -> Ordering) {
     let order = sorted_order(items.len(), &mut |left, right| {
         compare(&items[left], &items[right])

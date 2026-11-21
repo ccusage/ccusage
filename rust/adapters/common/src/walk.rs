@@ -188,7 +188,7 @@ pub fn dir_entries(dir: &Path, diagnostics: &Diagnostics) -> Vec<(PathBuf, fs::F
             }
         })
         .collect();
-    ccusage_core::sort::stable_by(&mut entries, |left, right| left.0.cmp(&right.0));
+    entries.sort_by(|left, right| left.0.cmp(&right.0));
     entries
 }
 

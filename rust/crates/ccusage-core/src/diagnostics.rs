@@ -171,7 +171,7 @@ impl Tally {
                 .is_some_and(|sample| sample_order(&skip, sample).is_lt())
         {
             self.samples.push(skip);
-            crate::sort::stable_by(&mut self.samples, sample_order);
+            self.samples.sort_by(sample_order);
             self.samples.truncate(SAMPLES_PER_KIND);
         }
     }
@@ -186,7 +186,7 @@ impl Tally {
             }
         }
         self.samples.extend(other.samples.iter().cloned());
-        crate::sort::stable_by(&mut self.samples, sample_order);
+        self.samples.sort_by(sample_order);
         self.samples.dedup_by(|right, left| {
             left.unit == right.unit
                 && left.table == right.table

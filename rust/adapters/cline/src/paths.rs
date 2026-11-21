@@ -69,7 +69,7 @@ pub(super) fn discover_files(diagnostics: &Diagnostics) -> Result<Vec<SourceFile
         }
     }
 
-    ccusage_core::sort::stable_by(&mut files, |left, right| left.path.cmp(&right.path));
+    files.sort_by(|left, right| left.path.cmp(&right.path));
     Ok(files)
 }
 
