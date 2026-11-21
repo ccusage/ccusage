@@ -476,7 +476,7 @@ mod pricing_identity_tests {
             },
             PriceTable::Calculate(&pricing),
         );
-        assert!((entry.cost - 0.00088).abs() < 1e-12);
+        assert!((entry.cost - 0.00075).abs() < 1e-12);
     }
 
     #[test]
@@ -486,7 +486,7 @@ mod pricing_identity_tests {
         let created = ccusage_core::parse_ts_timestamp("2026-11-17T10:00:00Z")
             .unwrap()
             .as_millis();
-        for (provider, expected) in [(Some("openrouter"), 0.0015), (Some("deepseek"), 0.00088)] {
+        for (provider, expected) in [(Some("openrouter"), 0.0015), (Some("deepseek"), 0.00075)] {
             let value = serde_json::from_value::<KiloMessage>(serde_json::json!({
                 "id": "msg-deepseek",
                 "role": "assistant",

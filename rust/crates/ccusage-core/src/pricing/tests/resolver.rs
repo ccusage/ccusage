@@ -728,7 +728,7 @@ fn resolver_table() {
             "deepseek-v4-flash",
             &[("deepseek-v4-flash", fuzzy)][..],
             AuthoritativeIdentity,
-            (0.22e-6, 0.66e-6),
+            (0.15e-6, 0.6e-6),
         ),
         (
             "R8_9_vendor_cache_default",

@@ -149,10 +149,22 @@ pub(super) struct PricingSchedule {
     pub(super) before: ScheduledRates,
     pub(super) off_peak: ScheduledRates,
     pub(super) peak: ScheduledRates,
+    pub(super) successor: Option<Successor>,
+}
+
+#[derive(Debug)]
+pub(super) struct Successor {
+    pub(super) from_ms: i64,
+    pub(super) schedule: &'static PricingSchedule,
 }
 
 impl PricingSchedule {
     fn rates_at(&self, timestamp: TimestampMs) -> ScheduledRates {
+        if let Some(successor) = &self.successor
+            && timestamp.as_millis() >= successor.from_ms
+        {
+            return successor.schedule.rates_at(timestamp);
+        }
         if timestamp.as_millis() < self.cutoff_ms {
             return self.before;
         }

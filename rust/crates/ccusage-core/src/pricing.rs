@@ -28,7 +28,7 @@ use models_dev::embedded_models_dev_pricing;
 mod overrides;
 use overrides::Overrides;
 mod rates;
-use rates::{CacheDefaults, PricingSchedule, ScheduledRates, rates};
+use rates::{CacheDefaults, PricingSchedule, ScheduledRates, Successor, rates};
 pub use rates::{
     DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS, LongContext, LongContextMode, LongContextRates, Pricing,
 };

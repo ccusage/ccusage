@@ -630,7 +630,7 @@ mod pricing_identity_tests {
         });
         for (name, expected) in [
             ("router.settings.json", 0.0015),
-            ("deepseek.settings.json", 0.00088),
+            ("deepseek.settings.json", 0.00075),
         ] {
             let entry = load_settings_file(&fixture.path(name)).unwrap().unwrap();
             let (cost, missing) = price_droid(&entry, PriceTable::Calculate(&pricing));
