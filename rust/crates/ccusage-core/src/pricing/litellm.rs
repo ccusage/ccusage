@@ -5,8 +5,8 @@ use crate::fast::FxHashMap;
 
 use super::{
     LongContextMode, LongContextRates, Pricing, PricingMap, Row, RowPricing, Scope, Source,
-    bare_host, data, embedded::litellm_sources, provider_cache_defaults, row_scope, schedule_for,
-    speed::PublishedSpeed, vendor_start,
+    bare_host, embedded::litellm_sources, provider_cache_defaults, row::whole_request_threshold,
+    row_scope, schedule_for, speed::PublishedSpeed, vendor_start,
 };
 
 #[derive(Debug, Deserialize)]
@@ -81,6 +81,8 @@ impl PricingMap {
             };
             row.source = Source::LiteLlm;
             row.scope = scope;
+            let whole_request_threshold = provider.and_then(whole_request_threshold);
+            row.whole_request_tiers = whole_request_threshold.is_some();
             row.schedule = schedule;
             row.vendor_start = vendor_start;
             row.host = host;
@@ -102,13 +104,9 @@ impl PricingMap {
                     }
                     .marginal()
                     .map(|mut context| {
-                        if let Some((_, threshold)) = provider.and_then(|provider| {
-                            data::WHOLE_REQUEST_LONG_CONTEXT_PROVIDERS
-                                .iter()
-                                .find(|(id, _)| *id == provider)
-                        }) {
+                        if let Some(threshold) = whole_request_threshold {
                             context.mode = LongContextMode::WholeRequest;
-                            context.threshold = *threshold;
+                            context.threshold = threshold;
                         }
                         context
                     }),

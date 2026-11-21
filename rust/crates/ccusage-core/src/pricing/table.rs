@@ -59,9 +59,12 @@ const SOURCE_MODELS_DEV: u8 = 2;
 const SOURCE_MASK: u8 = 0b11;
 const SCOPE_DIRECT: u8 = 1 << 2;
 const EXACT_ONLY: u8 = 1 << 3;
-const HOST_SHIFT: u8 = 4;
+const WHOLE_REQUEST_TIERS: u8 = 1 << 4;
+const HOST_SHIFT: u8 = 5;
 const HOST_MASK: u8 = 0b11 << HOST_SHIFT;
 const _: () = assert!(data::HOSTS.len() <= (HOST_MASK >> HOST_SHIFT) as usize);
+const _: () =
+    assert!(HOST_MASK & (SOURCE_MASK | SCOPE_DIRECT | EXACT_ONLY | WHOLE_REQUEST_TIERS) == 0);
 
 const NO_LONG_CONTEXT: u8 = 0;
 const LONG_CONTEXT_MARGINAL: u8 = 1;
@@ -164,8 +167,10 @@ impl Writer {
             0
         };
         let exact_only = if row.exact_only { EXACT_ONLY } else { 0 };
+        let whole_request = u8::from(row.whole_request_tiers) * WHOLE_REQUEST_TIERS;
         let host = row.host.map_or(0, |host| (host + 1) << HOST_SHIFT);
-        self.flags.push(source | scope | exact_only | host);
+        self.flags
+            .push(source | scope | exact_only | whole_request | host);
         varint(
             &mut self.flags,
             row.vendor_start.map_or(0, |start| start.get() as u64),
@@ -362,6 +367,7 @@ impl<'a> Reader<'a> {
             schedule,
             context_limit,
             exact_only: flags & EXACT_ONLY != 0,
+            whole_request_tiers: flags & WHOLE_REQUEST_TIERS != 0,
             scope,
             vendor_start,
             host,

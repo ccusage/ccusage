@@ -11,15 +11,17 @@ fn sorted_rows(rows: &PricingRows) -> Vec<String> {
         .iter()
         .map(|row| {
             format!(
-                "{} {:?} {:?} {:?} {:?} {} {:?} {:?}",
+                "{} {:?} {:?} {:?} {:?} {} {} {:?} {:?} {:?}",
                 row.key,
                 row.rates(),
                 row.source,
                 row.schedule,
                 row.context_limit,
                 row.exact_only,
+                row.whole_request_tiers,
                 row.scope,
-                row.vendor_start
+                row.vendor_start,
+                row.host,
             )
         })
         .collect();
