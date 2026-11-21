@@ -7,6 +7,7 @@
 }:
 let
   generator = root + /apps/ccusage/scripts/generate-large-fixture.ts;
+  assertUsage = ./pgo-assert-usage.mjs;
 in
 runCommand "ccusage-pgo-profile"
   {
@@ -29,12 +30,16 @@ runCommand "ccusage-pgo-profile"
     export LLVM_PROFILE_FILE="$TMPDIR/profraw/%m_%p.profraw"
     export LOG_LEVEL=0 TZ=UTC NO_COLOR=1 COLUMNS=200
 
+    runs=0
     train() {
-      local claude="$1"
+      local claude="$1" format=table
       shift
+      runs=$((runs + 1))
+      [[ " $* " == *" --json "* ]] && format=json
       env CLAUDE_CONFIG_DIR="$claude" CODEX_HOME="$fixtures/large/codex" GROK_HOME="$fixtures/large/grok" \
         OPENCODE_DATA_DIR="$fixtures/large/opencode" \
-        ${instrumented}/bin/ccusage "$@" --offline > /dev/null
+        ${instrumented}/bin/ccusage "$@" --offline > "$TMPDIR/report-$runs.out"
+      node ${assertUsage} "$TMPDIR/report-$runs.out" "$format" || { echo "report: ccusage $*" >&2; exit 1; }
     }
 
     for report in daily weekly monthly session blocks; do
@@ -53,7 +58,7 @@ runCommand "ccusage-pgo-profile"
     train "$fixtures/large/claude" opencode daily --since 20260731 --json
     train "$fixtures/large/claude" grok daily --json
     train "$fixtures/large/claude" claude daily --since 20260731 --json
-    train "$fixtures/large/claude" claude daily --since 20260920 --json
+    train "$fixtures/large/claude" claude daily --since 20260901 --json
     train "$fixtures/many-files" claude daily --json
     train "$fixtures/proxy" claude daily --json
 
