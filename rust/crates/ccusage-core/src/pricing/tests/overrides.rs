@@ -941,3 +941,26 @@ fn a_full_label_override_wins_over_the_bare_key() {
     let direct = pricing.find("gpt-5.5").unwrap();
     assert_eq!((direct.input, direct.output), (50e-6, 50e-6));
 }
+
+#[test]
+fn an_override_on_an_alias_of_a_google_spelling_inherits_the_gemini_row() {
+    let _aliases = crate::model_aliases::set_model_aliases_for_tests([(
+        "private-gemini",
+        "google/gemini-2.5-pro",
+    )]);
+    crate::test_support::install_pricing_snapshots();
+    let mut base = PricingMap::default();
+    base.load_json(
+        r#"{"gemini/gemini-2.5-pro": {"litellm_provider": "gemini", "input_cost_per_token": 1.25e-6, "output_cost_per_token": 1e-5}}"#,
+    );
+    let overrides = build_overrides("private-gemini", |o| {
+        o.input_cost_per_token = Some(50e-6);
+    });
+
+    let found = base
+        .with_user_overrides(overrides.iter())
+        .find("private-gemini")
+        .unwrap();
+
+    assert_eq!((found.input, found.output), (50e-6, 1e-5));
+}

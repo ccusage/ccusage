@@ -13,7 +13,9 @@ pub(super) fn with_names<T>(model: &str, mut choose: impl FnMut(&str) -> Option<
             if alias == model {
                 return None;
             }
-            choose(alias.as_ref()).or_else(|| pricing_alias(alias.as_ref()).and_then(choose))
+            choose(alias.as_ref())
+                .or_else(|| vendor_spelling(alias.as_ref()).and_then(|vendor| choose(&vendor)))
+                .or_else(|| pricing_alias(alias.as_ref()).and_then(choose))
         })
 }
 
