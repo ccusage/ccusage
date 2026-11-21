@@ -509,7 +509,7 @@ fn open_code_model_candidates(model: &str, provider: &str) -> Vec<(String, Match
         let provider = provider.replace('-', "_");
         candidates.extend(
             base.into_iter()
-                .map(|(model, kind)| (format!("{provider}/{model}"), kind)),
+                .map(|(model, _)| (format!("{provider}/{model}"), MatchKind::Exact)),
         );
     }
     candidates.dedup();

@@ -87,7 +87,7 @@ pub(super) fn row_to_entry(
 
     let mut candidates = vec![(model.clone(), MatchKind::Fuzzy)];
     if provider_id != "goose" {
-        candidates.push((format!("{provider_id}/{model}"), MatchKind::Fuzzy));
+        candidates.push((format!("{provider_id}/{model}"), MatchKind::Exact));
     }
     let candidates: Vec<_> = candidates
         .iter()
@@ -205,7 +205,7 @@ mod tests {
         let mut row = connection.prepare(r#"SELECT 's', '{"model_name":"sample"}', 'vendor', '2026-05-19 00:00:00', 100, 100, 0, 100, 100, 0"#).unwrap();
         assert_eq!(row.next().unwrap(), sqlite::State::Row);
         let mut pricing = ccusage_core::PricingMap::default();
-        pricing.load_json(r#"{"sample":{"litellm_provider": "openai", "input_cost_per_token":0,"output_cost_per_token":0},"vendor/sample":{"input_cost_per_token":1,"output_cost_per_token":1}}"#);
+        pricing.load_json(r#"{"sample":{"litellm_provider": "openai", "input_cost_per_token":1,"output_cost_per_token":1},"vendor/sample":{"input_cost_per_token":0,"output_cost_per_token":0}}"#);
         let loaded = super::row_to_entry(
             &row,
             &jiff::tz::TimeZone::UTC,
