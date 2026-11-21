@@ -422,33 +422,24 @@ jobs:
           nix build "git+file://$PWD?rev=$BASE_SHA#ccusage-static" \
             --out-link "$RUNNER_TEMP/ccusage-base"
 
-      - name: Generate large ccusage fixture
-        run: |
-          just generate-large-fixture \
-            "$RUNNER_TEMP/ccusage-large-fixture" \
-            "$RUNNER_TEMP/ccusage-large-codex-fixture" \
-            --grok-output-dir "$RUNNER_TEMP/ccusage-large-grok-fixture"
-
-      - name: Generate shape fixtures
-        run: |
-          generator=apps/ccusage/scripts/generate-large-fixture.ts
-          "$generator" --output-dir "$RUNNER_TEMP/ccusage-many-files-fixture" --claude-shape many-small-files
-          "$generator" --output-dir "$RUNNER_TEMP/ccusage-proxy-fixture" --claude-shape requestless-proxy --size-mib 1024
-          "$generator" --output-dir "$RUNNER_TEMP/ccusage-small-fixture" --size-mib 4
+      - name: Generate benchmark fixtures
+        run: just generate-benchmark-fixtures "$RUNNER_TEMP/ccusage-fixtures"
 
       - name: Compare performance
         run: |
+          fixtures="$RUNNER_TEMP/ccusage-fixtures"
           apps/ccusage/scripts/compare-pr-performance.bb \
             --base-bin "$RUNNER_TEMP/ccusage-base/bin/ccusage" \
             --base-sha "$BASE_SHA" \
             --head-bin "$RUNNER_TEMP/ccusage-head/bin/ccusage" \
             --head-sha "$HEAD_SHA" \
-            --fixture-dir "$RUNNER_TEMP/ccusage-large-fixture" \
-            --codex-fixture-dir "$RUNNER_TEMP/ccusage-large-codex-fixture" \
-            --grok-fixture-dir "$RUNNER_TEMP/ccusage-large-grok-fixture" \
-            --many-files-fixture-dir "$RUNNER_TEMP/ccusage-many-files-fixture" \
-            --proxy-fixture-dir "$RUNNER_TEMP/ccusage-proxy-fixture" \
-            --small-fixture-dir "$RUNNER_TEMP/ccusage-small-fixture" \
+            --fixture-dir "$fixtures/large" \
+            --codex-fixture-dir "$fixtures/large-codex" \
+            --grok-fixture-dir "$fixtures/large-grok" \
+            --many-files-fixture-dir "$fixtures/many-files" \
+            --proxy-fixture-dir "$fixtures/proxy" \
+            --small-fixture-dir "$fixtures/small" \
+            --opencode-fixture-dir "$fixtures/opencode" \
             --warmup 2 \
             --runs 11 \
             --output "$RUNNER_TEMP/ccusage-perf-comment.md"
