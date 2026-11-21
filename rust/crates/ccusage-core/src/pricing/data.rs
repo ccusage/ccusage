@@ -285,7 +285,7 @@ const fn whole_request_tier(
     }
 }
 
-// NOTE(2026-11-21, #2235): Anthropic billed every token of a Sonnet 4 or Sonnet 4.5 request above 200K input tokens (cache reads and writes included) at $6 input and $22.50 output per 1M, with the prompt caching multipliers on top, at https://web.archive.org/web/20260201050917/https://platform.claude.com/docs/en/about-claude/pricing. The current page no longer lists that tier because both models are back to a 200K window, so the rates still apply to the requests sent while the 1M beta ran.
+// NOTE(2026-11-21, #2235): Anthropic billed every token of a Sonnet 4 or Sonnet 4.5 request above 200K input tokens (cache reads and writes included) at $6 input and $22.50 output per 1M, with the prompt caching multipliers on top, at https://web.archive.org/web/20260201050917/https://platform.claude.com/docs/en/about-claude/pricing. The current page no longer lists that tier because both models are back to a 200K window, so the rates still apply to the requests sent while the 1M beta ran. Every row at a model's list rates takes its tier, whichever catalogue it comes from; a host that bills its own rates keeps its own.
 const ANTHROPIC_SONNET_4_LONG_CONTEXT: CuratedLongContext =
     whole_request_tier(3e-6, 15e-6, 200_000, [6e-6, 22.5e-6, 7.5e-6, 12e-6, 0.6e-6]);
 
@@ -297,7 +297,6 @@ const ANTHROPIC_HAIKU_5_5_LONG_CONTEXT: CuratedLongContext = whole_request_tier(
     [0.5e-6, 2.5e-6, 0.625e-6, 1e-6, 0.05e-6],
 );
 
-// A row priced at the model's Anthropic list rates takes this tier whichever catalogue it comes from; a host that bills its own rates keeps its own tier.
 pub(super) static ANTHROPIC_LONG_CONTEXT: &[(&str, CuratedLongContext)] = &[
     ("claude-sonnet-4", ANTHROPIC_SONNET_4_LONG_CONTEXT),
     ("claude-sonnet-4-5", ANTHROPIC_SONNET_4_LONG_CONTEXT),

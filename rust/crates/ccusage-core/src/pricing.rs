@@ -225,7 +225,9 @@ impl PricingMap {
             let Some(curated) = curated_long_context(&row.key) else {
                 continue;
             };
-            if row.pricing.input == curated.input && row.pricing.output == curated.output {
+            if (row.pricing.input - curated.input).abs() < f64::EPSILON
+                && (row.pricing.output - curated.output).abs() < f64::EPSILON
+            {
                 row.pricing.long_context = Some(Arc::new(curated.long_context));
             }
         }
