@@ -34239,9 +34239,9 @@
 	},
 	"thinkingmachines/inkling-2-mini": {
 		"cost": {
-			"cache_read": 0.016,
-			"input": 0.08,
-			"output": 0.35
+			"cache_read": 0.015,
+			"input": 0.075,
+			"output": 0.3
 		},
 		"limit": {
 			"context": 1048576
