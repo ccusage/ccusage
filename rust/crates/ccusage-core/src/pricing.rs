@@ -94,6 +94,7 @@ impl PricingMap {
     fn rows_mut(&mut self) -> &mut PricingRows {
         let rows = Arc::make_mut(&mut self.rows);
         rows.indexes.take();
+        rows.folded_indexes.take();
         rows.normalized_keys.take();
         rows.exact_only_by_identity.take();
         rows

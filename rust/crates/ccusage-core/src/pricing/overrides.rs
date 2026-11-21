@@ -192,7 +192,7 @@ impl PricingMap {
                 return Some(Base::Override(dependency));
             }
             self.rows
-                .authoritative(Name::new(name, &OnceLock::new()), false, Some)
+                .authoritative(Name::new(name, &OnceLock::new()), false, false, Some)
                 .map(|found| Base::Authority(Box::new(found.row.clone())))
         })
     }
@@ -251,7 +251,7 @@ impl PricingMap {
                 let catalog_row = base.or_else(|| {
                     with_names(model, |name| {
                         self.rows
-                            .authoritative(Name::new(name, &OnceLock::new()), true, Some)
+                            .authoritative(Name::new(name, &OnceLock::new()), true, false, Some)
                             .map(|found| found.row)
                     })
                     .or_else(|| secondary_base(secondary, model))
@@ -303,7 +303,7 @@ impl PricingMap {
 fn secondary_base<'a>(rows: Option<&'a PricingRows>, key: &str) -> Option<&'a Row> {
     let rows = rows?;
     with_names(key, |name| {
-        rows.exact(Name::new(name, &OnceLock::new()), Lookup::Pricing)
+        rows.exact(Name::new(name, &OnceLock::new()), Lookup::Pricing, false)
             .map(|found| found.row)
     })
 }

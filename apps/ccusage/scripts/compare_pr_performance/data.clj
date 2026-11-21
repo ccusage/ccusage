@@ -119,8 +119,9 @@
 (defn command-text-arg [value]
   (let [text (str value)]
     (if (re-matches safe-arg-pattern text) text (json/generate-string text))))
-(defn benchmark-command-text
+(defn benchmark-argv
   [{:keys [vars clean?]} argv]
-  (->> (concat ["env"] (when clean? ["-i"]) (map (fn [[k v]] (str k "=" v)) vars) argv)
-       (map command-text-arg)
-       (str/join " ")))
+  (vec (concat ["env"] (when clean? ["-i"]) (map (fn [[k v]] (str k "=" v)) vars) argv)))
+(defn benchmark-command-text
+  [env argv]
+  (str/join " " (map command-text-arg (benchmark-argv env argv))))

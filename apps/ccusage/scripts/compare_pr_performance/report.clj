@@ -52,7 +52,7 @@
 
 (defn method-line [{:keys [runs warmup threshold]}]
   (format (str "Base and PR are built from source the same way on this runner and run `--offline --json` in %d interleaved rounds after %d warmup rounds; "
-               "each round runs both binaries once in alternating order. Cells show median (min–max). "
+               "each round runs both binaries once in alternating order. Wall time, CPU time, and peak RSS come from the shell's `time` and GNU `time` around each run; instruction counts come from one extra hyperfine pass. Cells show median (min–max). "
                "Ratios are PR/base per round, so below 1.00 is better. A command is flagged when the median CPU-time or peak-RSS ratio moves past %d%% "
                "and at least four in five rounds agree. Wall time is shown but not judged.")
           runs warmup (Math/round (* 100 threshold))))
@@ -78,7 +78,7 @@
                             "RSS base" (data/format-memory-size (get-in base [:rss :median]))
                             "RSS PR" (data/format-memory-size (get-in head [:rss :median]))
                             "RSS ratio" (format-ratio-spread (:rss comparison))]
-                           (when instructions? ["Instructions ratio" (format-ratio-spread (:instructions comparison))])
+                           (when instructions? ["Instructions ratio" (format "%.2f" (double (get-in comparison [:instructions :median])))])
                            ["Verdict" (comparison-verdict comparison)])))
           results)))
 
