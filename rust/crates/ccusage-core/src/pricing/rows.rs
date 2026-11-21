@@ -176,13 +176,14 @@ impl PricingRows {
             .map(|(found, key)| (found, key.as_deref().unwrap_or(found.key)))
     }
 
-    fn indexed_rows<'a, const FOLD: bool>(
+    fn indexed_rows<'a>(
         &'a self,
         identity: &str,
         index: Index,
+        fold: bool,
     ) -> impl Iterator<Item = RowMatch<'a>> {
         let keys = index.sensitive(self.indexes()).get(identity);
-        let folded = if FOLD {
+        let folded = if fold {
             self.folded_ids(identity, index)
         } else {
             &[]
@@ -211,13 +212,14 @@ impl PricingRows {
         &ids[start..end]
     }
 
-    pub(super) fn authoritative<'a, const FOLD: bool>(
+    pub(super) fn authoritative<'a>(
         &'a self,
         name: Name<'_>,
         hosted: bool,
+        fold: bool,
         visible: impl Fn(RowMatch<'a>) -> Option<RowMatch<'a>>,
     ) -> Option<RowMatch<'a>> {
-        let literal = if FOLD {
+        let literal = if fold {
             None
         } else {
             self.literal(name.raw(), Lookup::Pricing)
@@ -228,18 +230,18 @@ impl PricingRows {
         {
             return Some(found);
         }
-        let identity = if FOLD {
+        let identity = if fold {
             fold_case(name.identity())
         } else {
             Cow::Borrowed(name.identity())
         };
         let matches = |index| {
-            self.indexed_rows::<FOLD>(&identity, index)
+            self.indexed_rows(&identity, index, fold)
                 .filter_map(|raw| Some((raw.key, visible(raw)?)))
         };
         let by_key = |select| {
             matches(select)
-                .min_by_key(|(key, _)| (FOLD && !key.eq_ignore_ascii_case(name.raw()), *key))
+                .min_by_key(|(key, _)| (fold && !key.eq_ignore_ascii_case(name.raw()), *key))
                 .map(|(_, found)| found)
         };
         by_key(Index::Identity)
@@ -269,24 +271,20 @@ impl PricingRows {
             })
     }
 
-    pub(super) fn exact<const FOLD: bool>(
-        &self,
-        name: Name<'_>,
-        lookup: Lookup,
-    ) -> Option<RowMatch<'_>> {
-        if !FOLD && let Some(literal) = self.literal(name.raw(), lookup) {
+    pub(super) fn exact(&self, name: Name<'_>, lookup: Lookup, fold: bool) -> Option<RowMatch<'_>> {
+        if !fold && let Some(literal) = self.literal(name.raw(), lookup) {
             return Some(literal);
         }
-        let identity = if FOLD {
+        let identity = if fold {
             fold_case(name.identity())
         } else {
             Cow::Borrowed(name.identity())
         };
-        self.indexed_rows::<FOLD>(&identity, Index::Identity)
+        self.indexed_rows(&identity, Index::Identity, fold)
             .filter(|found| lookup.includes(found.row))
             .min_by_key(|found| {
                 (
-                    FOLD && !found.key.eq_ignore_ascii_case(name.raw()),
+                    fold && !found.key.eq_ignore_ascii_case(name.raw()),
                     found.key,
                 )
             })
