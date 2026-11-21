@@ -143,6 +143,12 @@ struct Marker {
 struct Anchor {
     index: usize,
     run_start: usize,
+    before_bracket: SmallVec<[Token; 4]>,
+}
+
+struct Token {
+    byte: u8,
+    spaced: bool,
 }
 
 impl Anchor {
@@ -155,16 +161,33 @@ impl Anchor {
             .iter()
             .rposition(|&is_content| is_content)
             .map_or(0, |content| content + 1);
-        Some(Self { index, run_start })
+        let before_bracket = marker[run_start..=index]
+            .windows(2)
+            .rev()
+            .map(|pair| Token {
+                byte: pair[0],
+                spaced: pair.iter().any(|byte| b":,{}[]".contains(byte)),
+            })
+            .collect();
+        Some(Self {
+            index,
+            run_start,
+            before_bracket,
+        })
     }
-}
 
-fn is_structural(byte: u8) -> bool {
-    b":,{}[]".contains(&byte)
-}
-
-fn is_json_whitespace(byte: u8) -> bool {
-    matches!(byte, b' ' | b'\t' | b'\n' | b'\r')
+    fn run_at(&self, line: &[u8], bracket_at: usize) -> Option<usize> {
+        let mut end = bracket_at;
+        for token in &self.before_bracket {
+            if token.spaced {
+                while end > 0 && matches!(line[end - 1], b' ' | b'\t' | b'\n' | b'\r') {
+                    end -= 1;
+                }
+            }
+            end = end.checked_sub(1).filter(|&at| line[at] == token.byte)?;
+        }
+        Some(end)
+    }
 }
 
 impl Marker {
@@ -200,7 +223,6 @@ impl Marker {
 
     fn spelled_at_anchor(&self, line: &[u8], anchor: &Anchor) -> bool {
         let marker = self.finder.needle();
-        let run = &marker[anchor.run_start..=anchor.index];
         let mut first_backslash = None;
         for bracket_at in memchr_iter(marker[anchor.index], line) {
             if anchor.index + 1 < marker.len()
@@ -208,7 +230,7 @@ impl Marker {
             {
                 continue;
             }
-            let Some(run_at) = run_before(line, bracket_at, run) else {
+            let Some(run_at) = anchor.run_at(line, bracket_at) else {
                 continue;
             };
             let verbatim = run_at
@@ -271,19 +293,6 @@ impl Marker {
         }
         true
     }
-}
-
-fn run_before(line: &[u8], bracket_at: usize, run: &[u8]) -> Option<usize> {
-    let mut end = bracket_at;
-    for pair in run.windows(2).rev() {
-        if is_structural(pair[0]) || is_structural(pair[1]) {
-            while end > 0 && is_json_whitespace(line[end - 1]) {
-                end -= 1;
-            }
-        }
-        end = end.checked_sub(1).filter(|&at| line[at] == pair[0])?;
-    }
-    Some(end)
 }
 
 fn decode_escape(escape: &[u8]) -> (Option<u8>, usize) {
