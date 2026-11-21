@@ -17,7 +17,8 @@
    :real {:coerce :boolean :desc "Also measure the logs this environment points at (default dirs, CLAUDE_CONFIG_DIR, CODEX_HOME)"}
    :runs {:coerce :long :default 5 :ref "N" :desc "Interleaved measured rounds; at least 3"}
    :warmup {:coerce :long :default 1 :ref "N"}
-   :threshold {:coerce :double :default 0.1 :ref "RATIO"}
+   :threshold {:coerce :double :default 0.1 :ref "RATIO" :desc "CPU-time and RSS change that counts as a regression"}
+   :wall-threshold {:coerce :double :default 0.05 :ref "RATIO" :desc "Wall-time change that counts as a regression"}
    :commands {:ref "LIST" :desc "Comma-separated report commands"}
    :cache-dir {:ref "DIR" :desc "Built binaries, shared cargo target, and generated fixtures (default: rust/target/bench-history)"}
    :output {:ref "FILE"}
@@ -27,16 +28,17 @@
   {:clean? false :vars (assoc system/report-vars "LOG_LEVEL" "0")})
 
 (defn render-history-table
-  [{:keys [command rounds]} variants threshold]
+  [{:keys [command rounds]} variants limits]
   (let [rows (map-indexed
               (fn [index {:keys [label commit]}]
                 (let [summary (benchmark/variant-summary rounds label)
                       previous (when (pos? index) (:label (nth variants (dec index))))
-                      comparison (when previous (benchmark/compare-variants rounds previous label threshold))]
+                      comparison (when previous (benchmark/compare-variants rounds previous label limits))]
                   (array-map "Ref" label "Commit" (if commit (str "`" (data/format-sha commit) "`") "-")
                              "CPU" (report/format-spread (:cpu summary) data/format-duration)
                              "Wall" (report/format-spread (:wall summary) data/format-duration)
                              "Peak RSS" (data/format-memory-size (get-in summary [:rss :median]))
+                             "Wall vs prev" (if comparison (report/format-ratio-spread (:wall comparison)) "-")
                              "CPU vs prev" (if comparison (report/format-ratio-spread (:cpu comparison)) "-")
                              "RSS vs prev" (if comparison (report/format-ratio-spread (:rss comparison)) "-")
                              "Instructions vs prev" (if (:instructions comparison) (report/format-ratio-spread (:instructions comparison)) "-")
@@ -192,7 +194,7 @@
 (defn history-section [title variants env commands options]
   (str "## " title "\n\n"
        (str/join "\n\n" (map #(render-history-table (benchmark/measure-command variants % env (assoc options :title title))
-                                                    variants (:threshold options))
+                                                    variants options)
                              commands))
        "\n"))
 

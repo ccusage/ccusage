@@ -43,18 +43,21 @@
    :runs {:coerce :long :default 11 :ref "N" :desc "Interleaved measured rounds; at least 3"}
    :warmup {:coerce :long :default 2 :ref "N" :desc "Interleaved warmup rounds"}
    :threshold {:coerce :double :default 0.1 :ref "RATIO" :desc "CPU-time and RSS change that counts as a regression"}
+   :wall-threshold {:coerce :double :default 0.05 :ref "RATIO" :desc "Wall-time change that counts as a regression"}
    :help {:alias :h :coerce :boolean}})
 
 (defn fail! [message data]
   (throw (ex-info message data)))
 
-(defn assert-sample-options [{:keys [runs warmup threshold]}]
+(defn assert-sample-options [{:keys [runs warmup threshold wall-threshold]}]
   (when (< runs 3)
     (fail! "--runs must be at least 3" {:kind :invalid-cli}))
   (when (< warmup 0)
     (fail! "--warmup must be a non-negative integer" {:kind :invalid-cli}))
   (when-not (< 0 threshold 1)
-    (fail! "--threshold must be between 0 and 1" {:kind :invalid-cli})))
+    (fail! "--threshold must be between 0 and 1" {:kind :invalid-cli}))
+  (when-not (< 0 wall-threshold 1)
+    (fail! "--wall-threshold must be between 0 and 1" {:kind :invalid-cli})))
 
 (defn parse-cli [argv]
   (let [options (cli/parse-opts argv {:spec cli-spec :restrict true})]

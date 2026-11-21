@@ -10,7 +10,7 @@
   (let [{:keys [rounds]} (benchmark/measure-command variants command env (assoc options :title (str "PR vs base" (some->> (:fixture-label options) (str " / ")))))]
     {:command command
      :base (benchmark/variant-summary rounds "base") :head (benchmark/variant-summary rounds "PR")
-     :comparison (benchmark/compare-variants rounds "base" "PR" (:threshold options))}))
+     :comparison (benchmark/compare-variants rounds "base" "PR" options)}))
 
 ;; NOTE(2026-11-10, #2061): GitHub Actions reads workflow commands from stdout. Emit annotations there even though progress uses stderr.
 (defn github-warning!
@@ -51,5 +51,5 @@
                                              {:base (system/optional-file-size (:bin (first variants)))
                                               :head (system/optional-file-size (:bin (second variants)))})]
             (system/write-output! (:output options) report)
-            (github-warning! (report/overall-verdict (into results shape-results) (:threshold options)) (some? (System/getenv "GITHUB_ACTIONS"))))
+            (github-warning! (report/overall-verdict (into results shape-results) options) (some? (System/getenv "GITHUB_ACTIONS"))))
           (finally (fs/delete-tree empty-home)))))))

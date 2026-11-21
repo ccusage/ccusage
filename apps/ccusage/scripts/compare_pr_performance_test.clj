@@ -33,8 +33,10 @@
 
 (deftest cli-parsing
   (testing "defaults"
-    (is (= {:runs 11 :warmup 2 :threshold 0.1}
-           (select-keys (data/parse-cli required-args) [:runs :warmup :threshold]))))
+    (is (= {:runs 11 :warmup 2 :threshold 0.1 :wall-threshold 0.05}
+           (select-keys (data/parse-cli required-args) [:runs :warmup :threshold :wall-threshold])))
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"--wall-threshold must be between 0 and 1"
+                          (data/parse-cli (into required-args ["--wall-threshold" "0"])))))
   (testing "too few rounds to judge a regression"
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"--runs must be at least 3"
                           (data/parse-cli (conj required-args "--runs" "2")))))
@@ -117,14 +119,37 @@
   {"base" {:wall (* 0.2 base-cpu) :cpu base-cpu :rss 100 :instructions nil}
    "PR" {:wall (* 0.2 head-cpu) :cpu head-cpu :rss 100 :instructions nil}})
 
+(def limits {:threshold 0.1 :wall-threshold 0.05})
+
+(defn timed-round [[base-wall head-wall] [base-cpu head-cpu]]
+  {"base" {:wall base-wall :cpu base-cpu :rss 100 :instructions nil}
+   "PR" {:wall head-wall :cpu head-cpu :rss 100 :instructions nil}})
+
 (deftest paired-comparison
   (let [rounds [(round 1000 1500) (round 1100 1600) (round 900 1400) (round 1000 1550) (round 1050 1500)]
-        comparison (benchmark/compare-variants rounds "base" "PR" 0.1)]
+        comparison (benchmark/compare-variants rounds "base" "PR" limits)]
     (is (= :regression (get-in comparison [:cpu :verdict])))
+    (is (= :regression (get-in comparison [:wall :verdict])))
     (is (= :unchanged (get-in comparison [:rss :verdict])))
     (is (nil? (:instructions comparison)))
-    (is (= "⚠️ slower" (report/comparison-verdict comparison)))
+    (is (= "⚠️ slower, more CPU" (report/comparison-verdict comparison)))
     (is (= 1000 (get-in (benchmark/variant-summary rounds "base") [:cpu :median])))))
+
+(deftest wall-time-is-judged
+  (testing "a single-thread rewrite like #2407's state: slower wall, less CPU"
+    (let [rounds (mapv #(timed-round [280 (+ 380 %)] [750 370]) [0 4 -3 6 2 -1 5])
+          comparison (benchmark/compare-variants rounds "base" "PR" limits)]
+      (is (= :regression (get-in comparison [:wall :verdict])))
+      (is (= :improvement (get-in comparison [:cpu :verdict])))
+      (is (= "⚠️ slower, less CPU" (report/comparison-verdict comparison)))
+      (is (:regression? (report/overall-verdict [{:command "opencode daily" :comparison comparison}] limits)))))
+  (testing "wall time uses its own threshold"
+    (let [rounds (mapv (fn [_] (timed-round [1000 1040] [1000 1000])) (range 5))]
+      (is (= :unchanged (get-in (benchmark/compare-variants rounds "base" "PR" limits) [:wall :verdict])))
+      (is (= :regression (get-in (benchmark/compare-variants rounds "base" "PR" (assoc limits :wall-threshold 0.03)) [:wall :verdict])))))
+  (testing "a faster wall with more CPU, like #2412, reads as both"
+    (let [rounds (mapv (fn [_] (timed-round [380 280] [370 750])) (range 5))]
+      (is (= "⚠️ faster, more CPU" (report/comparison-verdict (benchmark/compare-variants rounds "base" "PR" limits)))))))
 
 (defn with-hyperfine-export [content f]
   (let [dir (babashka.fs/create-temp-dir {:prefix "ccusage-hyperfine-test."})
@@ -193,15 +218,15 @@
                                                         {:runs 3 :warmup 1 :title "t"})]
         (is (= 3 (count rounds)))
         (is (every? #(= 150.0 (get-in % ["PR" :instructions])) rounds))
-        (is (= 1.5 (get-in (benchmark/compare-variants rounds "base" "PR" 0.1) [:instructions :median])))
+        (is (= 1.5 (get-in (benchmark/compare-variants rounds "base" "PR" limits) [:instructions :median])))
         (testing "every warmup and measured round runs both binaries, alternating which goes first"
           (is (= ["/b" "/p" "/b" "/p" "/p" "/b" "/b" "/p"] @calls)))))))
 
 (deftest report-rendering
   (let [rounds [(round 1000 600) (round 1000 620) (round 1000 610)]
         result {:command "claude daily" :base (benchmark/variant-summary rounds "base") :head (benchmark/variant-summary rounds "PR")
-                :comparison (benchmark/compare-variants rounds "base" "PR" 0.1)}
-        context {:base-sha (apply str (repeat 40 "1")) :head-sha (apply str (repeat 40 "2")) :threshold 0.1 :runs 3 :warmup 1
+                :comparison (benchmark/compare-variants rounds "base" "PR" limits)}
+        context {:base-sha (apply str (repeat 40 "1")) :head-sha (apply str (repeat 40 "2")) :threshold 0.1 :wall-threshold 0.05 :runs 3 :warmup 1
                  :fixture-stats {:bytes 1073741824 :files 10} :codex-fixture-stats {:bytes 1048576 :files 2}}
         markdown (report/render-report context [result] [] {:base 2048 :head 1024})
         header (slurp (system/path (.getParent (babashka.fs/file *file*)) "testdata" "perf-comment-header.txt"))]
@@ -210,7 +235,11 @@
     (testing "a report without a head commit carries no comment marker"
       (is (.startsWith (report/render-report (dissoc context :head-sha) [result] [] {:base 2048 :head 1024})
                        "## ccusage performance comparison\n")))
-    (is (.contains markdown "**Verdict: ✅ improved** in `claude daily` (faster)"))
+    (is (.contains markdown "**Verdict: ✅ improved** in `claude daily` (faster, less CPU)"))
+    (testing "the method line says wall time is judged, with its own threshold"
+      (is (.contains markdown "median wall-time ratio moves past 5%"))
+      (is (not (.contains markdown "not judged"))))
+    (is (.contains markdown "| Wall ratio |"))
     (is (.contains markdown "| `claude daily` | 1.00s | 610ms | 0.61 (0.60–0.62) |"))
     (is (.contains markdown "| release binary | 2.00 KiB | 1.00 KiB | -1.00 KiB |"))
     (is (.contains markdown "Claude logs (1.00 GiB on disk, 10 files) and Codex logs"))
@@ -222,14 +251,14 @@
       (let [shapes [{:label "main"} {:label "tiny" :desc "startup dominates" :stats {:bytes 4194304 :files 5}}]
             slower {:command "daily" :fixture-label "tiny" :base (benchmark/variant-summary rounds "PR")
                     :head (benchmark/variant-summary rounds "base")
-                    :comparison (benchmark/compare-variants rounds "PR" "base" 0.1)}
+                    :comparison (benchmark/compare-variants rounds "PR" "base" limits)}
             markdown (report/render-report (assoc context :shapes shapes) [result] [slower] {:base 2048 :head 1024})]
         (is (.contains markdown "### Targeted shapes"))
         (is (.contains markdown "- **tiny** (4.00 MiB on disk, 5 files): startup dominates."))
         (is (.contains markdown "- **main**: the fixture above."))
         (is (.contains markdown "| Fixture | Command | CPU base |"))
         (is (.contains markdown "| tiny | `daily` | 610ms | 1.00s |"))
-        (is (.contains markdown "**Verdict: ⚠️ possible regression** in `daily` on tiny (slower)"))))))
+        (is (.contains markdown "**Verdict: ⚠️ possible regression** in `daily` on tiny (slower, more CPU)"))))))
 
 (deftest since-cut-off-follows-the-fixture
   (let [dir (babashka.fs/create-temp-dir {:prefix "ccusage-since."})
@@ -260,20 +289,24 @@
       (finally (babashka.fs/delete-tree dir)))))
 
 (deftest overall-verdicts
-  (let [result (fn [cpu rss] {:command "daily" :comparison {:cpu {:verdict cpu} :rss {:verdict rss}}})]
-    (is (:regression? (report/overall-verdict [(result :unchanged :regression)] 0.1)))
-    (is (.contains (:text (report/overall-verdict [(result :unchanged :unchanged)] 0.1)) "no significant change"))
-    (is (not (:regression? (report/overall-verdict [(result :improvement :unchanged)] 0.1))))
+  (let [result (fn [cpu rss & [wall]] {:command "daily" :comparison {:wall {:verdict (or wall :unchanged)} :cpu {:verdict cpu} :rss {:verdict rss}}})]
+    (is (:regression? (report/overall-verdict [(result :unchanged :regression)] limits)))
+    (is (:regression? (report/overall-verdict [(result :improvement :unchanged :regression)] limits)))
+    (is (= "**Verdict: no significant change** (every command within ±5% wall time and ±10% CPU time and peak RSS)."
+           (:text (report/overall-verdict [(result :unchanged :unchanged)] limits))))
+    (is (not (:regression? (report/overall-verdict [(result :improvement :unchanged)] limits))))
+    (is (.contains (:text (report/overall-verdict [(result :unchanged :unchanged :regression)] limits))
+                   "wall time above +5%, CPU time or peak RSS above +10%"))
     (testing "a memory-only improvement is reported"
-      (is (= "**Verdict: ✅ improved** in `daily` (less memory); nothing regressed beyond 10%."
-             (:text (report/overall-verdict [(result :unchanged :improvement)] 0.1)))))))
+      (is (= "**Verdict: ✅ improved** in `daily` (less memory); nothing regressed beyond the thresholds."
+             (:text (report/overall-verdict [(result :unchanged :improvement)] limits)))))))
 
 (deftest history-instruction-columns
   (let [with-instructions (fn [r n] (-> r (assoc-in ["base" :instructions] 100) (assoc-in ["PR" :instructions] n)))
         variants [{:label "base"} {:label "PR"}]
         rounds [(round 1000 1000) (round 1000 1000) (round 1000 1000)]]
-    (is (not (.contains (history/render-history-table {:command "daily" :rounds rounds} variants 0.1) "Instructions")))
-    (is (.contains (history/render-history-table {:command "daily" :rounds (mapv #(with-instructions % 50) rounds)} variants 0.1)
+    (is (not (.contains (history/render-history-table {:command "daily" :rounds rounds} variants limits) "Instructions")))
+    (is (.contains (history/render-history-table {:command "daily" :rounds (mapv #(with-instructions % 50) rounds)} variants limits)
                    "| Instructions vs prev |"))))
 
 (deftest github-warning-goes-to-stdout
