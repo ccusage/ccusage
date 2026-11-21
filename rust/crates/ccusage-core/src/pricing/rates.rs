@@ -256,7 +256,7 @@ impl Pricing {
         );
         scheduled!(fast_multiplier, self.fast_multiplier, OverrideFields::FAST);
         scheduled!(flex_multiplier, self.flex_multiplier, OverrideFields::FLEX);
-        if overridden(OverrideFields::RATES) && long_context.rates.cache_create_1h.is_none() {
+        if overridden(OverrideFields::RATES) {
             long_context.rates.cache_create_1h = Some(self.one_hour_cache_creation_rate());
         }
         self.long_context = Some(long_context);

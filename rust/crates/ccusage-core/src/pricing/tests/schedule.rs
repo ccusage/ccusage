@@ -887,3 +887,20 @@ fn a_scheduled_override_bills_one_hour_writes_above_the_split_at_its_base_rate()
     });
     assert_eq!(rate, Some(10e-6));
 }
+
+#[test]
+fn a_scheduled_override_tier_bills_one_hour_writes_at_the_scheduled_base_rate() {
+    let model = "deepseek-v4-flash".to_owned();
+    let patch = ccusage_cli::PricingOverride {
+        output_cost_per_token: Some(1e-6),
+        input_cost_per_token_above_200k_tokens: Some(1e-6),
+        ..Default::default()
+    };
+    let pricing = direct_deepseek_pricing().with_user_overrides([(&model, &patch)]);
+    let handle = pricing.find_handle(&model).unwrap();
+    let (input, rate) = handle.with_rates_at(Some(timestamp("2026-08-20T12:00:00Z")), |rates| {
+        (rates.input, rates.one_hour_cache_creation_rate_above_200k())
+    });
+    assert_eq!(input, 0.22e-6);
+    assert_eq!(rate, Some(0.22e-6));
+}
