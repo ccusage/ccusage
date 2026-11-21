@@ -10,6 +10,7 @@
 		"dashscope",
 		"gemini"
 	],
+	"freeTierOnlyProviders": ["gemini"],
 	"embedded": [
 		{
 			"keyPrefix": "claude-"

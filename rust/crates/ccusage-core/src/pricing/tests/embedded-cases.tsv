@@ -136,3 +136,5 @@
 117-hermes/google|gemini-4-carbon|E:google/gemini-4-carbon,F:gemini-4-carbon|2/10|S2|gemini/gemini-4-carbon|
 117-claude|google/gemini-3.8-flash|F:google/gemini-3.8-flash|0.75/3.75|S2|gemini/gemini-3.8-flash|
 117-hermes/google|gemini-3.6-flash|E:google/gemini-3.6-flash,F:gemini-3.6-flash|0.75/3.75|S2|gemini/gemini-3.6-flash|
+121-claude|gemma-3-27b-it|F:gemma-3-27b-it|0.099/0.299|S4|gemma-3-27b-it|
+121-opencode/openrouter|google/gemma-3-27b-it|F:google/gemma-3-27b-it,F:openrouter/google/gemma-3-27b-it|0.1587/0.48668|S4|google/gemma-3-27b-it|
