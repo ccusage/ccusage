@@ -81,20 +81,7 @@ pub(super) const BUILTIN_PRICING: &[Supplement] = &[
     Supplement {
         provider: "anthropic",
         model: "claude-sonnet-4",
-        pricing: Pricing {
-            long_context: Some(LongContext {
-                threshold: 200_000,
-                mode: LongContextMode::Marginal,
-                rates: LongContextRates {
-                    input: Some(6e-6),
-                    output: Some(22.5e-6),
-                    cache_create: Some(7.5e-6),
-                    cache_read: Some(0.6e-6),
-                    cache_create_1h: None,
-                },
-            }),
-            ..rates(3e-6, 15e-6, 3.75e-6, 0.3e-6)
-        },
+        pricing: rates(3e-6, 15e-6, 3.75e-6, 0.3e-6),
         context_limit: Some(200000),
     },
     Supplement {

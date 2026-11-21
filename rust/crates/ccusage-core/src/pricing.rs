@@ -108,6 +108,7 @@ impl PricingMap {
 
     fn complete_layers(&mut self, embedded_models_dev: &Self) {
         self.put_builtin_pricing();
+        self.curate_long_context();
         self.fill_long_context_rates_from_models_dev(embedded_models_dev);
         self.models_dev = Some(Arc::clone(&embedded_models_dev.rows));
         self.clear_find_cache();
@@ -200,6 +201,47 @@ impl PricingMap {
                 supplement.provider,
             );
         }
+    }
+}
+
+fn curated_long_context(key: &str) -> Option<&'static data::CuratedLongContext> {
+    let segment = last_segment(key);
+    let model = &segment[segment.find("claude-")?..];
+    let model = model.split_once(':').map_or(model, |(model, _)| model);
+    let model = model
+        .rsplit_once("-v")
+        .filter(|(_, version)| !version.is_empty() && version.bytes().all(|b| b.is_ascii_digit()))
+        .map_or(model, |(model, _)| model);
+    let model = normalized_pricing_key(model);
+    let model = data::FAMILY_PRICE_NEUTRAL_SUFFIX_WORDS
+        .iter()
+        .filter(|(family, _)| model.starts_with(family))
+        .flat_map(|(_, words)| words.iter())
+        .find_map(|word| {
+            model
+                .strip_suffix(word)
+                .and_then(|model| model.strip_suffix('-'))
+        })
+        .unwrap_or(&model);
+    let model = model_without_date_suffix(model);
+    data::ANTHROPIC_LONG_CONTEXT
+        .iter()
+        .find_map(|(id, curated)| (*id == model).then_some(curated))
+}
+
+impl PricingMap {
+    fn curate_long_context(&mut self) {
+        for row in &mut self.rows_mut().entries.rows {
+            let Some(curated) = curated_long_context(&row.key) else {
+                continue;
+            };
+            if (row.pricing.input - curated.input).abs() < f64::EPSILON
+                && (row.pricing.output - curated.output).abs() < f64::EPSILON
+            {
+                row.pricing.long_context = Some(Arc::new(curated.long_context));
+            }
+        }
+        self.clear_find_cache();
     }
 }
 
