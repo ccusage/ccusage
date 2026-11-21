@@ -40,7 +40,7 @@ pub fn print_report(args: &AgentCommandArgs, mut entries: Vec<LoadedEntry>) -> R
         );
     }
     let mut rows = summarize_entries(&entries, kind, args.start_of_week)?;
-    sort_summaries(&mut rows, &shared.order.unwrap_or_default(), |row| {
+    sort_summaries(&mut rows, &shared.order.unwrap_or_default(), &|row| {
         summary_period(row)
     });
     ccusage_adapter_common::report::print_table(

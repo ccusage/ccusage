@@ -285,10 +285,11 @@ fn aggregate_summaries(rows: &[&UsageSummary]) -> UsageSummary {
     summary
 }
 
-pub fn sort_summaries<F>(rows: &mut [UsageSummary], order: &SortOrder, date_fn: F)
-where
-    F: Fn(&UsageSummary) -> &str,
-{
+pub fn sort_summaries(
+    rows: &mut [UsageSummary],
+    order: &SortOrder,
+    date_fn: &dyn Fn(&UsageSummary) -> &str,
+) {
     rows.sort_by(|a, b| match order {
         SortOrder::Asc => date_fn(a).cmp(date_fn(b)),
         SortOrder::Desc => date_fn(b).cmp(date_fn(a)),
