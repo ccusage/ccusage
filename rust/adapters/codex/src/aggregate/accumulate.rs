@@ -87,10 +87,7 @@ pub(super) fn codex_period_for(
     Some(match kind {
         AgentReportKind::Daily => CodexPeriod::Date(date),
         AgentReportKind::Weekly => CodexPeriod::Date(date.week_start(WeekDay::Monday)),
-        AgentReportKind::Monthly => {
-            let (year, month, _) = date.parts();
-            CodexPeriod::Date(IsoDate::from_ymd(year, month, 1).unwrap_or(date))
-        }
+        AgentReportKind::Monthly => CodexPeriod::Date(date.month_start()),
         AgentReportKind::Session => CodexPeriod::Session(session),
     })
 }

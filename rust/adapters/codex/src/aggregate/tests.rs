@@ -373,6 +373,34 @@ fn records_flex_usage_in_model_buckets() {
 }
 
 #[test]
+fn keys_every_day_of_a_month_to_one_monthly_period() {
+    let window = ccusage_core::ReportWindow::from_shared(&SharedArgs {
+        timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+        ..SharedArgs::default()
+    });
+    let session = StringInterner::default()
+        .intern("session", || CompactString::new("session"))
+        .unwrap();
+    let monthly = |timestamp| {
+        codex_period_for(
+            parse_ts_timestamp(timestamp).unwrap(),
+            session,
+            AgentReportKind::Monthly,
+            &window,
+        )
+    };
+
+    assert_eq!(
+        monthly("2026-05-01T00:00:00.000Z"),
+        monthly("2026-05-31T23:59:59.000Z")
+    );
+    assert_ne!(
+        monthly("2026-05-31T23:59:59.000Z"),
+        monthly("2026-06-01T00:00:00.000Z")
+    );
+}
+
+#[test]
 fn omits_codex_period_outside_date_bounds() {
     let shared = SharedArgs {
         since: Some("20260528".parse().unwrap()),

@@ -110,6 +110,10 @@ impl IsoDate {
         parse_date(value, true)
     }
 
+    pub fn month_start(self) -> Self {
+        Self { day: 1, ..self }
+    }
+
     pub fn format_month(self) -> String {
         format!("{:04}-{:02}", self.year, self.month)
     }
