@@ -156,7 +156,7 @@ pub(crate) fn filter_blocks_by_date(blocks: &mut Vec<SessionBlock>, window: &Rep
 }
 
 pub(crate) fn sort_blocks(blocks: &mut [SessionBlock], order: &SortOrder) {
-    ccusage_core::sort::stable_by_key(blocks, |block| block.start_time);
+    blocks.sort_by_key(|block| block.start_time);
     if *order == SortOrder::Desc {
         blocks.reverse();
     }
