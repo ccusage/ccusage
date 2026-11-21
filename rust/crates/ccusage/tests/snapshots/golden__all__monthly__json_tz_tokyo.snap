@@ -258,6 +258,14 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00122,
+          "inputTokens": 920,
+          "modelName": "grok-code-fast-1",
+          "outputTokens": 150
+        },
+        {
+          "cacheCreationTokens": 0,
           "cacheReadTokens": 600,
           "cost": 0.0010142999999999999,
           "inputTokens": 1621,
@@ -271,14 +279,6 @@ exit: 0
           "inputTokens": 1250,
           "modelName": "deepseek-v4-pro",
           "outputTokens": 303
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.000409,
-          "inputTokens": 920,
-          "modelName": "grok-code-fast-1",
-          "outputTokens": 150
         },
         {
           "cacheCreationTokens": 0,
@@ -379,7 +379,7 @@ exit: 0
       ],
       "outputTokens": 15244,
       "period": "2025-12",
-      "totalCost": 9.753395560000003,
+      "totalCost": 9.754206560000004,
       "totalTokens": 223294
     },
     {
@@ -677,21 +677,21 @@ exit: 0
           "outputTokens": 100
         },
         {
+          "cacheCreationTokens": 50,
+          "cacheReadTokens": 700,
+          "cost": 0.00368,
+          "inputTokens": 650,
+          "modelName": "grok-code-fast-1",
+          "outputTokens": 490,
+          "storedCost": 0.003
+        },
+        {
           "cacheCreationTokens": 1500,
           "cacheReadTokens": 24000,
           "cost": 0.0032973,
           "inputTokens": 4100,
           "modelName": "deepseek-v4-pro",
           "outputTokens": 890
-        },
-        {
-          "cacheCreationTokens": 50,
-          "cacheReadTokens": 700,
-          "cost": 0.003235,
-          "inputTokens": 650,
-          "modelName": "grok-code-fast-1",
-          "outputTokens": 490,
-          "storedCost": 0.003
         },
         {
           "cacheCreationTokens": 0,
@@ -1109,7 +1109,7 @@ exit: 0
       ],
       "outputTokens": 44815,
       "period": "2026-01",
-      "totalCost": 18.317044115,
+      "totalCost": 18.317489115,
       "totalTokens": 2425226
     },
     {
@@ -1146,7 +1146,7 @@ exit: 0
     "cacheReadTokens": 1308300,
     "inputTokens": 1262107,
     "outputTokens": 60566,
-    "totalCost": 28.073793425000005,
+    "totalCost": 28.075049425000003,
     "totalTokens": 2652038,
     "unpricedModels": [
       "GLM-5.3",

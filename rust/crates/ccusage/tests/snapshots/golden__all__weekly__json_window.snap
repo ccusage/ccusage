@@ -10,7 +10,7 @@ exit: 0
     "cacheReadTokens": 668794,
     "inputTokens": 1070549,
     "outputTokens": 37494,
-    "totalCost": 15.286691300000003,
+    "totalCost": 15.286711300000002,
     "totalTokens": 1787423,
     "unpricedModels": [
       "GLM-5.3",
@@ -321,7 +321,7 @@ exit: 0
         {
           "cacheCreationTokens": 50,
           "cacheReadTokens": 700,
-          "cost": 0.0030600000000000002,
+          "cost": 0.0030800000000000003,
           "inputTokens": 150,
           "modelName": "grok-code-fast-1",
           "outputTokens": 440,
@@ -695,7 +695,7 @@ exit: 0
       ],
       "outputTokens": 37494,
       "period": "2025-12-29",
-      "totalCost": 15.286691300000003,
+      "totalCost": 15.286711300000002,
       "totalTokens": 1787423
     }
   ]

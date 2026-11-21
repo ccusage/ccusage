@@ -554,3 +554,47 @@ fn embedded_pricing_resolves_separator_aliases_for_other_claude_models() {
         pricing.context_limit("claude-haiku-4-5")
     );
 }
+
+#[test]
+fn offline_runs_bill_xai_ids_from_xais_own_rows_like_online_runs() {
+    crate::test_support::install_pricing_snapshots();
+    let offline = PricingMap::load_embedded();
+    let mut online = PricingMap::load_embedded();
+    online.refresh_litellm(|load| {
+        assert!(load(build_time_pricing_json()));
+        Ok(())
+    });
+    for (model, [input, output, read, long_input]) in [
+        ("grok-code-fast-1", [1e-6, 2e-6, 0.2e-6, 2e-6]),
+        ("grok-4.20", [1.25e-6, 2.5e-6, 0.2e-6, 2.5e-6]),
+        (
+            "grok-4.20-0309-reasoning",
+            [1.25e-6, 2.5e-6, 0.2e-6, 2.5e-6],
+        ),
+        ("grok-4.7", [2e-6, 6e-6, 0.5e-6, 4e-6]),
+    ] {
+        for (mode, pricing) in [("offline", &offline), ("online", &online)] {
+            let (_, rates) = pricing
+                .resolve_at(Some(model), &[(model, MatchKind::Fuzzy)], None)
+                .unwrap();
+            assert_eq!(
+                [
+                    rates.input,
+                    rates.output,
+                    rates.cache_read_rate_at(rates.input),
+                    rates
+                        .long_context
+                        .and_then(|context| context.rates.input)
+                        .unwrap_or(rates.input),
+                ],
+                [input, output, read, long_input],
+                "{mode} {model}"
+            );
+            assert_eq!(
+                rates.long_context.map(|context| context.mode),
+                Some(super::super::LongContextMode::WholeRequest),
+                "{mode} {model}"
+            );
+        }
+    }
+}

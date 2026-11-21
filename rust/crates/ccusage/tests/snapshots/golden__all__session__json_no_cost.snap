@@ -2605,38 +2605,6 @@ exit: 0
       "totalTokens": 7100
     },
     {
-      "agent": "opencode",
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 3000,
-      "inputTokens": 850,
-      "metadata": {
-        "lastActivity": "2026-01-02T08:00:00.000Z"
-      },
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 3000,
-          "inputTokens": 600,
-          "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 100
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "inputTokens": 250,
-          "modelName": "k2p6",
-          "outputTokens": 25
-        }
-      ],
-      "modelsUsed": [
-        "claude-sonnet-4-20250514",
-        "k2p6"
-      ],
-      "outputTokens": 125,
-      "period": "ses-ch-gamma",
-      "totalTokens": 3975
-    },
-    {
       "agent": "grok",
       "cacheCreationTokens": 750,
       "cacheReadTokens": 800,
@@ -2667,6 +2635,38 @@ exit: 0
       "outputTokens": 750,
       "period": "summary-session-beta",
       "totalTokens": 2950
+    },
+    {
+      "agent": "opencode",
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 3000,
+      "inputTokens": 850,
+      "metadata": {
+        "lastActivity": "2026-01-02T08:00:00.000Z"
+      },
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 3000,
+          "inputTokens": 600,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 100
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "inputTokens": 250,
+          "modelName": "k2p6",
+          "outputTokens": 25
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514",
+        "k2p6"
+      ],
+      "outputTokens": 125,
+      "period": "ses-ch-gamma",
+      "totalTokens": 3975
     },
     {
       "agent": "zcode",
@@ -3904,6 +3904,30 @@ exit: 0
       "totalTokens": 85
     },
     {
+      "agent": "grok",
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 120,
+      "metadata": {
+        "lastActivity": "2025-12-30T10:30:00.000Z"
+      },
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "inputTokens": 120,
+          "modelName": "grok-code-fast-1",
+          "outputTokens": 30
+        }
+      ],
+      "modelsUsed": [
+        "grok-code-fast-1"
+      ],
+      "outputTokens": 30,
+      "period": "eeeeeeee-0000-4000-8000-000000000005",
+      "totalTokens": 150
+    },
+    {
       "agent": "gemini",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 30,
@@ -4066,30 +4090,6 @@ exit: 0
       "outputTokens": 5,
       "period": "session",
       "totalTokens": 62
-    },
-    {
-      "agent": "grok",
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 0,
-      "inputTokens": 120,
-      "metadata": {
-        "lastActivity": "2025-12-30T10:30:00.000Z"
-      },
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "inputTokens": 120,
-          "modelName": "grok-code-fast-1",
-          "outputTokens": 30
-        }
-      ],
-      "modelsUsed": [
-        "grok-code-fast-1"
-      ],
-      "outputTokens": 30,
-      "period": "eeeeeeee-0000-4000-8000-000000000005",
-      "totalTokens": 150
     },
     {
       "agent": "pi",

@@ -275,7 +275,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.00006,
+          "cost": 0.00007999999999999999,
           "inputTokens": 0,
           "modelName": "grok-code-fast-1",
           "outputTokens": 40
@@ -306,7 +306,7 @@ exit: 0
       ],
       "outputTokens": 1610,
       "period": "sess-alpha",
-      "totalCost": 0.60006,
+      "totalCost": 0.6000800000000001,
       "totalTokens": 254910
     },
     {
@@ -3068,7 +3068,7 @@ exit: 0
     "cacheReadTokens": 568414,
     "inputTokens": 871119,
     "outputTokens": 35610,
-    "totalCost": 15.056532600000006,
+    "totalCost": 15.056552600000005,
     "totalTokens": 1485779,
     "unpricedModels": [
       "GLM-5.3",

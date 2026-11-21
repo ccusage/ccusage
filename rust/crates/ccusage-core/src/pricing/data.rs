@@ -246,6 +246,9 @@ pub(super) static FAMILY_PRICE_NEUTRAL_SUFFIX_WORDS: &[(&str, &[&str])] = &[
     ("qwen3-32b", &["thinking"]),
 ];
 
+// NOTE(2026-11-21, #2227): xAI bills every token of a request at the long-context rates once its prompt reaches 200k tokens at https://docs.x.ai/developers/pricing. LiteLLM's above-200k fields on xAI's own rows describe that tier, not a marginal one.
+pub(super) static WHOLE_REQUEST_LONG_CONTEXT_PROVIDERS: &[&str] = &["xai"];
+
 pub(super) static ALIASES: &[(&str, &str)] = &[
     ("gpt-reserve", "gpt-5.6-luna"),
     ("gpt-5.6", "gpt-5.6-sol"),

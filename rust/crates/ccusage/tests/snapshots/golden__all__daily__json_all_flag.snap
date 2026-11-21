@@ -370,6 +370,14 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00122,
+          "inputTokens": 920,
+          "modelName": "grok-code-fast-1",
+          "outputTokens": 150
+        },
+        {
+          "cacheCreationTokens": 0,
           "cacheReadTokens": 200,
           "cost": 0.001148,
           "inputTokens": 500,
@@ -391,14 +399,6 @@ exit: 0
           "inputTokens": 1200,
           "modelName": "deepseek-v4-pro",
           "outputTokens": 300
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.000409,
-          "inputTokens": 920,
-          "modelName": "grok-code-fast-1",
-          "outputTokens": 150
         },
         {
           "cacheCreationTokens": 0,
@@ -453,7 +453,7 @@ exit: 0
       ],
       "outputTokens": 10170,
       "period": "2025-12-30",
-      "totalCost": 5.6884924250000015,
+      "totalCost": 5.689303425000002,
       "totalTokens": 180409
     },
     {
@@ -1140,7 +1140,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.00006,
+          "cost": 0.00007999999999999999,
           "inputTokens": 0,
           "modelName": "grok-code-fast-1",
           "outputTokens": 40
@@ -1362,7 +1362,7 @@ exit: 0
       ],
       "outputTokens": 17537,
       "period": "2026-01-01",
-      "totalCost": 3.615907315,
+      "totalCost": 3.615927315,
       "totalTokens": 1508705
     },
     {
@@ -1548,6 +1548,14 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0006000000000000001,
+          "inputTokens": 500,
+          "modelName": "grok-code-fast-1",
+          "outputTokens": 50
+        },
+        {
+          "cacheCreationTokens": 0,
           "cacheReadTokens": 30,
           "cost": 0.0005464,
           "inputTokens": 610,
@@ -1577,14 +1585,6 @@ exit: 0
           "inputTokens": 250,
           "modelName": "k2p6",
           "outputTokens": 25
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.00017500000000000003,
-          "inputTokens": 500,
-          "modelName": "grok-code-fast-1",
-          "outputTokens": 50
         },
         {
           "cacheCreationTokens": 0,
@@ -1709,7 +1709,7 @@ exit: 0
       ],
       "outputTokens": 10755,
       "period": "2026-01-02",
-      "totalCost": 3.26575095,
+      "totalCost": 3.26617595,
       "totalTokens": 668978
     },
     {
@@ -1746,7 +1746,7 @@ exit: 0
     "cacheReadTokens": 1308300,
     "inputTokens": 1262107,
     "outputTokens": 60566,
-    "totalCost": 28.073793425000005,
+    "totalCost": 28.075049425000007,
     "totalTokens": 2652038,
     "unpricedModels": [
       "GLM-5.3",

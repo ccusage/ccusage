@@ -296,6 +296,15 @@ exit: 0
           "outputTokens": 730
         },
         {
+          "cacheCreationTokens": 50,
+          "cacheReadTokens": 700,
+          "cost": 0.00422,
+          "inputTokens": 1070,
+          "modelName": "grok-code-fast-1",
+          "outputTokens": 550,
+          "storedCost": 0.003
+        },
+        {
           "cacheCreationTokens": 400,
           "cacheReadTokens": 600,
           "cost": 0.0037359999999999997,
@@ -303,15 +312,6 @@ exit: 0
           "missingPricing": true,
           "modelName": "GLM-5.3",
           "outputTokens": 350
-        },
-        {
-          "cacheCreationTokens": 50,
-          "cacheReadTokens": 700,
-          "cost": 0.003409,
-          "inputTokens": 1070,
-          "modelName": "grok-code-fast-1",
-          "outputTokens": 550,
-          "storedCost": 0.003
         },
         {
           "cacheCreationTokens": 1200,
@@ -534,7 +534,7 @@ exit: 0
       ],
       "outputTokens": 31767,
       "period": "2025-12",
-      "totalCost": 21.188781409999994,
+      "totalCost": 21.189592409999992,
       "totalTokens": 470837
     },
     {
@@ -841,6 +841,14 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
+          "cost": 0.00068,
+          "inputTokens": 500,
+          "modelName": "grok-code-fast-1",
+          "outputTokens": 90
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
           "cost": 0.0006399999999999999,
           "inputTokens": 200,
           "modelName": "gemini-3-pro-high",
@@ -909,14 +917,6 @@ exit: 0
           "inputTokens": 500,
           "modelName": "qwen/qwen3-coder",
           "outputTokens": 100
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.00023500000000000002,
-          "inputTokens": 500,
-          "modelName": "grok-code-fast-1",
-          "outputTokens": 90
         },
         {
           "cacheCreationTokens": 0,
@@ -1191,7 +1191,7 @@ exit: 0
       ],
       "outputTokens": 28292,
       "period": "2026-01",
-      "totalCost": 6.8816582649999996,
+      "totalCost": 6.882103265,
       "totalTokens": 2177683
     },
     {
@@ -1228,7 +1228,7 @@ exit: 0
     "cacheReadTokens": 1308300,
     "inputTokens": 1262107,
     "outputTokens": 60566,
-    "totalCost": 28.073793424999995,
+    "totalCost": 28.075049424999996,
     "totalTokens": 2652038,
     "unpricedModels": [
       "GLM-5.3",

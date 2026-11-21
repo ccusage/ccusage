@@ -280,7 +280,7 @@ fn recorded_threshold_migration_groups_use_the_resolved_model_boundary() {
     for (model, expected) in [
         ("GLM-5-1", 32_000),
         ("anthropic-claude-5-5-haiku", 100_000),
-        ("spacexai/grok-4-5", 200_001),
+        ("spacexai/grok-4-5", 200_000),
         ("qwen-3-6-plus-high", 256_000),
         ("alibaba/qwen3-5-plus", 256_001),
         ("aihubmix/gpt-5-4-high", 272_000),

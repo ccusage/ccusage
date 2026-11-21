@@ -10,7 +10,7 @@ exit: 0
     "cacheReadTokens": 1308300,
     "inputTokens": 1262107,
     "outputTokens": 60566,
-    "totalCost": 28.073793424999998,
+    "totalCost": 28.075049424999996,
     "totalTokens": 2652038,
     "unpricedModels": [
       "GLM-5.3",
@@ -546,6 +546,15 @@ exit: 0
           "outputTokens": 420
         },
         {
+          "cacheCreationTokens": 50,
+          "cacheReadTokens": 700,
+          "cost": 0.0049,
+          "inputTokens": 1570,
+          "modelName": "grok-code-fast-1",
+          "outputTokens": 640,
+          "storedCost": 0.003
+        },
+        {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 300,
           "cost": 0.0048000000000000004,
@@ -560,15 +569,6 @@ exit: 0
           "inputTokens": 5350,
           "modelName": "deepseek-v4-pro",
           "outputTokens": 1193
-        },
-        {
-          "cacheCreationTokens": 50,
-          "cacheReadTokens": 700,
-          "cost": 0.0036440000000000005,
-          "inputTokens": 1570,
-          "modelName": "grok-code-fast-1",
-          "outputTokens": 640,
-          "storedCost": 0.003
         },
         {
           "cacheCreationTokens": 0,
@@ -1017,7 +1017,7 @@ exit: 0
       ],
       "outputTokens": 58299,
       "period": "2025-12-28",
-      "totalCost": 24.239072174999997,
+      "totalCost": 24.240328174999995,
       "totalTokens": 2635890
     },
     {

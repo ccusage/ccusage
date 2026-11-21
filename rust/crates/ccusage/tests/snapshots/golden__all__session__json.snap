@@ -617,7 +617,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.0004,
+          "cost": 0.00112,
           "inputTokens": 800,
           "modelName": "grok-code-fast-1",
           "outputTokens": 160
@@ -648,7 +648,7 @@ exit: 0
       ],
       "outputTokens": 2230,
       "period": "sess-alpha",
-      "totalCost": 0.6176999999999999,
+      "totalCost": 0.61842,
       "totalTokens": 259330
     },
     {
@@ -2911,6 +2911,43 @@ exit: 0
       "totalTokens": 7100
     },
     {
+      "agent": "grok",
+      "cacheCreationTokens": 750,
+      "cacheReadTokens": 800,
+      "inputTokens": 650,
+      "metadata": {
+        "lastActivity": "2026-01-02T11:00:00.000Z"
+      },
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 50,
+          "cacheReadTokens": 700,
+          "cost": 0.0036,
+          "inputTokens": 650,
+          "modelName": "grok-code-fast-1",
+          "outputTokens": 450,
+          "storedCost": 0.003
+        },
+        {
+          "cacheCreationTokens": 700,
+          "cacheReadTokens": 100,
+          "cost": 0.001,
+          "inputTokens": 0,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 300,
+          "storedCost": 0.001
+        }
+      ],
+      "modelsUsed": [
+        "grok-code-fast-1",
+        "claude-sonnet-4-20250514"
+      ],
+      "outputTokens": 750,
+      "period": "summary-session-beta",
+      "totalCost": 0.0046,
+      "totalTokens": 2950
+    },
+    {
       "agent": "opencode",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 3000,
@@ -2944,43 +2981,6 @@ exit: 0
       "period": "ses-ch-gamma",
       "totalCost": 0.0045375,
       "totalTokens": 3975
-    },
-    {
-      "agent": "grok",
-      "cacheCreationTokens": 750,
-      "cacheReadTokens": 800,
-      "inputTokens": 650,
-      "metadata": {
-        "lastActivity": "2026-01-02T11:00:00.000Z"
-      },
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 50,
-          "cacheReadTokens": 700,
-          "cost": 0.003175,
-          "inputTokens": 650,
-          "modelName": "grok-code-fast-1",
-          "outputTokens": 450,
-          "storedCost": 0.003
-        },
-        {
-          "cacheCreationTokens": 700,
-          "cacheReadTokens": 100,
-          "cost": 0.001,
-          "inputTokens": 0,
-          "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 300,
-          "storedCost": 0.001
-        }
-      ],
-      "modelsUsed": [
-        "grok-code-fast-1",
-        "claude-sonnet-4-20250514"
-      ],
-      "outputTokens": 750,
-      "period": "summary-session-beta",
-      "totalCost": 0.004175,
-      "totalTokens": 2950
     },
     {
       "agent": "zcode",
@@ -4329,6 +4329,32 @@ exit: 0
       "totalTokens": 85
     },
     {
+      "agent": "grok",
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 120,
+      "metadata": {
+        "lastActivity": "2025-12-30T10:30:00.000Z"
+      },
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00017999999999999998,
+          "inputTokens": 120,
+          "modelName": "grok-code-fast-1",
+          "outputTokens": 30
+        }
+      ],
+      "modelsUsed": [
+        "grok-code-fast-1"
+      ],
+      "outputTokens": 30,
+      "period": "eeeeeeee-0000-4000-8000-000000000005",
+      "totalCost": 0.00017999999999999998,
+      "totalTokens": 150
+    },
+    {
       "agent": "gemini",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 30,
@@ -4505,32 +4531,6 @@ exit: 0
       "period": "session",
       "totalCost": 0.00007685,
       "totalTokens": 62
-    },
-    {
-      "agent": "grok",
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 0,
-      "inputTokens": 120,
-      "metadata": {
-        "lastActivity": "2025-12-30T10:30:00.000Z"
-      },
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.000069,
-          "inputTokens": 120,
-          "modelName": "grok-code-fast-1",
-          "outputTokens": 30
-        }
-      ],
-      "modelsUsed": [
-        "grok-code-fast-1"
-      ],
-      "outputTokens": 30,
-      "period": "eeeeeeee-0000-4000-8000-000000000005",
-      "totalCost": 0.000069,
-      "totalTokens": 150
     },
     {
       "agent": "pi",
@@ -5555,7 +5555,7 @@ exit: 0
     "cacheReadTokens": 1309200,
     "inputTokens": 1262732,
     "outputTokens": 60668,
-    "totalCost": 28.854018425000024,
+    "totalCost": 28.855274425000026,
     "totalTokens": 2653785,
     "unpricedModels": [
       "GLM-5.3",
