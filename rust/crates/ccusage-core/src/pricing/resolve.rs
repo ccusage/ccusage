@@ -195,26 +195,33 @@ impl PricingMap {
         Some((model, handle.with_rates_at(timestamp, |rates| *rates)))
     }
 
-    /// Resolves `logged` once and returns the model id whose row priced it with
-    /// that row's handle: the configured alias target when the row was found
-    /// through that alias, otherwise `logged` itself. Charge usage grouped under
-    /// the returned name with this handle, not with a lookup of the name, so an
-    /// alias is applied exactly once.
+    /// Resolves `logged` once and returns that row's handle with a model id
+    /// that resolves to the same row: the configured alias target when the row
+    /// was found through that alias and the target itself resolves to it,
+    /// otherwise `logged`. Usage grouped by the returned name therefore shares
+    /// a group only when it bills the same row.
     pub fn pricing_identity<'a>(&self, logged: &'a str) -> PricedIdentity<'a> {
-        let resolved = self.resolve_row_with(
-            Some(logged),
-            &[(logged, MatchKind::Fuzzy)],
-            Lookup::Pricing,
-            models_dev_pricing,
-        );
+        let resolve = |model: &str| {
+            self.resolve_row_with(
+                Some(model),
+                &[(model, MatchKind::Fuzzy)],
+                Lookup::Pricing,
+                models_dev_pricing,
+            )
+            .map(|(_, found, hit)| (PricingHandle::new(found.row, hit), hit))
+        };
+        let resolved = resolve(logged);
         let name = resolved
-            .as_ref()
-            .filter(|(_, _, hit)| hit.aliased())
-            .and_then(|_| configured_alias(logged))
+            .filter(|(_, hit)| hit.aliased())
+            .and_then(|(_, hit)| {
+                let alias = configured_alias(logged)?;
+                let same = resolve(&alias).is_some_and(|(_, own)| own.same_row(hit));
+                same.then_some(alias)
+            })
             .unwrap_or(std::borrow::Cow::Borrowed(logged));
         PricedIdentity {
             name,
-            handle: resolved.map(|(_, found, hit)| PricingHandle::new(found.row, hit)),
+            handle: resolved.map(|(handle, _)| handle),
         }
     }
 

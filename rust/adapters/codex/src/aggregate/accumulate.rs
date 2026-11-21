@@ -43,7 +43,6 @@ impl CodexModels {
                 |handle| handle.with_rates_at(None, |entry| entry.long_context_split_threshold()),
             ),
             time_dependent: price.is_some_and(|handle| handle.is_time_dependent()),
-            logged: CompactString::new(logged),
         })?;
         self.logged.insert(CompactString::new(logged), id);
         Ok(id)
@@ -54,7 +53,6 @@ pub(super) struct CodexModel {
     name: CompactString,
     long_context_threshold: u64,
     time_dependent: bool,
-    logged: CompactString,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -142,9 +140,6 @@ fn accumulate_codex_usage_into_model_usage(
     timestamp: crate::TimestampMs,
     attribution: &CodexAttribution,
 ) {
-    if model_usage.priced_as.is_none() {
-        model_usage.priced_as = Some(model.logged.clone());
-    }
     model_usage.reasoning_output_tokens = model_usage
         .reasoning_output_tokens
         .saturating_add(event.reasoning_output_tokens);

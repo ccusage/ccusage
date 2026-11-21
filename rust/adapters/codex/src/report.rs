@@ -81,7 +81,7 @@ pub(super) fn calculate_codex_model_cost(
     pricing: Option<&PricingMap>,
     speed: CodexSpeedPolicy,
 ) -> f64 {
-    let Some(handle) = codex_model_price(model, usage, pricing) else {
+    let Some(handle) = pricing.and_then(|table| table.find_handle(model)) else {
         return 0.0;
     };
     if !usage.timestamped_usage.is_empty() {
@@ -122,16 +122,6 @@ pub fn calculate_group_cost(
     )
 }
 
-fn codex_model_price(
-    model: &str,
-    usage: &CodexModelUsage,
-    pricing: Option<&PricingMap>,
-) -> Option<crate::pricing::PricingHandle> {
-    pricing?
-        .pricing_identity(usage.priced_as.as_deref().unwrap_or(model))
-        .handle
-}
-
 pub(super) fn codex_model_missing_pricing(
     model: &str,
     usage: &CodexModelUsage,
@@ -143,7 +133,7 @@ pub(super) fn codex_model_missing_pricing(
             .input_tokens
             .saturating_add(usage.usage.output_tokens),
     );
-    pricing.is_some() && tokens != 0 && codex_model_price(model, usage, pricing).is_none()
+    pricing.is_some() && tokens != 0 && pricing.and_then(|table| table.find_handle(model)).is_none()
 }
 
 pub(crate) fn codex_missing_pricing_models(

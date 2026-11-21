@@ -64,6 +64,10 @@ impl CachedHit {
         self.0 & Self::ALIASED != 0
     }
 
+    pub(super) fn same_row(self, other: Self) -> bool {
+        self.id() == other.id() && self.overridden() == other.overridden()
+    }
+
     pub(super) fn id(self) -> usize {
         self.0 >> Self::ROW_SHIFT
     }
