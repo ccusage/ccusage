@@ -1,4 +1,7 @@
-use super::{CacheDefaults, PricingSchedule, ScheduledRates, Successor};
+use super::{
+    CacheDefaults, LongContext, LongContextMode, LongContextRates, PricingSchedule, ScheduledRates,
+    Successor,
+};
 
 // NOTE(2026-11-20): OpenAI charges no cache-write surcharge through GPT-5.5 and reads cached input at 0.1× on current models at https://developers.openai.com/api/docs/guides/prompt-caching. Use these multipliers when a row omits cache rates.
 pub(super) const WRITES_AT_INPUT_RATE: CacheDefaults = CacheDefaults {
@@ -251,6 +254,60 @@ pub(super) static VENDOR_SPELLINGS: &[(&str, &str)] = &[("google", "gemini")];
 
 // NOTE(2026-11-21, #2226): Google bills every token of a prompt longer than 200K at the higher tier ("prompts > 200k tokens") at https://ai.google.dev/gemini-api/docs/pricing. Its LiteLLM `*_above_200k_tokens` rates therefore select the tier for the whole request instead of only the tokens above it.
 pub(super) static WHOLE_REQUEST_TIER_PROVIDERS: &[&str] = &["gemini"];
+
+pub(super) struct CuratedLongContext {
+    pub(super) input: f64,
+    pub(super) output: f64,
+    pub(super) long_context: LongContext,
+}
+
+const fn whole_request_tier(
+    input: f64,
+    output: f64,
+    threshold: u64,
+    tier: [f64; 5],
+) -> CuratedLongContext {
+    let [
+        tier_input,
+        tier_output,
+        cache_create,
+        cache_create_1h,
+        cache_read,
+    ] = tier;
+    CuratedLongContext {
+        input,
+        output,
+        long_context: LongContext {
+            threshold,
+            mode: LongContextMode::WholeRequest,
+            rates: LongContextRates {
+                input: Some(tier_input),
+                output: Some(tier_output),
+                cache_create: Some(cache_create),
+                cache_create_1h: Some(cache_create_1h),
+                cache_read: Some(cache_read),
+            },
+        },
+    }
+}
+
+// NOTE(2026-11-21, #2235): Anthropic billed every token of a Sonnet 4 or Sonnet 4.5 request above 200K input tokens (cache reads and writes included) at $6 input and $22.50 output per 1M, with the prompt caching multipliers on top, at https://web.archive.org/web/20260201050917/https://platform.claude.com/docs/en/about-claude/pricing. The current page no longer lists that tier because both models are back to a 200K window, so the rates still apply to the requests sent while the 1M beta ran. Every row at a model's list rates takes its tier, whichever catalogue it comes from; a host that bills its own rates keeps its own.
+const ANTHROPIC_SONNET_4_LONG_CONTEXT: CuratedLongContext =
+    whole_request_tier(3e-6, 15e-6, 200_000, [6e-6, 22.5e-6, 7.5e-6, 12e-6, 0.6e-6]);
+
+// NOTE(2026-11-21, #2235): Anthropic bills a whole Haiku 5.5 request whose prompt is over 100,000 tokens at $0.50 input, $0.625 five-minute writes, $1 one-hour writes, $0.05 cache hits and $2.50 output per 1M at https://platform.claude.com/docs/en/about-claude/pricing. Claude 4.6 and later models other than Haiku 5.5 bill their full 1M window at standard rates on the same page.
+const ANTHROPIC_HAIKU_5_5_LONG_CONTEXT: CuratedLongContext = whole_request_tier(
+    0.1e-6,
+    0.5e-6,
+    100_000,
+    [0.5e-6, 2.5e-6, 0.625e-6, 1e-6, 0.05e-6],
+);
+
+pub(super) static ANTHROPIC_LONG_CONTEXT: &[(&str, CuratedLongContext)] = &[
+    ("claude-sonnet-4", ANTHROPIC_SONNET_4_LONG_CONTEXT),
+    ("claude-sonnet-4-5", ANTHROPIC_SONNET_4_LONG_CONTEXT),
+    ("claude-haiku-5-5", ANTHROPIC_HAIKU_5_5_LONG_CONTEXT),
+];
 
 pub(super) static ALIASES: &[(&str, &str)] = &[
     ("gpt-reserve", "gpt-5.6-luna"),

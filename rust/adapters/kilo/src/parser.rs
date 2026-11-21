@@ -129,6 +129,7 @@ pub(super) fn message_value_to_entry(
         .clone()
         .unwrap_or_else(|| format!("{}:{row_id}", db_path.display()));
     let cost_usd = value.cost;
+    let recorded = ccusage_core::cost::recorded_cost(cost_usd);
     let candidates = model_candidates(&model, value.provider_id.as_deref());
     let candidates: Vec<_> = candidates
         .iter()
@@ -141,12 +142,12 @@ pub(super) fn message_value_to_entry(
         residual_tokens: extra_total_tokens,
         reported_model: Some(&model),
         candidates: &candidates,
-        stored_cost: cost_usd.filter(|cost| mode != CostMode::Auto || *cost > 0.0),
+        stored_cost: recorded,
         timestamp: Some(timestamp),
     };
     let priced = price_entry_for_provider(entry_pricing, value.provider_id.as_deref(), pricing);
-    let stored_cost = stored_cost_for_mode(cost_usd, mode);
-    let cost = stored_cost.unwrap_or(priced.cost);
+    let stored_cost = stored_cost_for_mode(recorded, mode);
+    let cost = priced.cost;
     let missing_pricing_model = priced
         .missing_pricing
         .then(|| ccusage_core::model_aliases::resolve_model_name(&model).into_owned());
@@ -426,10 +427,54 @@ mod cost_mode_warnings {
             .unwrap();
             assert_eq!(
                 entry.cost,
-                if mode == CostMode::Auto { stored } else { 0.0 }
+                if mode == CostMode::Auto && stored > 0.0 {
+                    stored
+                } else {
+                    0.0
+                }
             );
             assert_eq!(entry.missing_pricing_model.as_deref(), expected, "{mode:?}");
         }
+    }
+}
+
+#[cfg(test)]
+mod recorded_zero_cost {
+    use super::*;
+
+    fn auto_cost(model: &str, provider: &str) -> f64 {
+        ccusage_test_support::install_pricing_snapshots();
+        let pricing = ccusage_core::PricingMap::load_embedded();
+        let value: KiloMessage = serde_json::from_value(serde_json::json!({
+            "role": "assistant", "modelID": model, "providerID": provider, "cost": 0,
+            "time": {"created": 1_767_312_000_000_i64},
+            "tokens": {"input": 100_000, "output": 10_000}
+        }))
+        .unwrap();
+        let (_, entry) = message_value_to_entry(
+            &value,
+            "r",
+            "s",
+            Path::new("kilo.db"),
+            &JiffTimeZone::UTC,
+            CostMode::Auto,
+            PriceTable::Auto(&pricing),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(entry.missing_pricing_model, None);
+        entry.cost
+    }
+
+    #[test]
+    fn a_recorded_zero_cost_on_a_priced_model_is_priced_from_tokens() {
+        let cost = auto_cost("gpt-5.5", "openai");
+        assert!((cost - 0.8).abs() < 1e-9, "{cost}");
+    }
+
+    #[test]
+    fn a_recorded_zero_cost_on_a_free_model_stays_zero() {
+        assert_eq!(auto_cost("glm-4.7-flash", "zai"), 0.0);
     }
 }
 

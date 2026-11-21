@@ -135,11 +135,10 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 3000,
-          "cost": 0.0,
+          "cost": 0.0042,
           "inputTokens": 600,
           "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 100,
-          "storedCost": 0.0
+          "outputTokens": 100
         }
       ],
       "modelsUsed": [
@@ -148,7 +147,7 @@ exit: 0
       ],
       "outputTokens": 500,
       "period": "ses-beta",
-      "totalCost": 2,
+      "totalCost": 2.0042,
       "totalTokens": 12200
     },
     {
@@ -1549,29 +1548,6 @@ exit: 0
       "totalTokens": 1980
     },
     {
-      "agent": "kimi",
-      "cacheCreationTokens": 0,
-      "cacheReadTokens": 5000,
-      "inputTokens": 1511,
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 5000,
-          "cost": 0.0046569,
-          "inputTokens": 1511,
-          "modelName": "kimi-k2-thinking",
-          "outputTokens": 821
-        }
-      ],
-      "modelsUsed": [
-        "kimi-k2-thinking"
-      ],
-      "outputTokens": 821,
-      "period": "session-old-1",
-      "totalCost": 0.0046569,
-      "totalTokens": 7582
-    },
-    {
       "agent": "opencode",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 3000,
@@ -1723,6 +1699,29 @@ exit: 0
       "period": "ses-v1-alpha",
       "totalCost": 0.0038274999999999997,
       "totalTokens": 3990
+    },
+    {
+      "agent": "kimi",
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 5000,
+      "inputTokens": 1511,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 5000,
+          "cost": 0.0037091000000000003,
+          "inputTokens": 1511,
+          "modelName": "kimi-k2-thinking",
+          "outputTokens": 821
+        }
+      ],
+      "modelsUsed": [
+        "kimi-k2-thinking"
+      ],
+      "outputTokens": 821,
+      "period": "session-old-1",
+      "totalCost": 0.0037091000000000003,
+      "totalTokens": 7582
     },
     {
       "agent": "zcode",
@@ -3068,7 +3067,7 @@ exit: 0
     "cacheReadTokens": 568414,
     "inputTokens": 871119,
     "outputTokens": 35610,
-    "totalCost": 15.056532600000006,
+    "totalCost": 15.059784800000006,
     "totalTokens": 1485779,
     "unpricedModels": [
       "GLM-5.3",

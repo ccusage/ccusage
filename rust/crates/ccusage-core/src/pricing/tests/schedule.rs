@@ -988,3 +988,74 @@ fn gemini_2_5_pro_keeps_its_long_context_tier_until_it_is_rebilled() {
     assert_eq!(tier("2026-11-30T23:59:59Z"), Some(2.5));
     assert_eq!(tier("2026-12-02T00:00:00Z"), Some(0.75));
 }
+
+#[test]
+fn a_scheduled_override_bills_one_hour_writes_above_the_split_at_its_base_rate() {
+    let model = "deepseek-v4-flash".to_owned();
+    let patch = ccusage_cli::PricingOverride {
+        input_cost_per_token: Some(50e-6),
+        cache_creation_input_token_cost_above_1hr: Some(10e-6),
+        ..Default::default()
+    };
+    let pricing = direct_deepseek_pricing().with_user_overrides([(&model, &patch)]);
+    let handle = pricing.find_handle(&model).unwrap();
+    assert!(handle.is_time_dependent());
+    let rate = handle.with_rates_at(Some(timestamp("2026-11-17T10:00:00Z")), |rates| {
+        rates.one_hour_cache_creation_rate_above_200k()
+    });
+    assert_eq!(rate, Some(10e-6));
+}
+
+#[test]
+fn a_scheduled_override_tier_bills_one_hour_writes_at_the_scheduled_base_rate() {
+    let model = "deepseek-v4-flash".to_owned();
+    let patch = ccusage_cli::PricingOverride {
+        output_cost_per_token: Some(1e-6),
+        input_cost_per_token_above_200k_tokens: Some(1e-6),
+        ..Default::default()
+    };
+    let pricing = direct_deepseek_pricing().with_user_overrides([(&model, &patch)]);
+    let handle = pricing.find_handle(&model).unwrap();
+    let (input, rate) = handle.with_rates_at(Some(timestamp("2026-08-20T12:00:00Z")), |rates| {
+        (rates.input, rates.one_hour_cache_creation_rate_above_200k())
+    });
+    assert_eq!(input, 0.22e-6);
+    assert_eq!(rate, Some(0.22e-6));
+}
+
+#[test]
+fn an_inherited_override_tier_bills_one_hour_writes_at_the_scheduled_base_rate() {
+    let _aliases = crate::model_aliases::set_model_aliases_for_tests([(
+        "scheduled-tier-child",
+        "deepseek-v4-flash",
+    )]);
+    let overrides = std::collections::BTreeMap::from([
+        (
+            "deepseek-v4-flash".to_string(),
+            ccusage_cli::PricingOverride {
+                output_cost_per_token: Some(1e-6),
+                input_cost_per_token_above_200k_tokens: Some(1e-6),
+                ..Default::default()
+            },
+        ),
+        (
+            "scheduled-tier-child".to_string(),
+            ccusage_cli::PricingOverride {
+                max_input_tokens: Some(500_000),
+                ..Default::default()
+            },
+        ),
+    ]);
+    let pricing = direct_deepseek_pricing().with_user_overrides(&overrides);
+    let handle = pricing.find_handle("scheduled-tier-child").unwrap();
+    let (input, long_input, rate) =
+        handle.with_rates_at(Some(timestamp("2026-08-20T12:00:00Z")), |rates| {
+            (
+                rates.input,
+                rates.long_context.and_then(|tier| tier.rates.input),
+                rates.one_hour_cache_creation_rate_above_200k(),
+            )
+        });
+    assert_eq!((input, long_input), (0.22e-6, Some(1e-6)));
+    assert_eq!(rate, Some(0.22e-6));
+}
