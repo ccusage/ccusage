@@ -1,13 +1,8 @@
-use std::{
-    path::PathBuf,
-    sync::atomic::{AtomicUsize, Ordering},
-};
+use std::path::PathBuf;
 
 use ccusage_test_support::Fixture;
 
-use super::{
-    Split, chunk_file_indexes_by_size, map_parallel, map_parallel_with_state, worker_count,
-};
+use super::{Split, chunk_file_indexes_by_size, map_parallel, worker_count};
 
 #[test]
 fn balances_file_chunks_by_size() {
@@ -111,42 +106,4 @@ fn a_worker_panic_reaches_the_caller() {
     map_parallel(&items, false, Split::ByCount, |item| {
         assert_ne!(*item, 7, "worker failed");
     });
-}
-
-#[test]
-fn map_parallel_with_state_keeps_item_order_and_reuses_each_worker_state() {
-    let items = Vec::from_fn(500, |index| index);
-    let inits = AtomicUsize::new(0);
-
-    let results = map_parallel_with_state(
-        &items,
-        false,
-        || {
-            inits.fetch_add(1, Ordering::Relaxed);
-            0_usize
-        },
-        |seen, item| {
-            *seen += 1;
-            *item * 2
-        },
-    );
-
-    assert_eq!(results, Vec::from_fn(500, |index| index * 2));
-    assert!(inits.load(Ordering::Relaxed) <= worker_count(false, items.len()));
-}
-
-#[test]
-fn map_parallel_with_state_runs_inline_with_one_state_for_a_single_thread() {
-    let items = Vec::from_fn(64, |index| index);
-    let inits = AtomicUsize::new(0);
-
-    let results = map_parallel_with_state(
-        &items,
-        true,
-        || inits.fetch_add(1, Ordering::Relaxed),
-        |_, item| *item,
-    );
-
-    assert_eq!(results, items);
-    assert_eq!(inits.load(Ordering::Relaxed), 1);
 }

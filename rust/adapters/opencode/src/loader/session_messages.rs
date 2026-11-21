@@ -1,10 +1,14 @@
 use ccusage_adapter_common::{
-    jsonl, map_parallel_with_state,
+    Split, jsonl, map_parallel,
     sqlite::{open_read_only, read_i64},
     units::UnitError,
+    worker_count,
 };
 use ccusage_core::{Diagnostics, Skip, SkipKind};
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    sync::{Mutex, PoisonError},
+};
 
 use super::{
     COLUMN_READ_FAILED, DatabaseLoadContext, EntryCollector, LinkedEntry, TableSchema,
@@ -59,6 +63,22 @@ struct PendingRow {
     meta: SessionMessageMeta,
 }
 
+impl PendingRow {
+    fn read(
+        statement: &sqlite::Statement<'_>,
+        row: u32,
+    ) -> std::result::Result<Option<Self>, UnreadableRow> {
+        let Some(meta) = SessionMessageMeta::read(statement)? else {
+            return Ok(None);
+        };
+        Ok(Some(Self {
+            row,
+            rowid: statement.read(3)?,
+            meta,
+        }))
+    }
+}
+
 enum RowOutcome {
     Entry(SessionMessageKind, Box<LinkedEntry>),
     Skipped,
@@ -74,8 +94,13 @@ pub(super) fn load_session_message_rows(
     context: &DatabaseLoadContext<'_>,
     collector: &mut EntryCollector,
 ) {
-    let parallel = (!context.shared.single_thread)
-        .then(|| load_rows_in_parallel(connection, schema, fork_copies, context, collector))
+    let workers = parallel_workers(context);
+    let parallel = (workers > 1)
+        .then(|| {
+            load_rows_in_parallel(schema, fork_copies, context, collector, workers, &|| {
+                open_read_only(context.db_path)
+            })
+        })
         .flatten();
     let Some((rows, entries)) = parallel
         .or_else(|| load_rows_in_order(connection, schema, fork_copies, context, collector))
@@ -91,6 +116,19 @@ pub(super) fn load_session_message_rows(
             ),
         );
     }
+}
+
+// NOTE(2026-11-21): Below this much database per worker, the extra pass and connections cost more than reading `data` in one scan saves. Past four connections, reads of one file contend in the kernel and get slower.
+const BYTES_PER_WORKER: u64 = 32 << 20;
+const MAX_WORKERS: usize = 4;
+
+fn parallel_workers(context: &DatabaseLoadContext<'_>) -> usize {
+    let bytes = std::fs::metadata(context.db_path).map_or(0, |metadata| metadata.len());
+    worker_count(
+        context.shared.single_thread,
+        usize::try_from(bytes / BYTES_PER_WORKER).unwrap_or(usize::MAX),
+    )
+    .min(MAX_WORKERS)
 }
 
 fn load_rows_in_order(
@@ -126,7 +164,7 @@ fn load_rows_in_order(
             apply_outcome(
                 outcome,
                 row,
-                || row_diagnostics(statement, &diagnostics),
+                &|| row_diagnostics(statement, &diagnostics),
                 context,
                 collector,
                 &mut entries,
@@ -136,105 +174,165 @@ fn load_rows_in_order(
     Some((rows, entries))
 }
 
-// NOTE(2026-11-21): A 3.4 GB OpenCode database spends most of its load reading `data` overflow pages in one thread. The ordered metadata pass keeps row numbers and push order unchanged.
+// NOTE(2026-11-21): A 3.4 GB OpenCode database spends most of its load reading `data` overflow pages in one thread. The ordered metadata pass keeps row numbers and push order unchanged, and rounds keep only a few batches of payloads in memory.
 fn load_rows_in_parallel(
-    connection: &sqlite::Connection,
     schema: &TableSchema,
     fork_copies: &HashMap<String, i64>,
     context: &DatabaseLoadContext<'_>,
     collector: &mut EntryCollector,
+    workers: usize,
+    open: &OpenConnection<'_>,
 ) -> Option<(u32, u32)> {
-    // NOTE(2026-11-21): A WITHOUT ROWID table cannot prepare this query. The ordered scan prepares its own query and records any other setup error.
-    let statement = prepare_session_message_query(connection, schema, context, "rowid").ok()?;
-    let mut pending = Vec::new();
-    let rows = scan_rows(
-        statement,
-        context,
-        schema.table,
-        COLUMN_READ_FAILED,
-        |statement| {
-            let Some(meta) = SessionMessageMeta::read(statement)? else {
-                return Ok(None);
-            };
-            Ok(Some((statement.read::<i64, _>(3)?, meta)))
-        },
-        |row, (rowid, meta), _| {
-            if !meta.is_fork_copy(fork_copies) {
-                pending.push(PendingRow { row, rowid, meta });
-            }
-        },
-    );
-    let batches = pending.chunks(PENDING_BATCH_ROWS).collect::<Vec<_>>();
-    let results = if batches.len() <= 1 {
-        batches
-            .iter()
-            .map(|batch| read_pending_rows(connection, batch, context))
-            .collect()
-    } else {
-        map_parallel_with_state(
-            &batches,
-            context.shared.single_thread,
-            || open_read_only(context.db_path),
-            |own, batch| {
-                own.as_ref()
-                    .map_err(Clone::clone)
-                    .and_then(|own| read_pending_rows(own, batch, context))
-            },
-        )
-    };
+    let (scan, lanes) = pin_snapshots(workers, open)?;
+    let mut statement = prepare_session_message_query(&scan, schema, context, "rowid").ok()?;
     let diagnostics = context.diagnostics.for_table(schema.table.name());
-    let mut entries = 0;
-    for (batch, outcomes) in batches.into_iter().zip(results) {
-        let outcomes = match outcomes.or_else(|_| read_pending_rows(connection, batch, context)) {
-            Ok(outcomes) => outcomes,
+    let mut round = Vec::with_capacity(lanes.len() * PENDING_BATCH_ROWS);
+    let (mut rows, mut entries) = (0_u32, 0_u32);
+    let mut failure = None;
+    while failure.is_none() {
+        let done = match statement.next() {
+            Ok(sqlite::State::Row) => {
+                rows = rows.saturating_add(1);
+                match PendingRow::read(&statement, rows) {
+                    Ok(Some(pending)) if !pending.meta.is_fork_copy(fork_copies) => {
+                        round.push(pending);
+                    }
+                    Ok(_) => {}
+                    Err(UnreadableRow) => {
+                        row_diagnostics(&statement, &diagnostics).record(Skip::record(
+                            context.db_path,
+                            rows,
+                            SkipKind::InvalidData,
+                            COLUMN_READ_FAILED,
+                        ))
+                    }
+                }
+                false
+            }
+            Ok(sqlite::State::Done) => true,
             Err(error) => {
-                record_rows_failure(error, context, schema.table);
-                break;
+                failure = Some((rows, error));
+                true
             }
         };
-        for (pending, outcome) in batch.iter().zip(outcomes) {
-            apply_outcome(
-                outcome,
-                pending.row,
-                || diagnostics.for_row(Some(&pending.meta.id)),
+        if !round.is_empty() && (done || round.len() == round.capacity()) {
+            if let Err(failed) = apply_round(
+                &lanes,
+                &round,
+                &diagnostics,
                 context,
                 collector,
                 &mut entries,
-            );
+            ) {
+                failure = Some(failed);
+            }
+            round.clear();
         }
+        if done {
+            break;
+        }
+    }
+    if let Some((row, error)) = failure {
+        rows = row;
+        record_rows_failure(sqlite_rows_failure(error), context, schema.table);
     }
     Some((rows, entries))
 }
 
-// NOTE(2026-11-21): Newer OpenCode rows carry far larger payloads than older ones. Workers pull small batches so one worker does not end up with all the large rows.
+type OpenConnection<'a> =
+    dyn Fn() -> std::result::Result<sqlite::Connection, UnitError> + Sync + 'a;
+type Lane = (usize, Mutex<sqlite::Connection>);
+
+// NOTE(2026-11-21): The metadata scan and each worker read through their own connection and snapshot. A read transaction holds each snapshot, and equal data_version reads on a probe connection before and after taking them prove no other connection committed in between, so all of them match. Otherwise the ordered scan reads everything.
+fn pin_snapshots(
+    workers: usize,
+    open: &OpenConnection<'_>,
+) -> Option<(sqlite::Connection, Vec<Lane>)> {
+    let probe = open().ok()?;
+    let version = data_version(&probe)?;
+    let pinned = || {
+        let connection = open().ok()?;
+        // NOTE(2026-11-21): Each overflow page is read once, so a default-sized cache per connection only holds memory.
+        step(&connection, "PRAGMA cache_size = -64")?;
+        step(&connection, "BEGIN")?;
+        data_version(&connection)?;
+        Some(connection)
+    };
+    let scan = pinned()?;
+    let mut lanes = Vec::with_capacity(workers);
+    for lane in 0..workers {
+        lanes.push((lane, Mutex::new(pinned()?)));
+    }
+    (data_version(&probe)? == version).then_some((scan, lanes))
+}
+
+fn step<'a>(connection: &'a sqlite::Connection, sql: &str) -> Option<sqlite::Statement<'a>> {
+    let mut statement = connection.prepare(sql).ok()?;
+    statement.next().ok()?;
+    Some(statement)
+}
+
+fn data_version(connection: &sqlite::Connection) -> Option<i64> {
+    step(connection, "PRAGMA data_version")?.read(0).ok()
+}
+
+// NOTE(2026-11-21): Each worker reads one batch per round, so payload sizes stay even across workers as newer rows grow, and only one round of outcomes is held at a time.
 const PENDING_BATCH_ROWS: usize = 256;
 
-fn read_pending_rows(
-    connection: &sqlite::Connection,
-    rows: &[PendingRow],
+fn apply_round(
+    lanes: &[Lane],
+    round: &[PendingRow],
+    diagnostics: &Diagnostics,
     context: &DatabaseLoadContext<'_>,
-) -> std::result::Result<Vec<RowOutcome>, UnitError> {
-    // NOTE(2026-11-21): The metadata pass and this read run in separate snapshots, and OpenCode's text-keyed table reuses or renumbers rowids after deletes or VACUUM. Matching the id as well keeps a reused rowid from attaching another message's payload.
-    let mut statement = connection
-        .prepare("SELECT data FROM session_message WHERE rowid = ?1 AND id = ?2")
-        .map_err(sqlite_setup_failure)?;
-    rows.iter()
-        .map(|pending| {
-            statement
+    collector: &mut EntryCollector,
+    entries: &mut u32,
+) -> std::result::Result<(), (u32, sqlite::Error)> {
+    let mut read = map_parallel(lanes, false, Split::ByCount, |(lane, connection)| {
+        let connection = connection.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut statement =
+            match connection.prepare("SELECT data FROM session_message WHERE rowid = ?1") {
+                Ok(statement) => statement,
+                Err(error) => return vec![Err(error)].into_iter(),
+            };
+        let mut outcomes = Vec::new();
+        for pending in round
+            .chunks(PENDING_BATCH_ROWS)
+            .nth(*lane)
+            .unwrap_or_default()
+        {
+            let outcome = statement
                 .reset()
                 .and_then(|()| statement.bind((1, pending.rowid)))
-                .and_then(|()| statement.bind((2, pending.meta.id.as_str())))
                 .and_then(|()| statement.next())
-                .map_err(sqlite_rows_failure)
-                .map(|state| match state {
-                    sqlite::State::Row => match statement.read::<String, _>(0) {
-                        Ok(data) => parse_row(pending.meta.clone(), data, context),
-                        Err(_) => RowOutcome::Unreadable,
-                    },
-                    sqlite::State::Done => RowOutcome::Skipped,
-                })
-        })
-        .collect()
+                .map(|state| match (state, statement.read::<String, _>(0)) {
+                    (sqlite::State::Row, Ok(data)) => {
+                        parse_row(pending.meta.clone(), data, context)
+                    }
+                    _ => RowOutcome::Unreadable,
+                });
+            let failed = outcome.is_err();
+            outcomes.push(outcome);
+            if failed {
+                break;
+            }
+        }
+        outcomes.into_iter()
+    });
+    for (index, pending) in round.iter().enumerate() {
+        match read[index / PENDING_BATCH_ROWS].next() {
+            Some(Ok(outcome)) => apply_outcome(
+                outcome,
+                pending.row,
+                &|| diagnostics.for_row(Some(&pending.meta.id)),
+                context,
+                collector,
+                entries,
+            ),
+            Some(Err(error)) => return Err((pending.row - 1, error)),
+            None => break,
+        }
+    }
+    Ok(())
 }
 
 fn parse_row(
@@ -275,7 +373,7 @@ fn parse_row(
 fn apply_outcome(
     outcome: RowOutcome,
     row: u32,
-    row_diagnostics: impl FnOnce() -> Diagnostics,
+    row_diagnostics: &dyn Fn() -> Diagnostics,
     context: &DatabaseLoadContext<'_>,
     collector: &mut EntryCollector,
     entries: &mut u32,
@@ -330,59 +428,4 @@ fn prepare_session_message_query<'a>(
 }
 
 #[cfg(test)]
-mod tests {
-    use ccusage_core::{Diagnostics, cost::PriceTable};
-
-    use super::{
-        super::{DatabaseLoadContext, DateWindow},
-        PendingRow, RowOutcome, SessionMessageKind, SessionMessageMeta, read_pending_rows,
-    };
-    use crate::cli::{CostMode, SharedArgs};
-
-    #[test]
-    fn a_reused_rowid_does_not_attach_another_message_payload() {
-        let fixture = ccusage_test_support::Fixture::new();
-        let path = fixture.path("opencode.db");
-        let connection = sqlite::open(&path).unwrap();
-        connection
-            .execute(
-                "CREATE TABLE session_message (id TEXT PRIMARY KEY, session_id TEXT, type TEXT, data TEXT); \
-                 INSERT INTO session_message (rowid, id, session_id, type, data) VALUES \
-                 (1, 'replacement', 'session', 'assistant', \
-                  '{\"time\":{\"created\":1767312000000},\"model\":{\"id\":\"gpt-test\",\"providerID\":\"openai\"},\"tokens\":{\"input\":3,\"output\":1}}')",
-            )
-            .unwrap();
-        let shared = SharedArgs::default();
-        let diagnostics = Diagnostics::new("opencode");
-        let context = DatabaseLoadContext {
-            tz: &jiff::tz::TimeZone::UTC,
-            mode: CostMode::Display,
-            pricing: PriceTable::Display,
-            window: DateWindow::UNBOUNDED,
-            shared: &shared,
-            db_path: &path,
-            diagnostics: &diagnostics,
-        };
-        let pending = |id: &str| PendingRow {
-            row: 1,
-            rowid: 1,
-            meta: SessionMessageMeta {
-                id: id.to_string(),
-                session_id: "session".to_string(),
-                kind: SessionMessageKind::Assistant,
-                created: Some(1_767_312_000_000),
-                seq: None,
-            },
-        };
-
-        let outcomes = read_pending_rows(
-            &connection,
-            &[pending("deleted"), pending("replacement")],
-            &context,
-        )
-        .unwrap();
-
-        assert!(matches!(outcomes[0], RowOutcome::Skipped));
-        assert!(matches!(outcomes[1], RowOutcome::Entry(..)));
-    }
-}
+mod tests;

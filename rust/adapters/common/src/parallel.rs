@@ -1,7 +1,6 @@
 use std::{
     fs,
     path::{Path, PathBuf},
-    sync::atomic::{AtomicUsize, Ordering},
     thread,
 };
 
@@ -107,47 +106,6 @@ where
             results.swap(slot, target);
         }
     }
-    results.into_iter().map(|(_, result)| result).collect()
-}
-
-pub fn map_parallel_with_state<I, S, T>(
-    items: &[I],
-    single_thread: bool,
-    init: impl Fn() -> S + Sync,
-    map: impl Fn(&mut S, &I) -> T + Sync,
-) -> Vec<T>
-where
-    I: Sync,
-    T: Send,
-{
-    let workers = worker_count(single_thread, items.len());
-    if workers == 1 {
-        let mut state = init();
-        return items.iter().map(|item| map(&mut state, item)).collect();
-    }
-    let next = AtomicUsize::new(0);
-    let (init, map, next) = (&init, &map, &next);
-    let mut results = thread::scope(|scope| {
-        (0..workers)
-            .map(|_| {
-                spawn_scoped_worker(scope, move || {
-                    let mut state = init();
-                    let mut done = Vec::new();
-                    loop {
-                        let index = next.fetch_add(1, Ordering::Relaxed);
-                        let Some(item) = items.get(index) else {
-                            break done;
-                        };
-                        done.push((index, map(&mut state, item)));
-                    }
-                })
-            })
-            .collect::<Vec<_>>()
-            .into_iter()
-            .flat_map(join_worker)
-            .collect::<Vec<_>>()
-    });
-    results.sort_unstable_by_key(|(index, _)| *index);
     results.into_iter().map(|(_, result)| result).collect()
 }
 
