@@ -1,6 +1,6 @@
 ---
 name: blacksmith-testbox
-description: Runs local changes on a Blacksmith testbox. Use for any fixture benchmark, build, or size check that would otherwise run long on a local machine: Linux builds and static binary size, Linux-only tests, and Linux or macOS hyperfine and callgrind comparisons.
+description: Runs local changes on a Blacksmith testbox. Use for Linux builds and static binary size, Linux-only tests, or Linux or macOS fixture benchmarks too long for a local machine.
 ---
 
 # Blacksmith Testbox

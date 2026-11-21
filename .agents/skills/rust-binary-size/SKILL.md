@@ -50,6 +50,6 @@ binary packers such as UPX, and `prefer-dynamic` linking.
 
 ## Validation
 
-For release-profile or packaging changes, rebuild the native CLI, compare against
-the earlier measurement, and record the command and result in the PR body or review
-reply. Repo-wide format and test recipes are in the `development` skill.
+For release-profile or packaging changes, re-run `binary-size.yaml` with `main`
+and the branch, and record the run link and the size table in the PR body or
+review reply. Repo-wide format and test recipes are in the `development` skill.

@@ -41,7 +41,8 @@ affect rendering — before believing a speedup.
 `just bench-history <ref|binary>...` builds each ref in release mode, runs every
 report command over the generated realistic fixture in interleaved rounds, and
 judges each ref against the previous one the same way the CI comment judges a
-PR against its merge base. Run it on a `testbox-bench.yaml` box. Add `--real`
+PR against its merge base. Run it on a `testbox-bench.yaml` box, or
+`testbox-bench-macos.yaml` for macOS timing. Add `--real`
 only for the final local real-log confirmation. Judge by the CPU-time and
 peak-RSS ratios, not wall time.
 
