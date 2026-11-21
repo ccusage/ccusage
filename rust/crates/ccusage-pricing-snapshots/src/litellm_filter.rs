@@ -67,21 +67,42 @@ pub(crate) fn filter_pricing_json(json: &str) -> Option<String> {
     serde_json::to_string(&Value::Object(filtered)).ok()
 }
 
-// NOTE(2026-11-21, #2228): A vendor's free row reached through a host bills an estimate only when that host is known to charge. A LiteLLM provider with at least one positive token rate is such a host, while local runtimes such as `ollama` list only $0 rows, so they stay free.
-pub(crate) fn paid_host_providers(json: &str) -> Option<Vec<String>> {
-    let Value::Object(raw) = serde_json::from_str::<Value>(json).ok()? else {
-        return None;
+// NOTE(2026-11-21, #2228): A vendor's free row reached through a host bills an estimate only when that host is known to charge. A LiteLLM provider or models.dev platform with at least one positive token rate is such a host, while local runtimes such as `ollama` list only $0 rows, so they stay free.
+pub(crate) fn paid_host_providers(
+    litellm_json: &str,
+    models_dev_json: &str,
+) -> Option<Vec<String>> {
+    let rows = |json: &str| match serde_json::from_str::<Value>(json).ok()? {
+        Value::Object(rows) => Some(rows),
+        _ => None,
     };
-    let rate = |pricing: &Map<String, Value>, field| {
-        pricing.get(field).and_then(Value::as_f64).unwrap_or(0.0) > 0.0
+    let positive = |rates: &Map<String, Value>, fields: [&str; 2]| {
+        fields
+            .iter()
+            .any(|field| rates.get(*field).and_then(Value::as_f64).unwrap_or(0.0) > 0.0)
     };
-    let providers = raw
+    let litellm = rows(litellm_json)?;
+    let models_dev = rows(models_dev_json)?;
+    let litellm_hosts = litellm
         .values()
         .filter_map(Value::as_object)
-        .filter(|pricing| {
-            rate(pricing, "input_cost_per_token") || rate(pricing, "output_cost_per_token")
-        })
-        .filter_map(|pricing| pricing.get("litellm_provider").and_then(Value::as_str))
+        .filter_map(|row| {
+            positive(row, ["input_cost_per_token", "output_cost_per_token"])
+                .then(|| row.get("litellm_provider")?.as_str())
+                .flatten()
+        });
+    let models_dev_hosts = models_dev
+        .values()
+        .filter_map(Value::as_object)
+        .filter_map(|row| {
+            row.get("cost")
+                .and_then(Value::as_object)
+                .is_some_and(|cost| positive(cost, ["input", "output"]))
+                .then(|| row.get("provider")?.as_str())
+                .flatten()
+        });
+    let providers = litellm_hosts
+        .chain(models_dev_hosts)
         .map(str::to_owned)
         .collect::<std::collections::BTreeSet<_>>();
     Some(providers.into_iter().collect())
@@ -143,9 +164,13 @@ mod tests {
             "openrouter/out-only": {"litellm_provider":"openrouter","output_cost_per_token":0.000001},
             "sample_spec": "not a row"
         });
+        let models_dev = serde_json::json!({
+            "zai-org/glm-4.7-flash": {"cost": {"input": 0.07, "output": 0.4}, "provider": "novita-ai"},
+            "free/model": {"cost": {"input": 0, "output": 0}, "provider": "local-runtime"}
+        });
         assert_eq!(
-            paid_host_providers(&json.to_string()).unwrap(),
-            ["kyma", "openrouter"]
+            paid_host_providers(&json.to_string(), &models_dev.to_string()).unwrap(),
+            ["kyma", "novita-ai", "openrouter"]
         );
     }
 

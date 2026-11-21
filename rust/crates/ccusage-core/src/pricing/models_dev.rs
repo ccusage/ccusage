@@ -23,7 +23,7 @@ pub(super) fn is_vendor_segment(segment: &str) -> bool {
         sources
             .direct_providers
             .iter()
-            .any(|id| *id == dashed || *id == segment)
+            .any(|id| super::same_host_spelling(id, segment))
     });
     let rules = models_dev_catalog_rules();
     direct

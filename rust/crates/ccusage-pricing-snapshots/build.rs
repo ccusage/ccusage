@@ -36,8 +36,9 @@ fn main() -> Result<(), String> {
         println!("cargo:rerun-if-changed={FLAKE_LOCK_JSON}");
         fetch_pricing_json()?
     };
-    let paid_hosts = litellm_filter::paid_host_providers(&pricing_json)
-        .ok_or_else(|| "list paid LiteLLM hosts".to_string())?;
+    let models_dev_pricing = embed_snapshot(MODELS_DEV_PRICING_JSON, OUT_MODELS_DEV_PRICING_JSON)?;
+    let paid_hosts = litellm_filter::paid_host_providers(&pricing_json, &models_dev_pricing.json)
+        .ok_or_else(|| "list paid hosts".to_string())?;
     let pricing_json = litellm_filter::filter_pricing_json(&pricing_json)
         .ok_or_else(|| "filter LiteLLM pricing JSON".to_string())?;
     ensure_reparses_to_itself("filtered LiteLLM pricing", &pricing_json)?;
@@ -47,7 +48,6 @@ fn main() -> Result<(), String> {
         .map_err(|error| format!("write build-time pricing snapshot: {error}"))?;
 
     let litellm_sources = embed_litellm_sources(paid_hosts)?;
-    let models_dev_pricing = embed_snapshot(MODELS_DEV_PRICING_JSON, OUT_MODELS_DEV_PRICING_JSON)?;
     let models_dev_catalog_rules = embed_snapshot(
         MODELS_DEV_CATALOG_RULES_JSON,
         OUT_MODELS_DEV_CATALOG_RULES_JSON,

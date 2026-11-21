@@ -213,6 +213,14 @@ pub(super) fn host_listing(segment: &str) -> Option<(u8, &'static data::HostList
     find_host_listing(segment, |listing| listing.spellings)
 }
 
+pub(super) fn same_host_spelling(left: &str, right: &str) -> bool {
+    left.len() == right.len()
+        && left.bytes().zip(right.bytes()).all(|(left, right)| {
+            left.eq_ignore_ascii_case(&right)
+                || matches!((left, right), (b'-', b'_') | (b'_', b'-'))
+        })
+}
+
 fn find_host_listing(
     segment: &str,
     spellings: impl Fn(&data::HostListing) -> &'static [&'static str],
@@ -221,13 +229,9 @@ fn find_host_listing(
         .iter()
         .zip(0..)
         .find(|(listing, _)| {
-            spellings(listing).iter().any(|spelling| {
-                segment.len() == spelling.len()
-                    && segment.bytes().zip(spelling.bytes()).all(|(left, right)| {
-                        left.eq_ignore_ascii_case(&right)
-                            || matches!((left, right), (b'-', b'_') | (b'_', b'-'))
-                    })
-            })
+            spellings(listing)
+                .iter()
+                .any(|spelling| same_host_spelling(segment, spelling))
         })
         .map(|(listing, index)| (index, listing))
 }

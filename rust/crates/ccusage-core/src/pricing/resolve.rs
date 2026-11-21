@@ -6,7 +6,7 @@ use super::{
     CachedHit, Candidate, HitKind, Lookup, Name, NameCache, Pass, Pricing, PricingMap, PricingRows,
     PricingSchedule, RequestCache, RequestHit, Row, RowMatch, Scope, host_listing,
     host_of_model_id, is_host_segment, last_segment, models_dev_pricing, names_pricing_key,
-    pricing_key_matches, schedule_for, unlabeled_model,
+    pricing_key_matches, same_host_spelling, schedule_for, unlabeled_model,
 };
 
 #[derive(Clone, Copy)]
@@ -1001,6 +1001,6 @@ fn is_paid_host(segment: &str) -> bool {
                 sources
                     .paid_host_providers
                     .iter()
-                    .any(|provider| provider.eq_ignore_ascii_case(segment))
+                    .any(|provider| same_host_spelling(provider, segment))
             }))
 }

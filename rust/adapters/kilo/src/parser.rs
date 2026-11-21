@@ -444,6 +444,38 @@ mod cost_mode_warnings {
 }
 
 #[cfg(test)]
+mod paid_host_estimates {
+    use super::*;
+
+    #[test]
+    fn a_hyphenated_paid_host_marks_a_free_vendor_model_as_an_estimate() {
+        ccusage_test_support::install_pricing_snapshots();
+        let pricing = ccusage_core::PricingMap::load_embedded();
+        for (provider, estimated) in [("novita-ai", true), ("ollama", false)] {
+            let value: KiloMessage = serde_json::from_value(serde_json::json!({
+                "role": "assistant", "modelID": "zai-org/glm-4.7-flash", "providerID": provider,
+                "time": {"created": 1_767_312_000_000_i64},
+                "tokens": {"input": 1_000_000, "output": 100_000}
+            }))
+            .unwrap();
+            let (_, entry) = message_value_to_entry(
+                &value,
+                "r",
+                "s",
+                Path::new("kilo.db"),
+                &JiffTimeZone::UTC,
+                CostMode::Calculate,
+                PriceTable::Calculate(&pricing),
+            )
+            .unwrap()
+            .unwrap();
+            assert_eq!(entry.estimated_pricing, estimated, "{provider}");
+            assert_eq!(entry.cost > 0.0, estimated, "{provider}: {}", entry.cost);
+        }
+    }
+}
+
+#[cfg(test)]
 mod recorded_zero_cost {
     use super::*;
 
