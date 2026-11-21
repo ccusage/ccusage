@@ -332,7 +332,7 @@ Set `claude.defaults.project` or `defaults.project` to filter Claude Code usage 
 
 Set `claude.commands.<report>.project` or `commands.<report>.project` to configure a filter for a specific report. For `ccusage claude daily`, the `--project` flag overrides the configured value.
 
-`ccusage blocks` and `ccusage session --id <id>` use the same config sections as their `ccusage claude` equivalents. An explicit session lookup with `--id` ignores the configured project filter.
+`ccusage blocks` and `ccusage session --id <id>` use the same config sections as their `ccusage claude` equivalents. An explicit session lookup with `--id` searches across projects regardless of the configured `project`. Passing the daily-report flag `--project` to `session --id` returns an unknown-option error.
 
 ## Command-Specific Options
 
