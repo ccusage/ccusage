@@ -35,12 +35,12 @@ pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<Loade
             Err(error) => error.record(&database_path, cx.diagnostics),
         }
     }
-    let mut events = deduplicate_events(events);
-    events.sort_by_key(|event| event.timestamp);
-    Ok(events
+    let mut entries = deduplicate_events(events)
         .into_iter()
         .map(|event| event_to_loaded(event, cx.window.timezone(), pricing))
-        .collect())
+        .collect::<Vec<_>>();
+    LoadedEntry::sort_by_timestamp(&mut entries);
+    Ok(entries)
 }
 
 fn deduplicate_events(
