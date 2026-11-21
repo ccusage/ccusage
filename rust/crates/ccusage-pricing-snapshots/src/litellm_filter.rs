@@ -72,9 +72,11 @@ pub(crate) fn paid_host_providers(
     litellm_json: &str,
     models_dev_json: &str,
 ) -> Option<Vec<String>> {
-    let rows = |json: &str| match serde_json::from_str::<Value>(json).ok()? {
-        Value::Object(rows) => Some(rows),
-        _ => None,
+    let rows = |json: &str| {
+        let Value::Object(rows) = serde_json::from_str::<Value>(json).ok()? else {
+            return None;
+        };
+        Some(rows)
     };
     let positive = |rates: &Map<String, Value>, fields: [&str; 2]| {
         fields
