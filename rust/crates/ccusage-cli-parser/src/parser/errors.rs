@@ -1,5 +1,7 @@
 use ccusage_cli::{AgentCommandKind, AgentId, Command, command_tokens};
 
+use crate::arg_parser::ArgParser;
+
 pub(super) fn report_flag_alias_error(args: &[String]) -> Option<String> {
     let flag = args.iter().find(|arg| {
         matches!(
@@ -71,7 +73,7 @@ fn unsupported_agent_report_error(agent: AgentId, report: &str) -> String {
     }
 }
 
-pub(super) fn last_option_error(command: &Command) -> Option<String> {
+pub(super) fn last_option_error(command: &Command, parser: &ArgParser) -> Option<String> {
     let shared = command.shared()?;
     shared.last?;
     if command.period().is_none() {
@@ -80,7 +82,7 @@ pub(super) fn last_option_error(command: &Command) -> Option<String> {
                 .to_string(),
         );
     }
-    if shared.since.is_some() || shared.until.is_some() {
+    if parser.saw_flag(&["-s", "--since", "-u", "--until"]) {
         return Some("The --last option cannot be combined with --since or --until.".to_string());
     }
     if matches!(command, Command::All(args) if args.sections.is_some()) {

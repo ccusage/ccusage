@@ -21,6 +21,15 @@ pub(super) fn parse_last_periods(value: &str) -> Result<NonZeroU32, String> {
     })
 }
 
+pub(super) fn replace_configured_window_with_last(command: &mut Command) {
+    if let Some(shared) = command.shared_mut()
+        && shared.last.is_some()
+    {
+        shared.since = None;
+        shared.until = None;
+    }
+}
+
 pub(super) fn validate_date_window(
     command: &mut Command,
     parser: &ArgParser,

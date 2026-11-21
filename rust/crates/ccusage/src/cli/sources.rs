@@ -605,18 +605,30 @@ mod tests {
     }
 
     #[test]
-    fn labels_source_last_conflicts_with_the_source_config() {
+    fn source_last_replaces_the_date_window_of_the_source_config() {
         let config = r#"{
-            "codex": { "defaults": { "since": "20260301" } }
+            "defaults": { "timezone": "UTC" },
+            "codex": { "defaults": { "since": "20260301", "until": "20260331" } }
         }"#;
-
-        let error = try_unified_with_config(&["daily", "--last", "1"], config)
-            .err()
-            .expect("expected the source config to conflict with --last");
+        let unified = unified_with_config(&["daily", "--last", "1"], config);
+        let codex = &unified.sources["codex"];
+        let today = date_at(
+            codex.shared.clock.now().into(),
+            &resolve_tz(codex.shared.timezone.as_ref()),
+        );
 
         assert_eq!(
-            error,
-            "The --last option cannot be combined with --since or --until. (in codex config)"
+            codex.shared.since,
+            last_periods_since(
+                PeriodUnit::Day,
+                std::num::NonZeroU32::MIN,
+                today,
+                unified.start_of_week
+            )
+        );
+        assert_eq!(
+            codex.shared.until,
+            last_periods_until(PeriodUnit::Day, today, unified.start_of_week)
         );
     }
 

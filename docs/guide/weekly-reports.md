@@ -86,7 +86,7 @@ ccusage weekly --last 1
 ccusage weekly --last 4
 ```
 
-The window starts on the same weekday the report buckets by, so `ccusage claude weekly --last 1 -w monday` starts on Monday. `--last` cannot be combined with `--since` or `--until`.
+The window starts on the same weekday the report buckets by, so `ccusage claude weekly --last 1 -w monday` starts on Monday. `--last` cannot be combined with `--since` or `--until` on the command line. A `since` or `until` set in a [configuration file](/guide/config-files) is not a conflict: `--last` replaces that window.
 
 ### Sort Order
 
