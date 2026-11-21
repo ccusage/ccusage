@@ -1,6 +1,6 @@
 ---
 name: blacksmith-testbox
-description: Runs local changes on a Blacksmith testbox. Use for Linux builds, Linux static binary size, Linux-only tests, or CI-like hyperfine and callgrind comparisons that a local machine cannot give.
+description: Runs local changes on a Blacksmith testbox. Use for any fixture benchmark, build, or size check that would otherwise run long on a local machine: Linux builds and static binary size, Linux-only tests, and Linux or macOS hyperfine and callgrind comparisons.
 ---
 
 # Blacksmith Testbox
@@ -35,7 +35,7 @@ description: Runs local changes on a Blacksmith testbox. Use for Linux builds, L
 ## Session
 
 - Run every `blacksmith` command from the repository root.
-- Start with `blacksmith testbox warmup testbox-<dev|bench>.yaml`; one workflow
+- Start with `blacksmith testbox warmup testbox-<dev|bench|bench-macos>.yaml`; one workflow
   per box, because every job in a dispatched workflow starts a runner. Wait
   with `blacksmith testbox status --id <id> --wait`, never a sleep loop.
 - Run commands as `blacksmith testbox run --id <id> 'nix develop --command <cmd>'`,
