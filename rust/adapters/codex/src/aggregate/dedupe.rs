@@ -18,7 +18,7 @@ use crate::{
 
 use super::{
     CodexSessionMetadata,
-    accumulate::{CodexModels, accumulate_codex_usage_into_group, codex_period_for},
+    accumulate::{CodexModels, CodexPeriod, accumulate_codex_usage_into_group, codex_period_for},
     intern::{StringId, StringInterner},
 };
 
@@ -497,7 +497,7 @@ impl<'a> CodexDedupe<'a> {
             .into_inner()
             .map_err(|_| crate::cli_error("codex lineage poisoned"))?;
         let window = ccusage_core::ReportWindow::from_shared(shared);
-        let mut groups = BTreeMap::new();
+        let mut groups = FxHashMap::<CodexPeriod, CodexGroup>::default();
         for shard in self.shards {
             let records = shard
                 .into_inner()
@@ -508,8 +508,8 @@ impl<'a> CodexDedupe<'a> {
                     .values
                     .get(key.model.index())
                     .ok_or_else(|| crate::cli_error("missing interned Codex model"))?;
-                let session = sessions.values[attribution.session.index()].as_str();
-                let Some(period) = codex_period_for(key.timestamp, Some(session), kind, &window)
+                let Some(period) =
+                    codex_period_for(key.timestamp, attribution.session, kind, &window)
                 else {
                     continue;
                 };
@@ -522,6 +522,9 @@ impl<'a> CodexDedupe<'a> {
                 );
             }
         }
-        Ok(groups)
+        Ok(groups
+            .into_iter()
+            .map(|(period, group)| (period.label(kind, &sessions), group))
+            .collect())
     }
 }

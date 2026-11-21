@@ -4,7 +4,7 @@ use jiff::civil::Date as JiffDate;
 
 use crate::WeekDay;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct IsoDate {
     year: i32,
     month: u32,

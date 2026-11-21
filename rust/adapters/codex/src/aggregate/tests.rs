@@ -1,6 +1,8 @@
 use super::accumulate::codex_period_for;
+use super::intern::StringInterner;
 use super::*;
 use crate::parse_ts_timestamp;
+use compact_str::CompactString;
 
 use ccusage_test_support::fs_fixture;
 use serde_json::json;
@@ -279,6 +281,12 @@ fn selects_codex_period_for_each_report_kind() {
         timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
         ..SharedArgs::default()
     };
+    let mut sessions = StringInterner::default();
+    let session = sessions
+        .intern("sessions/child.jsonl", || {
+            CompactString::new("sessions/child.jsonl")
+        })
+        .unwrap();
 
     for (kind, expected) in [
         (AgentReportKind::Daily, "2026-05-29"),
@@ -289,10 +297,11 @@ fn selects_codex_period_for_each_report_kind() {
         assert_eq!(
             codex_period_for(
                 timestamp,
-                Some("sessions/child.jsonl"),
+                session,
                 kind,
                 &ccusage_core::ReportWindow::from_shared(&shared),
             )
+            .map(|period| period.label(kind, &sessions))
             .as_deref(),
             Some(expected),
         );
@@ -371,33 +380,23 @@ fn omits_codex_period_outside_date_bounds() {
         until: Some("20260530".parse().unwrap()),
         ..SharedArgs::default()
     };
+    let session = StringInterner::default()
+        .intern("sessions/child.jsonl", || {
+            CompactString::new("sessions/child.jsonl")
+        })
+        .unwrap();
 
     for timestamp in ["2026-05-27T23:59:59.000Z", "2026-05-31T00:00:00.000Z"] {
         assert_eq!(
             codex_period_for(
                 parse_ts_timestamp(timestamp).unwrap(),
-                Some("sessions/child.jsonl"),
+                session,
                 AgentReportKind::Daily,
                 &ccusage_core::ReportWindow::from_shared(&shared),
             ),
             None,
         );
     }
-}
-
-#[test]
-fn omits_session_period_without_session_id() {
-    let timestamp = parse_ts_timestamp("2026-05-29T08:01:00.000Z").unwrap();
-
-    assert_eq!(
-        codex_period_for(
-            timestamp,
-            None,
-            AgentReportKind::Session,
-            &ccusage_core::ReportWindow::from_shared(&SharedArgs::default()),
-        ),
-        None,
-    );
 }
 
 #[test]

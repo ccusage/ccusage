@@ -4,7 +4,7 @@ use compact_str::CompactString;
 
 use crate::{
     CodexGroup, CodexUsageBucket, Result,
-    cli::{AgentReportKind, WeekDay},
+    cli::{AgentReportKind, IsoDate, WeekDay},
     fast::FxHashMap,
 };
 
@@ -54,21 +54,44 @@ pub(super) struct CodexModel {
     time_dependent: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(super) enum CodexPeriod {
+    Date(IsoDate),
+    Session(StringId),
+}
+
+impl CodexPeriod {
+    pub(super) fn label(
+        self,
+        kind: AgentReportKind,
+        sessions: &StringInterner<CompactString>,
+    ) -> String {
+        match self {
+            Self::Date(date) if matches!(kind, AgentReportKind::Monthly) => date.format_month(),
+            Self::Date(date) => date.to_string(),
+            Self::Session(session) => sessions.values[session.index()].to_string(),
+        }
+    }
+}
+
 pub(super) fn codex_period_for(
     timestamp: crate::TimestampMs,
-    session_id: Option<&str>,
+    session: StringId,
     kind: AgentReportKind,
     window: &ccusage_core::ReportWindow,
-) -> Option<String> {
+) -> Option<CodexPeriod> {
     let date = ccusage_core::date_at(timestamp, window.timezone());
     if !window.contains_day(date) {
         return None;
     }
     Some(match kind {
-        AgentReportKind::Daily => date.to_string(),
-        AgentReportKind::Weekly => date.week_start(WeekDay::Monday).to_string(),
-        AgentReportKind::Monthly => date.format_month(),
-        AgentReportKind::Session => session_id?.to_string(),
+        AgentReportKind::Daily => CodexPeriod::Date(date),
+        AgentReportKind::Weekly => CodexPeriod::Date(date.week_start(WeekDay::Monday)),
+        AgentReportKind::Monthly => {
+            let (year, month, _) = date.parts();
+            CodexPeriod::Date(IsoDate::from_ymd(year, month, 1).unwrap_or(date))
+        }
+        AgentReportKind::Session => CodexPeriod::Session(session),
     })
 }
 
