@@ -152,6 +152,7 @@ pub(super) struct PricingSchedule {
     pub(super) peak: ScheduledRates,
     pub(super) successor: Option<Successor>,
     pub(super) follows_row: bool,
+    pub(super) vendor: &'static str,
 }
 
 #[derive(Debug)]

@@ -349,6 +349,7 @@ const DEEPSEEK_V4_FLASH: PricingSchedule = PricingSchedule {
         schedule: &DEEPSEEK_FLASH,
     }),
     follows_row: false,
+    vendor: "deepseek",
 };
 // NOTE(2026-11-20, #2401): DeepSeek planned to route `deepseek-v4-pro` to V4.1 Flash on September 14, 2026 but kept serving it with unchanged billing instead, and the pricing page still lists its own rates at https://api-docs.deepseek.com/quick_start/pricing/. Give it no successor so it keeps the V4 Pro schedule.
 const DEEPSEEK_V4_PRO: PricingSchedule = PricingSchedule {
@@ -378,6 +379,7 @@ const DEEPSEEK_V4_PRO: PricingSchedule = PricingSchedule {
     },
     successor: None,
     follows_row: false,
+    vendor: "deepseek",
 };
 
 // NOTE(2026-11-20, #2268): DeepSeek launched deepseek-flash with V4.1 rates at 04:00 UTC on September 10, 2026: https://api-docs.deepseek.com/news/news260910/. Its rates differ from the retired V4 Flash schedule.
@@ -408,6 +410,7 @@ const DEEPSEEK_FLASH: PricingSchedule = PricingSchedule {
     },
     successor: None,
     follows_row: false,
+    vendor: "deepseek",
 };
 
 // NOTE(2026-11-21, #2227): xAI listed grok-code-fast-1 as its own model at $0.20 input, $0.02 cached and $1.50 output per 1M with no long-context rate in its console price data, last at https://web.archive.org/web/20260515145912/https://docs.x.ai/developers/pricing, and as an alias of grok-build-0.1 at $1.00 / $0.20 / $2.00, and $2.00 / $0.40 / $4.00 at 200K and above, from https://web.archive.org/web/20260521081415/https://docs.x.ai/developers/pricing on. xAI publishes no switch date, so the new rates start at the last capture that still shows the old ones (the earliest instant they can apply), which bills the few days in between at the higher rate. xAI bills no cache writes, so a write costs the input rate.
@@ -443,7 +446,16 @@ const GROK_CODE_FAST_1: PricingSchedule = PricingSchedule {
     peak: GROK_CODE_FAST_1_AS_GROK_BUILD,
     successor: None,
     follows_row: false,
+    vendor: "xai",
 };
+
+// NOTE(2026-11-21, #2455): A schedule is a vendor's own price list, so on a recorded billing route it applies only to usage that vendor billed itself. These provider IDs name a vendor's own API: DeepSeek's and xAI's LiteLLM provider IDs (https://docs.litellm.ai/docs/providers/deepseek, https://docs.litellm.ai/docs/providers/xai) and DeepSeek Harness's `deepseek-official` and `deepseek-account` routes. Any other provider ID bills at its own flat rate.
+pub(super) static DIRECT_BILLING_PROVIDERS: &[(&str, &str)] = &[
+    ("deepseek", "deepseek"),
+    ("deepseek-official", "deepseek"),
+    ("deepseek-account", "deepseek"),
+    ("xai", "xai"),
+];
 
 pub(super) static SCHEDULES: &[(&str, PricingSchedule)] = &[
     ("deepseek-flash", DEEPSEEK_FLASH),

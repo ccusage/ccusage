@@ -765,7 +765,7 @@ fn billing_route_decides_deepseek_schedule_eligibility() {
                 }
             }"#,
     );
-    let direct = BillingRoute::Direct;
+    let direct = BillingRoute::Direct("deepseek");
     let foreign = BillingRoute::Foreign;
     for (case, pricing, model, candidates, route, instant, expected) in [
         (
@@ -859,7 +859,12 @@ fn user_overrides_take_precedence_over_the_route_schedule() {
     let instant = Some(timestamp("2026-08-17T01:00:00Z"));
 
     let (_, direct) = pricing
-        .resolve_on_route_at(Some(&model), &candidates, BillingRoute::Direct, instant)
+        .resolve_on_route_at(
+            Some(&model),
+            &candidates,
+            BillingRoute::Direct("deepseek"),
+            instant,
+        )
         .unwrap();
     assert_eq!(direct.input * 1e6, 9.0);
     assert!((direct.output * 1e6 - 1.32).abs() < 1e-12);
@@ -940,4 +945,27 @@ fn an_inherited_override_tier_bills_one_hour_writes_at_the_scheduled_base_rate()
         });
     assert_eq!((input, long_input), (0.22e-6, Some(1e-6)));
     assert_eq!(rate, Some(0.22e-6));
+}
+
+#[test]
+fn a_vendors_own_provider_route_applies_only_that_vendors_schedule() {
+    crate::test_support::install_pricing_snapshots();
+    let pricing = PricingMap::load_embedded();
+    let model = "grok-code-fast-1";
+    for (route, before, after) in [
+        (BillingRoute::Direct("xai"), 0.2, 1.0),
+        (BillingRoute::Direct("deepseek"), 1.0, 1.0),
+        (BillingRoute::Foreign, 1.0, 1.0),
+    ] {
+        for (instant, expected) in [
+            ("2026-05-15T14:59:11Z", before),
+            ("2026-05-15T14:59:12Z", after),
+        ] {
+            let input = input_per_million_on_route(&pricing, model, &[model], route, instant);
+            assert!(
+                (input - expected).abs() < 1e-9,
+                "{route:?} {instant}: {input} != {expected}"
+            );
+        }
+    }
 }
