@@ -6988,7 +6988,25 @@
 			"context": 131072
 		}
 	},
+	"baseten/bison-1": {
+		"cost": {
+			"input": 0.1,
+			"output": 0
+		},
+		"limit": {
+			"context": 32768
+		}
+	},
 	"baseten/elephant-1": {
+		"cost": {
+			"input": 0.035,
+			"output": 0
+		},
+		"limit": {
+			"context": 16384
+		}
+	},
+	"baseten/groundhog-1": {
 		"cost": {
 			"input": 0.035,
 			"output": 0
@@ -16991,9 +17009,9 @@
 	},
 	"google/gemma-4-26b-a4b-it:thinking": {
 		"cost": {
-			"cache_read": 0.046,
-			"input": 0.07,
-			"output": 0.24
+			"cache_read": 0.0375,
+			"input": 0.0675,
+			"output": 0.225
 		},
 		"limit": {
 			"context": 262144
@@ -18389,9 +18407,9 @@
 	},
 	"greenpt/deepseek-v4-flash-0731": {
 		"cost": {
-			"cache_read": 0.043968,
-			"input": 0.153888,
-			"output": 0.38472
+			"cache_read": 0.04396,
+			"input": 0.15386,
+			"output": 0.38465
 		},
 		"limit": {
 			"context": 1000000
@@ -18399,9 +18417,9 @@
 	},
 	"greenpt/deepseek-v4.1-flash": {
 		"cost": {
-			"cache_read": 0.012091,
-			"input": 0.241824,
-			"output": 1.209119
+			"cache_read": 0.012089,
+			"input": 0.24178,
+			"output": 1.2089
 		},
 		"limit": {
 			"context": 1000000
@@ -18429,8 +18447,8 @@
 	},
 	"greenpt/gpt-oss-120b": {
 		"cost": {
-			"input": 0.21984,
-			"output": 0.76944
+			"input": 0.2198,
+			"output": 0.7693
 		},
 		"limit": {
 			"context": 128000
@@ -18438,8 +18456,8 @@
 	},
 	"greenpt/llama-3.3-70b-instruct": {
 		"cost": {
-			"input": 1.209119,
-			"output": 1.209119
+			"input": 1.2089,
+			"output": 1.2089
 		},
 		"limit": {
 			"context": 128000
@@ -18447,8 +18465,8 @@
 	},
 	"greenpt/qwen3-235b-a22b-instruct-2507": {
 		"cost": {
-			"input": 0.98928,
-			"output": 2.967839
+			"input": 0.9891,
+			"output": 2.9673
 		},
 		"limit": {
 			"context": 250000
@@ -19807,8 +19825,8 @@
 	},
 	"infomaniak/mistralai/Ministral-3-14B-Instruct-2512": {
 		"cost": {
-			"input": 0.32976,
-			"output": 0.43968
+			"input": 0.3297,
+			"output": 0.4396
 		},
 		"limit": {
 			"context": 100000
@@ -19877,8 +19895,8 @@
 	},
 	"ionos/Qwen/Qwen3-Coder-Next": {
 		"cost": {
-			"input": 0.16488,
-			"output": 0.87936
+			"input": 0.16485,
+			"output": 0.8792
 		},
 		"limit": {
 			"context": 128000
@@ -19886,8 +19904,8 @@
 	},
 	"ionos/meta-llama/Llama-3.3-70B-Instruct": {
 		"cost": {
-			"input": 0.71448,
-			"output": 0.71448
+			"input": 0.71435,
+			"output": 0.71435
 		},
 		"limit": {
 			"context": 128000
@@ -19895,8 +19913,8 @@
 	},
 	"ionos/openai/gpt-oss-120b": {
 		"cost": {
-			"input": 0.16488,
-			"output": 0.71448
+			"input": 0.16485,
+			"output": 0.71435
 		},
 		"limit": {
 			"context": 128000
@@ -25797,9 +25815,9 @@
 	},
 	"nvidia/nemotron-3.5-lightning": {
 		"cost": {
-			"cache_read": 0.0125,
-			"input": 0.025,
-			"output": 0.12
+			"cache_read": 0.01,
+			"input": 0.02,
+			"output": 0.096
 		},
 		"limit": {
 			"context": 262144
@@ -32591,9 +32609,9 @@
 	},
 	"scaleway/deepseek-v4-flash-0731": {
 		"cost": {
-			"cache_read": 0.087936,
-			"input": 0.43968,
-			"output": 0.87936
+			"cache_read": 0.08792,
+			"input": 0.4396,
+			"output": 0.8792
 		},
 		"limit": {
 			"context": 256000
@@ -32611,9 +32629,9 @@
 	},
 	"scaleway/deepseek-v4.1-flash-1017": {
 		"cost": {
-			"cache_read": 0.131904,
-			"input": 0.65952,
-			"output": 1.978559
+			"cache_read": 0.13188,
+			"input": 0.6594,
+			"output": 1.9782
 		},
 		"limit": {
 			"context": 256000
@@ -32630,8 +32648,8 @@
 	},
 	"scaleway/gpt-oss-120b": {
 		"cost": {
-			"input": 0.16488,
-			"output": 0.65952
+			"input": 0.16485,
+			"output": 0.6594
 		},
 		"limit": {
 			"context": 128000
@@ -32639,8 +32657,8 @@
 	},
 	"scaleway/llama-3.3-70b-instruct": {
 		"cost": {
-			"input": 0.98928,
-			"output": 0.98928
+			"input": 0.9891,
+			"output": 0.9891
 		},
 		"limit": {
 			"context": 128000
@@ -32648,8 +32666,8 @@
 	},
 	"scaleway/qwen3-235b-a22b-instruct-2507": {
 		"cost": {
-			"input": 0.8244,
-			"output": 2.473199
+			"input": 0.82425,
+			"output": 2.47275
 		},
 		"limit": {
 			"context": 250000
@@ -33889,16 +33907,6 @@
 			"context": 256000
 		}
 	},
-	"tencent/hy3-preview": {
-		"cost": {
-			"cache_read": 0.06,
-			"input": 0.18,
-			"output": 0.6
-		},
-		"limit": {
-			"context": 262144
-		}
-	},
 	"tencent/hy4": {
 		"cost": {
 			"cache_read": 0.048,
@@ -34570,9 +34578,9 @@
 	},
 	"tsystems/gpt-oss-120b": {
 		"cost": {
-			"cache_read": 0.032976,
-			"input": 0.21984,
-			"output": 0.71448
+			"cache_read": 0.03297,
+			"input": 0.2198,
+			"output": 0.71435
 		},
 		"limit": {
 			"context": 131072
