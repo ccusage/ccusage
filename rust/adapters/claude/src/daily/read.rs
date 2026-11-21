@@ -1,4 +1,7 @@
-use ccusage_adapter_common::jsonl::{self, Interruption, ReadPolicy};
+use ccusage_adapter_common::{
+    json::JsonText,
+    jsonl::{self, Interruption, ReadPolicy},
+};
 use ccusage_core::{Diagnostics, SkipKind};
 use std::{
     ops::ControlFlow,
@@ -35,7 +38,7 @@ pub(super) const READ_POLICY: ReadPolicy = ReadPolicy {
 
 pub(crate) fn has_usage(path: &Path) -> bool {
     jsonl::read(path, None, READ_POLICY, |line, _, _| {
-        if admit(line.bytes()).is_ok() {
+        if admit(line.json()).is_ok() {
             ControlFlow::Break(())
         } else {
             ControlFlow::Continue(())
@@ -48,10 +51,11 @@ pub(super) enum Refusal {
     NotUsage,
     Rejected(Rejection),
     InvalidTimestamp,
+    UnrepresentableUsage,
 }
 
-pub(super) struct Admitted {
-    pub(super) record: ClaudeUsageRecord,
+pub(super) struct Admitted<'a> {
+    pub(super) record: ClaudeUsageRecord<'a>,
     timestamp: TimestampMs,
     advisors: crate::AdvisorUsages,
 }
@@ -63,14 +67,18 @@ fn has_usage_marker(line: &[u8]) -> bool {
     USAGE_MARKER.matches(line)
 }
 
-pub(super) fn admit(line: &[u8]) -> std::result::Result<Admitted, Refusal> {
+pub(super) fn admit<'a>(json: &'a JsonText<'a>) -> std::result::Result<Admitted<'a>, Refusal> {
+    let line = json.bytes();
     if !has_usage_marker(line) {
         return Err(Refusal::NotUsage);
     }
-    let (record, advisor_lookup) = parse_usage_line(line).map_err(Refusal::Rejected)?;
+    let (record, advisor_lookup) = parse_usage_line(json).map_err(Refusal::Rejected)?;
     let timestamp = parse_ts_timestamp(&record.timestamp).ok_or(Refusal::InvalidTimestamp)?;
     if !is_valid_usage_record(&record) {
         return Err(Refusal::Rejected(Rejection::Malformed));
+    }
+    if ccusage_core::checked_total_usage_tokens(record.message.usage.usage, 0).is_none() {
+        return Err(Refusal::UnrepresentableUsage);
     }
     let advisors = match advisor_lookup.usages(line) {
         Ok(advisors) => advisors,
@@ -89,13 +97,19 @@ pub(super) fn admit(line: &[u8]) -> std::result::Result<Admitted, Refusal> {
 
 pub(super) fn read_daily_usage_file_with_diagnostics(
     path: &Path,
+    projects_root: Option<&Path>,
     tz: &JiffTimeZone,
     pricing: PriceTable<'_>,
     diagnostics: &Diagnostics,
 ) -> Vec<ClaudeEntry> {
-    read_usage_file(path, tz, pricing, diagnostics, |parsed, _| {
-        parsed.into_daily()
-    })
+    read_usage_file(
+        path,
+        projects_root,
+        tz,
+        pricing,
+        diagnostics,
+        |parsed, _| parsed.into_daily(),
+    )
 }
 
 struct FilePricing<'a> {
@@ -133,13 +147,14 @@ impl FilePricing<'_> {
 
 pub(crate) fn read_usage_file<E>(
     path: &Path,
+    projects_root: Option<&Path>,
     tz: &JiffTimeZone,
     pricing: PriceTable<'_>,
     diagnostics: &Diagnostics,
-    build: impl Fn(ParsedUsage, &[u8]) -> E,
+    build: impl Fn(ParsedUsage<'_>, &[u8]) -> E,
 ) -> Vec<E> {
-    let project: Arc<str> = Arc::from(extract_project(path));
-    let (path_session_id, _) = crate::paths::extract_session_parts(path);
+    let project: Arc<str> = Arc::from(extract_project(path, projects_root));
+    let (path_session_id, _) = crate::paths::extract_session_parts(path, projects_root);
     let path_session_id: Arc<str> = Arc::from(path_session_id);
     let mut recorded_session_id = Arc::clone(&path_session_id);
     let mut entries = Vec::new();
@@ -154,7 +169,7 @@ pub(crate) fn read_usage_file<E>(
             record: data,
             timestamp,
             advisors,
-        } = match admit(line) {
+        } = match admit(current.json()) {
             Ok(admitted) => admitted,
             Err(Refusal::NotUsage) => {
                 if response_chains.is_tracking() {
@@ -174,6 +189,18 @@ pub(crate) fn read_usage_file<E>(
             }
             Err(Refusal::InvalidTimestamp) => {
                 crate::diagnostics::invalid_timestamp(path, current.index, diagnostics);
+                return ControlFlow::Continue(());
+            }
+            Err(Refusal::UnrepresentableUsage) => {
+                if response_chains.is_tracking() {
+                    response_chains.link(line, true, !current.unterminated());
+                }
+                diagnostics.record(ccusage_core::Skip::record(
+                    path,
+                    ccusage_core::Skip::line_number(current.index),
+                    ccusage_core::SkipKind::InvalidData,
+                    "Claude token counts exceed the u64 range",
+                ));
                 return ControlFlow::Continue(());
             }
         };
@@ -222,7 +249,10 @@ pub(crate) fn read_usage_file<E>(
             raw_model,
             timestamp_text: data.timestamp,
             version: data.version,
-            recorded_session_id: data.session_id,
+            recorded_session_id: data
+                .session_id
+                .is_some()
+                .then(|| Arc::clone(&recorded_session_id)),
             cost_usd: data.cost_usd,
             is_api_error_message: data.is_api_error_message,
         };

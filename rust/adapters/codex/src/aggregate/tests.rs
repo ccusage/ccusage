@@ -2093,3 +2093,123 @@ fn settles_mixed_recordless_tiers_independently_of_file_order() {
         }
     }
 }
+
+fn same_instant_rollout(id: &str, parent: Option<&str>, requests: u64, recorded: bool) -> String {
+    let timestamp = "2026-11-01T09:15:00.000Z";
+    let usage = json!({"input_tokens": 100, "cached_input_tokens": 0, "output_tokens": 1, "total_tokens": 101});
+    let mut meta = json!({"id": id});
+    if let Some(parent) = parent {
+        meta["forked_from_id"] = parent.into();
+        meta["source"] =
+            json!({"subagent": {"thread_spawn": {"parent_thread_id": parent, "depth": 1}}});
+    }
+    let mut lines = vec![
+        json!({"timestamp": "2026-11-01T09:00:00.000Z", "type": "session_meta", "payload": meta}).to_string(),
+        json!({"timestamp": "2026-11-01T09:00:00.000Z", "type": "turn_context", "payload": {"model": "gpt-5.2"}}).to_string(),
+    ];
+    if parent.is_some() {
+        lines.push(
+            json!({"timestamp": "2026-11-01T09:10:00.000Z", "type": "event_msg", "payload": {"type": "thread_settings_applied", "thread_id": id, "thread_settings": {}}})
+                .to_string(),
+        );
+    }
+    for request in 1..=requests {
+        if recorded {
+            lines.push(
+                json!({"timestamp": timestamp, "type": "token_usage_record", "payload": {"thread_id": id, "response_id": format!("resp_{id}_{request}"), "usage": usage}})
+                    .to_string(),
+            );
+        }
+        let total = json!({"input_tokens": 100 * request, "cached_input_tokens": 0, "output_tokens": request, "total_tokens": 101 * request});
+        lines.push(
+            json!({
+                "timestamp": timestamp,
+                "type": "event_msg",
+                "payload": {"type": "token_count", "info": {"last_token_usage": usage, "total_token_usage": total}},
+            })
+            .to_string(),
+        );
+    }
+    lines.join("\n")
+}
+
+fn assert_same_instant_requests(rollouts: &[(&str, String)], daily: u64, sessions: &[u64]) {
+    ccusage_test_support::install_pricing_snapshots();
+    let orders = [
+        rollouts.iter().collect::<Vec<_>>(),
+        rollouts.iter().rev().collect::<Vec<_>>(),
+    ];
+    for (order, files) in orders.iter().enumerate() {
+        let fixture = ccusage_test_support::Fixture::new();
+        for (position, (name, contents)) in files.iter().enumerate() {
+            fixture.write_file(format!("sessions/{position}-{name}.jsonl"), contents);
+        }
+        let root = fixture.path("sessions");
+        for single_thread in [true, false] {
+            for bounded in [false, true] {
+                let day = bounded.then(|| "20261101".parse().unwrap());
+                let shared = SharedArgs {
+                    single_thread,
+                    since: day,
+                    until: day,
+                    timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                    ..SharedArgs::default()
+                };
+                let input = |kind| {
+                    load_groups_from_directory(&root, &shared, kind)
+                        .unwrap()
+                        .into_iter()
+                        .map(|(period, group)| (period, group.input_tokens))
+                        .collect::<Vec<_>>()
+                };
+                let context =
+                    format!("order={order}, single_thread={single_thread}, bounded={bounded}");
+                assert_eq!(
+                    input(AgentReportKind::Daily),
+                    [("2026-11-01".to_string(), daily)],
+                    "{context}"
+                );
+                let mut by_session = input(AgentReportKind::Session)
+                    .into_iter()
+                    .map(|(_, tokens)| tokens)
+                    .collect::<Vec<_>>();
+                by_session.sort_unstable();
+                assert_eq!(by_session, sessions, "{context}");
+            }
+        }
+    }
+}
+
+#[test]
+fn keeps_a_spawned_children_own_request_beside_a_matching_recorded_parent_request() {
+    assert_same_instant_requests(
+        &[
+            ("parent", same_instant_rollout("parent-xyz", None, 1, true)),
+            (
+                "child",
+                same_instant_rollout("child-abc", Some("parent-xyz"), 1, false),
+            ),
+        ],
+        200,
+        &[100, 100],
+    );
+}
+
+#[test]
+fn settles_repeated_fork_requests_at_the_depth_used_for_pairing() {
+    assert_same_instant_requests(
+        &[
+            ("parent", same_instant_rollout("parent-xyz", None, 1, true)),
+            (
+                "child",
+                same_instant_rollout("child-abc", Some("parent-xyz"), 2, false),
+            ),
+            (
+                "unrelated",
+                same_instant_rollout("other-def", None, 2, false),
+            ),
+        ],
+        400,
+        &[100, 100, 200],
+    );
+}

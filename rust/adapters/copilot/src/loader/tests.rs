@@ -48,6 +48,49 @@ fn prices_the_logged_model_before_its_normalized_form() {
 }
 
 #[test]
+fn only_a_single_call_selects_the_long_context_tier() {
+    ccusage_test_support::install_pricing_snapshots();
+    let fixture = fs_fixture!({
+        "copilot.jsonl": json!({
+            "type": "span",
+            "traceId": "trace-1",
+            "spanId": "span-1",
+            "name": "chat",
+            "endTime": [1_775_934_264_u64, 0_u64],
+            "attributes": {
+                "gen_ai.operation.name": "chat",
+                "gen_ai.response.model": "tiered-model",
+                "gen_ai.usage.input_tokens": 250_000,
+            },
+        }).to_string(),
+    });
+    let mut pricing = ccusage_core::PricingMap::default();
+    pricing.load_json(
+        r#"{"tiered-model":{"input_cost_per_token":1,"output_cost_per_token":1,"input_cost_per_token_above_200k_tokens":2}}"#,
+    );
+    let call = parse_otel_file(&fixture.path("copilot.jsonl"), &Diagnostics::new("copilot"))
+        .unwrap()
+        .pop()
+        .unwrap();
+    let interval = CopilotUsageEntry {
+        request_count: 3,
+        ..call.clone()
+    };
+    let price = |entry| {
+        usage_entry_to_loaded(
+            entry,
+            &jiff::tz::TimeZone::UTC,
+            CostMode::Calculate,
+            PriceTable::Calculate(&pricing),
+        )
+        .cost
+    };
+
+    assert_eq!(price(call), 200_000.0 + 50_000.0 * 2.0);
+    assert_eq!(price(interval), 250_000.0);
+}
+
+#[test]
 fn parses_copilot_chat_spans() {
     let fixture = fs_fixture!({
         "copilot.jsonl": [
@@ -91,6 +134,52 @@ fn parses_copilot_chat_spans() {
     assert_eq!(entries[0].cache_read_tokens, 123);
     assert_eq!(entries[0].reasoning_output_tokens, 128);
     assert_eq!(entries[0].dedup_key, "trace-1:span-1");
+}
+
+#[test]
+fn skips_and_diagnoses_token_counts_that_exceed_the_u64_range() {
+    let fixture = fs_fixture!({
+        "copilot.jsonl": [
+            json!({
+                "type": "span",
+                "traceId": "trace-huge",
+                "spanId": "span-huge",
+                "name": "chat claude-sonnet-4",
+                "endTime": [1_775_934_264_u64, 967_317_833_u64],
+                "attributes": {
+                    "gen_ai.operation.name": "chat",
+                    "gen_ai.response.model": "claude-sonnet-4",
+                    "gen_ai.conversation.id": "conv-huge",
+                    "gen_ai.usage.input_tokens": 18_446_744_073_709_551_615_u64,
+                    "gen_ai.usage.output_tokens": 1,
+                },
+            })
+            .to_string(),
+            json!({
+                "type": "span",
+                "traceId": "trace-ok",
+                "spanId": "span-ok",
+                "name": "chat claude-sonnet-4",
+                "endTime": [1_775_934_264_u64, 967_317_833_u64],
+                "attributes": {
+                    "gen_ai.operation.name": "chat",
+                    "gen_ai.response.model": "claude-sonnet-4",
+                    "gen_ai.conversation.id": "conv-ok",
+                    "gen_ai.usage.input_tokens": 10,
+                    "gen_ai.usage.output_tokens": 1,
+                },
+            })
+            .to_string(),
+        ]
+        .join("\n"),
+    });
+    let diagnostics = Diagnostics::new("copilot");
+
+    let entries = parse_otel_file(&fixture.path("copilot.jsonl"), &diagnostics).unwrap();
+
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].session_id, "conv-ok");
+    assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
 }
 
 #[test]
@@ -1253,7 +1342,7 @@ fn credit_rows(entries: &[LoadedEntry]) -> Vec<(String, String, u64, u64)> {
             (
                 entry.date.to_string(),
                 entry.model.clone().unwrap_or_default(),
-                crate::total_usage_tokens(entry.usage),
+                ccusage_core::total_usage_tokens(entry.usage),
                 (entry.cost * 100.0).round() as u64,
             )
         })
@@ -2324,6 +2413,164 @@ fn counts_an_otel_call_copied_to_another_line_of_another_file_once() {
             ("2026-01-02T09:00:00.000Z".to_string(), 1),
         ]
     );
+}
+
+fn joined_and_split_otel_rows(lines: &[String]) -> [Vec<(String, u64)>; 2] {
+    let joined = fs_fixture!({ "home/.copilot/otel/a.jsonl": lines.join("\n") });
+    let split = fs_fixture!({});
+    for (index, line) in lines.iter().enumerate() {
+        split.write_file(format!("home/.copilot/otel/{index}.jsonl"), line);
+    }
+    [joined, split].map(|fixture| usage_rows(&load_copilot_home(&fixture, &utc_args())))
+}
+
+#[test]
+fn counts_an_exact_otel_span_identity_once_in_one_file_or_several() {
+    let span = otel_call("span-1", "2026-01-02T09:00:00.000Z");
+
+    let [joined, split] = joined_and_split_otel_rows(&[span.clone(), span]);
+
+    let once = [("2026-01-02T09:00:00.000Z".to_string(), 1)];
+    assert_eq!(joined, once);
+    assert_eq!(split, once);
+}
+
+#[test]
+fn counts_a_re_exported_chat_span_once_in_one_file_or_several() {
+    let response = ("gen_ai.response.id", "response-1");
+    let lines = [
+        otel_call_with("span-1", "2026-01-02T09:00:00.000Z", response),
+        otel_call_with("span-2", "2026-01-02T09:05:00.000Z", response),
+    ];
+
+    let [joined, split] = joined_and_split_otel_rows(&lines);
+
+    let earliest = [("2026-01-02T09:00:00.000Z".to_string(), 1)];
+    assert_eq!(joined, earliest);
+    assert_eq!(split, earliest);
+}
+
+#[test]
+fn keeps_the_earliest_copy_of_one_span_identity_in_one_file_or_several() {
+    let lines = [
+        otel_call("span-1", "2026-01-02T09:05:00.000Z"),
+        otel_call("span-1", "2026-01-02T09:00:00.000Z"),
+    ];
+
+    let [joined, split] = joined_and_split_otel_rows(&lines);
+
+    let earliest = [("2026-01-02T09:00:00.000Z".to_string(), 1)];
+    assert_eq!(joined, earliest);
+    assert_eq!(split, earliest);
+}
+
+#[test]
+fn a_re_export_inherits_its_trace_model_from_another_file() {
+    let response = ("gen_ai.response.id", "response-1");
+    let with_model = otel_call_with("span-1", "2026-01-02T09:00:00.000Z", response);
+    let mut without_model: serde_json::Value = serde_json::from_str(&otel_call_with(
+        "span-2",
+        "2026-01-02T09:05:00.000Z",
+        response,
+    ))
+    .unwrap();
+    without_model["attributes"]
+        .as_object_mut()
+        .unwrap()
+        .remove("gen_ai.response.model");
+    let without_model = without_model.to_string();
+
+    for lines in [
+        [with_model.clone(), without_model.clone()],
+        [without_model.clone(), with_model.clone()],
+    ] {
+        let [joined, split] = joined_and_split_otel_rows(&lines);
+
+        let earliest = [("2026-01-02T09:00:00.000Z".to_string(), 1)];
+        assert_eq!(joined, earliest);
+        assert_eq!(split, earliest);
+    }
+}
+
+#[test]
+fn a_kept_span_copy_takes_the_request_ids_of_a_later_copy() {
+    let unattributed = otel_call("span-1", "2026-01-02T09:00:00.000Z");
+    let attributed = otel_call_with(
+        "span-1",
+        "2026-01-02T09:05:00.000Z",
+        ("github.copilot.service_request_id", "request-1"),
+    );
+    let receipt = usage_record(
+        "record-1",
+        "2026-01-02T09:00:00.000Z",
+        json!({"serviceRequestId": "request-1"}),
+    );
+    for split in [false, true] {
+        let fixture = fs_fixture!({
+            "home/.copilot/session-state/session-1/events.jsonl": receipt.clone(),
+        });
+        if split {
+            fixture.write_file("home/.copilot/otel/0.jsonl", &unattributed);
+            fixture.write_file("home/.copilot/otel/1.jsonl", &attributed);
+        } else {
+            fixture.write_file(
+                "home/.copilot/otel/0.jsonl",
+                [unattributed.clone(), attributed.clone()].join("\n"),
+            );
+        }
+
+        let entries = load_copilot_home(&fixture, &utc_args());
+
+        assert_eq!(
+            usage_rows(&entries),
+            [("2026-01-02T09:00:00.000Z".to_string(), 100)],
+            "split={split}"
+        );
+    }
+}
+
+#[test]
+fn keeps_distinct_service_requests_of_one_response_in_one_file_or_several() {
+    let call = |span_id: &str, request_id: &str| {
+        let mut span: serde_json::Value = serde_json::from_str(&otel_call_with(
+            span_id,
+            "2026-01-02T09:00:00.000Z",
+            ("gen_ai.response.id", "turn-response"),
+        ))
+        .unwrap();
+        span["attributes"]["github.copilot.service_request_id"] = json!(request_id);
+        span.to_string()
+    };
+
+    let [joined, split] =
+        joined_and_split_otel_rows(&[call("span-1", "request-1"), call("span-2", "request-2")]);
+
+    let both = [
+        ("2026-01-02T09:00:00.000Z".to_string(), 1),
+        ("2026-01-02T09:00:00.000Z".to_string(), 1),
+    ];
+    assert_eq!(joined, both);
+    assert_eq!(split, both);
+}
+
+#[test]
+fn keeps_distinct_calls_of_one_response_id_in_one_file_or_several() {
+    let call = |span_id: &str, input_tokens: u64| {
+        let mut span: serde_json::Value =
+            serde_json::from_str(&otel_call(span_id, "2026-01-02T09:00:00.000Z")).unwrap();
+        span["attributes"]["gen_ai.response.id"] = json!("turn-response");
+        span["attributes"]["gen_ai.usage.input_tokens"] = json!(input_tokens);
+        span.to_string()
+    };
+
+    let [joined, split] = joined_and_split_otel_rows(&[call("span-1", 1), call("span-2", 2)]);
+
+    let both = [
+        ("2026-01-02T09:00:00.000Z".to_string(), 1),
+        ("2026-01-02T09:00:00.000Z".to_string(), 2),
+    ];
+    assert_eq!(joined, both);
+    assert_eq!(split, both);
 }
 
 #[test]

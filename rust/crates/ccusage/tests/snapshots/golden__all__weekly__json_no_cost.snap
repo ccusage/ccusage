@@ -7,10 +7,10 @@ exit: 0
 {
   "totals": {
     "cacheCreationTokens": 17765,
-    "cacheReadTokens": 1310267,
-    "inputTokens": 1365600,
+    "cacheReadTokens": 1308300,
+    "inputTokens": 1262107,
     "outputTokens": 60566,
-    "totalTokens": 2757615,
+    "totalTokens": 2652038,
     "unpricedModels": [
       "GLM-5.3",
       "[openclaw] openclaw-mystery-1",
@@ -220,8 +220,8 @@ exit: 0
     {
       "agent": "all",
       "cacheCreationTokens": 16501,
-      "cacheReadTokens": 1307174,
-      "inputTokens": 1356106,
+      "cacheReadTokens": 1305207,
+      "inputTokens": 1252613,
       "metadata": {
         "agents": [
           "amp",
@@ -264,8 +264,8 @@ exit: 0
         {
           "cacheCreation1hTokens": 1000,
           "cacheCreationTokens": 6440,
-          "cacheReadTokens": 108220,
-          "inputTokens": 31408,
+          "cacheReadTokens": 106720,
+          "inputTokens": 30748,
           "missingPricing": true,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 9744
@@ -353,7 +353,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 102800,
-          "inputTokens": 305531,
+          "inputTokens": 202731,
           "modelName": "qwen3-coder-plus",
           "outputTokens": 3014
         },
@@ -802,8 +802,8 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 500,
-          "inputTokens": 33,
+          "cacheReadTokens": 33,
+          "inputTokens": 0,
           "missingPricing": true,
           "modelName": "qwen-mystery-1",
           "outputTokens": 665
@@ -898,7 +898,7 @@ exit: 0
       ],
       "outputTokens": 58299,
       "period": "2025-12-29",
-      "totalTokens": 2741467
+      "totalTokens": 2635890
     },
     {
       "agent": "all",

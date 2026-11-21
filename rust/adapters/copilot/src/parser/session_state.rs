@@ -328,7 +328,6 @@ pub(crate) fn parse_session_state_file(
                     request_count,
                     nano_aiu: model_nano_aiu,
                     dedup_key,
-                    call_key: None,
                     call_ids: CallIds::default(),
                 });
             }
@@ -434,7 +433,6 @@ fn usage_record_entries(
                     request_count: 1,
                     nano_aiu: record.nano_aiu,
                     dedup_key,
-                    call_key: None,
                     call_ids: record.call_ids,
                 },
                 sequence: record.accounting.as_ref().map(|(_, sequence)| *sequence),

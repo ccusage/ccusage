@@ -127,7 +127,7 @@ exit: 0
         {
           "cacheCreationTokens": 100,
           "cacheReadTokens": 51900,
-          "cost": 0.8567699999999999,
+          "cost": 0.43577,
           "inputTokens": 204000,
           "modelName": "grok-4.5-build",
           "outputTokens": 2000
@@ -167,7 +167,7 @@ exit: 0
       "outputTokens": 2230,
       "projectPath": "/work/alpha",
       "sessionId": "sess-alpha",
-      "totalCost": 0.8571699999999999,
+      "totalCost": 0.43617,
       "totalTokens": 259330
     },
     {
@@ -210,7 +210,7 @@ exit: 0
     "cacheReadTokens": 53400,
     "inputTokens": 207415,
     "outputTokens": 3435,
-    "totalCost": 0.8665379999999999,
+    "totalCost": 0.445538,
     "totalTokens": 265100,
     "unpricedModels": [
       "grok-mystery-1",

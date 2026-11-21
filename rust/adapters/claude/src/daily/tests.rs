@@ -2,6 +2,7 @@ use std::{fmt::Write, path::Path, sync::Arc};
 
 use super::{ClaudeEntry, read_daily_usage_file_with_diagnostics};
 use crate::dedupe::push_deduped_entry;
+use ccusage_adapter_common::json::JsonText;
 use ccusage_core::cost::PriceTable;
 use ccusage_core::{
     Diagnostics, PricingMap, TimestampMs, TokenUsageRaw,
@@ -29,6 +30,7 @@ fn read_daily_usage_file(
 ) -> Vec<ClaudeEntry> {
     read_daily_usage_file_with_diagnostics(
         path,
+        crate::paths::fixture_projects_root(path).as_deref(),
         tz,
         pricing.map_or(PriceTable::Display, |map| PriceTable::for_map(mode, map)),
         &Diagnostics::new("claude"),
@@ -66,7 +68,7 @@ fn usage_prefilter_matches_the_gate_marker_on_generated_lines() {
                     let prefix = &bytes[..end];
                     assert_eq!(
                         !matches!(
-                            super::read::admit(prefix),
+                            super::read::admit(&JsonText::new(prefix)),
                             Err(super::read::Refusal::NotUsage)
                         ),
                         marker.matches(prefix),
@@ -129,7 +131,7 @@ fn usage_prefilter_preserves_typed_record_admission() {
     ];
     for (fields, expected) in cases {
         let line = format!("{{{fields}}}");
-        let actual = match super::read::admit(line.as_bytes()) {
+        let actual = match super::read::admit(&JsonText::new(line.as_bytes())) {
             Ok(admitted) => Accepted(admitted.record.message.usage.usage.input_tokens),
             Err(super::read::Refusal::NotUsage) => NoMarker,
             Err(super::read::Refusal::Rejected(crate::Rejection::Malformed)) => Malformed,
@@ -208,6 +210,7 @@ fn detection_and_reports_keep_parent_usage_with_a_null_advisor() {
     let diagnostics = Diagnostics::new("claude");
     let loaded = super::read_daily_usage_file_with_diagnostics(
         &path,
+        crate::paths::fixture_projects_root(&path).as_deref(),
         &JiffTimeZone::UTC,
         PriceTable::Display,
         &diagnostics,
@@ -227,9 +230,11 @@ fn guards_only_the_advisor_iterations_it_reads() {
         ]
         .join("\n"),
     });
+    let path = fixture.path("projects/project-a/session-a.jsonl");
     let diagnostics = Diagnostics::new("claude");
     let loaded = super::read_daily_usage_file_with_diagnostics(
-        &fixture.path("projects/project-a/session-a.jsonl"),
+        &path,
+        crate::paths::fixture_projects_root(&path).as_deref(),
         &JiffTimeZone::UTC,
         PriceTable::Display,
         &diagnostics,
@@ -247,9 +252,35 @@ fn malformed_advisors_preserve_parent_and_valid_sibling_usage() {
     let fixture = fs_fixture!({
         "projects/project-a/session-a.jsonl": r#"{"timestamp":"2026-01-02T10:00:00Z","message":{"usage":{"input_tokens":10,"output_tokens":1,"iterations":[{"type":"advisor_message","model":"bad","input_tokens":"x"},{"type":"advisor_message","model":"good","input_tokens":3,"output_tokens":2}]}}}"#,
     });
+    let path = fixture.path("projects/project-a/session-a.jsonl");
     let diagnostics = Diagnostics::new("claude");
     let loaded = super::read_daily_usage_file_with_diagnostics(
-        &fixture.path("projects/project-a/session-a.jsonl"),
+        &path,
+        crate::paths::fixture_projects_root(&path).as_deref(),
+        &JiffTimeZone::UTC,
+        PriceTable::Display,
+        &diagnostics,
+    );
+    assert_eq!(
+        loaded
+            .iter()
+            .map(|entry| entry.usage.input_tokens)
+            .collect::<Vec<_>>(),
+        [10, 3]
+    );
+    assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
+}
+
+#[test]
+fn unrepresentable_advisor_usage_is_diagnosed_and_dropped() {
+    let fixture = fs_fixture!({
+        "projects/project-a/session-a.jsonl": r#"{"timestamp":"2026-01-02T10:00:00Z","message":{"usage":{"input_tokens":10,"output_tokens":1,"iterations":[{"type":"advisor_message","model":"advisor-model","input_tokens":18446744073709551615,"output_tokens":50},{"type":"advisor_message","model":"advisor-model","input_tokens":3,"output_tokens":2}]}}}"#,
+    });
+    let diagnostics = Diagnostics::new("claude");
+    let path = fixture.path("projects/project-a/session-a.jsonl");
+    let loaded = super::read_daily_usage_file_with_diagnostics(
+        &path,
+        crate::paths::fixture_projects_root(&path).as_deref(),
         &JiffTimeZone::UTC,
         PriceTable::Display,
         &diagnostics,
@@ -277,6 +308,7 @@ fn irrelevant_outer_advisor_fields_do_not_reject_progress_usage() {
         let diagnostics = Diagnostics::new("claude");
         let loaded = super::read_daily_usage_file_with_diagnostics(
             &path,
+            crate::paths::fixture_projects_root(&path).as_deref(),
             &JiffTimeZone::UTC,
             PriceTable::Display,
             &diagnostics,
@@ -297,6 +329,7 @@ fn records_a_malformed_advisor_iteration_as_invalid_data() {
     let diagnostics = Diagnostics::new("claude");
     let loaded = super::read_daily_usage_file_with_diagnostics(
         &path,
+        crate::paths::fixture_projects_root(&path).as_deref(),
         &JiffTimeZone::UTC,
         PriceTable::Display,
         &diagnostics,
@@ -541,21 +574,63 @@ fn refreshes_daily_dedupe_indexes_when_parent_replaces_sidechain_replay() {
 
 #[test]
 fn propagates_sidechain_metadata_from_agent_progress_lines() {
-    let (data, _) = super::parse_usage_line(
+    let line = JsonText::new(
         br#"{"sessionId":"session-a","data":{"message":{"timestamp":"2026-03-29T07:00:00.000Z","requestId":"req-sidechain","isSidechain":true,"message":{"usage":{"input_tokens":0,"output_tokens":10,"cache_creation_input_tokens":0,"cache_read_input_tokens":20},"model":"claude-sonnet-4-20250514","id":"msg-sidechain"}}}}"#,
-    )
-    .unwrap();
+    );
+    let (data, _) = super::parse_usage_line(&line).unwrap();
 
     assert_eq!(data.session_id.as_deref(), Some("session-a"));
     assert_eq!(data.is_sidechain, Some(true));
 }
 
 #[test]
+fn reads_the_agent_progress_envelope_when_the_top_level_timestamp_is_null() {
+    let line = JsonText::new(
+        br#"{"timestamp":null,"sessionId":"session-a","data":{"message":{"timestamp":"2026-03-29T07:00:00.000Z","message":{"usage":{"input_tokens":1,"output_tokens":2}}}}}"#,
+    );
+    let (data, _) = super::parse_usage_line(&line).unwrap();
+
+    assert_eq!(data.timestamp, "2026-03-29T07:00:00.000Z");
+    assert_eq!(data.session_id.as_deref(), Some("session-a"));
+}
+
+#[test]
+fn decodes_escaped_line_scoped_fields_like_plain_ones() {
+    for (direct, progress, escaped) in [
+        (
+            r#"{"timestamp":"2026-03-29T07:00:00.000Z","version":"1.0.0","sessionId":"session-a","message":{"usage":{"input_tokens":1,"output_tokens":2}}}"#,
+            r#"{"sessionId":"session-a","data":{"message":{"timestamp":"2026-03-29T07:00:00.000Z","message":{"usage":{"input_tokens":1,"output_tokens":2}}}}}"#,
+            false,
+        ),
+        (
+            r#"{"timestamp":"2026-03-29T07:00:00.000\u005a","version":"1.0\u002e0","sessionId":"session\u002da","message":{"usage":{"input_tokens":1,"output_tokens":2}}}"#,
+            r#"{"sessionId":"session\u002da","data":{"message":{"timestamp":"2026-03-29T07:00:00.000\u005a","message":{"usage":{"input_tokens":1,"output_tokens":2}}}}}"#,
+            true,
+        ),
+    ] {
+        let direct = JsonText::new(direct.as_bytes());
+        let (record, _) = super::parse_usage_line(&direct).unwrap();
+        assert_eq!(
+            matches!(record.timestamp, std::borrow::Cow::Owned(_)),
+            escaped
+        );
+        assert_eq!(record.timestamp, "2026-03-29T07:00:00.000Z");
+        assert_eq!(record.version.as_deref(), Some("1.0.0"));
+        assert_eq!(record.session_id.as_deref(), Some("session-a"));
+
+        let progress = JsonText::new(progress.as_bytes());
+        let (record, _) = super::parse_usage_line(&progress).unwrap();
+        assert_eq!(record.timestamp, "2026-03-29T07:00:00.000Z");
+        assert_eq!(record.session_id.as_deref(), Some("session-a"));
+    }
+}
+
+#[test]
 fn prefers_the_direct_entry_over_an_agent_progress_wrapper() {
-    let (data, _) = super::parse_usage_line(
+    let line = JsonText::new(
         br#"{"timestamp":"2026-03-29T08:00:00.000Z","requestId":"req-direct","message":{"usage":{"input_tokens":1,"output_tokens":2},"model":"direct-model","id":"msg-direct"},"data":{"message":{"timestamp":"2026-03-29T07:00:00.000Z","requestId":"req-wrapped","message":{"usage":{"input_tokens":3,"output_tokens":4},"model":"wrapped-model","id":"msg-wrapped"}}}}"#,
-    )
-    .unwrap();
+    );
+    let (data, _) = super::parse_usage_line(&line).unwrap();
 
     assert_eq!(data.request_id.as_deref(), Some("req-direct"));
     assert_eq!(data.message.model.as_deref(), Some("direct-model"));
@@ -817,7 +892,7 @@ fn daily_advisor_gate_preserves_the_previous_extraction() {
                 r#"{{"data":{{"message":{{"timestamp":"2026-05-22T02:34:40Z","message":{message}}}}}}}"#
             ),
         ] {
-            let (_, lookup) = super::parse_usage_line(line.as_bytes()).unwrap();
+            let (_, lookup) = super::parse_usage_line(&JsonText::new(line.as_bytes())).unwrap();
             let reference = format!(r#"{{"message":{message}}}"#);
             let previous = crate::advisor::advisor_usages_from_line(reference.as_bytes()).unwrap();
             let actual = lookup.usages(line.as_bytes()).unwrap();

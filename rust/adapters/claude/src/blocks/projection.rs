@@ -34,7 +34,10 @@ pub(crate) fn calculate_burn_rate(block: &SessionBlock) -> Option<BurnRate> {
         return None;
     }
     let total_tokens = block.token_counts.total() as f64;
-    let non_cache = (block.token_counts.input_tokens + block.token_counts.output_tokens) as f64;
+    let non_cache = block
+        .token_counts
+        .input_tokens
+        .saturating_add(block.token_counts.output_tokens) as f64;
     Some(BurnRate {
         tokens_per_minute: total_tokens / duration_minutes,
         tokens_per_minute_for_indicator: non_cache / duration_minutes,

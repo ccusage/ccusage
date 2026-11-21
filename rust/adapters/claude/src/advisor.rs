@@ -86,6 +86,10 @@ fn advisor_usages_from_envelope(envelope: UsageIterationsEnvelope) -> AdvisorUsa
         if usage.has_null {
             continue;
         }
+        if ccusage_core::checked_total_usage_tokens(usage.usage.usage, 0).is_none() {
+            advisors.malformed += 1;
+            continue;
+        }
         advisors.usages.push(AdvisorUsage {
             model: model.to_owned(),
             usage: usage.usage.usage,

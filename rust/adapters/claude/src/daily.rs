@@ -1,5 +1,5 @@
 use ccusage_core::Diagnostics;
-use std::{path::PathBuf, sync::Arc};
+use std::{borrow::Cow, path::PathBuf, sync::Arc};
 
 use crate::{
     Result, Speed, TokenUsageRaw, UsageSummary,
@@ -8,10 +8,10 @@ use crate::{
 };
 
 use super::{
-    MainThreadSessions, UsageLoadContext,
+    MainThreadSessions, UsageLoadContext, containing_projects_root,
     dedupe::{DedupEntry, DedupKey, dedupe_files},
     main_thread_sessions,
-    paths::{claude_paths, read_usage_files_since, visit_usage_files},
+    paths::{claude_paths, projects_roots, read_usage_files_since, visit_usage_files},
     read_discovered_paths,
 };
 
@@ -52,10 +52,12 @@ pub(super) fn load_daily_entries(
 ) -> Result<DailyEntries> {
     let paths = claude_paths()?;
     let context = UsageLoadContext::new(shared);
+    let projects_roots = projects_roots(&paths);
     let mut pruned = Vec::new();
     let read = |file: &PathBuf| {
         read_daily_usage_file_with_diagnostics(
             file,
+            containing_projects_root(file, &projects_roots),
             context.window().timezone(),
             context.table(),
             diagnostics,
@@ -121,7 +123,7 @@ fn sessions(deduped: &DedupedDailyEntries) -> MainThreadSessions {
     )
 }
 
-pub(super) struct ParsedUsage {
+pub(super) struct ParsedUsage<'a> {
     pub(super) key: DedupKey,
     pub(super) date: IsoDate,
     pub(super) project: Arc<str>,
@@ -130,14 +132,14 @@ pub(super) struct ParsedUsage {
     pub(super) missing_pricing_model: Option<String>,
     pub(super) stored_cost: Option<f64>,
     pub(super) raw_model: Option<String>,
-    pub(super) timestamp_text: String,
-    pub(super) version: Option<String>,
-    pub(super) recorded_session_id: Option<String>,
+    pub(super) timestamp_text: Cow<'a, str>,
+    pub(super) version: Option<Cow<'a, str>>,
+    pub(super) recorded_session_id: Option<Arc<str>>,
     pub(super) cost_usd: Option<f64>,
     pub(super) is_api_error_message: Option<bool>,
 }
 
-impl ParsedUsage {
+impl ParsedUsage<'_> {
     pub(super) fn display_model(
         raw_model: Option<String>,
         usage: &TokenUsageRaw,

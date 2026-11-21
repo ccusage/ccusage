@@ -59,8 +59,10 @@ pub(super) fn calculate_context_tokens_from_transcript(
         ControlFlow::Continue(())
     })
     .ok()??;
-    let total_input_tokens =
-        usage.input_tokens? + usage.cache_creation_input_tokens + usage.cache_read_input_tokens;
+    let total_input_tokens = usage
+        .input_tokens?
+        .checked_add(usage.cache_creation_input_tokens)?
+        .checked_add(usage.cache_read_input_tokens)?;
     let context_window_size = model_id
         .filter(|model_id| !model_id.is_empty())
         .and_then(|model_id| {

@@ -1,5 +1,8 @@
 use ccusage_core::cost::PriceTable;
-use ccusage_core::{cost::EntryPricing, pricing::MatchKind};
+use ccusage_core::{
+    cost::{EntryPricing, UsageGranularity},
+    pricing::MatchKind,
+};
 use std::sync::Arc;
 
 use ccusage_adapter_common::{
@@ -20,7 +23,6 @@ pub(super) struct HermesEntry {
     model: String,
     provider: String,
     usage: TokenUsageRaw,
-    reasoning_tokens: u64,
     message_count: u64,
     cost_usd: Option<f64>,
 }
@@ -99,7 +101,6 @@ pub(super) fn read_session_row(
             speed: None,
             cache_creation: None,
         },
-        reasoning_tokens,
         message_count,
         cost_usd,
     }))
@@ -166,7 +167,7 @@ pub(super) fn to_loaded_entry(
         project_path: Arc::from("Hermes"),
         cost,
         credits: None,
-        extra_total_tokens: entry.reasoning_tokens,
+        extra_total_tokens: 0,
         message_count: Some(entry.message_count),
         model: Some(entry.model),
         usage_limit_reset_time: None,
@@ -185,9 +186,11 @@ fn price_hermes(entry: &HermesEntry, pricing: PriceTable<'_>) -> (f64, Option<St
         .iter()
         .map(|(name, kind)| (name.as_str(), *kind))
         .collect();
+    // NOTE(2026-11-20, #2364): Hermes reads `reasoning_tokens` from the output token details and bills only `output_tokens` (NousResearch/hermes-agent `agent/usage_pricing.py`). Reasoning is a subset of output, so it is neither priced nor totaled again.
     let entry_pricing = EntryPricing {
+        granularity: UsageGranularity::Aggregate,
         usage: entry.usage,
-        reasoning_tokens: entry.reasoning_tokens,
+        reasoning_tokens: 0,
         residual_tokens: 0,
         reported_model: Some(&entry.model),
         candidates: &candidates,
@@ -231,7 +234,6 @@ mod tests {
                 input_tokens: 100,
                 ..TokenUsageRaw::default()
             },
-            reasoning_tokens: 0,
             message_count: 1,
             cost_usd: None,
         };
@@ -252,13 +254,13 @@ mod tests {
         );
         for (stored, auto, display) in [
             (Some(0.42), 0.42, 0.42),
-            (Some(0.0), 0.26, 0.0),
-            (None, 0.26, 0.0),
+            (Some(0.0), 0.2, 0.0),
+            (None, 0.2, 0.0),
         ] {
             for (mode, expected) in [
                 (CostMode::Auto, auto),
                 (CostMode::Display, display),
-                (CostMode::Calculate, 0.26),
+                (CostMode::Calculate, 0.2),
             ] {
                 let entry = HermesEntry {
                     timestamp: ccusage_core::parse_ts_timestamp("2026-05-19T00:00:00Z").unwrap(),
@@ -271,7 +273,6 @@ mod tests {
                         output_tokens: 50,
                         ..TokenUsageRaw::default()
                     },
-                    reasoning_tokens: 30,
                     message_count: 1,
                     cost_usd: stored,
                 };
@@ -291,6 +292,60 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn a_session_total_is_priced_at_the_base_tier_not_the_long_context_tier() {
+        ccusage_test_support::install_pricing_snapshots();
+        let mut pricing = ccusage_core::PricingMap::default();
+        pricing.load_json(
+            r#"{"gemini-2.5-pro":{"litellm_provider":"gemini","input_cost_per_token":1.25e-6,"output_cost_per_token":1e-5,"input_cost_per_token_above_200k_tokens":2.5e-6,"output_cost_per_token_above_200k_tokens":1.5e-5}}"#,
+        );
+        let fixture = ccusage_test_support::Fixture::new();
+        let connection = sqlite::open(fixture.path("row.db")).unwrap();
+        let mut statement = connection
+            .prepare("SELECT 's1', 'gemini-2.5-pro', 'google', 1767312000, 1, 5000000, 0, 0, 0, 0, NULL, NULL")
+            .unwrap();
+        assert_eq!(statement.next().unwrap(), sqlite::State::Row);
+        let entry = read_session_row(&statement).unwrap().unwrap();
+
+        let loaded = to_loaded_entry(
+            entry,
+            &JiffTimeZone::UTC,
+            CostMode::Calculate,
+            PriceTable::Calculate(&pricing),
+        );
+
+        assert!((loaded.cost - 6.25).abs() < 1e-9, "{}", loaded.cost);
+    }
+
+    #[test]
+    fn reasoning_tokens_are_part_of_output_and_not_counted_again() {
+        ccusage_test_support::install_pricing_snapshots();
+        let mut pricing = ccusage_core::PricingMap::default();
+        pricing.load_json(
+            r#"{"gpt-5":{"litellm_provider":"openai","input_cost_per_token":1.25e-6,"output_cost_per_token":1e-5}}"#,
+        );
+        let fixture = ccusage_test_support::Fixture::new();
+        let connection = sqlite::open(fixture.path("row.db")).unwrap();
+        let mut statement = connection
+            .prepare("SELECT 's1', 'gpt-5', 'openai', 1767312000, 1, 1000000, 500000, 0, 0, 300000, NULL, NULL")
+            .unwrap();
+        assert_eq!(statement.next().unwrap(), sqlite::State::Row);
+        let entry = read_session_row(&statement).unwrap().unwrap();
+
+        let loaded = to_loaded_entry(
+            entry,
+            &JiffTimeZone::UTC,
+            CostMode::Calculate,
+            PriceTable::Calculate(&pricing),
+        );
+
+        assert_eq!(
+            ccusage_core::total_usage_tokens(loaded.usage) + loaded.extra_total_tokens,
+            1_500_000
+        );
+        assert!((loaded.cost - 6.25).abs() < 1e-9, "{}", loaded.cost);
+    }
 
     #[test]
     fn hermes_start_time_is_always_seconds() {
@@ -352,7 +407,6 @@ mod tests {
                     speed: None,
                     cache_creation: None,
                 },
-                reasoning_tokens: 50,
                 message_count: 1,
                 cost_usd: None,
             };
@@ -382,7 +436,6 @@ mod tests {
                 speed: None,
                 cache_creation: None,
             },
-            reasoning_tokens: 3_216,
             message_count: 72,
             cost_usd: Some(0.0),
         };
@@ -411,7 +464,6 @@ mod tests {
                 speed: None,
                 cache_creation: None,
             },
-            reasoning_tokens: 0,
             message_count: 1,
             cost_usd: Some(0.42),
         };
@@ -429,7 +481,6 @@ mod tests {
             model: "gpt-5.5".to_string(),
             provider: "openai".to_string(),
             usage: TokenUsageRaw::default(),
-            reasoning_tokens: 0,
             message_count: 1,
             cost_usd: None,
         };
@@ -480,7 +531,6 @@ mod tests {
                 input_tokens: 1_000_000,
                 ..TokenUsageRaw::default()
             },
-            reasoning_tokens: 0,
             message_count: 1,
             cost_usd: None,
         };
@@ -513,7 +563,6 @@ mod tests {
                 input_tokens: 1_000_000,
                 ..TokenUsageRaw::default()
             },
-            reasoning_tokens: 0,
             message_count: 1,
             cost_usd: None,
         };
@@ -568,7 +617,6 @@ mod tests {
                 input_tokens: 1_000_000,
                 ..TokenUsageRaw::default()
             },
-            reasoning_tokens: 0,
             message_count: 1,
             cost_usd: None,
         };
@@ -628,7 +676,6 @@ mod pricing_identity_tests {
                     output_tokens: 1_000,
                     ..TokenUsageRaw::default()
                 },
-                reasoning_tokens: 0,
                 message_count: 1,
                 cost_usd: None,
             };
@@ -672,7 +719,6 @@ mod pricing_identity_tests {
                     output_tokens: 1_000,
                     ..Default::default()
                 },
-                reasoning_tokens: 0,
                 message_count: 1,
                 cost_usd: None,
             };
@@ -699,7 +745,6 @@ mod pricing_identity_tests {
                 output_tokens: 1000,
                 ..Default::default()
             },
-            reasoning_tokens: 0,
             message_count: 1,
             cost_usd: None,
         };
@@ -782,7 +827,6 @@ mod pricing_identity_tests {
                     output_tokens: 1_000,
                     ..Default::default()
                 },
-                reasoning_tokens: 0,
                 message_count: 1,
                 cost_usd: None,
             };

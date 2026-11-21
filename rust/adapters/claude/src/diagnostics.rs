@@ -53,6 +53,7 @@ mod tests {
         let pricing = ccusage_core::PricingMap::default();
         let entries = crate::daily::read_usage_file(
             &fixture.path("missing.jsonl"),
+            None,
             &jiff::tz::TimeZone::UTC,
             PriceTable::for_map(CostMode::Auto, &pricing),
             &diagnostics,

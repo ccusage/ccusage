@@ -1,5 +1,8 @@
 use ccusage_core::cost::PriceTable;
-use ccusage_core::{cost::EntryPricing, pricing::MatchKind};
+use ccusage_core::{
+    cost::{EntryPricing, UsageGranularity},
+    pricing::MatchKind,
+};
 use std::{ops::ControlFlow, path::Path};
 
 use ccusage_adapter_common::{
@@ -180,6 +183,7 @@ pub(super) fn price_droid(entry: &DroidEntry, pricing: PriceTable<'_>) -> (f64, 
         )
         .collect();
     let entry_pricing = EntryPricing {
+        granularity: UsageGranularity::Aggregate,
         usage: entry.usage,
         reasoning_tokens: 0,
         residual_tokens: entry.reasoning_tokens,
@@ -533,7 +537,7 @@ mod pricing_identity_tests {
         for label in ["unlocked.settings.json", "locked.settings.json"] {
             let entry = load_settings_file(&fixture.path(label)).unwrap().unwrap();
             let (cost, missing) = price_droid(&entry, PriceTable::Calculate(&pricing));
-            assert!((cost - 2.03).abs() < 1e-12, "{label}: {cost}");
+            assert!((cost - 1.53).abs() < 1e-12, "{label}: {cost}");
             assert_eq!(missing, None);
         }
     }
