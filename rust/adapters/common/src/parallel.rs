@@ -16,11 +16,15 @@ fn chunk_indexes_by_size<I>(
     path: fn(&I) -> &Path,
     chunk_count: usize,
 ) -> Vec<Vec<usize>> {
-    let mut weighted_indexes = Vec::with_capacity(items.len());
-    for (index, item) in items.iter().enumerate() {
-        let size = fs::metadata(path(item)).map_or(0, |metadata| metadata.len());
-        weighted_indexes.push((index, size));
-    }
+    let sizes = items
+        .iter()
+        .map(|item| fs::metadata(path(item)).map_or(0, |metadata| metadata.len()))
+        .collect();
+    balance_chunks(sizes, chunk_count)
+}
+
+fn balance_chunks(sizes: Vec<u64>, chunk_count: usize) -> Vec<Vec<usize>> {
+    let mut weighted_indexes = sizes.into_iter().enumerate().collect::<Vec<_>>();
     weighted_indexes.sort_unstable_by(|a, b| (b.1, a.0).cmp(&(a.1, b.0)));
 
     let mut chunks = vec![Vec::new(); chunk_count];
@@ -39,6 +43,15 @@ fn chunk_indexes_by_size<I>(
     chunks
         .into_iter()
         .filter(|chunk| !chunk.is_empty())
+        .collect()
+}
+
+fn chunk_by_count(len: usize, workers: usize) -> Vec<Vec<usize>> {
+    let chunk_size = len.div_ceil(workers);
+    (0..len)
+        .collect::<Vec<_>>()
+        .chunks(chunk_size)
+        .map(<[usize]>::to_vec)
         .collect()
 }
 
@@ -68,18 +81,13 @@ where
     }
     let chunks = match split {
         Split::BySize(path) => chunk_indexes_by_size(items, path, workers),
-        Split::ByCount => {
-            let chunk_size = items.len().div_ceil(workers);
-            (0..items.len())
-                .collect::<Vec<_>>()
-                .chunks(chunk_size)
-                .map(<[usize]>::to_vec)
-                .collect()
-        }
+        Split::ByCount => chunk_by_count(items.len(), workers),
     };
     let map = &map;
-    let mut results = thread::scope(|scope| {
-        chunks
+    let mut slots = Vec::with_capacity(items.len());
+    slots.resize_with(items.len(), || None);
+    thread::scope(|scope| {
+        let handles = chunks
             .into_iter()
             .map(|chunk| {
                 spawn_scoped_worker(scope, move || {
@@ -89,13 +97,14 @@ where
                         .collect::<Vec<_>>()
                 })
             })
-            .collect::<Vec<_>>()
-            .into_iter()
-            .flat_map(join_worker)
-            .collect::<Vec<_>>()
+            .collect::<Vec<_>>();
+        for handle in handles {
+            for (index, result) in join_worker(handle) {
+                slots[index] = Some(result);
+            }
+        }
     });
-    results.sort_unstable_by_key(|(index, _)| *index);
-    results.into_iter().map(|(_, result)| result).collect()
+    slots.into_iter().flatten().collect()
 }
 
 fn join_worker<T>(handle: thread::ScopedJoinHandle<'_, T>) -> T {
