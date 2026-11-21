@@ -169,7 +169,7 @@ fn embedded_models_dev_carries_grok_long_context_tiers() {
         );
         assert_eq!(
             entry.long_context.map(|context| context.threshold),
-            Some(200_000),
+            Some(199_999),
             "{model}"
         );
     }
@@ -178,7 +178,7 @@ fn embedded_models_dev_carries_grok_long_context_tiers() {
             .find("grok-4.5")
             .unwrap()
             .long_context_split_threshold(),
-        200_000
+        199_999
     );
 }
 
@@ -280,7 +280,7 @@ fn recorded_threshold_migration_groups_use_the_resolved_model_boundary() {
     for (model, expected) in [
         ("GLM-5-1", 32_000),
         ("anthropic-claude-5-5-haiku", 100_000),
-        ("spacexai/grok-4-5", 200_001),
+        ("spacexai/grok-4-5", 199_999),
         ("qwen-3-6-plus-high", 256_000),
         ("alibaba/qwen3-5-plus", 256_001),
         ("aihubmix/gpt-5-4-high", 272_000),
@@ -353,6 +353,56 @@ fn claude_long_context_tiers_bill_anthropics_published_rates_whichever_row_wins(
                 .and_then(|context| context.rates.input),
             Some(6.6e-6),
             "{mode}: a row off Anthropic's list price keeps its own tier"
+        );
+    }
+}
+
+fn long_request_cost_with_override(model: &str, input: f64, output: f64, instant: &str) -> f64 {
+    crate::test_support::install_pricing_snapshots();
+    let key = model.to_string();
+    let override_value = ccusage_cli::PricingOverride {
+        input_cost_per_token: Some(input),
+        output_cost_per_token: Some(output),
+        ..Default::default()
+    };
+    let pricing = PricingMap::load_embedded().with_user_overrides([(&key, &override_value)]);
+    let candidates = [(model, MatchKind::Fuzzy)];
+    crate::cost::price_entry(
+        crate::cost::EntryPricing {
+            granularity: crate::cost::UsageGranularity::Request,
+            usage: crate::TokenUsageRaw {
+                input_tokens: 300_000,
+                output_tokens: 1_000,
+                ..Default::default()
+            },
+            reasoning_tokens: 0,
+            residual_tokens: 0,
+            reported_model: Some(model),
+            candidates: &candidates,
+            stored_cost: None,
+            timestamp: Some(super::timestamp(instant)),
+        },
+        crate::cost::PriceTable::Calculate(&pricing),
+    )
+    .cost
+}
+
+#[test]
+fn a_base_only_override_bills_no_scheduled_tier_on_either_side_of_its_date() {
+    let expected = 300_000.0 * 4e-6 + 1_000.0 * 20e-6;
+    for instant in ["2026-03-12T00:00:00Z", "2026-03-13T00:00:00Z"] {
+        let cost = long_request_cost_with_override("claude-sonnet-4-6", 4e-6, 20e-6, instant);
+        assert!(
+            (cost - expected).abs() < 1e-9,
+            "{instant}: {cost} != {expected}"
+        );
+    }
+    let expected = 300_000.0 * 1e-6 + 1_000.0 * 2e-6;
+    for instant in ["2026-08-01T00:00:00Z", "2026-11-17T03:00:00Z"] {
+        let cost = long_request_cost_with_override("deepseek-v4-pro", 1e-6, 2e-6, instant);
+        assert!(
+            (cost - expected).abs() < 1e-9,
+            "deepseek {instant}: {cost} != {expected}"
         );
     }
 }
