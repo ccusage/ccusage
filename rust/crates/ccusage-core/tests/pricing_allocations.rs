@@ -82,7 +82,7 @@ fn host_pass_does_not_allocate_to_compare_prefixes() {
         assert_eq!(
             pricing
                 .resolve_at(reported, &[(model, kind)], None)
-                .unwrap()
+                .expect("the host comparison fixture has an exact pricing row")
                 .1
                 .input,
             1.0,
