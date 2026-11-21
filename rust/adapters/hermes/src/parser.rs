@@ -690,6 +690,29 @@ mod pricing_identity_tests {
     }
 
     #[test]
+    fn a_vertex_record_with_no_vertex_row_bills_googles_dated_rate() {
+        ccusage_test_support::install_pricing_snapshots();
+        let pricing = ccusage_core::PricingMap::load_embedded();
+        for logged in ["vertex_ai", "google-vertex", "google"] {
+            let entry = HermesEntry {
+                timestamp: ccusage_core::parse_ts_timestamp("2026-12-02T00:00:00Z").unwrap(),
+                session_id: "session-gemini".to_string(),
+                model: "gemini-4-argon".to_string(),
+                provider: normalize_provider(Some(logged), "gemini-4-argon"),
+                usage: TokenUsageRaw {
+                    input_tokens: 1_000_000,
+                    ..TokenUsageRaw::default()
+                },
+                message_count: 1,
+                cost_usd: None,
+            };
+            let (cost, missing) = price_hermes(&entry, PriceTable::Calculate(&pricing));
+            assert!((cost - 4.0).abs() < 1e-9, "{logged}: {cost}");
+            assert_eq!(missing, None, "{logged}");
+        }
+    }
+
+    #[test]
     fn vertex_records_bill_the_vertex_listing_and_google_records_the_gemini_api_rate() {
         ccusage_test_support::install_pricing_snapshots();
         let mut pricing = ccusage_core::PricingMap::default();

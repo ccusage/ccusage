@@ -35,6 +35,7 @@ pub use rates::{
 mod resolve;
 pub use resolve::{
     AgentModel, BillingRoute, MatchKind, PricedIdentity, PricingHandle, direct_billing_vendor,
+    host_billing_vendor,
 };
 #[cfg(feature = "resolver-trace")]
 pub use resolve::{Explanation, ResolutionStep};

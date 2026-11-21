@@ -1,6 +1,6 @@
 use ccusage_core::{
     cost::{EntryPrice, EntryPricing, PriceTable, price_entry, price_entry_on_route},
-    pricing::{BillingRoute, direct_billing_vendor},
+    pricing::{BillingRoute, direct_billing_vendor, host_billing_vendor},
 };
 
 const UNKNOWN_PROVIDERS: &[&str] = &["", "unknown"];
@@ -35,11 +35,21 @@ pub fn host_provider(logged: &str) -> Option<&'static str> {
 /// schedule does. `None` means the record does not name a provider, and the
 /// caller keeps the inferred behavior.
 pub fn billing_route(provider: Option<&str>) -> Option<BillingRoute> {
-    let provider = provider?.trim().to_ascii_lowercase().replace('_', "-");
+    let provider = provider?;
+    let provider = host_provider(provider)
+        .unwrap_or(provider)
+        .trim()
+        .to_ascii_lowercase()
+        .replace('_', "-");
     if UNKNOWN_PROVIDERS.contains(&provider.as_str()) {
         return None;
     }
-    Some(direct_billing_vendor(&provider).map_or(BillingRoute::Foreign, BillingRoute::Direct))
+    Some(
+        direct_billing_vendor(&provider)
+            .map(BillingRoute::Direct)
+            .or_else(|| host_billing_vendor(&provider).map(BillingRoute::Host))
+            .unwrap_or(BillingRoute::Foreign),
+    )
 }
 
 /// Prices an entry on the route its recorded provider implies.
@@ -72,8 +82,8 @@ mod tests {
         ] {
             assert_eq!(host_provider(logged), Some("vertex_ai"), "{logged}");
             assert_eq!(
-                billing_route(host_provider(logged)),
-                Some(BillingRoute::Foreign),
+                billing_route(Some(logged)),
+                Some(BillingRoute::Host("google")),
                 "{logged}"
             );
         }
@@ -129,7 +139,6 @@ mod tests {
             "fireworks_ai",
             "alibaba",
             "openai",
-            "google-vertex",
         ] {
             assert_eq!(
                 billing_route(Some(provider)),

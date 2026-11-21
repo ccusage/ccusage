@@ -656,7 +656,7 @@ fn legacy_models_keep_timestamp_aware_pricing() {
 }
 
 #[test]
-fn a_vertex_request_takes_the_vertex_route_and_never_googles_schedule() {
+fn a_vertex_request_bills_vertex_or_falls_back_to_googles_dated_rate() {
     ccusage_test_support::install_pricing_snapshots();
     let after_the_step = parse_ts_timestamp("2026-12-02T00:00:00Z").unwrap();
     let price = |rows: &str, provider| {
@@ -682,6 +682,6 @@ fn a_vertex_request_takes_the_vertex_route_and_never_googles_schedule() {
     }"#;
 
     assert!((price(with_vertex, API_PROVIDER_GOOGLE_VERTEX) - 2.5).abs() < 1e-9);
-    assert!((price(google, API_PROVIDER_GOOGLE_VERTEX) - 2.0).abs() < 1e-9);
+    assert!((price(google, API_PROVIDER_GOOGLE_VERTEX) - 4.0).abs() < 1e-9);
     assert!((price(google, API_PROVIDER_GOOGLE_GEMINI) - 4.0).abs() < 1e-9);
 }
