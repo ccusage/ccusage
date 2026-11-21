@@ -158,7 +158,7 @@ pub(super) fn to_loaded_entry(
     pricing: PriceTable<'_>,
 ) -> LoadedEntry {
     let (cost, missing_pricing_model) = price_hermes(&entry, pricing);
-    let stored_cost = stored_cost_for_mode(entry.cost_usd.filter(|cost| *cost > 0.0), mode);
+    let stored_cost = stored_cost_for_mode(ccusage_core::cost::recorded_cost(entry.cost_usd), mode);
     LoadedEntry {
         date: date_at(entry.timestamp, tz),
         timestamp: entry.timestamp,
@@ -194,7 +194,7 @@ fn price_hermes(entry: &HermesEntry, pricing: PriceTable<'_>) -> (f64, Option<St
         residual_tokens: 0,
         reported_model: Some(&entry.model),
         candidates: &candidates,
-        stored_cost: entry.cost_usd.filter(|cost| *cost > 0.0),
+        stored_cost: ccusage_core::cost::recorded_cost(entry.cost_usd),
         timestamp: Some(entry.timestamp),
     };
     let provider = (entry.provider != "hermes").then_some(entry.provider.as_str());
@@ -798,6 +798,35 @@ mod pricing_identity_tests {
     }
 
     #[test]
+    fn a_bare_override_prices_a_provider_request_above_the_context_threshold() {
+        ccusage_test_support::install_pricing_snapshots();
+        let id = "glm-4.7".to_owned();
+        let rates = ccusage_core::cli::PricingOverride {
+            input_cost_per_token: Some(50e-6),
+            output_cost_per_token: Some(50e-6),
+            ..Default::default()
+        };
+        let pricing =
+            ccusage_core::PricingMap::load_embedded().with_user_overrides([(&id, &rates)]);
+        let entry = HermesEntry {
+            timestamp: ccusage_core::parse_ts_timestamp("2026-11-17T10:00:00Z").unwrap(),
+            session_id: "s".into(),
+            model: "glm-4.7".into(),
+            provider: "zai".into(),
+            usage: TokenUsageRaw {
+                input_tokens: 150_000,
+                output_tokens: 150_000,
+                ..Default::default()
+            },
+            message_count: 1,
+            cost_usd: None,
+        };
+        let (cost, missing) = price_hermes(&entry, PriceTable::Calculate(&pricing));
+        assert!((cost - 15.0).abs() < 1e-9, "{cost}");
+        assert_eq!(missing, None);
+    }
+
+    #[test]
     fn adapter_pricing_identity() {
         ccusage_test_support::install_pricing_snapshots();
         let pricing = ccusage_core::PricingMap::load_embedded();
@@ -852,7 +881,7 @@ mod pricing_identity_tests {
                 "deepseek-v3.2",
                 "deepseek",
                 &pricing,
-                0.00068,
+                0.0007,
             ),
             (
                 "34_scheduled_flash",

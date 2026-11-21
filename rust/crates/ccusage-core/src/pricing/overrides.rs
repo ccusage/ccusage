@@ -4,8 +4,9 @@ use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 
 use super::{
-    Candidate, Lookup, Name, Pricing, PricingMap, PricingOverride, PricingRows, Row, RowMatch,
-    Scope, Source, SpeedMultipliers, normalized_pricing_key, row::cache_defaults, with_names,
+    Candidate, LongContext, LongContextRates, Lookup, Name, Pricing, PricingMap, PricingOverride,
+    PricingRows, Row, RowMatch, Scope, Source, SpeedMultipliers, normalized_pricing_key,
+    row::cache_defaults, with_names,
 };
 
 #[derive(Debug, Default)]
@@ -83,6 +84,17 @@ impl Overrides {
         self.rows
             .iter()
             .map(|slot| (slot.key.as_ref(), slot.identity.as_ref()))
+    }
+
+    fn published_tier(&self, id: usize) -> Option<LongContext> {
+        let mut base = self.rows.get(id)?.base.as_ref();
+        while let Some(Base::Override(dependency)) = base {
+            base = self.rows.get(*dependency)?.base.as_ref();
+        }
+        match base? {
+            Base::Authority(row) => row.rates().long_context,
+            Base::Override(_) => None,
+        }
     }
 
     fn has_authoritative_base(&self, id: usize) -> Option<bool> {
@@ -247,13 +259,23 @@ impl PricingMap {
                     }
                 }
             };
-            let mut explicit_fields = 0;
+            if matches!(slot.base, Some(Base::Override(_))) && pricing.long_context.is_none() {
+                pricing.long_context = self.overrides.published_tier(id).map(|tier| LongContext {
+                    rates: LongContextRates::default(),
+                    ..tier
+                });
+            }
+            let mut explicit_fields = pricing.explicit_long_rate_fields();
             for patch in &slot.patches {
                 pricing.apply_override(patch);
                 explicit_fields |= pricing.explicit_fields;
                 context_limit = patch.max_input_tokens.or(context_limit);
             }
             pricing.explicit_fields = explicit_fields;
+            pricing.replace_tier_with_explicit_rates();
+            pricing.long_context = pricing
+                .long_context
+                .filter(|tier| tier.rates.marginal().is_some());
             Some(Row {
                 key: Arc::clone(&slot.key),
                 source: Source::Override,

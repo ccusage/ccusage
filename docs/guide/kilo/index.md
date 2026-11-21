@@ -46,7 +46,7 @@ These views support `--json` for structured output and `--compact` for narrow te
 
 ## Cost Calculation
 
-In `auto` mode, ccusage uses a recorded cost, including `0`, when present; otherwise it calculates from tokens and model pricing. `calculate` always prices tokens, while `display` uses recorded costs only.
+In `auto` mode, ccusage uses a positive recorded cost when present; otherwise it calculates from tokens and model pricing. Kilo records `0` both for free usage and when the provider returns no cost, so a recorded `0` is calculated from tokens too, which stays $0.00 for a model whose price is zero. `calculate` always prices tokens, while `display` uses recorded costs only.
 
 ## Troubleshooting
 
@@ -55,5 +55,5 @@ Ensure the data directory exists at `~/.local/share/kilo/` and contains `kilo.db
 :::
 
 ::: details Costs showing as $0.00
-If Kilo did not record a cost and ccusage cannot resolve a model price, the calculated cost is $0.00. [Open an issue](https://github.com/ccusage/ccusage/issues/new) to request alias support.
+If Kilo recorded no positive cost and ccusage cannot resolve a model price, the calculated cost is $0.00. [Open an issue](https://github.com/ccusage/ccusage/issues/new) to request alias support.
 :::

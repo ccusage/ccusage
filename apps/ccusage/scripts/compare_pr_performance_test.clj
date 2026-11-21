@@ -84,7 +84,15 @@
            (data/benchmark-command-text (system/fixture-env "/f/c" "/f/x" "/f/g" "/e") (benchmark/command-argv "/b" "daily")))))
   (testing "a Claude-only shape fixture leaves CODEX_HOME unset"
     (is (not (.contains (data/benchmark-command-text (system/fixture-env "/f/c" nil nil "/e") (benchmark/command-argv "/b" "daily"))
-                        "CODEX_HOME")))))
+                        "CODEX_HOME"))))
+  (testing "a shape fixture is pointed at through its own agent's variable"
+    (let [shape (first (filter #(= :opencode (:fixture %)) data/shape-fixtures))]
+      (is (= "env -i OPENCODE_DATA_DIR=/f/o HOME=/e COLUMNS=200 LOG_LEVEL=0 NO_COLOR=1 TZ=UTC /b opencode daily --offline --json"
+             (data/benchmark-command-text (system/shape-env shape "/f/o" "/e") (benchmark/command-argv "/b" "opencode daily"))))
+      (is (some #{{:fixture :opencode :command "opencode daily"}} data/shape-commands))))
+  (testing "a shape fixture without its own variable is a Claude fixture"
+    (is (= "env -i CLAUDE_CONFIG_DIR=/f/c HOME=/e COLUMNS=200 LOG_LEVEL=0 NO_COLOR=1 TZ=UTC /b daily --offline --json"
+           (data/benchmark-command-text (system/shape-env {:fixture :small} "/f/c" "/e") (benchmark/command-argv "/b" "daily"))))))
 
 (deftest statistics
   (is (= 4 (data/median [9 1 2 4 7])))
@@ -220,6 +228,9 @@
         (testing "the cut-off is the fixture's median transcript day, so it prunes some but not all files"
           (is (= "claude daily --since 20260608" command))
           (is (< 0 pruned 5))))
+      (testing "the recent cut-off is the fixture's 95th-percentile transcript day, so it prunes most files by mtime"
+        (is (= "claude daily --since 20260613" (system/resolve-command (str "claude daily --since " data/recent-mtime) dir)))
+        (is (some #{{:fixture :large :command (str "claude daily --since " data/recent-mtime)}} data/shape-commands)))
       (testing "an empty fixture cannot silently prune nothing"
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"No Claude transcripts"
                               (system/resolve-command (str "claude daily --since " data/median-mtime) (str (babashka.fs/path dir "none"))))))

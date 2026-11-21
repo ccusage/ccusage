@@ -21,20 +21,20 @@ exit: 0
           "outputTokens": 1200
         },
         {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 5000,
-          "cost": 0.0034119,
-          "inputTokens": 1411,
-          "modelName": "kimi-k2-thinking",
-          "outputTokens": 339
-        },
-        {
           "cacheCreationTokens": 20,
           "cacheReadTokens": 3000,
           "cost": 0.003255,
           "inputTokens": 1650,
           "modelName": "kimi-for-coding",
           "outputTokens": 650
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 5000,
+          "cost": 0.0024441000000000003,
+          "inputTokens": 1411,
+          "modelName": "kimi-k2-thinking",
+          "outputTokens": 339
         }
       ],
       "modelsUsed": [
@@ -43,7 +43,7 @@ exit: 0
         "claude-sonnet-4-20250514"
       ],
       "outputTokens": 2189,
-      "totalCost": 0.0413169,
+      "totalCost": 0.0403491,
       "totalTokens": 37570
     },
     {
@@ -63,7 +63,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.001245,
+          "cost": 0.001265,
           "inputTokens": 100,
           "modelName": "kimi-k2-thinking",
           "outputTokens": 482
@@ -93,7 +93,7 @@ exit: 0
         "kimi-for-coding"
       ],
       "outputTokens": 697,
-      "totalCost": 0.003125,
+      "totalCost": 0.003145,
       "totalTokens": 2047
     }
   ],
@@ -102,7 +102,7 @@ exit: 0
     "cacheReadTokens": 29000,
     "inputTokens": 6861,
     "outputTokens": 2886,
-    "totalCost": 0.0444419,
+    "totalCost": 0.0434941,
     "totalTokens": 39617,
     "unpricedModels": [
       "kimi-mystery-1"
