@@ -228,7 +228,7 @@ fn gemini_flash_effort_variant(display_name: &str) -> Option<String> {
         .then_some(variant)
 }
 
-// NOTE(2026-11-21, #2226): Antigravity records the serving API as a number, not a name. A Vertex request bills through the same shared host route as an agent that logs `vertex_ai`, so its Vertex listing answers first and Google's direct schedule never applies; other requests keep the unrouted pricing.
+// NOTE(2026-11-21, #2226): Antigravity records the serving API as a number, not a name. A Vertex request bills through the same shared host route as an agent that logs `vertex_ai`, so its Vertex listing answers first and a fallback to Google's row takes Google's dated schedule; other requests keep the unrouted pricing.
 fn recorded_host(provider: Option<u64>) -> Option<&'static str> {
     provider
         .filter(|provider| *provider == API_PROVIDER_GOOGLE_VERTEX)
