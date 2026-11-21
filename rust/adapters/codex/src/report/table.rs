@@ -141,7 +141,9 @@ fn codex_breakdown_rows(
             )
         })
         .collect::<Vec<_>>();
-    models.sort_by(|(_, _, cost_a), (_, _, cost_b)| cost_b.total_cmp(cost_a));
+    ccusage_core::sort::stable_by(&mut models, |(_, _, cost_a), (_, _, cost_b)| {
+        cost_b.total_cmp(cost_a)
+    });
     let mut rows = Vec::with_capacity(models.len());
     for (model, usage, cost) in models {
         let input_tokens = non_cached_input_tokens(

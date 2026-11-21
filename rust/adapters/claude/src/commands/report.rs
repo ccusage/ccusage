@@ -116,7 +116,7 @@ pub fn run_session(args: SessionArgs) -> Result<()> {
             || row.cache_creation_tokens > 0
             || row.cache_read_tokens > 0
     });
-    rows.sort_by(|a, b| match session_cost_ordering(&shared) {
+    ccusage_core::sort::stable_by(&mut rows, |a, b| match session_cost_ordering(&shared) {
         SortOrder::Asc => a.total_cost.total_cmp(&b.total_cost),
         SortOrder::Desc => b.total_cost.total_cmp(&a.total_cost),
     });
