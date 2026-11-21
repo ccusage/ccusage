@@ -2,7 +2,7 @@ use super::{
     MatchKind, PricingMap, build_time_models_dev_json, build_time_pricing_json,
     embedded_models_dev_pricing, layered,
 };
-use crate::pricing::PricingRows;
+use crate::pricing::{PricingRows, rows::FoldedIndexes};
 
 fn sorted_rows(rows: &PricingRows) -> Vec<String> {
     let mut rows: Vec<_> = rows
@@ -46,6 +46,10 @@ fn embedded_table_matches_the_rows_loaded_from_its_snapshots() {
         sorted_rows(&embedded_models_dev_pricing().rows),
         sorted_rows(&models_dev.rows)
     );
+    for rows in [&embedded.rows, &embedded_models_dev_pricing().rows] {
+        let stored = rows.folded_indexes.get().unwrap();
+        assert_eq!(stored.0, FoldedIndexes::build(rows.matches()).0);
+    }
 }
 
 #[test]
