@@ -207,8 +207,10 @@ impl Pricing {
     pub(super) fn at(mut self, schedule: &PricingSchedule, timestamp: TimestampMs) -> Self {
         let explicit = (self.explicit_fields != 0).then_some(self);
         let rates = schedule.rates_at(timestamp);
-        let mut long_context = rates
-            .long_context
+        let scheduled_tier = rates.long_context.filter(|_| {
+            explicit.is_none_or(|entry| entry.explicit_fields & OverrideFields::RATES == 0)
+        });
+        let mut long_context = scheduled_tier
             .or(self.long_context)
             .unwrap_or(LongContext::empty_marginal());
         macro_rules! scheduled {
@@ -240,7 +242,7 @@ impl Pricing {
                         .and_then(|entry| entry.long_context)
                         .and_then(|context| context.rates.$field)
                 } else {
-                    match rates.long_context {
+                    match scheduled_tier {
                         Some(tier) => tier.rates.$field,
                         None => $wrap(self.$field),
                     }
