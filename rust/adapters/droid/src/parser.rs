@@ -6,7 +6,7 @@ use ccusage_core::{
 use std::{ops::ControlFlow, path::Path};
 
 use ccusage_adapter_common::{
-    billing::price_entry_for_provider,
+    billing::{host_provider, price_entry_for_provider},
     jsonl::{self, ReadPolicy},
     units::{UnitError, read_json},
 };
@@ -273,13 +273,15 @@ fn normalize_droid_provider(value: Option<&str>) -> String {
     let Some(value) = value else {
         return "unknown".to_string();
     };
+    if let Some(host) = host_provider(value) {
+        return host.to_string();
+    }
     let normalized = value.trim().to_ascii_lowercase().replace('-', "_");
     match normalized.as_str() {
         "" => "unknown".to_string(),
         "claude" | "anthropic" => "anthropic".to_string(),
         "openai" => "openai".to_string(),
         "google" | "google_ai" | "gemini" => "google".to_string(),
-        "vertex" | "vertex_ai" => "vertex_ai".to_string(),
         "xai" | "x_ai" | "grok" => "xai".to_string(),
         value => value.to_string(),
     }
@@ -686,7 +688,13 @@ mod pricing_identity_tests {
 
     #[test]
     fn a_vertex_provider_lock_keeps_the_vertex_host() {
-        for logged in ["vertex", "vertex_ai", "Vertex-AI"] {
+        for logged in [
+            "vertex",
+            "vertex_ai",
+            "Vertex-AI",
+            "google-vertex",
+            "google_vertex",
+        ] {
             let provider = super::normalize_droid_provider(Some(logged));
             assert_eq!(provider, "vertex_ai", "{logged}");
             let (direct, _) = super::provider_prefixes(&provider);

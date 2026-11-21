@@ -1,4 +1,4 @@
-use ccusage_adapter_common::billing::{billing_route, price_entry_for_provider};
+use ccusage_adapter_common::billing::{billing_route, host_provider, price_entry_for_provider};
 use ccusage_adapter_common::{
     UnitError,
     jsonl::{self, Interruption, Line, ReadFailure, ReadPolicy},
@@ -507,7 +507,7 @@ fn model_candidates(provider: Option<&str>, model: &str) -> Vec<String> {
         return vec![model.to_string(), format!("deepseek/{model}")];
     }
     let mut candidates = Vec::new();
-    if let Some(provider) = provider
+    if let Some(provider) = provider.map(|provider| host_provider(provider).unwrap_or(provider))
         && !model.starts_with(&format!("{provider}/"))
     {
         candidates.push(format!("{provider}/{model}"));

@@ -5,6 +5,29 @@ use ccusage_core::{
 
 const UNKNOWN_PROVIDERS: &[&str] = &["", "unknown"];
 
+// NOTE(2026-11-21, #2226): Agents log one host under several names: models.dev's `google-vertex` (https://models.dev/providers/google-vertex), LiteLLM's `vertex_ai` (https://docs.litellm.ai/docs/providers/vertex) and the shorter `vertex`. They all name Vertex AI, a host with its own listing, so they fold to LiteLLM's ID before an adapter builds a `provider/model` candidate or a billing route.
+const HOST_ALIASES: &[(&str, &[&str])] = &[(
+    "vertex_ai",
+    &[
+        "vertex",
+        "vertex_ai",
+        "vertexai",
+        "google_vertex",
+        "google_vertex_ai",
+    ],
+)];
+
+/// The catalogue's provider ID for a logged name of a cloud host, such as
+/// `vertex_ai` for `google-vertex`, or `None` when the name is not a known
+/// host alias. Case, `-` and `_` do not matter.
+pub fn host_provider(logged: &str) -> Option<&'static str> {
+    let logged = logged.trim().to_ascii_lowercase().replace('-', "_");
+    HOST_ALIASES
+        .iter()
+        .find(|(_, aliases)| aliases.contains(&logged.as_str()))
+        .map(|(provider, _)| *provider)
+}
+
 /// Billing route for a provider ID recorded by an agent.
 ///
 /// `Direct` names the vendor that billed the request itself, so that vendor's
@@ -36,6 +59,28 @@ pub fn price_entry_for_provider<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_vertex_spelling_is_the_vertex_host() {
+        for logged in [
+            "vertex",
+            "vertex_ai",
+            "vertex-ai",
+            "Vertex-AI",
+            "google-vertex",
+            "google_vertex",
+        ] {
+            assert_eq!(host_provider(logged), Some("vertex_ai"), "{logged}");
+            assert_eq!(
+                billing_route(host_provider(logged)),
+                Some(BillingRoute::Foreign),
+                "{logged}"
+            );
+        }
+        for logged in ["google", "gemini", "openrouter"] {
+            assert_eq!(host_provider(logged), None, "{logged}");
+        }
+    }
 
     #[test]
     fn direct_vendor_ids_keep_their_own_schedule() {
