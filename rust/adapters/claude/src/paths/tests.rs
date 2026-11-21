@@ -667,6 +667,32 @@ fn keeps_the_probe_buffer_bounded_on_a_large_undated_file() {
 }
 
 #[test]
+fn revives_a_stale_transcript_whose_recorded_session_follows_a_head_longer_than_the_probe() {
+    let fixture = fs_fixture!({
+        "projects/p/live.jsonl": record_at("2026-09-21T12:00:00Z"),
+        "projects/p/agent-1.jsonl": format!(
+            "{{\"type\":\"summary\",\"text\":\"{}\"}}\n{{\"sessionId\":\"live\",\"timestamp\":\"2026-09-01T12:00:00Z\"}}\n{}",
+            "x".repeat(100 * 1024),
+            record_at("2026-09-01T12:00:00Z")
+        ),
+    });
+    let live = fixture.path("projects/p/live.jsonl");
+    let agent = fixture.path("projects/p/agent-1.jsonl");
+    set_modified(&live, instant("2026-09-21T12:00:00Z"));
+    set_modified(&agent, instant("2026-09-01T12:00:00Z"));
+    let mut probe = super::StaleProbe::new(instant("2026-09-19T00:00:00Z").millis());
+    assert_eq!(probe.file(&agent), (false, None));
+
+    let split = split_files_before_since(
+        vec![live.clone(), agent.clone()],
+        &shared_since(Some("20260920")),
+        TimestampMs::from_millis(instant("2026-09-24T00:00:00Z").millis()),
+    );
+
+    assert_eq!(split.kept, [live, agent]);
+}
+
+#[test]
 fn reads_no_stale_session_group_for_a_transcript_whose_tail_has_no_timestamps() {
     let old = record_at("2026-09-01T12:00:00Z");
     let fixture = fs_fixture!({

@@ -118,6 +118,7 @@ pub(crate) fn usage_file_order(left: &Path, right: &Path) -> std::cmp::Ordering 
 const MTIME_PRUNE_MARGIN_MS: i64 = MILLIS_PER_DAY;
 const TAIL_PROBE_BYTES: u64 = 16 * 1024;
 const PROBE_READ_LIMIT: u64 = 1024 * 1024;
+const HEAD_PROBE_BYTES: u64 = 64 * 1024;
 
 pub(super) struct SinceFiles<T> {
     pub(super) kept: Vec<(PathBuf, T)>,
@@ -304,16 +305,21 @@ impl StaleProbe {
             return (true, None);
         }
         let in_one_window = len <= TAIL_PROBE_BYTES + 1;
-        let recorded_session =
-            (!in_one_window).then(|| recorded_session_id_in(&self.session_marker, &file));
+        let recorded_session = if in_one_window {
+            None
+        } else {
+            head_recorded_session_id(&self.session_marker, &file, len)
+        };
         // NOTE(2026-11-20, #2376): A restored or imported transcript can keep an mtime older than its records. Pruning on mtime alone silently drops in-window usage, so the latest timestamp in the tail must also be stale.
         let Some(live) = self.tail_reaches(&file, len) else {
             return (true, None);
         };
-        let recorded_session = recorded_session.unwrap_or_else(|| {
-            lines(&self.tail).find_map(|line| recorded_session_id(&self.session_marker, line))
-        });
-        (live, Some(recorded_session))
+        let recorded_session = if in_one_window {
+            Some(lines(&self.tail).find_map(|line| recorded_session_id(&self.session_marker, line)))
+        } else {
+            recorded_session
+        };
+        (live, recorded_session)
     }
 
     // NOTE(2026-11-21, #2431): A tail without record timestamps proves nothing, and treating it as live revives the file's whole session group. Read further back until a record timestamp turns up; a file without any holds no dated usage. Reads stop growing at `PROBE_READ_LIMIT` so a large undated file doesn't pin its size in memory, and a line longer than that keeps the file unjudged.
@@ -498,6 +504,23 @@ fn session_marker() -> LinePrefilter {
 
 fn first_recorded_session_id(path: &Path) -> Option<String> {
     recorded_session_id_in(&session_marker(), &File::open(path).ok()?)
+}
+
+// NOTE(2026-11-21, #2431): Grouping needs the first recorded session only when some file is live, and a file without one would be read to its end. Read a bounded head here; past that, leave it to the lazy `first_recorded_session_id`.
+fn head_recorded_session_id(
+    marker: &LinePrefilter,
+    file: &File,
+    len: u64,
+) -> Option<Option<String>> {
+    let mut lines = BufReader::new(io::Read::take(file, HEAD_PROBE_BYTES));
+    let mut line = Vec::new();
+    while lines.read_until(b'\n', &mut line).ok()? > 0 {
+        if let Some(session_id) = recorded_session_id(marker, &line) {
+            return Some(Some(session_id));
+        }
+        line.clear();
+    }
+    (len <= HEAD_PROBE_BYTES).then_some(None)
 }
 
 fn recorded_session_id_in(marker: &LinePrefilter, file: &File) -> Option<String> {
