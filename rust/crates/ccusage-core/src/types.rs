@@ -117,6 +117,10 @@ pub struct ModelBreakdown {
 }
 
 impl ModelBreakdown {
+    pub fn sort_by_cost_desc(breakdowns: &mut [Self]) {
+        breakdowns.sort_by(|a, b| b.cost.total_cmp(&a.cost));
+    }
+
     pub fn add_usage(&mut self, usage: &TokenUsageRaw) {
         self.input_tokens = self.input_tokens.saturating_add(usage.input_tokens);
         self.output_tokens = self.output_tokens.saturating_add(usage.output_tokens);

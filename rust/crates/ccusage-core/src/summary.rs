@@ -111,7 +111,7 @@ impl UsageAccumulator {
     }
 
     fn into_summary(mut self) -> UsageSummary {
-        self.breakdowns.sort_by(|a, b| b.cost.total_cmp(&a.cost));
+        ModelBreakdown::sort_by_cost_desc(&mut self.breakdowns);
         UsageSummary {
             date: None,
             month: None,
@@ -279,9 +279,7 @@ fn aggregate_summaries(rows: &[&UsageSummary]) -> UsageSummary {
             summary.model_breakdowns[index].merge(item);
         }
     }
-    summary
-        .model_breakdowns
-        .sort_by(|a, b| b.cost.total_cmp(&a.cost));
+    ModelBreakdown::sort_by_cost_desc(&mut summary.model_breakdowns);
     summary
 }
 
