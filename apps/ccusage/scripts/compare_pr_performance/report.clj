@@ -61,7 +61,7 @@
   (map (fn [{:keys [label desc stats]}]
          (if stats
            (format "- **%s** (%s on disk, %d files): %s." label (data/format-data-size (:bytes stats)) (:files stats) desc)
-           (format "- **%s**: the fixture above. Each file's mtime is its last record, so `--since` the day of the median mtime skips about half of the Claude files, and one Codex rollout in eight is a fork of the one before it." label)))
+           (format "- **%s**: the fixture above. Each file's mtime is its last record, so `--since` the day of the median mtime skips about half of the Claude files and `--since` the 95th-percentile day skips nearly all of them by mtime alone, and one Codex rollout in eight is a fork of the one before it." label)))
        shapes))
 
 (defn comparison-rows [results]
