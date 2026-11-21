@@ -483,7 +483,7 @@ const DEEPSEEK_V4_FLASH: PricingSchedule = PricingSchedule {
     flat_in_fast_mode: false,
     vendor: "deepseek",
 };
-// NOTE(2026-11-20, #2401): DeepSeek planned to route `deepseek-v4-pro` to V4.1 Flash on September 14, 2026 but kept serving it with unchanged billing instead, and the pricing page still lists its own rates at https://api-docs.deepseek.com/quick_start/pricing/. Give it no successor so it keeps the V4 Pro schedule.
+// NOTE(2026-11-21, #2167): The September 14 switch to V4.1 Flash rates announced at https://api-docs.deepseek.com/news/news260910/ is outdated, as https://api-docs.deepseek.com/updates/ confirms V4 Pro billing stayed unchanged. A Flash successor would misprice Pro requests.
 const DEEPSEEK_V4_PRO: PricingSchedule = PricingSchedule {
     cutoff_ms: 1_786_896_000_000,
     peak_weekdays: 1..=5,
@@ -515,7 +515,7 @@ const DEEPSEEK_V4_PRO: PricingSchedule = PricingSchedule {
     vendor: "deepseek",
 };
 
-// NOTE(2026-11-20, #2268): DeepSeek launched deepseek-flash with V4.1 rates at 04:00 UTC on September 10, 2026: https://api-docs.deepseek.com/news/news260910/. Its rates differ from the retired V4 Flash schedule.
+// NOTE(2026-11-21, #2167): DeepSeek lists the V4.1 Flash rates at https://api-docs.deepseek.com/quick_start/pricing/. Apply them from the 04:00 UTC cutoff on September 10, 2026 announced at https://api-docs.deepseek.com/news/news260910/.
 const DEEPSEEK_FLASH: PricingSchedule = PricingSchedule {
     cutoff_ms: DEEPSEEK_V4_1_FLASH_MS,
     peak_weekdays: 1..=5,
