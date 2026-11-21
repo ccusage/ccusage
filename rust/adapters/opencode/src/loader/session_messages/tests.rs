@@ -364,3 +364,33 @@ fn a_full_round_of_metadata_skips_waits_for_the_payloads_before_it() {
     assert_eq!(ordered.0, Some((649, 649)));
     assert_eq!(parallel, ordered);
 }
+
+#[cfg(unix)]
+#[test]
+fn a_path_switched_away_and_back_while_workers_open_leaves_the_rows_to_the_ordered_scan() {
+    let fixture = database("WAL", "");
+    let first = fixture.path("opencode.db");
+    let second = fixture.path("replacement.db");
+    std::fs::copy(&first, &second).unwrap();
+    let path = fixture.path("link.db");
+    std::os::unix::fs::symlink(&first, &path).unwrap();
+    let retarget = |target: &Path| {
+        std::fs::remove_file(&path).unwrap();
+        std::os::unix::fs::symlink(target, &path).unwrap();
+    };
+    let opened = AtomicUsize::new(0);
+
+    let parallel = load(
+        &path,
+        Some(&|| {
+            match opened.fetch_add(1, Ordering::Relaxed) {
+                2 => retarget(&second),
+                3 => retarget(&first),
+                _ => {}
+            }
+            open_read_only(&path)
+        }),
+    );
+
+    assert_eq!(parallel, (None, Vec::new(), Vec::new()));
+}
