@@ -53,7 +53,7 @@ pub(crate) fn usage_files(
         &mut |path| files.push(path),
         diagnostics,
     );
-    files.sort_by(|left, right| usage_file_order(left, right));
+    ccusage_core::sort::stable_by(&mut files, |left, right| usage_file_order(left, right));
     files
 }
 

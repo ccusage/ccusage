@@ -346,7 +346,7 @@ fn model_usage_rows(
             .iter()
             .map(|(model, usage)| (model.clone(), *usage))
             .collect();
-        rows.sort_by(|a, b| a.0.cmp(&b.0));
+        ccusage_core::sort::stable_by(&mut rows, |a, b| a.0.cmp(&b.0));
         return rows;
     }
 

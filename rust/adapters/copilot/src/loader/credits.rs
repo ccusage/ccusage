@@ -111,7 +111,9 @@ pub(super) fn credit_gap_entries(
         {
             continue;
         }
-        snapshots.sort_by_key(|snapshot| (snapshot.timestamp, snapshot.is_shutdown));
+        ccusage_core::sort::stable_by_key(&mut snapshots, |snapshot| {
+            (snapshot.timestamp, snapshot.is_shutdown)
+        });
         let receipt_credits = if snapshots
             .iter()
             .any(|snapshot| snapshot.receipt_watermark.is_some())

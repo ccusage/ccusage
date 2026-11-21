@@ -97,7 +97,7 @@ fn load_base_rows<R>(
 
 pub(super) fn finish_sessions(rows: Vec<SourceRow>, shared: &SharedArgs) -> Vec<ReportRow> {
     let mut rows = rows.into_iter().map(ReportRow::Source).collect::<Vec<_>>();
-    rows.sort_by(|a, b| {
+    ccusage_core::sort::stable_by(&mut rows, |a, b| {
         let cost_order = match crate::cli::session_cost_ordering(shared) {
             crate::cli::SortOrder::Asc => a.total_cost.total_cmp(&b.total_cost),
             crate::cli::SortOrder::Desc => b.total_cost.total_cmp(&a.total_cost),
@@ -169,12 +169,12 @@ pub(crate) fn load_agent_rows_parallel(
             }
         }
 
-        errors.sort_by_key(|(index, _)| *index);
+        ccusage_core::sort::stable_by_key(&mut errors, |(index, _)| *index);
         if let Some((_, error)) = errors.into_iter().next() {
             return Err(error);
         }
 
-        loaded.sort_by_key(|loaded| loaded.index);
+        ccusage_core::sort::stable_by_key(&mut loaded, |loaded| loaded.index);
         Ok(loaded)
     })
 }

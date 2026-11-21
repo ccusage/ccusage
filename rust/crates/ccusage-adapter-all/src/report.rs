@@ -26,7 +26,7 @@ fn totals(rows: &[ReportRow]) -> Totals {
 }
 
 pub(super) fn sort_rows(rows: &mut [ReportRow], order: &SortOrder) {
-    rows.sort_by(|a, b| {
+    ccusage_core::sort::stable_by(rows, |a, b| {
         a.period
             .cmp(&b.period)
             .then_with(|| a.agent().cmp(b.agent()))

@@ -44,7 +44,7 @@ fn collect_agent_databases(root: &Path, diagnostics: &Diagnostics) -> Vec<AgentD
             databases.push(AgentDatabase { path });
         }
     }
-    databases.sort_by(|left, right| left.path.cmp(&right.path));
+    ccusage_core::sort::stable_by(&mut databases, |left, right| left.path.cmp(&right.path));
     databases
 }
 

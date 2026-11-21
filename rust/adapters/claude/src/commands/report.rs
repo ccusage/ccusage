@@ -116,7 +116,7 @@ pub fn run_session(args: SessionArgs) -> Result<()> {
             || row.cache_creation_tokens > 0
             || row.cache_read_tokens > 0
     });
-    rows.sort_by(|a, b| match session_cost_ordering(&shared) {
+    ccusage_core::sort::stable_by(&mut rows, |a, b| match session_cost_ordering(&shared) {
         SortOrder::Asc => a.total_cost.total_cmp(&b.total_cost),
         SortOrder::Desc => b.total_cost.total_cmp(&a.total_cost),
     });
@@ -173,7 +173,7 @@ fn run_session_id(id: &str, shared: &SharedArgs) -> Result<()> {
             entry.recorded_session_id.as_deref() == Some(id) || entry.session_id.as_ref() == id
         })
         .collect::<Vec<_>>();
-    session_entries.sort_by_key(|entry| entry.timestamp);
+    ccusage_core::sort::stable_by_key(&mut session_entries, |entry| entry.timestamp);
 
     if session_entries.is_empty() {
         if wants_json(shared) {
@@ -193,7 +193,9 @@ fn run_session_id(id: &str, shared: &SharedArgs) -> Result<()> {
 
     if wants_json(shared) {
         if shared.requested_order() == Some(SortOrder::Desc) {
-            session_entries.sort_by_key(|entry| std::cmp::Reverse(entry.timestamp));
+            ccusage_core::sort::stable_by_key(&mut session_entries, |entry| {
+                std::cmp::Reverse(entry.timestamp)
+            });
         }
         let output = json!({
             "sessionId": id,
