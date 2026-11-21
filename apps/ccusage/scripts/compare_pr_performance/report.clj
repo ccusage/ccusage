@@ -13,33 +13,37 @@
   (format "%s (%s–%s)" (formatter median) (formatter min) (formatter max)))
 (defn format-ratio-spread [summary] (format-spread summary #(format "%.2f" (double %))))
 
-(def verdict-labels {:regression "slower" :improvement "faster" :unchanged "unchanged"})
-(def rss-verdict-labels {:regression "more memory" :improvement "less memory" :unchanged "unchanged"})
+(def verdict-labels
+  {:wall {:regression "slower" :improvement "faster"}
+   :cpu {:regression "more CPU" :improvement "less CPU"}
+   :rss {:regression "more memory" :improvement "less memory"}})
 
-(defn comparison-verdict [{:keys [cpu rss]}]
-  (let [parts (remove nil? [(when-not (= :unchanged (:verdict cpu)) (verdict-labels (:verdict cpu)))
-                            (when-not (= :unchanged (:verdict rss)) (rss-verdict-labels (:verdict rss)))])]
+(defn comparison-verdict [comparison]
+  (let [judged (keep (fn [metric] (when-let [verdict (get-in comparison [metric :verdict])] [metric verdict])) [:wall :cpu :rss])
+        parts (keep (fn [[metric verdict]] (get-in verdict-labels [metric verdict])) judged)]
     (cond
-      (or (= :regression (:verdict cpu)) (= :regression (:verdict rss))) (str "⚠️ " (str/join ", " parts))
+      (some #(= :regression (second %)) judged) (str "⚠️ " (str/join ", " parts))
       (seq parts) (str "✅ " (str/join ", " parts))
       :else "unchanged")))
 
-(defn- verdicts [result] [(get-in result [:comparison :cpu :verdict]) (get-in result [:comparison :rss :verdict])])
+(defn- verdicts [result] (keep #(get-in result [:comparison % :verdict]) [:wall :cpu :rss]))
 
 (defn- result-name [{:keys [command fixture-label]}]
   (str "`" command "`" (when fixture-label (str " on " fixture-label))))
 
-(defn overall-verdict [results threshold]
-  (let [percent (Math/round (* 100 threshold))
+(defn- percent [ratio] (Math/round (* 100 ratio)))
+
+(defn overall-verdict [results {:keys [threshold wall-threshold]}]
+  (let [cpu-percent (percent threshold) wall-percent (percent wall-threshold)
         regressions (filter #(some #{:regression} (verdicts %)) results)
         improvements (filter #(some #{:improvement} (verdicts %)) results)
         commands (fn [rs] (str/join ", " (map #(format "%s (%s)" (result-name %) (str/replace (comparison-verdict (:comparison %)) #"^\S+ " "")) rs)))]
     (cond
       (seq regressions) {:regression? true
-                         :text (format "**Verdict: ⚠️ possible regression** in %s; CPU time or peak RSS above +%d%%, consistent across rounds."
-                                       (commands regressions) percent)}
-      (seq improvements) {:text (format "**Verdict: ✅ improved** in %s; nothing regressed beyond %d%%." (commands improvements) percent)}
-      :else {:text (format "**Verdict: no significant change** (every command within ±%d%% CPU time and peak RSS)." percent)})))
+                         :text (format "**Verdict: ⚠️ possible regression** in %s; wall time above +%d%% or CPU time or peak RSS above +%d%%, consistent across rounds."
+                                       (commands regressions) wall-percent cpu-percent)}
+      (seq improvements) {:text (format "**Verdict: ✅ improved** in %s; nothing regressed beyond the thresholds." (commands improvements))}
+      :else {:text (format "**Verdict: no significant change** (no command moved consistently beyond ±%d%% wall time or ±%d%% CPU time and peak RSS)." wall-percent cpu-percent)})))
 
 (defn fixture-line [{:keys [fixture-stats codex-fixture-stats grok-fixture-stats]}]
   (format "Fixture: generated Claude logs (%s on disk, %d files)%s Codex logs (%s on disk, %d files, mostly zstd-compressed)%s shaped like current real logs; every value is synthetic."
@@ -50,12 +54,12 @@
             (format ", and Grok logs (%s on disk, %d files)" (data/format-data-size (:bytes grok-fixture-stats)) (:files grok-fixture-stats))
             "")))
 
-(defn method-line [{:keys [runs warmup threshold]}]
+(defn method-line [{:keys [runs warmup threshold wall-threshold]}]
   (format (str "Base and PR are built from source the same way on this runner and run `--offline --json` in %d interleaved rounds after %d warmup rounds; "
                "each round runs both binaries once in alternating order. Wall time, CPU time, and peak RSS come from the shell's `time` and GNU `time` around each run; instruction counts come from one extra hyperfine pass. Cells show median (min–max). "
                "Ratios are PR/base per round, so below 1.00 is better. A command is flagged when the median CPU-time or peak-RSS ratio moves past %d%% "
-               "and at least four in five rounds agree. Wall time is shown but not judged.")
-          runs warmup (Math/round (* 100 threshold))))
+               "and at least four in five rounds agree; the same holds when the median wall-time ratio moves past %d%%.")
+          runs warmup (percent threshold) (percent wall-threshold)))
 
 (defn shape-lines [shapes]
   (map (fn [{:keys [label desc stats]}]
@@ -75,6 +79,7 @@
                             "CPU ratio" (format-ratio-spread (:cpu comparison))
                             "Wall base" (format-spread (:wall base) data/format-duration)
                             "Wall PR" (format-spread (:wall head) data/format-duration)
+                            "Wall ratio" (format-ratio-spread (:wall comparison))
                             "RSS base" (data/format-memory-size (get-in base [:rss :median]))
                             "RSS PR" (data/format-memory-size (get-in head [:rss :median]))
                             "RSS ratio" (format-ratio-spread (:rss comparison))]
@@ -90,7 +95,7 @@
                               (when head-sha [(str "PR: `" (data/format-sha head-sha) "`"
                                                    (when base-sha (str " merged onto Base: `" (data/format-sha base-sha) "`")))
                                               ""])
-                              [(:text (overall-verdict (concat results shape-results) (:threshold context))) ""
+                              [(:text (overall-verdict (concat results shape-results) context)) ""
                                (fixture-line context) "" (method-line context) ""
                                (table-md (comparison-rows results)) ""]
                               (when (seq shape-results)

@@ -89,11 +89,13 @@
   (mapv #(/ (double (get-in % [variant metric])) (get-in % [reference metric])) rounds))
 
 (defn compare-variants
-  [rounds reference variant threshold]
-  (let [cpu (paired-ratios rounds :cpu reference variant)
+  [rounds reference variant {:keys [threshold wall-threshold]}]
+  (let [wall (paired-ratios rounds :wall reference variant)
+        cpu (paired-ratios rounds :cpu reference variant)
         rss (paired-ratios rounds :rss reference variant)
         instructions (when (every? #(and (get-in % [reference :instructions]) (get-in % [variant :instructions])) rounds)
                        (paired-ratios rounds :instructions reference variant))]
-    {:cpu (assoc (data/summarize cpu) :verdict (data/classify-ratios cpu threshold))
+    {:wall (assoc (data/summarize wall) :verdict (data/classify-ratios wall wall-threshold))
+     :cpu (assoc (data/summarize cpu) :verdict (data/classify-ratios cpu threshold))
      :rss (assoc (data/summarize rss) :verdict (data/classify-ratios rss threshold))
      :instructions (when instructions (data/summarize instructions))}))
