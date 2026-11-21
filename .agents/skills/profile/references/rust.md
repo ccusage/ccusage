@@ -44,9 +44,11 @@ judges each ref against the previous one the same way the CI comment judges a
 PR against its merge base. Run it on a `testbox-bench.yaml` box, or
 `testbox-bench-macos.yaml` for macOS timing. For the final local real-log
 confirmation, do not use `--real`: it also builds refs and runs the synthetic
-section. Run the two already-built binaries directly over APFS clones with
-`hyperfine` and report ratios only. Judge by the CPU-time and
-peak-RSS ratios, not wall time.
+section. Build both macOS binaries on a `testbox-bench-macos.yaml` box and fetch
+them with `blacksmith testbox download`, then run them over APFS clones with
+`hyperfine --export-json` (compare `user` + `system`) and `/usr/bin/time -l`
+(peak RSS), and report ratios only. Judge by the CPU-time and peak-RSS
+ratios, not wall time.
 
 When a regression slips past the comparison, fix the fixture generator
 (`apps/ccusage/scripts/generate-large-fixture.ts`) so its lines carry the shape
