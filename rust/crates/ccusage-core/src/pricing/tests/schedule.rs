@@ -870,3 +870,20 @@ fn user_overrides_take_precedence_over_the_route_schedule() {
     assert_eq!(foreign.input * 1e6, 9.0);
     assert!((foreign.output * 1e6 - 0.28).abs() < 1e-12);
 }
+
+#[test]
+fn a_scheduled_override_bills_one_hour_writes_above_the_split_at_its_base_rate() {
+    let model = "deepseek-v4-flash".to_owned();
+    let patch = ccusage_cli::PricingOverride {
+        input_cost_per_token: Some(50e-6),
+        cache_creation_input_token_cost_above_1hr: Some(10e-6),
+        ..Default::default()
+    };
+    let pricing = direct_deepseek_pricing().with_user_overrides([(&model, &patch)]);
+    let handle = pricing.find_handle(&model).unwrap();
+    assert!(handle.is_time_dependent());
+    let rate = handle.with_rates_at(Some(timestamp("2026-11-17T10:00:00Z")), |rates| {
+        rates.one_hour_cache_creation_rate_above_200k()
+    });
+    assert_eq!(rate, Some(10e-6));
+}
