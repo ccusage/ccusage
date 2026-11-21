@@ -2226,7 +2226,7 @@ fn folds_many_sessions_to_the_same_groups_with_settler_threads() {
                 event % 24,
                 session,
             ),
-            if event % 3 == 0 {
+            if event.is_multiple_of(3) {
                 "gpt-5"
             } else {
                 "gpt-5-mini"
