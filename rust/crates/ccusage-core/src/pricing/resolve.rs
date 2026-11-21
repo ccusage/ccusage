@@ -55,8 +55,15 @@ impl<'a> AgentModel<'a> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BillingRoute {
-    Direct,
+    Direct(&'static str),
     Foreign,
+}
+
+/// The vendor whose own API a recorded provider ID names, if any.
+pub fn direct_billing_vendor(provider: &str) -> Option<&'static str> {
+    super::data::DIRECT_BILLING_PROVIDERS
+        .iter()
+        .find_map(|(id, vendor)| (*id == provider).then_some(*vendor))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -97,7 +104,7 @@ impl PricingHandle {
 
     fn on_route(row: &Row, route: BillingRoute, reported: &str, matched: &str) -> Self {
         let schedule = match route {
-            BillingRoute::Direct => [reported, matched]
+            BillingRoute::Direct(vendor) => [reported, matched]
                 .into_iter()
                 .find_map(|name| {
                     let resolved = crate::model_aliases::resolve_model_name(name);
@@ -105,7 +112,8 @@ impl PricingHandle {
                         .into_iter()
                         .find_map(|name| schedule_for(last_segment(name)))
                 })
-                .or(row.schedule.filter(|schedule| schedule.follows_row)),
+                .or(row.schedule.filter(|schedule| schedule.follows_row))
+                .filter(|schedule| schedule.vendor == vendor),
             BillingRoute::Foreign => None,
         };
         Self {

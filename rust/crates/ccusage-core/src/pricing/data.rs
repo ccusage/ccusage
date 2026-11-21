@@ -317,6 +317,7 @@ const fn premium_until_1m_ga(input: f64, output: f64, tier: [f64; 5]) -> Pricing
         successor: None,
         follows_row: true,
         flat_in_fast_mode: true,
+        vendor: "anthropic",
     }
 }
 
@@ -401,6 +402,7 @@ const DEEPSEEK_V4_FLASH: PricingSchedule = PricingSchedule {
     }),
     follows_row: false,
     flat_in_fast_mode: false,
+    vendor: "deepseek",
 };
 // NOTE(2026-11-20, #2401): DeepSeek planned to route `deepseek-v4-pro` to V4.1 Flash on September 14, 2026 but kept serving it with unchanged billing instead, and the pricing page still lists its own rates at https://api-docs.deepseek.com/quick_start/pricing/. Give it no successor so it keeps the V4 Pro schedule.
 const DEEPSEEK_V4_PRO: PricingSchedule = PricingSchedule {
@@ -431,6 +433,7 @@ const DEEPSEEK_V4_PRO: PricingSchedule = PricingSchedule {
     successor: None,
     follows_row: false,
     flat_in_fast_mode: false,
+    vendor: "deepseek",
 };
 
 // NOTE(2026-11-20, #2268): DeepSeek launched deepseek-flash with V4.1 rates at 04:00 UTC on September 10, 2026: https://api-docs.deepseek.com/news/news260910/. Its rates differ from the retired V4 Flash schedule.
@@ -462,7 +465,16 @@ const DEEPSEEK_FLASH: PricingSchedule = PricingSchedule {
     successor: None,
     follows_row: false,
     flat_in_fast_mode: false,
+    vendor: "deepseek",
 };
+
+// NOTE(2026-11-21, #2455): A schedule is a vendor's own price list, so on a recorded billing route it applies only to usage that vendor billed itself. These provider IDs name a vendor's own API: DeepSeek's and Anthropic's LiteLLM provider IDs (https://docs.litellm.ai/docs/providers/deepseek, https://docs.litellm.ai/docs/providers/anthropic) and DeepSeek Harness's `deepseek-official` and `deepseek-account` routes. Any other provider ID bills at its own flat rate.
+pub(super) static DIRECT_BILLING_PROVIDERS: &[(&str, &str)] = &[
+    ("deepseek", "deepseek"),
+    ("deepseek-official", "deepseek"),
+    ("deepseek-account", "deepseek"),
+    ("anthropic", "anthropic"),
+];
 
 pub(super) static SCHEDULES: &[(&str, PricingSchedule)] = &[
     ("deepseek-flash", DEEPSEEK_FLASH),

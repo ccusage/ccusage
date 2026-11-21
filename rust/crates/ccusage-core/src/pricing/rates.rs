@@ -155,6 +155,7 @@ pub(super) struct PricingSchedule {
     pub(super) successor: Option<Successor>,
     pub(super) follows_row: bool,
     pub(super) flat_in_fast_mode: bool,
+    pub(super) vendor: &'static str,
 }
 
 #[derive(Debug)]

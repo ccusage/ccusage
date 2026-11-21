@@ -547,3 +547,45 @@ fn a_base_only_override_bills_no_scheduled_tier_on_either_side_of_its_date() {
         );
     }
 }
+
+#[test]
+fn anthropic_billed_claude_4_6_usage_keeps_the_premium_before_ga() {
+    use super::BillingRoute;
+    crate::test_support::install_pricing_snapshots();
+    let pricing = PricingMap::load_embedded();
+    for model in ["claude-sonnet-4-6", "anthropic/claude-sonnet-4.6"] {
+        let candidates = [(model, MatchKind::Fuzzy)];
+        for (route, instant, premium) in [
+            (
+                BillingRoute::Direct("anthropic"),
+                "2026-03-12T23:59:59Z",
+                Some(6e-6),
+            ),
+            (
+                BillingRoute::Direct("anthropic"),
+                "2026-03-13T00:00:00Z",
+                None,
+            ),
+            (
+                BillingRoute::Direct("deepseek"),
+                "2026-03-12T23:59:59Z",
+                None,
+            ),
+            (BillingRoute::Foreign, "2026-03-12T23:59:59Z", None),
+        ] {
+            let (_, rates) = pricing
+                .resolve_on_route_at(
+                    Some(model),
+                    &candidates,
+                    route,
+                    Some(super::timestamp(instant)),
+                )
+                .unwrap();
+            let long_input = rates
+                .long_context
+                .and_then(|context| context.rates.input)
+                .filter(|rate| (*rate - rates.input).abs() > f64::EPSILON);
+            assert_eq!(long_input, premium, "{model} {route:?} {instant}");
+        }
+    }
+}

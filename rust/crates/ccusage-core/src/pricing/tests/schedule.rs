@@ -765,7 +765,7 @@ fn billing_route_decides_deepseek_schedule_eligibility() {
                 }
             }"#,
     );
-    let direct = BillingRoute::Direct;
+    let direct = BillingRoute::Direct("deepseek");
     let foreign = BillingRoute::Foreign;
     for (case, pricing, model, candidates, route, instant, expected) in [
         (
@@ -859,7 +859,12 @@ fn user_overrides_take_precedence_over_the_route_schedule() {
     let instant = Some(timestamp("2026-08-17T01:00:00Z"));
 
     let (_, direct) = pricing
-        .resolve_on_route_at(Some(&model), &candidates, BillingRoute::Direct, instant)
+        .resolve_on_route_at(
+            Some(&model),
+            &candidates,
+            BillingRoute::Direct("deepseek"),
+            instant,
+        )
         .unwrap();
     assert_eq!(direct.input * 1e6, 9.0);
     assert!((direct.output * 1e6 - 1.32).abs() < 1e-12);
