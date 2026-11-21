@@ -921,3 +921,45 @@ fn prices_a_foreign_router_without_the_deepseek_schedule() {
         assert_eq!(entry.missing_pricing_model, None, "{provider}");
     }
 }
+
+#[test]
+fn reports_claude_agent_model_aliases_as_missing_pricing_instead_of_regional_rates() {
+    ccusage_test_support::install_pricing_snapshots();
+    let mut pricing = PricingMap::default();
+    pricing.load_json(
+        r#"{
+            "claude-opus-5-5": {"litellm_provider": "anthropic", "input_cost_per_token": 4e-6, "output_cost_per_token": 2e-5},
+            "us-gov.anthropic.claude-opus-5": {"litellm_provider": "bedrock_converse", "input_cost_per_token": 6e-6, "output_cost_per_token": 3e-5},
+            "claude-sonnet-5-5": {"litellm_provider": "anthropic", "input_cost_per_token": 2e-6, "output_cost_per_token": 1e-5},
+            "bedrock/us-gov-west-1/anthropic.claude-sonnet-5-5": {"litellm_provider": "bedrock", "input_cost_per_token": 3.6e-6, "output_cost_per_token": 1.8e-5},
+            "claude-haiku-5-5": {"litellm_provider": "anthropic", "input_cost_per_token": 1e-6, "output_cost_per_token": 5e-6},
+            "us-gov.anthropic.claude-haiku-5-5": {"litellm_provider": "bedrock_converse", "input_cost_per_token": 1.2e-6, "output_cost_per_token": 6e-6},
+            "claude-fable-5-2": {"litellm_provider": "anthropic", "input_cost_per_token": 8e-6, "output_cost_per_token": 4e-5},
+            "us-gov.anthropic.claude-fable-5-1": {"litellm_provider": "bedrock_converse", "input_cost_per_token": 1.2e-5, "output_cost_per_token": 6e-5}
+        }"#,
+    );
+    for alias in ["opus", "sonnet", "haiku", "fable"] {
+        let data = format!(
+            r#"{{"model":{{"id":"{alias}","providerID":"claude-agent"}},"tokens":{{"input":1000000}},"cost":0}}"#
+        );
+        let (entry, _) = session_message_value_to_entry_checked(
+            SessionMessageRow {
+                kind: SessionMessageKind::Assistant,
+                data: &data,
+                id: "msg-v2".to_string(),
+                session_id: "v2-session".to_string(),
+                created: Some(1_767_312_000_000),
+            },
+            &jiff::tz::TimeZone::UTC,
+            CostMode::Calculate,
+            ccusage_core::cost::PriceTable::Calculate(&pricing),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            (entry.cost, entry.missing_pricing_model.as_deref()),
+            (0.0, Some(alias)),
+            "{alias}"
+        );
+    }
+}
