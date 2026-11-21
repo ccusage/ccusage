@@ -233,7 +233,7 @@ impl Pricing {
         );
         let overridden = |bit: u16| explicit.is_some_and(|entry| entry.explicit_fields & bit != 0);
         // NOTE(2026-11-20, #2373): `scheduled!` already resolved each base field to its override or schedule rate. The fields above the split therefore inherit `self.$field` unless a long rate is explicit.
-        // NOTE(2026-11-21, #2226): A schedule's own tier prices the fields above the split only where the override leaves the base rate alone, so a base-rate override stays the price at every context size (#2198).
+        // NOTE(2026-11-21, #2226): A schedule's own tier prices the fields above the split only where the override leaves the base rate alone. A base-rate override therefore stays the price at every context size, as #2198 decided.
         macro_rules! long_scheduled {
             ($field:ident, $bit:expr, $base_bit:expr, $wrap:expr) => {
                 long_context.rates.$field = if overridden($bit) {
