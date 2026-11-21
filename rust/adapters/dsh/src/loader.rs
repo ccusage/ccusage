@@ -22,7 +22,7 @@ pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
             entries.push(dsh_entry_to_loaded(entry, cx.window.timezone(), pricing));
         }
     }
-    entries.sort_by_key(|entry| entry.timestamp);
+    LoadedEntry::sort_by_timestamp(&mut entries);
     Ok(entries)
 }
 

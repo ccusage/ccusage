@@ -190,6 +190,12 @@ pub struct LoadedEntry {
     pub stored_cost: Option<f64>,
 }
 
+impl LoadedEntry {
+    pub fn sort_by_timestamp(entries: &mut [Self]) {
+        entries.sort_by_key(|entry| entry.timestamp);
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UsageSummary {

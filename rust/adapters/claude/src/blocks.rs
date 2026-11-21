@@ -40,7 +40,7 @@ pub(crate) fn identify_session_blocks(
         return Vec::new();
     }
     let session_duration = session_duration.as_millis();
-    entries.sort_by_key(|entry| entry.timestamp);
+    LoadedEntry::sort_by_timestamp(&mut entries);
     let mut blocks = Vec::new();
     let mut current_start: Option<TimestampMs> = None;
     let mut current_entries = Vec::new();
