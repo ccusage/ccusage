@@ -29,22 +29,21 @@ impl CodexModels {
             return Ok(*id);
         }
 
-        let model = pricing.map_or_else(
-            || crate::model_aliases::resolve_model_name(logged),
-            |table| table.pricing_identity(logged),
-        );
-        let id = self.resolved.intern(&model, || {
-            let price = pricing.and_then(|table| table.find_identity_handle(&model));
-            CodexModel {
-                name: CompactString::new(model.as_ref()),
-                long_context_threshold: price.as_ref().map_or(
-                    crate::pricing::DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS,
-                    |handle| {
-                        handle.with_rates_at(None, |entry| entry.long_context_split_threshold())
-                    },
-                ),
-                time_dependent: price.is_some_and(|handle| handle.is_time_dependent()),
+        let (model, price) = match pricing {
+            Some(table) => {
+                let identity = table.pricing_identity(logged);
+                (identity.name, identity.handle)
             }
+            None => (crate::model_aliases::resolve_model_name(logged), None),
+        };
+        let id = self.resolved.intern(&model, || CodexModel {
+            name: CompactString::new(model.as_ref()),
+            long_context_threshold: price.as_ref().map_or(
+                crate::pricing::DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS,
+                |handle| handle.with_rates_at(None, |entry| entry.long_context_split_threshold()),
+            ),
+            time_dependent: price.is_some_and(|handle| handle.is_time_dependent()),
+            logged: CompactString::new(logged),
         })?;
         self.logged.insert(CompactString::new(logged), id);
         Ok(id)
@@ -55,6 +54,7 @@ pub(super) struct CodexModel {
     name: CompactString,
     long_context_threshold: u64,
     time_dependent: bool,
+    logged: CompactString,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -142,6 +142,9 @@ fn accumulate_codex_usage_into_model_usage(
     timestamp: crate::TimestampMs,
     attribution: &CodexAttribution,
 ) {
+    if model_usage.priced_as.is_none() {
+        model_usage.priced_as = Some(model.logged.clone());
+    }
     model_usage.reasoning_output_tokens = model_usage
         .reasoning_output_tokens
         .saturating_add(event.reasoning_output_tokens);

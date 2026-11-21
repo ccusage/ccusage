@@ -33,7 +33,7 @@ pub use rates::{
     DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS, LongContext, LongContextMode, LongContextRates, Pricing,
 };
 mod resolve;
-pub use resolve::{AgentModel, BillingRoute, MatchKind, PricingHandle};
+pub use resolve::{AgentModel, BillingRoute, MatchKind, PricedIdentity, PricingHandle};
 #[cfg(feature = "resolver-trace")]
 pub use resolve::{Explanation, ResolutionStep};
 mod row;

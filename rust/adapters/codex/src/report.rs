@@ -6,8 +6,7 @@ use crate::{
     CodexGroup, CodexModelUsage, CodexTimestampedUsage, PricingMap, Result, SimpleTable,
     attach_unpriced_models,
     cli::{AgentReportKind, CostMode, SharedArgs},
-    missing_pricing_model_for_token_total, print_box_title,
-    print_missing_pricing_warnings_for_models, sum_costs,
+    print_box_title, print_missing_pricing_warnings_for_models, sum_costs,
 };
 
 use super::speed::CodexSpeedPolicy;
@@ -82,7 +81,7 @@ pub(super) fn calculate_codex_model_cost(
     pricing: Option<&PricingMap>,
     speed: CodexSpeedPolicy,
 ) -> f64 {
-    let Some(handle) = pricing.and_then(|table| table.find_identity_handle(model)) else {
+    let Some(handle) = codex_model_price(model, usage, pricing) else {
         return 0.0;
     };
     if !usage.timestamped_usage.is_empty() {
@@ -123,22 +122,28 @@ pub fn calculate_group_cost(
     )
 }
 
+fn codex_model_price(
+    model: &str,
+    usage: &CodexModelUsage,
+    pricing: Option<&PricingMap>,
+) -> Option<crate::pricing::PricingHandle> {
+    pricing?
+        .pricing_identity(usage.priced_as.as_deref().unwrap_or(model))
+        .handle
+}
+
 pub(super) fn codex_model_missing_pricing(
     model: &str,
     usage: &CodexModelUsage,
     pricing: Option<&PricingMap>,
 ) -> bool {
-    missing_pricing_model_for_token_total(
-        Some(model),
-        usage.total_tokens.max(
-            usage
-                .usage
-                .input_tokens
-                .saturating_add(usage.usage.output_tokens),
-        ),
-        pricing,
-    )
-    .is_some()
+    let tokens = usage.total_tokens.max(
+        usage
+            .usage
+            .input_tokens
+            .saturating_add(usage.usage.output_tokens),
+    );
+    pricing.is_some() && tokens != 0 && codex_model_price(model, usage, pricing).is_none()
 }
 
 pub(crate) fn codex_missing_pricing_models(

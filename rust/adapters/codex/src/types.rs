@@ -132,6 +132,7 @@ pub struct CodexModelUsage {
     pub total_tokens: u64,
     pub(crate) timestamped_usage: BTreeMap<i64, CodexTimestampedUsage>,
     pub(crate) is_fallback: bool,
+    pub(crate) priced_as: Option<compact_str::CompactString>,
 }
 
 impl CodexModelUsage {

@@ -272,7 +272,7 @@ fn an_unpriced_alias_target_is_not_priced_through_its_own_alias() {
     let found = pricing.find("chain-own-first").unwrap();
     assert_eq!((found.input, found.output), (1e-6, 2e-6));
     assert_eq!(
-        pricing.pricing_identity("chain-own-first"),
+        pricing.pricing_identity("chain-own-first").name,
         "chain-own-first"
     );
 }

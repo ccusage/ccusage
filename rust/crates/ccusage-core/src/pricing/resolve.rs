@@ -79,6 +79,11 @@ pub struct Explanation<'a> {
     pub source: super::Source,
 }
 
+pub struct PricedIdentity<'a> {
+    pub name: std::borrow::Cow<'a, str>,
+    pub handle: Option<PricingHandle>,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct PricingHandle {
     rates: Pricing,
@@ -190,35 +195,27 @@ impl PricingMap {
         Some((model, handle.with_rates_at(timestamp, |rates| *rates)))
     }
 
-    /// The model id whose row prices a request for `logged`: its configured
-    /// alias target when the row was found through that alias, otherwise
-    /// `logged` itself, including when a pricing override matches it.
-    pub fn pricing_identity<'a>(&self, logged: &'a str) -> std::borrow::Cow<'a, str> {
-        let aliased = !self.has_user_override(logged)
-            && self
-                .resolve_row_with(
-                    Some(logged),
-                    &[(logged, MatchKind::Fuzzy)],
-                    Lookup::Pricing,
-                    models_dev_pricing,
-                )
-                .is_some_and(|(_, _, hit)| hit.aliased());
-        aliased
-            .then(|| configured_alias(logged))
-            .flatten()
-            .unwrap_or(std::borrow::Cow::Borrowed(logged))
-    }
-
-    /// Prices a model id returned by [`Self::pricing_identity`]. An alias target
-    /// it returns has an identity price, so its own alias is never reached.
-    pub fn find_identity_handle(&self, model: &str) -> Option<PricingHandle> {
-        let (_, found, hit) = self.resolve_row_with(
-            None,
-            &[(model, MatchKind::Fuzzy)],
+    /// Resolves `logged` once and returns the model id whose row priced it with
+    /// that row's handle: the configured alias target when the row was found
+    /// through that alias, otherwise `logged` itself. Charge usage grouped under
+    /// the returned name with this handle, not with a lookup of the name, so an
+    /// alias is applied exactly once.
+    pub fn pricing_identity<'a>(&self, logged: &'a str) -> PricedIdentity<'a> {
+        let resolved = self.resolve_row_with(
+            Some(logged),
+            &[(logged, MatchKind::Fuzzy)],
             Lookup::Pricing,
             models_dev_pricing,
-        )?;
-        Some(PricingHandle::new(found.row, hit))
+        );
+        let name = resolved
+            .as_ref()
+            .filter(|(_, _, hit)| hit.aliased())
+            .and_then(|_| configured_alias(logged))
+            .unwrap_or(std::borrow::Cow::Borrowed(logged));
+        PricedIdentity {
+            name,
+            handle: resolved.map(|(_, found, hit)| PricingHandle::new(found.row, hit)),
+        }
     }
 
     pub fn find_handle(&self, model: &str) -> Option<PricingHandle> {

@@ -218,6 +218,58 @@ fn groups_under_the_alias_target_whose_fuzzy_row_priced_the_usage() {
 }
 
 #[test]
+fn bills_a_fuzzy_priced_alias_target_once_even_when_it_has_its_own_alias() {
+    ccusage_test_support::install_pricing_snapshots();
+    let _aliases = set_model_aliases_for_tests([
+        ("chain-hop-a", "claude-chain-hop-9-thinking"),
+        ("claude-chain-hop-9-thinking", "chain-hop-c"),
+    ]);
+    let mut pricing = PricingMap::default();
+    pricing.load_json(
+        r#"{
+                "claude-chain-hop-9":{"input_cost_per_token":2,"output_cost_per_token":2},
+                "chain-hop-c":{"input_cost_per_token":3,"output_cost_per_token":3}
+            }"#,
+    );
+    assert_eq!(pricing.find("chain-hop-a").unwrap().input, 2.0);
+    let event = CodexTokenUsageEvent {
+        session_id: "session".into(),
+        response_id: None,
+        record_response_id: None,
+        timestamp: parse_ts_timestamp("2026-09-01T00:00:00Z").unwrap(),
+        last_activity: "2026-09-01T00:00:00Z".into(),
+        model: "chain-hop-a".into(),
+        input_tokens: 100,
+        cached_input_tokens: 0,
+        cache_creation_tokens: 0,
+        output_tokens: 0,
+        reasoning_output_tokens: 0,
+        total_tokens: 100,
+        is_fallback_model: false,
+        service_tier: None,
+    };
+    let seen = CodexDedupe::new(1, Some(&pricing));
+    let mut provenance = CodexEventProvenance::new(0);
+    seen.record(&event, &mut provenance).unwrap();
+    let groups = seen
+        .fold(&SharedArgs::default(), AgentReportKind::Session)
+        .unwrap();
+    let group = &groups["session"];
+    assert_eq!(
+        group.models.keys().cloned().collect::<Vec<_>>(),
+        ["claude-chain-hop-9-thinking"]
+    );
+    assert_eq!(
+        crate::report::calculate_group_cost(
+            group,
+            Some(&pricing),
+            CodexSpeedPolicy::Auto(CodexServiceTier::Standard)
+        ),
+        200.0,
+    );
+}
+
+#[test]
 fn tier_split_uses_the_supplied_pricing_entry_instead_of_embedded_rates() {
     ccusage_test_support::install_pricing_snapshots();
     let mut pricing = PricingMap::default();
