@@ -41,7 +41,7 @@
                              "Wall vs prev" (if comparison (report/format-ratio-spread (:wall comparison)) "-")
                              "CPU vs prev" (if comparison (report/format-ratio-spread (:cpu comparison)) "-")
                              "RSS vs prev" (if comparison (report/format-ratio-spread (:rss comparison)) "-")
-                             "Instructions vs prev" (if (:instructions comparison) (report/format-ratio-spread (:instructions comparison)) "-")
+                             "Instructions vs prev" (if (:instructions comparison) (format "%.2f" (double (get-in comparison [:instructions :median]))) "-")
                              "Verdict" (if comparison (report/comparison-verdict comparison) "-"))))
               variants)
         rows (if (some #(not= "-" (get % "Instructions vs prev")) (rest rows))
