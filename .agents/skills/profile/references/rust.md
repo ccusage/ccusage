@@ -46,9 +46,9 @@ PR against its merge base. Run it on a `testbox-bench.yaml` box, or
 confirmation, do not use `--real`: it also builds refs and runs the synthetic
 section. Build both macOS binaries on a `testbox-bench-macos.yaml` box and fetch
 them with `blacksmith testbox download`, then run them over APFS clones with
-`hyperfine --export-json` (compare `user` + `system`) and `/usr/bin/time -l`
-(peak RSS), and report ratios only. Judge by the CPU-time and peak-RSS
-ratios, not wall time.
+`hyperfine --export-json` (wall `mean`, and `user` + `system` for CPU) and
+`/usr/bin/time -l` (peak RSS), and report the wall, CPU and peak-RSS ratios
+only.
 
 When a regression slips past the comparison, fix the fixture generator
 (`apps/ccusage/scripts/generate-large-fixture.ts`) so its lines carry the shape
