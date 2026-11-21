@@ -20,21 +20,22 @@ pub(crate) fn resolve_codex_speed(requested: CodexSpeed) -> CodexSpeedPolicy {
 }
 
 fn detect_codex_service_tier() -> CodexServiceTier {
-    let configured_tiers: Vec<_> = codex_home_paths()
-        .iter()
+    use CodexServiceTier::{Fast, Flex, Standard, Ultrafast};
+
+    codex_home_paths()
+        .into_iter()
         .filter_map(|path| {
             fs::read_to_string(path.join("config.toml"))
                 .ok()
                 .and_then(|content| codex_config_service_tier(&content))
         })
-        .collect();
-    if configured_tiers.contains(&CodexServiceTier::Fast) {
-        CodexServiceTier::Fast
-    } else if configured_tiers.contains(&CodexServiceTier::Flex) {
-        CodexServiceTier::Flex
-    } else {
-        CodexServiceTier::Standard
-    }
+        .max_by_key(|tier| match tier {
+            Standard => 0,
+            Flex => 1,
+            Fast => 2,
+            Ultrafast => 3,
+        })
+        .unwrap_or(Standard)
 }
 
 fn codex_home_paths() -> Vec<std::path::PathBuf> {
@@ -95,16 +96,22 @@ mod tests {
     }
 
     #[test]
-    fn configured_ultrafast_leaves_unclassified_usage_at_standard() {
-        let fixture = fs_fixture!({ "config.toml": r#"service_tier = "ultrafast""# });
-        Environment::with_var("CODEX_HOME", fixture.path("")).run(|| {
-            assert_eq!(
-                codex_config_service_tier(r#"service_tier = "ultrafast""#),
-                Some(CodexServiceTier::Ultrafast)
-            );
+    fn configured_ultrafast_takes_precedence_over_fast_and_flex() {
+        let fixture = fs_fixture!({
+            "fast/config.toml": r#"service_tier = "fast""#,
+            "ultrafast/config.toml": r#"service_tier = "default"
+                profile = "work"
+                [profiles.work]
+                service_tier = "ultrafast""#,
+            "flex/config.toml": r#"service_tier = "flex""#,
+        });
+        let homes = ["fast", "ultrafast", "flex"]
+            .map(|root| fixture.path(root).display().to_string())
+            .join(",");
+        Environment::with_var("CODEX_HOME", homes).run(|| {
             assert_eq!(
                 super::resolve_codex_speed(crate::cli::CodexSpeed::Auto),
-                super::CodexSpeedPolicy::Auto(CodexServiceTier::Standard)
+                super::CodexSpeedPolicy::Auto(CodexServiceTier::Ultrafast)
             );
         })
     }

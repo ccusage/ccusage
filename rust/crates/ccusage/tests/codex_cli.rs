@@ -823,7 +823,7 @@ fn reports_issue_1970_subagent_usage_in_daily_and_session_commands() {
 }
 
 #[test]
-fn prices_issue_1987_recorded_ultrafast_requests_at_ultrafast_rates() {
+fn prices_recorded_and_configured_ultrafast_usage() {
     let settings = |timestamp: &str, tier: &str| {
         json!({
             "timestamp": timestamp,
@@ -866,13 +866,20 @@ fn prices_issue_1987_recorded_ultrafast_requests_at_ultrafast_rates() {
         request("2026-10-27T10:00:03Z"),
     ]
     .join("\n");
+    let configured_ultrafast = [
+        request("2026-10-27T10:00:01Z"),
+        settings("2026-10-27T10:00:02Z", "default"),
+        request("2026-10-27T10:00:03Z"),
+    ]
+    .join("\n");
 
-    for (rollout, total_tokens, expected_cost) in [
-        (ultrafast_only, 1250, 0.01512),
-        (switched_back, 2500, 0.01512 + 0.00252),
+    for (configured_tier, rollout, total_tokens, expected_cost) in [
+        ("default", ultrafast_only, 1250, 0.01512),
+        ("default", switched_back, 2500, 0.01512 + 0.00252),
+        ("ultrafast", configured_ultrafast, 2500, 0.01512 + 0.00252),
     ] {
         let fixture = fs_fixture!({
-            "codex/config.toml": r#"service_tier = "default""#,
+            "codex/config.toml": format!("service_tier = {configured_tier:?}"),
             "codex/sessions/2026/10/27/rollout.jsonl": rollout,
         });
 
@@ -884,7 +891,10 @@ fn prices_issue_1987_recorded_ultrafast_requests_at_ultrafast_rates() {
 
         assert_eq!(daily["totals"]["totalTokens"], total_tokens);
         let cost = daily["totals"]["costUSD"].as_f64().unwrap();
-        assert!((cost - expected_cost).abs() < 1e-12, "{cost}");
+        assert!(
+            (cost - expected_cost).abs() < 1e-12,
+            "config tier {configured_tier}: expected {expected_cost}, got {cost}"
+        );
         let summary: Value = serde_json::from_str(&run_cli(
             &fixture,
             &[
