@@ -1,9 +1,9 @@
-use ccusage_adapter_common::{dedupe::dedupe_highest_rank, read_units, source::LoadContext};
+use ccusage_adapter_common::{dedupe::dedupe_preferred, read_units, source::LoadContext};
 
 use crate::{LoadedEntry, Result};
 
 use super::{
-    parser::{dsh_entry_key, dsh_entry_to_loaded, read_session_file},
+    parser::{DshUsageEntry, dsh_entry_key, dsh_entry_to_loaded, read_session_file},
     paths::discover_session_files,
 };
 
@@ -13,10 +13,10 @@ pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let loaded = read_units(&files, cx.shared.single_thread, cx.diagnostics, |file| {
         read_session_file(file, cx.diagnostics)
     });
-    let mut entries = dedupe_highest_rank(
+    let mut entries = dedupe_preferred(
         loaded.into_iter().flatten().flatten(),
         dsh_entry_key,
-        |entry| entry.billable_output_tokens(),
+        DshUsageEntry::preferred_over,
     )
     .into_iter()
     .map(|entry| dsh_entry_to_loaded(entry, cx.window.timezone(), pricing))
@@ -206,6 +206,61 @@ mod tests {
                 assert_eq!(entries.len(), 1);
                 assert_eq!(entries[0].cost, 10.0);
             })
+        }
+    }
+
+    #[test]
+    fn duplicate_dsh_sequences_prefer_billable_total_then_output_in_either_order() {
+        ccusage_test_support::install_pricing_snapshots();
+        let mut pricing = PricingMap::default();
+        pricing.load_json(r#"{"sample":{"input_cost_per_token":1,"output_cost_per_token":2}}"#);
+        let session = |events: &str| {
+            format!(
+                "{}\n{}\n{events}",
+                r#"{"type":"session","id":"duplicate","createdAt":1785015039278}"#,
+                r#"{"type":"request/header","data":{"header":{"config":{"model":"sample"}}}}"#,
+            )
+        };
+        let first = fs_fixture!({
+            "sessions/p/duplicate/session.v4.jsonl": session(r#"
+{"type":"assistant/message","seq":1,"time":1785015045001,"data":{"usage":{"inputTokens":1000,"outputTokens":5}}}
+{"type":"assistant/message","seq":2,"time":1785015045002,"data":{"usage":{"inputTokens":100,"outputTokens":5}}}
+{"type":"assistant/message","seq":3,"time":1785015045003,"data":{"usage":{"inputTokens":10,"outputTokens":5}}}
+{"type":"assistant/message","seq":4,"time":1785015045004,"data":{"usage":{"inputTokens":100,"outputTokens":5}}}
+"#),
+        });
+        let second = fs_fixture!({
+            "sessions/p/duplicate/session.v4.jsonl": session(r#"
+{"type":"assistant/message","seq":1,"time":1785015045001,"data":{"usage":{"inputTokens":0,"outputTokens":6}}}
+{"type":"assistant/message","seq":2,"time":1785015045002,"data":{"usage":{"inputTokens":200,"outputTokens":5}}}
+{"type":"assistant/message","seq":3,"time":1785015045003,"data":{"usage":{"inputTokens":9,"outputTokens":6}}}
+{"type":"assistant/message","seq":4,"time":1785015045005,"data":{"usage":{"inputTokens":100,"outputTokens":5}}}
+"#),
+        });
+        for [first, second] in [[first.root(), second.root()], [second.root(), first.root()]] {
+            let roots = format!("{},{}", first.display(), second.display());
+            Environment::with_var(DSH_HOME_ENV, &roots).run(|| {
+                let entries = ccusage_adapter_common::testing::entries(
+                    &crate::SOURCE,
+                    &SharedArgs::default(),
+                    Default::default(),
+                    Some(&pricing),
+                )
+                .unwrap();
+                let rows = entries
+                    .iter()
+                    .map(|entry| (entry.timestamp.as_millis(), entry.cost))
+                    .collect::<Vec<_>>();
+                assert_eq!(
+                    rows,
+                    [
+                        (1785015045001, 1010.0),
+                        (1785015045002, 210.0),
+                        (1785015045003, 21.0),
+                        (1785015045004, 110.0),
+                    ]
+                );
+            });
         }
     }
 

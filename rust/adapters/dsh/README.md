@@ -80,7 +80,8 @@ pricing, the entry stays visible with the resolved model in the missing-pricing 
   inherited marker, the log is read as its parent's usage and dropped with a debug note; a log
   without `isSeeded` keeps its entries.
 - Entries are deduplicated by session ID and `seq`. Events without `seq` fall back to the full
-  timestamp, model and token tuple.
+  timestamp, model and token tuple. Conflicting copies are ranked by billable token total,
+  then by output tokens, then by their recorded fields to keep selection deterministic.
 - Session rows use the session ID from the log header. The project path is the header `cwd`, or
   `DeepSeek Harness` when absent.
 

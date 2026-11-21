@@ -56,6 +56,8 @@ ccusage counts the usage recorded on assistant messages, failed or aborted assis
 
 A forked session starts with a copy of its parent's log. ccusage counts only the requests made after the fork point, so a parent and its forks are not counted twice. A fork whose log was cut off before the end of the copied history is skipped, because everything in it belongs to the parent.
 
+When copies of a request disagree, ccusage keeps the copy with the most billable tokens. If the totals match, it prefers the copy with more output tokens.
+
 DeepSeek Harness does not log usage for the requests that generate session titles, so those requests are not included.
 
 DeepSeek Harness does not record costs, so ccusage calculates them from token counts and known model pricing. `auto` and `calculate` produce the same result, and `display` shows `$0.00`. Requests through DeepSeek's own API-key and account providers use DeepSeek pricing, including DeepSeek's peak and off-peak rates. Requests that name another provider look up pricing for that provider's model first, then for the bare model ID, and keep that flat rate even when the bare DeepSeek model ID resolves to DeepSeek's own row. A model without known pricing remains visible with a missing-pricing warning.

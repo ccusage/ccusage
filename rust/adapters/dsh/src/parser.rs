@@ -468,8 +468,29 @@ pub(super) fn dsh_entry_key(entry: &DshUsageEntry) -> String {
 }
 
 impl DshUsageEntry {
-    pub(super) fn billable_output_tokens(&self) -> u64 {
-        self.usage.output_tokens
+    pub(super) fn preferred_over(&self, other: &Self) -> bool {
+        self.billable_token_rank()
+            .cmp(&other.billable_token_rank())
+            .then_with(|| self.report_remainder.cmp(&other.report_remainder))
+            .then_with(|| other.timestamp.cmp(&self.timestamp))
+            .then_with(|| {
+                (&self.model, &self.provider, &self.cwd).cmp(&(
+                    &other.model,
+                    &other.provider,
+                    &other.cwd,
+                ))
+            })
+            .is_gt()
+    }
+
+    fn billable_token_rank(&self) -> (u128, u64, u64, u64) {
+        let usage = self.usage;
+        let cache_write = usage.cache_creation_token_count();
+        let total = u128::from(usage.input_tokens)
+            + u128::from(usage.output_tokens)
+            + u128::from(cache_write)
+            + u128::from(usage.cache_read_input_tokens);
+        (total, usage.output_tokens, usage.input_tokens, cache_write)
     }
 
     fn reported_usage(&self) -> (TokenUsageRaw, u64) {

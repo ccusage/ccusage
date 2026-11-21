@@ -24,10 +24,10 @@ pub fn dedupe_last_wins<T, K: Eq + Hash>(
     kept
 }
 
-pub fn dedupe_highest_rank<T, K: Eq + Hash, R: Ord>(
+pub fn dedupe_preferred<T, K: Eq + Hash>(
     records: impl IntoIterator<Item = T>,
     mut key: impl FnMut(&T) -> K,
-    mut rank: impl FnMut(&T) -> R,
+    mut prefer: impl FnMut(&T, &T) -> bool,
 ) -> Vec<T> {
     let mut positions = HashMap::<K, usize>::new();
     let mut kept = Vec::new();
@@ -39,7 +39,7 @@ pub fn dedupe_highest_rank<T, K: Eq + Hash, R: Ord>(
             }
             Entry::Occupied(position) => {
                 let previous = &mut kept[*position.get()];
-                if rank(&record) > rank(previous) {
+                if prefer(&record, previous) {
                     *previous = record;
                 }
             }

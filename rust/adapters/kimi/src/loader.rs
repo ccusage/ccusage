@@ -1,5 +1,5 @@
 use ccusage_adapter_common::{
-    dedupe::dedupe_highest_rank, source::LoadContext, units::read_typed_units_flat,
+    dedupe::dedupe_preferred, source::LoadContext, units::read_typed_units_flat,
 };
 
 use crate::{LoadedEntry, Result};
@@ -15,11 +15,9 @@ pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let loaded = read_typed_units_flat(&files, cx.shared.single_thread, cx.diagnostics, |file| {
         read_wire_file(file, cx.diagnostics)
     });
-    let mut entries = dedupe_highest_rank(
-        loaded,
-        KimiUsageEntry::dedupe_key,
-        KimiUsageEntry::billable_output_tokens,
-    )
+    let mut entries = dedupe_preferred(loaded, KimiUsageEntry::dedupe_key, |entry, other| {
+        entry.billable_output_tokens() > other.billable_output_tokens()
+    })
     .into_iter()
     .map(|entry| kimi_entry_to_loaded(entry, cx.window.timezone(), pricing))
     .collect::<Vec<_>>();
