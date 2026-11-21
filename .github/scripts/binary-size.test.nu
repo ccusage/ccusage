@@ -58,6 +58,19 @@ def main []: nothing -> nothing {
     assert equal (core parse-limit '4_200_000') 4200000
     assert error { core parse-limit '4MiB' }
 
+    assert equal (core ref-rows 'main, feat/x main') [
+        {ref: main, slug: main}
+        {ref: feat/x, slug: feat-x}
+    ]
+    assert error { core ref-rows ' , ' }
+    let collision = try {
+        core ref-rows 'main feat/x feat-x' | ignore
+        ''
+    } catch {|err|
+        $err.msg
+    }
+    assert equal $collision 'Refs collide after slugging: feat/x and feat-x; pass one of each'
+
     let refs = [
         {ref: main, sha: main0000000000000000, slug: main}
         {ref: feat/x, sha: feat/x0000000000000000, slug: feat-x}

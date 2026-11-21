@@ -1,7 +1,7 @@
 #!/usr/bin/env nix
 #! nix shell --inputs-from ../.. nixpkgs#nushell nixpkgs#llvm --command nu
 
-use ./profile-instructions/core.nu [resolve-ref slug split-list]
+use ./profile-instructions/core.nu [resolve-ref]
 use ./binary-size/core.nu
 
 def main []: nothing -> nothing {
@@ -18,10 +18,7 @@ def github-output [values: record]: nothing -> nothing {
 
 # Resolve the dispatch refs to commits and emit one build per ref and target.
 def "main plan" [--refs: string = 'main', --targets: string = '']: nothing -> nothing {
-    let ref_rows = split-list $refs | each {|ref| {ref: $ref sha: (resolve-ref $ref --fetch) slug: (slug $ref)} }
-    if ($ref_rows | is-empty) {
-        error make {msg: 'Pass at least one ref'}
-    }
+    let ref_rows = core ref-rows $refs | each {|row| $row | insert sha (resolve-ref $row.ref --fetch) }
     let selected = core select-targets $targets
     let builds = core matrix $ref_rows $selected
     github-output {

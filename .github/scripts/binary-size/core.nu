@@ -1,4 +1,4 @@
-use ../profile-instructions/core.nu [split-list]
+use ../profile-instructions/core.nu [slug split-list]
 
 # NOTE(2026-11-21): These mirror the Nix-built targets of `release.yaml`, with its runners and sticky-disk scopes. Windows builds with cargo outside Nix and the Intel macOS binary is a cross-build on the same scarce runners, so both are left out to keep a run to minutes.
 export const targets = [
@@ -53,6 +53,20 @@ export def parse-limit [value: string]: nothing -> any {
         $digits if ($digits =~ '^\d+$') => ($digits | into int)
         _ => { error make {msg: $"Limit '($value)' is not a whole number of bytes"} }
     }
+}
+
+# Refs become artifact names through their slug, so two refs that slug alike would upload twice.
+export def ref-rows [refs: string]: nothing -> list<record<ref: string, slug: string>> {
+    let rows = split-list $refs | each {|ref| {ref: $ref slug: (slug $ref)} }
+    if ($rows | is-empty) {
+        error make {msg: 'Pass at least one ref'}
+    }
+    let colliding = $rows | group-by slug --to-table | where {|group| ($group.items | length) > 1 }
+    if ($colliding | is-not-empty) {
+        let names = $colliding | each {|group| $group.items.ref | str join ' and ' } | str join '; '
+        error make {msg: $"Refs collide after slugging: ($names); pass one of each"}
+    }
+    $rows
 }
 
 export def matrix [refs: list<record>, targets: list<record>]: nothing -> list<record> {
