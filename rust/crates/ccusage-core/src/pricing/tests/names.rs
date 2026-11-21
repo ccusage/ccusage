@@ -185,3 +185,141 @@ fn model_suffix_matches_only_at_the_last_occurrence() {
 fn builtin_price_aliases_require_an_explicit_table_entry() {
     assert_eq!(super::super::data::ALIASES.len(), 3);
 }
+
+#[test]
+fn a_configured_alias_prices_a_model_that_has_its_own_rate() {
+    crate::test_support::install_pricing_snapshots();
+    let _aliases = crate::model_aliases::set_model_aliases_for_tests([(
+        "alias-source-model",
+        "alias-target-model",
+    )]);
+    let mut pricing = PricingMap::default();
+    assert_eq!(
+        pricing.load_json(
+            r#"{
+                "alias-source-model": {"input_cost_per_token": 1e-6, "output_cost_per_token": 2e-6},
+                "openai/alias-source-model": {"litellm_provider": "openai", "input_cost_per_token": 1e-6, "output_cost_per_token": 2e-6},
+                "alias-target-model": {"input_cost_per_token": 7e-6, "output_cost_per_token": 9e-6}
+            }"#,
+        ),
+        3
+    );
+    let found = pricing.find("alias-source-model").unwrap();
+    assert_eq!((found.input, found.output), (7e-6, 9e-6));
+    for reported in ["alias-source-model", "[pi] alias-source-model"] {
+        let (_, provider) = pricing
+            .resolve_at(
+                Some(reported),
+                &[
+                    ("openai/alias-source-model", MatchKind::StrictExact),
+                    ("alias-source-model", MatchKind::Fuzzy),
+                ],
+                None,
+            )
+            .unwrap();
+        assert_eq!(
+            (provider.input, provider.output),
+            (7e-6, 9e-6),
+            "{reported}"
+        );
+    }
+}
+
+#[test]
+fn an_alias_target_without_an_identity_price_falls_back_to_the_logged_id() {
+    crate::test_support::install_pricing_snapshots();
+    let _aliases = crate::model_aliases::set_model_aliases_for_tests([(
+        "alias-logged-model",
+        "claude-alias-family-9-thinking",
+    )]);
+    let mut pricing = PricingMap::default();
+    assert_eq!(
+        pricing.load_json(
+            r#"{
+                "alias-logged-model": {"input_cost_per_token": 1e-6, "output_cost_per_token": 2e-6},
+                "claude-alias-family-9": {"input_cost_per_token": 7e-6, "output_cost_per_token": 9e-6}
+            }"#,
+        ),
+        2
+    );
+    assert_eq!(
+        pricing
+            .find_entry("claude-alias-family-9-thinking", MatchKind::Fuzzy)
+            .map(|rates| rates.input),
+        Some(7e-6)
+    );
+    let found = pricing.find("alias-logged-model").unwrap();
+    assert_eq!((found.input, found.output), (1e-6, 2e-6));
+}
+
+#[test]
+fn an_unpriced_alias_target_is_not_priced_through_its_own_alias() {
+    crate::test_support::install_pricing_snapshots();
+    let _aliases = crate::model_aliases::set_model_aliases_for_tests([
+        ("chain-own-first", "chain-own-second"),
+        ("chain-own-second", "chain-own-third"),
+    ]);
+    let mut pricing = PricingMap::default();
+    assert_eq!(
+        pricing.load_json(
+            r#"{
+                "chain-own-first": {"input_cost_per_token": 1e-6, "output_cost_per_token": 2e-6},
+                "chain-own-third": {"input_cost_per_token": 7e-6, "output_cost_per_token": 9e-6}
+            }"#,
+        ),
+        2
+    );
+    let found = pricing.find("chain-own-first").unwrap();
+    assert_eq!((found.input, found.output), (1e-6, 2e-6));
+    assert_eq!(
+        pricing.pricing_identity("chain-own-first").name,
+        "chain-own-first"
+    );
+}
+
+#[test]
+fn an_alias_target_priced_only_by_models_dev_beats_the_logged_id() {
+    crate::test_support::install_pricing_snapshots();
+    let _aliases =
+        crate::model_aliases::set_model_aliases_for_tests([("md-alias-logged", "md-alias-target")]);
+    let mut primary = PricingMap::default();
+    primary.load_json(
+        r#"{"md-alias-logged": {"input_cost_per_token": 1e-6, "output_cost_per_token": 2e-6}}"#,
+    );
+    let mut models_dev = PricingMap::default();
+    models_dev.load_models_dev_json_for_tests(
+        r#"{"md-alias-target": {"cost": {"input": 7, "output": 9}}}"#,
+    );
+    let pricing = online(&primary);
+    let found = pricing
+        .find_with_live("md-alias-logged", || Some(&models_dev))
+        .unwrap();
+    assert_eq!((found.input, found.output), (7e-6, 9e-6));
+}
+
+#[test]
+fn a_models_dev_row_and_an_authoritative_row_at_the_same_index_are_different_rows() {
+    crate::test_support::install_pricing_snapshots();
+    let _aliases = crate::model_aliases::set_model_aliases_for_tests([
+        ("index-logged", "index-target"),
+        ("index-target", "index-next"),
+    ]);
+    let mut primary = PricingMap::default();
+    primary.load_json(
+        r#"{"index-next": {"input_cost_per_token": 3e-6, "output_cost_per_token": 3e-6}}"#,
+    );
+    let mut models_dev = PricingMap::default();
+    models_dev
+        .load_models_dev_json_for_tests(r#"{"index-target": {"cost": {"input": 7, "output": 9}}}"#);
+    let pricing = super::layered(&primary, Some(&models_dev));
+
+    let identity = pricing.pricing_identity("index-logged");
+    let charged = identity
+        .handle
+        .unwrap()
+        .with_rates_at(None, |rates| (rates.input, rates.output));
+    assert_eq!(charged, (7e-6, 9e-6));
+    let target = pricing.find("index-target").unwrap();
+    assert_eq!((target.input, target.output), (3e-6, 3e-6));
+    assert_eq!(identity.name, "index-logged");
+}

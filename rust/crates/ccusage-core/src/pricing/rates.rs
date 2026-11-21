@@ -139,6 +139,7 @@ pub(super) struct ScheduledRates {
     pub(super) output: f64,
     pub(super) cache_create: f64,
     pub(super) cache_read: f64,
+    pub(super) long_context: Option<LongContext>,
 }
 
 #[derive(Debug)]
@@ -150,6 +151,8 @@ pub(super) struct PricingSchedule {
     pub(super) off_peak: ScheduledRates,
     pub(super) peak: ScheduledRates,
     pub(super) successor: Option<Successor>,
+    pub(super) follows_row: bool,
+    pub(super) vendor: &'static str,
 }
 
 #[derive(Debug)]
@@ -205,7 +208,12 @@ impl Pricing {
     pub(super) fn at(mut self, schedule: &PricingSchedule, timestamp: TimestampMs) -> Self {
         let explicit = (self.explicit_fields != 0).then_some(self);
         let rates = schedule.rates_at(timestamp);
-        let mut long_context = self.long_context.unwrap_or(LongContext::empty_marginal());
+        let scheduled_tier = rates.long_context.filter(|_| {
+            explicit.is_none_or(|entry| entry.explicit_fields & OverrideFields::RATES == 0)
+        });
+        let mut long_context = scheduled_tier
+            .or(self.long_context)
+            .unwrap_or(LongContext::empty_marginal());
         macro_rules! scheduled {
             ($field:ident, $rate:expr, $bit:expr) => {
                 self.$field = match explicit {
@@ -235,7 +243,10 @@ impl Pricing {
                         .and_then(|entry| entry.long_context)
                         .and_then(|context| context.rates.$field)
                 } else {
-                    $wrap(self.$field)
+                    match scheduled_tier {
+                        Some(tier) => tier.rates.$field,
+                        None => $wrap(self.$field),
+                    }
                 };
             };
         }
@@ -258,7 +269,7 @@ impl Pricing {
         );
         scheduled!(fast_multiplier, self.fast_multiplier, OverrideFields::FAST);
         scheduled!(flex_multiplier, self.flex_multiplier, OverrideFields::FLEX);
-        if explicit.is_some() {
+        if overridden(OverrideFields::RATES | OverrideFields::LONG_RATES) {
             long_context.rates.cache_create_1h = Some(self.one_hour_cache_creation_rate());
         }
         self.long_context = Some(long_context);

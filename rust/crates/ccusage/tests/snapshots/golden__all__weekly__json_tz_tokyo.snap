@@ -564,7 +564,7 @@ exit: 0
         {
           "cacheCreationTokens": 50,
           "cacheReadTokens": 700,
-          "cost": 0.0036440000000000005,
+          "cost": 0.003644,
           "inputTokens": 1570,
           "modelName": "grok-code-fast-1",
           "outputTokens": 640,
