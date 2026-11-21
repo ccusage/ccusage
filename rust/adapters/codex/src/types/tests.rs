@@ -160,3 +160,61 @@ fn leaves_an_empty_usage_total_at_zero() {
 
     assert_eq!(usage.total_tokens, 0);
 }
+
+fn top_level_usage(line: &[u8]) -> Option<CodexUsageCandidate> {
+    ccusage_adapter_common::json::JsonText::new(line)
+        .parse::<CodexLogEntry<'_>>()
+        .ok()
+        .map(|entry| entry.usage)
+}
+
+#[test]
+fn decodes_a_top_level_usage_object_like_a_json_value() {
+    let decoded = |input_tokens| {
+        Some(CodexUsageCandidate::Decoded(CodexRawUsage {
+            input_tokens,
+            total_tokens: input_tokens,
+            ..CodexRawUsage::default()
+        }))
+    };
+    for (line, expected) in [
+        (
+            br#"{"usage":{"input_tokens":7,"note":"x","details":{"a":[1,"b",null]}}}"#.as_slice(),
+            decoded(7),
+        ),
+        (
+            br#"{"usage":{"input_tokens":{},"input_tokens":7}}"#,
+            decoded(7),
+        ),
+        (
+            br#"{"usage":{"input_tokens":7,"input_tokens":[]}}"#,
+            Some(CodexUsageCandidate::Malformed),
+        ),
+        (
+            br#"{"usage":{"output_tokens":[],"input_tokens":7}}"#,
+            Some(CodexUsageCandidate::Malformed),
+        ),
+        (
+            br#"{"usage":{"input_tokens":{"x":1}}}"#,
+            Some(CodexUsageCandidate::Malformed),
+        ),
+        (br#"{"usage":{"input_tokens":7,"x":1e400}}"#, None),
+        (br#"{"usage":{"input_tokens":7,"x":{"y":[1e400]}}}"#, None),
+        (br#"{"usage":{"input_tokens":{"y":1e400}}}"#, None),
+        (br#"{"usage":{"input_tokens":7,"x":"\udc00"}}"#, None),
+        (b"{\"usage\":{\"input_tokens\":7,\"x\":\"\xff\"}}", None),
+        (b"{\"usage\":{\"input_tokens\":[\"\xff\"]}}", None),
+        (b"{\"usage\":{\"input_tokens\":7,\"\xff\":1}}", None),
+        (
+            b"{\"note\":\"\xff\",\"usage\":{\"input_tokens\":7}}",
+            decoded(7),
+        ),
+    ] {
+        assert_eq!(
+            top_level_usage(line),
+            expected,
+            "{}",
+            String::from_utf8_lossy(line)
+        );
+    }
+}

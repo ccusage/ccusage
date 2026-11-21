@@ -43,12 +43,12 @@ impl<'de> Deserialize<'de> for CodexUsageCandidate {
             where
                 A: serde::de::MapAccess<'de>,
             {
-                let value = serde_json::Value::deserialize(
-                    serde::de::value::MapAccessDeserializer::new(map),
-                )?;
-                Ok(serde_json::from_value(value)
-                    .map(CodexUsageCandidate::Decoded)
-                    .unwrap_or(CodexUsageCandidate::Malformed))
+                let fields = UsageFieldsVisitor::<CheckedAny>(PhantomData).visit_map(map)?;
+                Ok(if fields.invalid_members == 0 {
+                    CodexUsageCandidate::Decoded(CodexRawUsage::from_fields(fields))
+                } else {
+                    CodexUsageCandidate::Malformed
+                })
             }
 
             fn visit_seq<A>(self, mut sequence: A) -> std::result::Result<Self::Value, A::Error>
@@ -307,84 +307,138 @@ struct CodexRawUsageFields {
     reasoning_tokens: Option<u64>,
     total_tokens: Option<u64>,
     invalid_fields: bool,
+    invalid_members: u16,
 }
 
 impl<'de> Deserialize<'de> for CodexRawUsageFields {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct UsageFieldsVisitor;
-        impl<'de> serde::de::Visitor<'de> for UsageFieldsVisitor {
-            type Value = CodexRawUsageFields;
+        deserializer.deserialize_map(UsageFieldsVisitor::<serde::de::IgnoredAny>(PhantomData))
+    }
+}
+
+// NOTE(2026-11-20): A top-level `usage` object decodes as a `serde_json::Value` would: every string and number in it is checked, and the last of duplicate keys wins. `CheckedAny` and `invalid_members` keep that without building the value; `IgnoredAny` would accept lines that decoding as a value rejects.
+struct UsageFieldsVisitor<I>(PhantomData<I>);
+
+impl<'de, I: Deserialize<'de>> serde::de::Visitor<'de> for UsageFieldsVisitor<I> {
+    type Value = CodexRawUsageFields;
+    fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Codex token counts")
+    }
+    fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+        #[derive(Clone, Copy, Deserialize)]
+        #[serde(field_identifier)]
+        enum Field {
+            #[serde(rename = "input_tokens")]
+            InputTokens,
+            #[serde(rename = "prompt_tokens")]
+            PromptTokens,
+            #[serde(rename = "input")]
+            Input,
+            #[serde(rename = "cached_input_tokens")]
+            CachedInputTokens,
+            #[serde(rename = "cache_read_input_tokens")]
+            CacheReadInputTokens,
+            #[serde(rename = "cache_creation_input_tokens")]
+            CacheCreationInputTokens,
+            #[serde(rename = "cache_write_input_tokens")]
+            CacheWriteInputTokens,
+            #[serde(rename = "cached_tokens")]
+            CachedTokens,
+            #[serde(rename = "output_tokens")]
+            OutputTokens,
+            #[serde(rename = "completion_tokens")]
+            CompletionTokens,
+            #[serde(rename = "output")]
+            Output,
+            #[serde(rename = "reasoning_output_tokens")]
+            ReasoningOutputTokens,
+            #[serde(rename = "reasoning_tokens")]
+            ReasoningTokens,
+            #[serde(rename = "total_tokens")]
+            TotalTokens,
+            #[serde(other)]
+            Unknown,
+        }
+        let mut fields = CodexRawUsageFields::default();
+        while let Some(field) = map.next_key()? {
+            let target = match field {
+                Field::InputTokens => &mut fields.input_tokens,
+                Field::PromptTokens => &mut fields.prompt_tokens,
+                Field::Input => &mut fields.input,
+                Field::CachedInputTokens => &mut fields.cached_input_tokens,
+                Field::CacheReadInputTokens => &mut fields.cache_read_input_tokens,
+                Field::CacheCreationInputTokens => &mut fields.cache_creation_input_tokens,
+                Field::CacheWriteInputTokens => &mut fields.cache_write_input_tokens,
+                Field::CachedTokens => &mut fields.cached_tokens,
+                Field::OutputTokens => &mut fields.output_tokens,
+                Field::CompletionTokens => &mut fields.completion_tokens,
+                Field::Output => &mut fields.output,
+                Field::ReasoningOutputTokens => &mut fields.reasoning_output_tokens,
+                Field::ReasoningTokens => &mut fields.reasoning_tokens,
+                Field::TotalTokens => &mut fields.total_tokens,
+                Field::Unknown => {
+                    map.next_value::<I>()?;
+                    continue;
+                }
+            };
+            let OptionalU64(value, invalid, _) = map.next_value::<OptionalU64<I>>()?;
+            fields.invalid_fields |= invalid;
+            let member = 1 << field as u16;
+            if invalid {
+                fields.invalid_members |= member;
+            } else {
+                fields.invalid_members &= !member;
+            }
+            *target = value;
+        }
+        Ok(fields)
+    }
+}
+
+struct CheckedAny;
+
+impl<'de> Deserialize<'de> for CheckedAny {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct CheckedVisitor;
+        impl<'de> serde::de::Visitor<'de> for CheckedVisitor {
+            type Value = CheckedAny;
             fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                f.write_str("Codex token counts")
+                f.write_str("any JSON value")
+            }
+            fn visit_bool<E>(self, _: bool) -> Result<Self::Value, E> {
+                Ok(CheckedAny)
+            }
+            fn visit_i64<E>(self, _: i64) -> Result<Self::Value, E> {
+                Ok(CheckedAny)
+            }
+            fn visit_u64<E>(self, _: u64) -> Result<Self::Value, E> {
+                Ok(CheckedAny)
+            }
+            fn visit_f64<E>(self, _: f64) -> Result<Self::Value, E> {
+                Ok(CheckedAny)
+            }
+            fn visit_str<E>(self, _: &str) -> Result<Self::Value, E> {
+                Ok(CheckedAny)
+            }
+            fn visit_unit<E>(self) -> Result<Self::Value, E> {
+                Ok(CheckedAny)
+            }
+            fn visit_seq<A: serde::de::SeqAccess<'de>>(
+                self,
+                mut seq: A,
+            ) -> Result<Self::Value, A::Error> {
+                while seq.next_element::<CheckedAny>()?.is_some() {}
+                Ok(CheckedAny)
             }
             fn visit_map<A: serde::de::MapAccess<'de>>(
                 self,
                 mut map: A,
             ) -> Result<Self::Value, A::Error> {
-                #[derive(Deserialize)]
-                #[serde(field_identifier)]
-                enum Field {
-                    #[serde(rename = "input_tokens")]
-                    InputTokens,
-                    #[serde(rename = "prompt_tokens")]
-                    PromptTokens,
-                    #[serde(rename = "input")]
-                    Input,
-                    #[serde(rename = "cached_input_tokens")]
-                    CachedInputTokens,
-                    #[serde(rename = "cache_read_input_tokens")]
-                    CacheReadInputTokens,
-                    #[serde(rename = "cache_creation_input_tokens")]
-                    CacheCreationInputTokens,
-                    #[serde(rename = "cache_write_input_tokens")]
-                    CacheWriteInputTokens,
-                    #[serde(rename = "cached_tokens")]
-                    CachedTokens,
-                    #[serde(rename = "output_tokens")]
-                    OutputTokens,
-                    #[serde(rename = "completion_tokens")]
-                    CompletionTokens,
-                    #[serde(rename = "output")]
-                    Output,
-                    #[serde(rename = "reasoning_output_tokens")]
-                    ReasoningOutputTokens,
-                    #[serde(rename = "reasoning_tokens")]
-                    ReasoningTokens,
-                    #[serde(rename = "total_tokens")]
-                    TotalTokens,
-                    #[serde(other)]
-                    Unknown,
-                }
-                let mut fields = CodexRawUsageFields::default();
-                while let Some(field) = map.next_key()? {
-                    let target = match field {
-                        Field::InputTokens => &mut fields.input_tokens,
-                        Field::PromptTokens => &mut fields.prompt_tokens,
-                        Field::Input => &mut fields.input,
-                        Field::CachedInputTokens => &mut fields.cached_input_tokens,
-                        Field::CacheReadInputTokens => &mut fields.cache_read_input_tokens,
-                        Field::CacheCreationInputTokens => &mut fields.cache_creation_input_tokens,
-                        Field::CacheWriteInputTokens => &mut fields.cache_write_input_tokens,
-                        Field::CachedTokens => &mut fields.cached_tokens,
-                        Field::OutputTokens => &mut fields.output_tokens,
-                        Field::CompletionTokens => &mut fields.completion_tokens,
-                        Field::Output => &mut fields.output,
-                        Field::ReasoningOutputTokens => &mut fields.reasoning_output_tokens,
-                        Field::ReasoningTokens => &mut fields.reasoning_tokens,
-                        Field::TotalTokens => &mut fields.total_tokens,
-                        Field::Unknown => {
-                            map.next_value::<serde::de::IgnoredAny>()?;
-                            continue;
-                        }
-                    };
-                    let OptionalU64(value, invalid) = map.next_value()?;
-                    fields.invalid_fields |= invalid;
-                    *target = value;
-                }
-                Ok(fields)
+                while map.next_entry::<CheckedAny, CheckedAny>()?.is_some() {}
+                Ok(CheckedAny)
             }
         }
-        deserializer.deserialize_map(UsageFieldsVisitor)
+        deserializer.deserialize_any(CheckedVisitor)
     }
 }
 
@@ -537,13 +591,13 @@ where
     deserializer.deserialize_any(OptionalObjectVisitor(PhantomData))
 }
 
-struct OptionalU64(Option<u64>, bool);
-impl<'de> Deserialize<'de> for OptionalU64 {
+struct OptionalU64<I>(Option<u64>, bool, PhantomData<I>);
+impl<'de, I: Deserialize<'de>> Deserialize<'de> for OptionalU64<I> {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct OptionalU64Visitor;
+        struct OptionalU64Visitor<I>(PhantomData<I>);
 
-        impl<'de> serde::de::Visitor<'de> for OptionalU64Visitor {
-            type Value = OptionalU64;
+        impl<'de, I: Deserialize<'de>> serde::de::Visitor<'de> for OptionalU64Visitor<I> {
+            type Value = OptionalU64<I>;
 
             fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 formatter.write_str("an optional unsigned integer")
@@ -553,35 +607,39 @@ impl<'de> Deserialize<'de> for OptionalU64 {
             where
                 E: serde::de::Error,
             {
-                Ok(OptionalU64(None, false))
+                Ok(OptionalU64(None, false, PhantomData))
             }
 
             fn visit_unit<E>(self) -> std::result::Result<Self::Value, E>
             where
                 E: serde::de::Error,
             {
-                Ok(OptionalU64(None, false))
+                Ok(OptionalU64(None, false, PhantomData))
             }
 
             fn visit_some<D>(self, deserializer: D) -> std::result::Result<Self::Value, D::Error>
             where
                 D: serde::Deserializer<'de>,
             {
-                OptionalU64::deserialize(deserializer)
+                OptionalU64::<I>::deserialize(deserializer)
             }
 
             fn visit_u64<E>(self, value: u64) -> std::result::Result<Self::Value, E>
             where
                 E: serde::de::Error,
             {
-                Ok(OptionalU64(Some(value), false))
+                Ok(OptionalU64(Some(value), false, PhantomData))
             }
 
             fn visit_str<E>(self, value: &str) -> std::result::Result<Self::Value, E>
             where
                 E: serde::de::Error,
             {
-                Ok(OptionalU64(value.trim().parse::<u64>().ok(), false))
+                Ok(OptionalU64(
+                    value.trim().parse::<u64>().ok(),
+                    false,
+                    PhantomData,
+                ))
             }
 
             fn visit_borrowed_str<E>(self, value: &'de str) -> std::result::Result<Self::Value, E>
@@ -602,43 +660,39 @@ impl<'de> Deserialize<'de> for OptionalU64 {
             where
                 E: serde::de::Error,
             {
-                Ok(OptionalU64(None, false))
+                Ok(OptionalU64(None, false, PhantomData))
             }
 
             fn visit_f64<E>(self, _value: f64) -> std::result::Result<Self::Value, E>
             where
                 E: serde::de::Error,
             {
-                Ok(OptionalU64(None, false))
+                Ok(OptionalU64(None, false, PhantomData))
             }
 
             fn visit_map<A: serde::de::MapAccess<'de>>(
                 self,
                 map: A,
             ) -> Result<Self::Value, A::Error> {
-                serde::de::IgnoredAny::deserialize(serde::de::value::MapAccessDeserializer::new(
-                    map,
-                ))?;
-                Ok(OptionalU64(None, true))
+                I::deserialize(serde::de::value::MapAccessDeserializer::new(map))?;
+                Ok(OptionalU64(None, true, PhantomData))
             }
             fn visit_seq<A: serde::de::SeqAccess<'de>>(
                 self,
                 seq: A,
             ) -> Result<Self::Value, A::Error> {
-                serde::de::IgnoredAny::deserialize(serde::de::value::SeqAccessDeserializer::new(
-                    seq,
-                ))?;
-                Ok(OptionalU64(None, true))
+                I::deserialize(serde::de::value::SeqAccessDeserializer::new(seq))?;
+                Ok(OptionalU64(None, true, PhantomData))
             }
 
             fn visit_bool<E>(self, _value: bool) -> std::result::Result<Self::Value, E>
             where
                 E: serde::de::Error,
             {
-                Ok(OptionalU64(None, false))
+                Ok(OptionalU64(None, false, PhantomData))
             }
         }
 
-        deserializer.deserialize_any(OptionalU64Visitor)
+        deserializer.deserialize_any(OptionalU64Visitor(PhantomData))
     }
 }

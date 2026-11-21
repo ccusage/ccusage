@@ -1,3 +1,6 @@
+use std::borrow::Cow;
+
+use ccusage_adapter_common::json::JsonText;
 use ccusage_core::{CacheCreationRaw, Speed, TokenUsageRaw};
 use serde::{
     Deserialize, Deserializer,
@@ -96,6 +99,16 @@ pub(crate) fn deserialize_usage_line<T: DeserializeOwned>(
 ) -> std::result::Result<T, Rejection> {
     ccusage_adapter_common::json::parse(line).map_err(|_| Rejection::Malformed)
 }
+
+pub(crate) fn deserialize_borrowed_usage_line<'a, T: Deserialize<'a>>(
+    line: &'a JsonText<'a>,
+) -> std::result::Result<T, Rejection> {
+    line.parse().map_err(|_| Rejection::Malformed)
+}
+
+#[derive(Deserialize)]
+#[serde(transparent)]
+pub(crate) struct Text<'a>(#[serde(borrow)] pub(crate) Cow<'a, str>);
 
 pub(crate) type Nullable<T> = Option<Option<T>>;
 
