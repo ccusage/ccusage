@@ -55,8 +55,6 @@ impl<'a> AgentModel<'a> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BillingRoute {
-    /// The vendor named by this id billed the request itself, so that
-    /// vendor's dated schedules apply.
     Direct(&'static str),
     Foreign,
 }
