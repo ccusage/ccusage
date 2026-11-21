@@ -26,7 +26,8 @@ impl CachedHit {
     const PRESENT: usize = 2;
     const STEP_SHIFT: usize = 2;
     const ALIASED: usize = 1 << 5;
-    const ROW_SHIFT: usize = 6;
+    const ESTIMATED: usize = 1 << 6;
+    const ROW_SHIFT: usize = 7;
     const STEP_MASK: usize = 7;
     #[cfg(feature = "resolver-trace")]
     const STEPS: [ResolutionStep; 6] = [
@@ -62,6 +63,14 @@ impl CachedHit {
 
     pub(super) fn aliased(self) -> bool {
         self.0 & Self::ALIASED != 0
+    }
+
+    pub(super) fn as_estimate(self) -> Self {
+        Self(self.0 | Self::ESTIMATED)
+    }
+
+    pub(super) fn estimated(self) -> bool {
+        self.0 & Self::ESTIMATED != 0
     }
 
     pub(super) fn same_row(self, other: Self) -> bool {
@@ -137,7 +146,7 @@ impl Pass {
     pub(super) const CANDIDATE: [Self; 4] = [Self::S2, Self::S34, Self::S3f, Self::S56];
 
     pub(super) fn searches(self, lookup: Lookup) -> bool {
-        !matches!((lookup, self), (Lookup::Context, Self::S3f))
+        !matches!((lookup, self), (Lookup::Context | Lookup::Paid, Self::S3f))
     }
 
     pub(super) fn allows(self, kind: MatchKind) -> bool {
@@ -245,6 +254,7 @@ struct NameSlot {
     forms: Option<Option<Arc<NameForms>>>,
     prices: [ResultCell; 5],
     limits: Option<Box<[ResultCell; 5]>>,
+    paid: Option<Box<[ResultCell; 5]>>,
 }
 
 const _: () = assert!(size_of::<NameSlot>() <= 96);
@@ -254,6 +264,7 @@ impl NameSlot {
         let slots = match lookup {
             Lookup::Pricing => &self.prices,
             Lookup::Context => self.limits.as_deref()?,
+            Lookup::Paid => self.paid.as_deref()?,
         };
         slots[pass as usize].get()
     }
@@ -267,6 +278,7 @@ impl NameSlot {
         let slots = match lookup {
             Lookup::Pricing => &mut self.prices,
             Lookup::Context => self.limits.get_or_insert_with(Box::default),
+            Lookup::Paid => self.paid.get_or_insert_with(Box::default),
         };
         slots[pass as usize].insert(result)
     }

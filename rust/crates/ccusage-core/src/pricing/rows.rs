@@ -8,6 +8,7 @@ use super::{Entries, Name, Row, Scope, last_segment, normalized_pricing_key};
 pub(super) enum Lookup {
     Pricing,
     Context,
+    Paid,
 }
 
 impl Lookup {
@@ -15,6 +16,7 @@ impl Lookup {
         match self {
             Self::Pricing => true,
             Self::Context => row.context_limit.is_some(),
+            Self::Paid => !row.is_free(),
         }
     }
 }

@@ -6,6 +6,7 @@ use super::data;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Pricing {
+    pub estimated: bool,
     pub input: f64,
     pub output: f64,
     pub(super) cache_create: Option<f64>,
