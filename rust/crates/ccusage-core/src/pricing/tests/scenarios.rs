@@ -36,7 +36,7 @@ fn check_cases(base: &PricingMap, cases: &str) {
         );
         let route = match fields.get(7).copied().unwrap_or("") {
             "" => None,
-            "direct" => Some(BillingRoute::Direct),
+            "direct" => Some(BillingRoute::Direct("deepseek")),
             "foreign" => Some(BillingRoute::Foreign),
             route => panic!("{line}: unknown billing route {route}"),
         };

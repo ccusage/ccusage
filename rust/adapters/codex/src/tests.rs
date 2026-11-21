@@ -419,6 +419,34 @@ fn prices_gpt_reserve_as_gpt_5_6_luna() {
 }
 
 #[test]
+fn a_zero_rate_model_is_priced_and_usage_without_tokens_is_not_missing() {
+    ccusage_test_support::install_pricing_snapshots();
+    let mut pricing = PricingMap::default();
+    pricing.load_json(
+        r#"{ "free-model": { "litellm_provider": "openai", "input_cost_per_token": 0, "output_cost_per_token": 0 } }"#,
+    );
+    let usage = CodexModelUsage {
+        total_tokens: 100,
+        ..CodexModelUsage::default()
+    };
+    assert!(!codex_model_missing_pricing(
+        "free-model",
+        &usage,
+        Some(&pricing)
+    ));
+    assert!(codex_model_missing_pricing(
+        "unknown-model",
+        &usage,
+        Some(&pricing)
+    ));
+    assert!(!codex_model_missing_pricing(
+        "unknown-model",
+        &CodexModelUsage::default(),
+        Some(&pricing)
+    ));
+}
+
+#[test]
 fn reports_codex_model_aliases_without_raw_model_names() {
     ccusage_test_support::install_pricing_snapshots();
     let _aliases = crate::model_aliases::set_model_aliases_for_tests([
@@ -1056,10 +1084,10 @@ fn prices_ultrafast_from_the_same_entry_as_standard_rates() {
         CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
     );
     assert!(
-        (standard_terra - standard_sol / 2.0).abs() < 1e-12,
+        (standard_terra - standard_sol).abs() < f64::EPSILON,
         "{standard_terra}"
     );
-    assert!((terra - standard_terra).abs() < f64::EPSILON, "{terra}");
+    assert!((terra - private_sol).abs() < f64::EPSILON, "{terra}");
 }
 
 #[test]

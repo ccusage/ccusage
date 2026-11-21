@@ -4,9 +4,9 @@ use serde_json::Value;
 use crate::fast::FxHashMap;
 
 use super::{
-    LongContextRates, Pricing, PricingMap, Row, RowPricing, Scope, Source,
-    embedded::litellm_sources, provider_cache_defaults, row_scope, schedule_for,
-    speed::PublishedSpeed, vendor_start,
+    LongContextMode, LongContextRates, Pricing, PricingMap, Row, RowPricing, Scope, Source,
+    embedded::litellm_sources, provider_cache_defaults, row::whole_request_threshold, row_scope,
+    schedule_for, speed::PublishedSpeed, vendor_start,
 };
 
 #[derive(Debug, Deserialize)]
@@ -78,6 +78,8 @@ impl PricingMap {
             };
             row.source = Source::LiteLlm;
             row.scope = scope;
+            let whole_request_threshold = provider.and_then(whole_request_threshold);
+            row.whole_request_tiers = whole_request_threshold.is_some();
             row.schedule = schedule;
             row.vendor_start = vendor_start;
             row.context_limit = pricing.max_input_tokens.or(row.context_limit);
@@ -96,7 +98,14 @@ impl PricingMap {
                         cache_create_1h: pricing
                             .cache_creation_input_token_cost_above_1hr_above_200k_tokens,
                     }
-                    .marginal(),
+                    .marginal()
+                    .map(|mut context| {
+                        if let Some(threshold) = whole_request_threshold {
+                            context.mode = LongContextMode::WholeRequest;
+                            context.threshold = threshold;
+                        }
+                        context
+                    }),
                     ..Pricing::empty()
                 },
                 provider_specific,

@@ -132,8 +132,8 @@ fn resolves_ultrafast_multiplier_through_model_aliases() {
     assert_eq!(private_sol.input, 2e-6);
 
     let terra = pricing.find("gpt-6.1-terra").unwrap();
-    assert_eq!(terra.ultrafast_multiplier, 1.0);
-    assert_eq!(terra.input, 1e-6);
+    assert_eq!(terra.ultrafast_multiplier, 6.0);
+    assert_eq!(terra.input, 2e-6);
 }
 
 #[test]

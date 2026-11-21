@@ -20,7 +20,7 @@ mod keys;
 use keys::{
     dash_pricing_key_separators, is_pricing_key_separator, last_segment, matches_model_suffix,
     model_without_date_suffix, names_pricing_key, normalized_pricing_key, pricing_alias,
-    pricing_key_matches, with_names,
+    pricing_key_matches, unlabeled_model, with_names,
 };
 mod litellm;
 mod models_dev;
@@ -33,7 +33,9 @@ pub use rates::{
     DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS, LongContext, LongContextMode, LongContextRates, Pricing,
 };
 mod resolve;
-pub use resolve::{AgentModel, BillingRoute, MatchKind, PricingHandle};
+pub use resolve::{
+    AgentModel, BillingRoute, MatchKind, PricedIdentity, PricingHandle, direct_billing_vendor,
+};
 #[cfg(feature = "resolver-trace")]
 pub use resolve::{Explanation, ResolutionStep};
 mod row;
@@ -49,7 +51,7 @@ use speed::SpeedMultipliers;
 mod table;
 pub use table::encode_pricing_table;
 
-use builtin_pricing::BUILTIN_PRICING;
+use builtin_pricing::{BUILTIN_PRICING, CURATED_LIST_PRICES};
 
 #[derive(Debug)]
 pub struct PricingMap {
@@ -92,6 +94,7 @@ impl PricingMap {
     fn rows_mut(&mut self) -> &mut PricingRows {
         let rows = Arc::make_mut(&mut self.rows);
         rows.indexes.take();
+        rows.folded_indexes.take();
         rows.normalized_keys.take();
         rows.exact_only_by_identity.take();
         rows
@@ -108,6 +111,7 @@ impl PricingMap {
 
     fn complete_layers(&mut self, embedded_models_dev: &Self) {
         self.put_builtin_pricing();
+        self.put_curated_list_prices();
         self.curate_long_context();
         self.fill_long_context_rates_from_models_dev(embedded_models_dev);
         self.models_dev = Some(Arc::clone(&embedded_models_dev.rows));
@@ -163,6 +167,32 @@ impl PricingMap {
         self.override_shadows.take();
     }
 
+    fn supplement_row(
+        &mut self,
+        model: &str,
+        pricing: Pricing,
+        context_limit: Option<u64>,
+        provider: &str,
+    ) -> Option<&mut Row> {
+        let pricing = SpeedMultipliers::get().for_model(model).applied_to(pricing);
+        self.clear_find_cache();
+        let row = self
+            .rows_mut()
+            .entries
+            .get_or_insert(model.to_string(), || Row {
+                pricing: pricing.into(),
+                context_limit,
+                source: Source::Curated,
+                whole_request_tiers: row::whole_request_threshold(provider).is_some(),
+                scope: Scope::Direct,
+                vendor_start: vendor_start(model, vendor_id(model, provider)),
+                schedule: schedule_for(vendor_id(model, provider)),
+                ..Row::default()
+            })?;
+        row.context_limit = row.context_limit.or(context_limit);
+        Some(row)
+    }
+
     fn supplement_pricing(
         &mut self,
         model: &str,
@@ -170,26 +200,11 @@ impl PricingMap {
         context_limit: Option<u64>,
         provider: &str,
     ) {
-        let pricing = SpeedMultipliers::get().for_model(model).applied_to(pricing);
-        let Some(row) = self
-            .rows_mut()
-            .entries
-            .get_or_insert(model.to_string(), || Row {
-                pricing: pricing.into(),
-                context_limit,
-                source: Source::Curated,
-                scope: Scope::Direct,
-                vendor_start: vendor_start(model, vendor_id(model, provider)),
-                schedule: schedule_for(vendor_id(model, provider)),
-                ..Row::default()
-            })
-        else {
+        let Some(row) = self.supplement_row(model, pricing, context_limit, provider) else {
             return;
         };
-        row.context_limit = row.context_limit.or(context_limit);
         row.pricing.cache_read = row.pricing.cache_read.or(pricing.cache_read);
         row.pricing.cache_create = row.pricing.cache_create.or(pricing.cache_create);
-        self.clear_find_cache();
     }
 
     fn put_builtin_pricing(&mut self) {
@@ -200,6 +215,26 @@ impl PricingMap {
                 supplement.context_limit,
                 supplement.provider,
             );
+        }
+    }
+
+    fn put_curated_list_prices(&mut self) {
+        for supplement in CURATED_LIST_PRICES {
+            let curated = supplement.pricing;
+            let Some(row) = self.supplement_row(
+                supplement.model,
+                curated,
+                supplement.context_limit,
+                supplement.provider,
+            ) else {
+                continue;
+            };
+            row.pricing.input = curated.input;
+            row.pricing.output = curated.output;
+            row.pricing.cache_read = curated.cache_read;
+            row.pricing.cache_create = row.pricing.cache_create.or(curated.cache_create);
+            row.source = Source::Curated;
+            row.scope = Scope::Direct;
         }
     }
 }
@@ -238,7 +273,11 @@ impl PricingMap {
             if (row.pricing.input - curated.input).abs() < f64::EPSILON
                 && (row.pricing.output - curated.output).abs() < f64::EPSILON
             {
-                row.pricing.long_context = Some(Arc::new(curated.long_context));
+                row.whole_request_tiers = row::whole_request_threshold("anthropic").is_some();
+                row.pricing.long_context = curated.long_context.map(Arc::new);
+                if let Some(schedule) = curated.schedule.and_then(schedule_for) {
+                    row.schedule = Some(schedule);
+                }
             }
         }
         self.clear_find_cache();

@@ -25,7 +25,9 @@ impl CachedHit {
     const OVERRIDDEN: usize = 1;
     const PRESENT: usize = 2;
     const STEP_SHIFT: usize = 2;
-    const ROW_SHIFT: usize = 5;
+    const ALIASED: usize = 1 << 5;
+    const FOLDED: usize = 1 << 6;
+    const ROW_SHIFT: usize = 7;
     const STEP_MASK: usize = 7;
     #[cfg(feature = "resolver-trace")]
     const STEPS: [ResolutionStep; 6] = [
@@ -49,6 +51,32 @@ impl CachedHit {
                 | Self::PRESENT
                 | overridden,
         )
+    }
+
+    pub(super) fn through_alias(self, aliased: bool) -> Self {
+        if aliased {
+            Self(self.0 | Self::ALIASED)
+        } else {
+            self
+        }
+    }
+
+    pub(super) fn aliased(self) -> bool {
+        self.0 & Self::ALIASED != 0
+    }
+
+    pub(super) fn through_case_fallback(self) -> Self {
+        Self(self.0 | Self::FOLDED)
+    }
+
+    pub(super) fn case_fallback(self) -> bool {
+        self.0 & Self::FOLDED != 0
+    }
+
+    pub(super) fn same_row(self, other: Self) -> bool {
+        self.id() == other.id()
+            && self.overridden() == other.overridden()
+            && self.is_models_dev() == other.is_models_dev()
     }
 
     pub(super) fn id(self) -> usize {
@@ -115,6 +143,12 @@ pub(super) enum Pass {
 }
 
 impl Pass {
+    pub(super) const IDENTITY: [Self; 3] = [Self::S2, Self::S34, Self::S3f];
+
+    pub(super) fn searches(self, lookup: Lookup) -> bool {
+        !matches!((lookup, self), (Lookup::Context, Self::S3f))
+    }
+
     pub(super) fn allows(self, kind: MatchKind) -> bool {
         match self {
             Self::S2 => true,
@@ -296,22 +330,39 @@ impl Candidate<'_> {
         Some(self.forms(text)?.configured.as_ref()?.name())
     }
 
-    pub(super) fn names<T>(
+    pub(super) fn own_names<T>(
         &self,
         text: &str,
         mut select: impl FnMut(Name<'_>) -> Option<T>,
     ) -> Option<T> {
-        select(self.name(text)).or_else(|| {
-            let forms = self.forms(text)?;
-            [
-                forms.builtin.as_ref().map(Alias::name),
-                forms.configured.as_ref().map(Alias::name),
-                forms.configured_builtin.as_ref().map(Alias::name),
-            ]
-            .into_iter()
-            .flatten()
-            .find_map(select)
-        })
+        select(self.name(text)).or_else(|| select(self.forms(text)?.builtin.as_ref()?.name()))
+    }
+
+    pub(super) fn names<T>(
+        &self,
+        text: &str,
+        select: impl FnMut(Name<'_>) -> Option<T>,
+    ) -> Option<T> {
+        self.names_marked(text, select).map(|(found, _)| found)
+    }
+
+    pub(super) fn names_marked<T>(
+        &self,
+        text: &str,
+        mut select: impl FnMut(Name<'_>) -> Option<T>,
+    ) -> Option<(T, bool)> {
+        if let Some(found) = self.own_names(text, &mut select) {
+            return Some((found, false));
+        }
+        let forms = self.forms(text)?;
+        [
+            forms.configured.as_ref().map(Alias::name),
+            forms.configured_builtin.as_ref().map(Alias::name),
+        ]
+        .into_iter()
+        .flatten()
+        .find_map(select)
+        .map(|found| (found, true))
     }
 }
 
@@ -319,6 +370,13 @@ impl Candidate<'_> {
 pub(super) struct NameCache(RwLock<FxHashMap<Box<str>, NameSlot>>);
 
 impl NameCache {
+    pub(super) fn candidate(&self) -> Candidate<'_> {
+        Candidate {
+            cache: Some(self),
+            forms: OnceCell::new(),
+        }
+    }
+
     fn with_slot<T>(&self, text: &str, update: impl FnOnce(&mut NameSlot) -> T) -> T {
         let mut guard = self.0.write().unwrap_or_else(|error| error.into_inner());
         if let Some(slot) = guard.get_mut(text) {
@@ -356,11 +414,7 @@ impl NameCache {
         if let Some(hit) = self.get(name, lookup, pass) {
             return hit;
         }
-        let candidate = Candidate {
-            cache: Some(self),
-            forms: OnceCell::new(),
-        };
-        let result = init(&candidate);
+        let result = init(&self.candidate());
         self.with_slot(name, |slot| slot.insert(lookup, pass, result))
     }
 }
@@ -556,6 +610,7 @@ mod tests {
             assert_eq!(table.find("provider/literal").unwrap().input, 3.0);
         }
         assert!(table.rows.indexes.get().is_none());
+        assert!(table.rows.folded_indexes.get().is_none());
         assert!(
             table.find_cache.get().unwrap().0.read().unwrap()["provider/literal"]
                 .forms

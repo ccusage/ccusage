@@ -7,8 +7,9 @@ use crate::fast::FxHashMap;
 
 use super::{
     CacheDefaults, LongContext, LongContextMode, LongContextRates, PricingMap, PricingRows, Row,
-    RowPricing, Scope, Source, data,
+    RowMatch, RowPricing, Scope, Source, data,
     row::{Published, PublishedRates},
+    rows::FoldedIndexes,
     speed::PublishedSpeed,
 };
 
@@ -59,6 +60,7 @@ const SOURCE_MODELS_DEV: u8 = 2;
 const SOURCE_MASK: u8 = 0b11;
 const SCOPE_DIRECT: u8 = 1 << 2;
 const EXACT_ONLY: u8 = 1 << 3;
+const WHOLE_REQUEST_TIERS: u8 = 1 << 4;
 
 const NO_LONG_CONTEXT: u8 = 0;
 const LONG_CONTEXT_MARGINAL: u8 = 1;
@@ -125,10 +127,22 @@ impl Writer {
         sorted.sort_by(|left, right| left.key.cmp(&right.key));
         varint(&mut self.keys, sorted.len() as u64);
         let mut previous: &str = "";
-        for row in sorted {
+        for row in &sorted {
             self.key(previous, &row.key);
             self.row(row);
             previous = &row.key;
+        }
+        let folded = FoldedIndexes::build(
+            sorted
+                .into_iter()
+                .enumerate()
+                .map(|(id, row)| RowMatch::new(id, row)),
+        );
+        for ids in folded.0 {
+            varint(&mut self.flags, ids.len() as u64);
+            for id in ids {
+                varint(&mut self.flags, id as u64);
+            }
         }
     }
 
@@ -161,7 +175,9 @@ impl Writer {
             0
         };
         let exact_only = if row.exact_only { EXACT_ONLY } else { 0 };
-        self.flags.push(source | scope | exact_only);
+        self.flags.push(
+            source | scope | exact_only | (u8::from(row.whole_request_tiers) * WHOLE_REQUEST_TIERS),
+        );
         varint(
             &mut self.flags,
             row.vendor_start.map_or(0, |start| start.get() as u64),
@@ -315,7 +331,8 @@ impl<'a> Reader<'a> {
 
     fn rows(&mut self) -> PricingMap {
         let mut map = PricingMap::default();
-        let entries = &mut map.rows_mut().entries;
+        let rows = map.rows_mut();
+        let entries = &mut rows.entries;
         for _ in 0..self.keys.usize() {
             let shared = self.keys.usize();
             let suffix = self.keys.usize();
@@ -326,6 +343,11 @@ impl<'a> Reader<'a> {
             let row = self.row();
             entries.append(key, row);
         }
+        rows.folded_indexes = OnceLock::from(FoldedIndexes(std::array::from_fn(|_| {
+            (0..self.flags.usize())
+                .map(|_| self.flags.usize())
+                .collect()
+        })));
         map
     }
 
@@ -357,6 +379,7 @@ impl<'a> Reader<'a> {
             schedule,
             context_limit,
             exact_only: flags & EXACT_ONLY != 0,
+            whole_request_tiers: flags & WHOLE_REQUEST_TIERS != 0,
             scope,
             vendor_start,
         }

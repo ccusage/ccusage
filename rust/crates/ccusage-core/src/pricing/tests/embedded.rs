@@ -2,7 +2,7 @@ use super::{
     MatchKind, PricingMap, build_time_models_dev_json, build_time_pricing_json,
     embedded_models_dev_pricing, layered,
 };
-use crate::pricing::PricingRows;
+use crate::pricing::{PricingRows, rows::FoldedIndexes};
 
 fn sorted_rows(rows: &PricingRows) -> Vec<String> {
     let mut rows: Vec<_> = rows
@@ -11,13 +11,14 @@ fn sorted_rows(rows: &PricingRows) -> Vec<String> {
         .iter()
         .map(|row| {
             format!(
-                "{} {:?} {:?} {:?} {:?} {} {:?} {:?}",
+                "{} {:?} {:?} {:?} {:?} {} {} {:?} {:?}",
                 row.key,
                 row.rates(),
                 row.source,
                 row.schedule,
                 row.context_limit,
                 row.exact_only,
+                row.whole_request_tiers,
                 row.scope,
                 row.vendor_start
             )
@@ -45,6 +46,10 @@ fn embedded_table_matches_the_rows_loaded_from_its_snapshots() {
         sorted_rows(&embedded_models_dev_pricing().rows),
         sorted_rows(&models_dev.rows)
     );
+    for rows in [&embedded.rows, &embedded_models_dev_pricing().rows] {
+        let stored = rows.folded_indexes.get().unwrap();
+        assert_eq!(stored.0, FoldedIndexes::build(rows.matches()).0);
+    }
 }
 
 #[test]
@@ -553,4 +558,124 @@ fn embedded_pricing_resolves_separator_aliases_for_other_claude_models() {
         pricing.context_limit("claude-haiku-4.5"),
         pricing.context_limit("claude-haiku-4-5")
     );
+}
+
+#[test]
+fn offline_runs_bill_xai_ids_from_xais_own_rows_like_online_runs() {
+    crate::test_support::install_pricing_snapshots();
+    let offline = PricingMap::load_embedded();
+    let mut online = PricingMap::load_embedded();
+    online.refresh_litellm(|load| {
+        assert!(load(build_time_pricing_json()));
+        Ok(())
+    });
+    for (model, [input, output, read, long_input]) in [
+        ("grok-code-fast-1", [1e-6, 2e-6, 0.2e-6, 2e-6]),
+        ("grok-4.20", [1.25e-6, 2.5e-6, 0.2e-6, 2.5e-6]),
+        (
+            "grok-4.20-0309-reasoning",
+            [1.25e-6, 2.5e-6, 0.2e-6, 2.5e-6],
+        ),
+        ("grok-4.7", [2e-6, 6e-6, 0.5e-6, 4e-6]),
+    ] {
+        for (mode, pricing) in [("offline", &offline), ("online", &online)] {
+            let (_, rates) = pricing
+                .resolve_at(Some(model), &[(model, MatchKind::Fuzzy)], None)
+                .unwrap();
+            assert_eq!(
+                [
+                    rates.input,
+                    rates.output,
+                    rates.cache_read_rate_at(rates.input),
+                    rates
+                        .long_context
+                        .and_then(|context| context.rates.input)
+                        .unwrap_or(rates.input),
+                ],
+                [input, output, read, long_input],
+                "{mode} {model}"
+            );
+            assert_eq!(
+                rates.long_context.map(|context| context.mode),
+                Some(super::super::LongContextMode::WholeRequest),
+                "{mode} {model}"
+            );
+        }
+    }
+}
+
+fn xai_cost(
+    pricing: &PricingMap,
+    model: &str,
+    input_tokens: u64,
+    timestamp: Option<crate::TimestampMs>,
+) -> f64 {
+    let candidates = [(model, MatchKind::Fuzzy)];
+    crate::cost::price_entry(
+        crate::cost::EntryPricing {
+            granularity: crate::cost::UsageGranularity::Request,
+            usage: crate::TokenUsageRaw {
+                input_tokens,
+                output_tokens: 1_000,
+                ..Default::default()
+            },
+            reasoning_tokens: 0,
+            residual_tokens: 0,
+            reported_model: Some(model),
+            candidates: &candidates,
+            stored_cost: None,
+            timestamp,
+        },
+        crate::cost::PriceTable::Calculate(pricing),
+    )
+    .cost
+}
+
+#[test]
+fn xai_bills_the_long_context_rate_from_a_200k_token_prompt() {
+    crate::test_support::install_pricing_snapshots();
+    let pricing = PricingMap::load_embedded();
+    for (input_tokens, expected) in [
+        (199_999, 199_999.0 * 1.25e-6 + 1_000.0 * 2.5e-6),
+        (200_000, 200_000.0 * 2.5e-6 + 1_000.0 * 5e-6),
+    ] {
+        let cost = xai_cost(&pricing, "grok-4.20", input_tokens, None);
+        assert!(
+            (cost - expected).abs() < 1e-9,
+            "{input_tokens}: {cost} != {expected}"
+        );
+    }
+}
+
+#[test]
+fn grok_code_fast_1_bills_its_own_rates_until_xai_aliased_it_to_grok_build() {
+    crate::test_support::install_pricing_snapshots();
+    let offline = PricingMap::load_embedded();
+    let mut online = PricingMap::load_embedded();
+    online.refresh_litellm(|load| {
+        assert!(load(build_time_pricing_json()));
+        Ok(())
+    });
+    let before = super::timestamp("2026-05-15T14:59:11Z");
+    let after = super::timestamp("2026-05-15T14:59:12Z");
+    for (mode, pricing) in [("offline", &offline), ("online", &online)] {
+        for model in [
+            "grok-code-fast-1",
+            "grok-code-fast",
+            "grok-code-fast-1-0825",
+        ] {
+            for (instant, input_tokens, expected) in [
+                (before, 1_000, 1_000.0 * 0.2e-6 + 1_000.0 * 1.5e-6),
+                (before, 250_000, 250_000.0 * 0.2e-6 + 1_000.0 * 1.5e-6),
+                (after, 1_000, 1_000.0 * 1e-6 + 1_000.0 * 2e-6),
+                (after, 250_000, 250_000.0 * 2e-6 + 1_000.0 * 4e-6),
+            ] {
+                let cost = xai_cost(pricing, model, input_tokens, Some(instant));
+                assert!(
+                    (cost - expected).abs() < 1e-9,
+                    "{mode} {model} {input_tokens}: {cost} != {expected}"
+                );
+            }
+        }
+    }
 }

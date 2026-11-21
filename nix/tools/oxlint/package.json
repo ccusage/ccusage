@@ -4,6 +4,6 @@
 	"private": true,
 	"dependencies": {
 		"oxlint": "1.94.0",
-		"tsrs": "7.1.0-beta.tsrs2"
+		"tsrs": "7.1.0-beta.tsrs3"
 	}
 }

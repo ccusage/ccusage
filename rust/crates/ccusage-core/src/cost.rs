@@ -148,12 +148,9 @@ fn rates_for(granularity: UsageGranularity, mut rates: Pricing) -> Pricing {
 }
 
 fn cost_at_speed(usage: crate::TokenUsageRaw, rates: &Pricing) -> f64 {
-    let multiplier = if matches!(usage.speed, Some(Speed::Fast)) {
-        rates.fast_multiplier
-    } else {
-        1.0
-    };
-    calculate_cost_from_pricing(usage, rates) * multiplier
+    let fast = matches!(usage.speed, Some(Speed::Fast));
+    let multiplier = if fast { rates.fast_multiplier } else { 1.0 };
+    calculate_cost_from_pricing(usage, &rates.at_speed(fast)) * multiplier
 }
 
 // NOTE(2026-11-21, #2199): Kilo, Hermes, and OpenCode write a cost of 0 both for free usage and when the provider returned no cost. A non-positive cost is treated as not recorded: the tokens are priced instead, which still comes to $0 for a model whose price is zero.
@@ -163,22 +160,6 @@ pub fn recorded_cost(cost: Option<f64>) -> Option<f64> {
 
 pub fn stored_cost_for_mode(cost_usd: Option<f64>, mode: CostMode) -> Option<f64> {
     cost_usd.filter(|_| mode == CostMode::Auto)
-}
-
-pub fn missing_pricing_model_for_token_total(
-    model: Option<&str>,
-    total_tokens: u64,
-    pricing: Option<&PricingMap>,
-) -> Option<String> {
-    if total_tokens == 0 {
-        return None;
-    }
-    let model = model?;
-    let pricing = pricing?;
-    pricing
-        .find(model)
-        .is_none()
-        .then(|| crate::model_aliases::resolve_model_name(model).into_owned())
 }
 
 fn calculate_cost_from_pricing(usage: crate::TokenUsageRaw, pricing: &Pricing) -> f64 {

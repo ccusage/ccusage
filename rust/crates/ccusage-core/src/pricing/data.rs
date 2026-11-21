@@ -1,6 +1,6 @@
 use super::{
-    CacheDefaults, LongContext, LongContextMode, LongContextRates, PricingSchedule, ScheduledRates,
-    Successor,
+    CacheDefaults, DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS, LongContext, LongContextMode,
+    LongContextRates, PricingSchedule, ScheduledRates, Successor,
 };
 
 // NOTE(2026-11-20): OpenAI charges no cache-write surcharge through GPT-5.5 and reads cached input at 0.1× on current models at https://developers.openai.com/api/docs/guides/prompt-caching. Use these multipliers when a row omits cache rates.
@@ -249,10 +249,36 @@ pub(super) static FAMILY_PRICE_NEUTRAL_SUFFIX_WORDS: &[(&str, &[&str])] = &[
     ("qwen3-32b", &["thinking"]),
 ];
 
+// NOTE(2026-11-21, #2227): xAI lists separate "(≥ 200k prompt tokens)" rows and bills every token of such a request at them at https://docs.x.ai/developers/pricing. LiteLLM's above-200k fields on xAI's own rows describe that tier, not a marginal one. A request is long when its context exceeds the threshold, so 199,999 makes a 200,000-token prompt long.
+const XAI_LONG_CONTEXT_THRESHOLD: u64 = 199_999;
+// NOTE(2026-11-21, #2472): Google prices Gemini prompts over 200K as whole requests (https://ai.google.dev/gemini-api/docs/pricing). The cutoff here applies to LiteLLM split fields. Models.dev supplies a cutoff per model.
+pub(super) static WHOLE_REQUEST_LONG_CONTEXT_PROVIDERS: &[(&str, u64)] = &[
+    ("anthropic", DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS),
+    ("gemini", DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS),
+    ("google", DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS),
+    ("xai", XAI_LONG_CONTEXT_THRESHOLD),
+];
+
 pub(super) struct CuratedLongContext {
     pub(super) input: f64,
     pub(super) output: f64,
-    pub(super) long_context: LongContext,
+    pub(super) long_context: Option<LongContext>,
+    pub(super) schedule: Option<&'static str>,
+}
+
+const fn whole_request(threshold: u64, tier: [f64; 5]) -> LongContext {
+    let [input, output, cache_create, cache_create_1h, cache_read] = tier;
+    LongContext {
+        threshold,
+        mode: LongContextMode::WholeRequest,
+        rates: LongContextRates {
+            input: Some(input),
+            output: Some(output),
+            cache_create: Some(cache_create),
+            cache_create_1h: Some(cache_create_1h),
+            cache_read: Some(cache_read),
+        },
+    }
 }
 
 const fn whole_request_tier(
@@ -261,31 +287,51 @@ const fn whole_request_tier(
     threshold: u64,
     tier: [f64; 5],
 ) -> CuratedLongContext {
-    let [
-        tier_input,
-        tier_output,
-        cache_create,
-        cache_create_1h,
-        cache_read,
-    ] = tier;
     CuratedLongContext {
         input,
         output,
-        long_context: LongContext {
-            threshold,
-            mode: LongContextMode::WholeRequest,
-            rates: LongContextRates {
-                input: Some(tier_input),
-                output: Some(tier_output),
-                cache_create: Some(cache_create),
-                cache_create_1h: Some(cache_create_1h),
-                cache_read: Some(cache_read),
-            },
-        },
+        long_context: Some(whole_request(threshold, tier)),
+        schedule: None,
     }
 }
 
-// NOTE(2026-11-21, #2235): Anthropic billed every token of a Sonnet 4 or Sonnet 4.5 request above 200K input tokens (cache reads and writes included) at $6 input and $22.50 output per 1M, with the prompt caching multipliers on top, at https://web.archive.org/web/20260201050917/https://platform.claude.com/docs/en/about-claude/pricing. The current page no longer lists that tier because both models are back to a 200K window, so the rates still apply to the requests sent while the 1M beta ran. Every row at a model's list rates takes its tier, whichever catalogue it comes from; a host that bills its own rates keeps its own.
+const fn standard_rates_only(input: f64, output: f64) -> CuratedLongContext {
+    CuratedLongContext {
+        input,
+        output,
+        long_context: None,
+        schedule: None,
+    }
+}
+
+const ANTHROPIC_1M_GA_MS: i64 = 1_773_360_000_000;
+
+const fn premium_until_1m_ga(input: f64, output: f64, tier: [f64; 5]) -> PricingSchedule {
+    let standard = ScheduledRates {
+        input,
+        output,
+        cache_create: input * 1.25,
+        cache_read: input * 0.1,
+        long_context: None,
+    };
+    PricingSchedule {
+        cutoff_ms: ANTHROPIC_1M_GA_MS,
+        peak_weekdays: 1..=5,
+        peak_hours: &[],
+        before: ScheduledRates {
+            long_context: Some(whole_request(200_000, tier)),
+            ..standard
+        },
+        off_peak: standard,
+        peak: standard,
+        successor: None,
+        follows_row: true,
+        flat_in_fast_mode: true,
+        vendor: "anthropic",
+    }
+}
+
+// NOTE(2026-11-21, #2235): Anthropic billed every token of a Sonnet 4 or Sonnet 4.5 request above 200K input tokens (cache reads and writes included) at $6 input and $22.50 output per 1M, with the prompt caching multipliers on top, at https://web.archive.org/web/20260201050917/https://platform.claude.com/docs/en/about-claude/pricing. https://claude.com/blog/1m-context lists the same $6 / $22.50 for Sonnet 4 prompts over 200K, and https://platform.claude.com/docs/en/release-notes/overview (February 2026) says long context pricing applies to Sonnet 4.5 and Sonnet 4 requests exceeding 200k input tokens. The current page no longer lists that tier because both models are back to a 200K window, so the rates still apply to the requests sent while the 1M beta ran. Every row at a model's list rates takes its tier, whichever catalogue it comes from; a host that bills its own rates keeps its own.
 const ANTHROPIC_SONNET_4_LONG_CONTEXT: CuratedLongContext =
     whole_request_tier(3e-6, 15e-6, 200_000, [6e-6, 22.5e-6, 7.5e-6, 12e-6, 0.6e-6]);
 
@@ -297,10 +343,31 @@ const ANTHROPIC_HAIKU_5_5_LONG_CONTEXT: CuratedLongContext = whole_request_tier(
     [0.5e-6, 2.5e-6, 0.625e-6, 1e-6, 0.05e-6],
 );
 
+// NOTE(2026-11-21, #2451): Anthropic bills the full 1M window of Claude 4.6 and later models, other than Haiku 5.5, at standard rates ("A 900k-token request is billed at the same per-token rate as a 9k-token request") at https://platform.claude.com/docs/en/about-claude/pricing. models.dev still lists a 200K tier for some Sonnet 4.6, Opus 4.6 and Opus 4.7 spellings, so rows at these list rates drop it. Opus 4.7 and 4.8 launched after the change and never had a premium.
+// NOTE(2026-11-21, #2451): Until the 1M window left beta "at standard pricing" on March 13, 2026 (https://platform.claude.com/docs/en/release-notes/overview), Opus 4.6 and Sonnet 4.6 requests exceeding 200K input tokens paid the long context pricing that the February 2026 entry on the same page names: $10 / $37.50 for Opus 4.6 and $6 / $22.50 for Sonnet 4.6 per 1M, every token of the request, caching multipliers on top, at https://web.archive.org/web/20260301150515/https://platform.claude.com/docs/en/about-claude/pricing. The release note gives no hour, so the premium ends at 00:00 UTC that day. Fast mode never paid it: the same capture says "Fast mode includes the full 1M context window at no additional long context charge", and https://platform.claude.com/docs/en/about-claude/pricing says "Fast mode pricing applies across the full context window, including requests over 200k input tokens", so a fast request bills its flat fast rate at every context size.
+const SONNET_4_6_1M_BETA: PricingSchedule =
+    premium_until_1m_ga(3e-6, 15e-6, [6e-6, 22.5e-6, 7.5e-6, 12e-6, 0.6e-6]);
+const OPUS_4_6_1M_BETA: PricingSchedule =
+    premium_until_1m_ga(5e-6, 25e-6, [10e-6, 37.5e-6, 12.5e-6, 20e-6, 1e-6]);
+const ANTHROPIC_SONNET_4_6: CuratedLongContext = CuratedLongContext {
+    schedule: Some("claude-sonnet-4-6"),
+    ..standard_rates_only(3e-6, 15e-6)
+};
+const ANTHROPIC_OPUS_4_6: CuratedLongContext = CuratedLongContext {
+    schedule: Some("claude-opus-4-6"),
+    ..standard_rates_only(5e-6, 25e-6)
+};
+const ANTHROPIC_OPUS_4_7: CuratedLongContext = standard_rates_only(5e-6, 25e-6);
+
 pub(super) static ANTHROPIC_LONG_CONTEXT: &[(&str, CuratedLongContext)] = &[
     ("claude-sonnet-4", ANTHROPIC_SONNET_4_LONG_CONTEXT),
     ("claude-sonnet-4-5", ANTHROPIC_SONNET_4_LONG_CONTEXT),
     ("claude-haiku-5-5", ANTHROPIC_HAIKU_5_5_LONG_CONTEXT),
+    ("claude-sonnet-4-6", ANTHROPIC_SONNET_4_6),
+    ("claude-4-6-sonnet", ANTHROPIC_SONNET_4_6),
+    ("claude-opus-4-6", ANTHROPIC_OPUS_4_6),
+    ("claude-opus-4-7", ANTHROPIC_OPUS_4_7),
+    ("claude-opus-4-8", ANTHROPIC_OPUS_4_7),
 ];
 
 pub(super) static ALIASES: &[(&str, &str)] = &[
@@ -322,24 +389,30 @@ const DEEPSEEK_V4_FLASH: PricingSchedule = PricingSchedule {
         output: 0.28e-6,
         cache_create: 0.14e-6,
         cache_read: 0.0028e-6,
+        long_context: None,
     },
     off_peak: ScheduledRates {
         input: 0.22e-6,
         output: 0.66e-6,
         cache_create: 0.22e-6,
         cache_read: 0.007e-6,
+        long_context: None,
     },
     peak: ScheduledRates {
         input: 0.44e-6,
         output: 1.32e-6,
         cache_create: 0.44e-6,
         cache_read: 0.014e-6,
+        long_context: None,
     },
     // NOTE(2026-11-20, #2401): DeepSeek retired V4 Flash but still accepts `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp` at https://api-docs.deepseek.com/quick_start/pricing/. Both ids follow this handoff instead of the V4 Flash rates above.
     successor: Some(Successor {
         from_ms: DEEPSEEK_V4_1_FLASH_MS,
         schedule: &DEEPSEEK_FLASH,
     }),
+    follows_row: false,
+    flat_in_fast_mode: false,
+    vendor: "deepseek",
 };
 // NOTE(2026-11-20, #2401): DeepSeek planned to route `deepseek-v4-pro` to V4.1 Flash on September 14, 2026 but kept serving it with unchanged billing instead, and the pricing page still lists its own rates at https://api-docs.deepseek.com/quick_start/pricing/. Give it no successor so it keeps the V4 Pro schedule.
 const DEEPSEEK_V4_PRO: PricingSchedule = PricingSchedule {
@@ -351,20 +424,26 @@ const DEEPSEEK_V4_PRO: PricingSchedule = PricingSchedule {
         output: 0.87e-6,
         cache_create: 0.435e-6,
         cache_read: 0.003625e-6,
+        long_context: None,
     },
     off_peak: ScheduledRates {
         input: 0.66e-6,
         output: 1.98e-6,
         cache_create: 0.66e-6,
         cache_read: 0.022e-6,
+        long_context: None,
     },
     peak: ScheduledRates {
         input: 1.32e-6,
         output: 3.96e-6,
         cache_create: 1.32e-6,
         cache_read: 0.044e-6,
+        long_context: None,
     },
     successor: None,
+    follows_row: false,
+    flat_in_fast_mode: false,
+    vendor: "deepseek",
 };
 
 // NOTE(2026-11-20, #2268): DeepSeek launched deepseek-flash with V4.1 rates at 04:00 UTC on September 10, 2026: https://api-docs.deepseek.com/news/news260910/. Its rates differ from the retired V4 Flash schedule.
@@ -377,21 +456,73 @@ const DEEPSEEK_FLASH: PricingSchedule = PricingSchedule {
         output: 1.2e-6,
         cache_create: 0.3e-6,
         cache_read: 0.006e-6,
+        long_context: None,
     },
     off_peak: ScheduledRates {
         input: 0.15e-6,
         output: 0.6e-6,
         cache_create: 0.15e-6,
         cache_read: 0.003e-6,
+        long_context: None,
     },
     peak: ScheduledRates {
         input: 0.3e-6,
         output: 1.2e-6,
         cache_create: 0.3e-6,
         cache_read: 0.006e-6,
+        long_context: None,
     },
     successor: None,
+    follows_row: false,
+    flat_in_fast_mode: false,
+    vendor: "deepseek",
 };
+
+// NOTE(2026-11-21, #2227): xAI listed grok-code-fast-1 as its own model at $0.20 input, $0.02 cached and $1.50 output per 1M with no long-context rate in its console price data, last at https://web.archive.org/web/20260515145912/https://docs.x.ai/developers/pricing, and as an alias of grok-build-0.1 at $1.00 / $0.20 / $2.00, and $2.00 / $0.40 / $4.00 at 200K and above, from https://web.archive.org/web/20260521081415/https://docs.x.ai/developers/pricing on. xAI publishes no switch date, so the new rates start at the last capture that still shows the old ones (the earliest instant they can apply), which bills the few days in between at the higher rate. xAI bills no cache writes, so a write costs the input rate.
+const GROK_CODE_FAST_1_AS_GROK_BUILD: ScheduledRates = ScheduledRates {
+    input: 1e-6,
+    output: 2e-6,
+    cache_create: 1e-6,
+    cache_read: 0.2e-6,
+    long_context: Some(LongContext {
+        threshold: XAI_LONG_CONTEXT_THRESHOLD,
+        mode: LongContextMode::WholeRequest,
+        rates: LongContextRates {
+            input: Some(2e-6),
+            output: Some(4e-6),
+            cache_create: Some(2e-6),
+            cache_create_1h: None,
+            cache_read: Some(0.4e-6),
+        },
+    }),
+};
+const GROK_CODE_FAST_1: PricingSchedule = PricingSchedule {
+    cutoff_ms: 1_778_857_152_000,
+    peak_weekdays: 1..=5,
+    peak_hours: &[],
+    before: ScheduledRates {
+        input: 0.2e-6,
+        output: 1.5e-6,
+        cache_create: 0.2e-6,
+        cache_read: 0.02e-6,
+        long_context: None,
+    },
+    off_peak: GROK_CODE_FAST_1_AS_GROK_BUILD,
+    peak: GROK_CODE_FAST_1_AS_GROK_BUILD,
+    successor: None,
+    follows_row: false,
+    flat_in_fast_mode: false,
+    vendor: "xai",
+};
+
+// NOTE(2026-11-21, #2455): A schedule is a vendor's own price list, so on a recorded billing route it applies only to usage that vendor billed itself. These provider IDs name a vendor's own API: DeepSeek's, xAI's and Anthropic's LiteLLM provider IDs (https://docs.litellm.ai/docs/providers/deepseek, https://docs.litellm.ai/docs/providers/xai, https://docs.litellm.ai/docs/providers/anthropic) and DeepSeek Harness's `deepseek-official` and `deepseek-account` routes. Any other provider ID bills at its own flat rate.
+pub(super) static DIRECT_BILLING_PROVIDERS: &[(&str, &str)] = &[
+    ("deepseek", "deepseek"),
+    ("deepseek-official", "deepseek"),
+    ("deepseek-account", "deepseek"),
+    ("xai", "xai"),
+    ("anthropic", "anthropic"),
+];
 
 pub(super) static SCHEDULES: &[(&str, PricingSchedule)] = &[
     ("deepseek-flash", DEEPSEEK_FLASH),
@@ -399,4 +530,9 @@ pub(super) static SCHEDULES: &[(&str, PricingSchedule)] = &[
     // NOTE(2026-11-20, #2401): DeepSeek's August 21, 2026 V4 Flash Vision Exp release prices only image tokens at V4-Flash rates: https://api-docs.deepseek.com/news/news260821/. The alias therefore shares the V4 Flash schedule, including the September 10, 2026 handoff.
     ("deepseek-v4-flash-vision-exp", DEEPSEEK_V4_FLASH),
     ("deepseek-v4-pro", DEEPSEEK_V4_PRO),
+    ("claude-sonnet-4-6", SONNET_4_6_1M_BETA),
+    ("claude-opus-4-6", OPUS_4_6_1M_BETA),
+    ("grok-code-fast-1", GROK_CODE_FAST_1),
+    ("grok-code-fast", GROK_CODE_FAST_1),
+    ("grok-code-fast-1-0825", GROK_CODE_FAST_1),
 ];
