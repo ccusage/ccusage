@@ -197,21 +197,17 @@ impl PricingMap {
         if self.has_user_override(logged) {
             return std::borrow::Cow::Borrowed(logged);
         }
+        let models_dev = || self.select_models_dev(models_dev_pricing);
         configured_alias(logged)
             .filter(|alias| {
-                self.resolve_row_with(
-                    None,
-                    &[(alias.as_ref(), MatchKind::StrictExact)],
-                    Lookup::Pricing,
-                    models_dev_pricing,
-                )
-                .is_some()
+                self.identity_hit(alias, Lookup::Pricing, &models_dev)
+                    .is_some()
             })
             .unwrap_or(std::borrow::Cow::Borrowed(logged))
     }
 
-    /// Prices a model id that is already the result of [`Self::pricing_identity`],
-    /// so its configured alias is not applied a second time.
+    /// Prices a model id returned by [`Self::pricing_identity`]. An alias target
+    /// it returns has an identity price, so its own alias is never reached.
     pub fn find_identity_handle(&self, model: &str) -> Option<PricingHandle> {
         let (_, found, hit) = self.resolve_row_with(
             None,
@@ -340,7 +336,7 @@ impl PricingMap {
             }
         }
         if let Some(alias) = reported.and_then(configured_alias)
-            && let Some(row) = matching(alias.as_ref(), Pass::S2)
+            && let Some(row) = self.identity_hit(alias.as_ref(), lookup, &models_dev)
         {
             return Some(RequestHit {
                 candidate: None,
@@ -386,6 +382,21 @@ impl PricingMap {
                 .is_none()
         };
         std::iter::once(name).chain(name.suffixes().take_while(unclaimed))
+    }
+
+    /// Answers only from rows for `model` itself or its built-in respelling,
+    /// never through the model's own configured alias or a fuzzy match.
+    fn identity_hit<'a>(
+        &'a self,
+        model: &str,
+        lookup: Lookup,
+        models_dev: &impl Fn() -> Option<&'a PricingRows>,
+    ) -> Option<CachedHit> {
+        Candidate::default()
+            .own_names(model, |name| {
+                self.authoritative(name, lookup, true, models_dev, |_| true)
+            })
+            .map(|found| CachedHit::new(found, HitKind::AuthoritativeIdentity))
     }
 
     fn search_pass<'a>(

@@ -121,6 +121,57 @@ fn applies_a_chained_alias_once_like_every_other_adapter() {
 }
 
 #[test]
+fn does_not_price_an_unpriced_alias_target_through_its_own_alias() {
+    ccusage_test_support::install_pricing_snapshots();
+    let _aliases = set_model_aliases_for_tests([
+        ("chain-own-first", "chain-own-second"),
+        ("chain-own-second", "chain-own-third"),
+    ]);
+    let mut pricing = PricingMap::default();
+    pricing.load_json(
+        r#"{
+                "chain-own-first":{"input_cost_per_token":1,"output_cost_per_token":1},
+                "chain-own-third":{"input_cost_per_token":3,"output_cost_per_token":3}
+            }"#,
+    );
+    let event = CodexTokenUsageEvent {
+        session_id: "session".into(),
+        response_id: None,
+        record_response_id: None,
+        timestamp: parse_ts_timestamp("2026-09-01T00:00:00Z").unwrap(),
+        last_activity: "2026-09-01T00:00:00Z".into(),
+        model: "chain-own-first".into(),
+        input_tokens: 100,
+        cached_input_tokens: 0,
+        cache_creation_tokens: 0,
+        output_tokens: 0,
+        reasoning_output_tokens: 0,
+        total_tokens: 100,
+        is_fallback_model: false,
+        service_tier: None,
+    };
+    let seen = CodexDedupe::new(1, Some(&pricing));
+    let mut provenance = CodexEventProvenance::new(0);
+    seen.record(&event, &mut provenance).unwrap();
+    let groups = seen
+        .fold(&SharedArgs::default(), AgentReportKind::Session)
+        .unwrap();
+    let group = &groups["session"];
+    assert_eq!(
+        group.models.keys().cloned().collect::<Vec<_>>(),
+        ["chain-own-first"]
+    );
+    assert_eq!(
+        crate::report::calculate_group_cost(
+            group,
+            Some(&pricing),
+            CodexSpeedPolicy::Auto(CodexServiceTier::Standard)
+        ),
+        100.0,
+    );
+}
+
+#[test]
 fn tier_split_uses_the_supplied_pricing_entry_instead_of_embedded_rates() {
     ccusage_test_support::install_pricing_snapshots();
     let mut pricing = PricingMap::default();

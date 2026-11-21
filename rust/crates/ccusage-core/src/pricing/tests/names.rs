@@ -251,3 +251,28 @@ fn an_alias_target_without_an_identity_price_falls_back_to_the_logged_id() {
     let found = pricing.find("alias-logged-model").unwrap();
     assert_eq!((found.input, found.output), (1e-6, 2e-6));
 }
+
+#[test]
+fn an_unpriced_alias_target_is_not_priced_through_its_own_alias() {
+    crate::test_support::install_pricing_snapshots();
+    let _aliases = crate::model_aliases::set_model_aliases_for_tests([
+        ("chain-own-first", "chain-own-second"),
+        ("chain-own-second", "chain-own-third"),
+    ]);
+    let mut pricing = PricingMap::default();
+    assert_eq!(
+        pricing.load_json(
+            r#"{
+                "chain-own-first": {"input_cost_per_token": 1e-6, "output_cost_per_token": 2e-6},
+                "chain-own-third": {"input_cost_per_token": 7e-6, "output_cost_per_token": 9e-6}
+            }"#,
+        ),
+        2
+    );
+    let found = pricing.find("chain-own-first").unwrap();
+    assert_eq!((found.input, found.output), (1e-6, 2e-6));
+    assert_eq!(
+        pricing.pricing_identity("chain-own-first"),
+        "chain-own-first"
+    );
+}

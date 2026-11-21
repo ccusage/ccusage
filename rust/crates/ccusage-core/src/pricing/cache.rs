@@ -302,6 +302,14 @@ impl Candidate<'_> {
         Some(self.forms(text)?.configured.as_ref()?.name())
     }
 
+    pub(super) fn own_names<T>(
+        &self,
+        text: &str,
+        mut select: impl FnMut(Name<'_>) -> Option<T>,
+    ) -> Option<T> {
+        select(self.name(text)).or_else(|| select(self.forms(text)?.builtin.as_ref()?.name()))
+    }
+
     pub(super) fn names<T>(
         &self,
         text: &str,
