@@ -687,6 +687,33 @@ mod pricing_identity_tests {
     }
 
     #[test]
+    fn xai_provider_records_bill_grok_code_fast_1_at_the_rate_of_their_date() {
+        ccusage_test_support::install_pricing_snapshots();
+        let pricing = ccusage_core::PricingMap::load_embedded();
+        for (instant, expected) in [
+            ("2026-05-15T14:59:11Z", 0.0017),
+            ("2026-05-15T14:59:12Z", 0.003),
+        ] {
+            let entry = HermesEntry {
+                timestamp: ccusage_core::parse_ts_timestamp(instant).unwrap(),
+                session_id: "session-grok".to_string(),
+                model: "grok-code-fast-1".to_string(),
+                provider: "xai".to_string(),
+                usage: TokenUsageRaw {
+                    input_tokens: 1_000,
+                    output_tokens: 1_000,
+                    ..TokenUsageRaw::default()
+                },
+                message_count: 1,
+                cost_usd: None,
+            };
+            let (cost, missing) = price_hermes(&entry, PriceTable::Calculate(&pricing));
+            assert!((cost - expected).abs() < 1e-12, "{instant}: {cost}");
+            assert_eq!(missing, None, "{instant}");
+        }
+    }
+
+    #[test]
     fn override_on_the_reported_id_beats_provider_pricing() {
         ccusage_test_support::install_pricing_snapshots();
         let pricing = ccusage_core::PricingMap::load_embedded();

@@ -503,7 +503,7 @@ pub(super) fn dsh_entry_to_loaded(
 }
 
 fn model_candidates(provider: Option<&str>, model: &str) -> Vec<String> {
-    if billing_route(provider) == Some(BillingRoute::Direct) {
+    if billing_route(provider) == Some(BillingRoute::Direct("deepseek")) {
         return vec![model.to_string(), format!("deepseek/{model}")];
     }
     let mut candidates = Vec::new();
@@ -871,7 +871,10 @@ mod pricing_identity_tests {
 
     #[test]
     fn shared_route_treats_deepseek_as_direct_and_unrecorded_providers_as_inferred() {
-        assert_eq!(billing_route(Some("deepseek")), Some(BillingRoute::Direct));
+        assert_eq!(
+            billing_route(Some("deepseek")),
+            Some(BillingRoute::Direct("deepseek"))
+        );
         for provider in [None, Some(""), Some("unknown")] {
             assert_eq!(billing_route(provider), None, "{provider:?}");
         }

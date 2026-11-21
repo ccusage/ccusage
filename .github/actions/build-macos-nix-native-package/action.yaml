@@ -24,6 +24,7 @@ runs:
         cache-scope: ${{ inputs.cache-scope }}
         save: ${{ inputs.save-nix-cache }}
 
+    # NOTE(2026-11-21, #2457): On Blacksmith macOS, setup-nix uses Hestia, which caches every path the job builds. Unlike the Linux sticky disk, the PGO instrumented dependencies need no GC root here.
     - name: Build macOS binary and check its target under the unsafe_code forbid
       id: build
       shell: bash
