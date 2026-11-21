@@ -328,3 +328,111 @@ fn rows_without_cache_rates_use_the_model_vendors_documented_multipliers() {
         }
     }
 }
+
+#[test]
+fn disputed_list_prices_bill_the_vendor_rate_online_and_offline() {
+    crate::test_support::install_pricing_snapshots();
+    let offline = PricingMap::load_embedded();
+    let mut online = PricingMap::load_embedded();
+    online.refresh_litellm(|load| {
+        assert!(load(
+            r#"{
+                "vertex_ai/gemini-2.0-flash": {"input_cost_per_token": 1.5e-7, "output_cost_per_token": 6e-7, "litellm_provider": "vertex_ai"},
+                "gemini-2.0-flash": {"input_cost_per_token": 1.5e-7, "output_cost_per_token": 6e-7, "litellm_provider": "vertex_ai-language-models"},
+                "deepseek/deepseek-v3.2": {"input_cost_per_token": 2.8e-7, "output_cost_per_token": 4e-7, "cache_read_input_token_cost": 2.8e-8, "litellm_provider": "deepseek"},
+                "deepseek/deepseek-chat": {"input_cost_per_token": 2.8e-7, "output_cost_per_token": 4.2e-7, "cache_creation_input_token_cost": 0, "cache_read_input_token_cost": 2.8e-8, "litellm_provider": "deepseek"}
+            }"#
+        ));
+        Ok(())
+    });
+    for (mode, pricing) in [("offline", &offline), ("online", &online)] {
+        for (model, [input, output, write, read]) in [
+            ("kimi-k2-thinking", [0.6e-6, 2.5e-6, 0.6e-6, 0.15e-6]),
+            (
+                "moonshot/kimi-k2-thinking",
+                [0.6e-6, 2.5e-6, 0.6e-6, 0.15e-6],
+            ),
+            ("kimi-k2-turbo-preview", [1.15e-6, 8e-6, 1.15e-6, 0.15e-6]),
+            ("deepseek-v3.2", [0.28e-6, 0.42e-6, 0.28e-6, 0.028e-6]),
+            ("gemini-2.0-flash", [0.1e-6, 0.4e-6, 0.1e-6, 0.025e-6]),
+        ] {
+            let rates = pricing
+                .resolve_at(Some(model), &[(model, MatchKind::Fuzzy)], None)
+                .map(|(_, rates)| rates)
+                .unwrap();
+            assert_eq!(
+                [
+                    rates.input,
+                    rates.output,
+                    rates.cache_creation_rate(),
+                    rates.cache_read_rate_at(rates.input),
+                ],
+                [input, output, write, read],
+                "{mode} {model}"
+            );
+        }
+    }
+    let deepseek_chat = online.find("deepseek-chat").unwrap();
+    assert_eq!(
+        deepseek_chat.cache_creation_rate(),
+        0.0,
+        "a published zero write rate stays"
+    );
+}
+
+#[test]
+fn curated_rows_keep_the_write_rate_their_loaded_row_publishes() {
+    crate::test_support::install_pricing_snapshots();
+    for (key, model, provider, input, output, published, expected) in [
+        (
+            "deepseek/deepseek-v3.2",
+            "deepseek-v3.2",
+            "deepseek",
+            "2.8e-7",
+            0.42e-6,
+            "0",
+            0.0,
+        ),
+        (
+            "deepseek/deepseek-v3.2",
+            "deepseek-v3.2",
+            "deepseek",
+            "2.8e-7",
+            0.42e-6,
+            "5e-7",
+            0.5e-6,
+        ),
+        (
+            "moonshot/kimi-k2-thinking",
+            "kimi-k2-thinking",
+            "moonshot",
+            "6e-7",
+            2.5e-6,
+            "0",
+            0.0,
+        ),
+        (
+            "moonshot/kimi-k2-thinking",
+            "kimi-k2-thinking",
+            "moonshot",
+            "6e-7",
+            2.5e-6,
+            "7e-7",
+            0.7e-6,
+        ),
+    ] {
+        let mut pricing = PricingMap::load_embedded();
+        pricing.refresh_litellm(|load| {
+            assert!(load(&format!(
+                r#"{{"{key}": {{"input_cost_per_token": {input}, "output_cost_per_token": 4e-7, "cache_creation_input_token_cost": {published}, "litellm_provider": "{provider}"}}}}"#
+            )));
+            Ok(())
+        });
+        let rates = pricing.find(model).unwrap();
+        assert_eq!(
+            (rates.output, rates.cache_creation_rate()),
+            (output, expected),
+            "{key} {published}"
+        );
+    }
+}

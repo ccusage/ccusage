@@ -209,20 +209,20 @@ exit: 0
           "outputTokens": 530
         },
         {
-          "cacheCreationTokens": 900,
-          "cacheReadTokens": 12000,
-          "cost": 0.0082419,
-          "inputTokens": 3111,
-          "modelName": "kimi-k2-thinking",
-          "outputTokens": 699
-        },
-        {
           "cacheCreationTokens": 50,
           "cacheReadTokens": 4500,
           "cost": 0.0066,
           "inputTokens": 1000,
           "modelName": "gemini-3-pro",
           "outputTokens": 200
+        },
+        {
+          "cacheCreationTokens": 900,
+          "cacheReadTokens": 12000,
+          "cost": 0.0059541,
+          "inputTokens": 3111,
+          "modelName": "kimi-k2-thinking",
+          "outputTokens": 699
         },
         {
           "cacheCreationTokens": 20,
@@ -258,14 +258,6 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.00122,
-          "inputTokens": 920,
-          "modelName": "grok-code-fast-1",
-          "outputTokens": 150
-        },
-        {
-          "cacheCreationTokens": 0,
           "cacheReadTokens": 600,
           "cost": 0.0010142999999999999,
           "inputTokens": 1621,
@@ -279,6 +271,14 @@ exit: 0
           "inputTokens": 1250,
           "modelName": "deepseek-v4-pro",
           "outputTokens": 303
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.000409,
+          "inputTokens": 920,
+          "modelName": "grok-code-fast-1",
+          "outputTokens": 150
         },
         {
           "cacheCreationTokens": 0,
@@ -379,7 +379,7 @@ exit: 0
       ],
       "outputTokens": 15244,
       "period": "2025-12",
-      "totalCost": 9.754206560000004,
+      "totalCost": 9.751107760000002,
       "totalTokens": 223294
     },
     {
@@ -469,7 +469,7 @@ exit: 0
           "cacheCreation1hTokens": 1000,
           "cacheCreationTokens": 3640,
           "cacheReadTokens": 70820,
-          "cost": 0.825767,
+          "cost": 0.829967,
           "inputTokens": 18627,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 6939,
@@ -662,14 +662,6 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 5000,
-          "cost": 0.004555,
-          "inputTokens": 1500,
-          "modelName": "kimi-k2-thinking",
-          "outputTokens": 782
-        },
-        {
-          "cacheCreationTokens": 0,
           "cacheReadTokens": 3000,
           "cost": 0.0042,
           "inputTokens": 600,
@@ -677,13 +669,12 @@ exit: 0
           "outputTokens": 100
         },
         {
-          "cacheCreationTokens": 50,
-          "cacheReadTokens": 700,
-          "cost": 0.00368,
-          "inputTokens": 650,
-          "modelName": "grok-code-fast-1",
-          "outputTokens": 490,
-          "storedCost": 0.003
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 5000,
+          "cost": 0.003605,
+          "inputTokens": 1500,
+          "modelName": "kimi-k2-thinking",
+          "outputTokens": 782
         },
         {
           "cacheCreationTokens": 1500,
@@ -692,6 +683,15 @@ exit: 0
           "inputTokens": 4100,
           "modelName": "deepseek-v4-pro",
           "outputTokens": 890
+        },
+        {
+          "cacheCreationTokens": 50,
+          "cacheReadTokens": 700,
+          "cost": 0.003235,
+          "inputTokens": 650,
+          "modelName": "grok-code-fast-1",
+          "outputTokens": 490,
+          "storedCost": 0.003
         },
         {
           "cacheCreationTokens": 0,
@@ -1109,7 +1109,7 @@ exit: 0
       ],
       "outputTokens": 44815,
       "period": "2026-01",
-      "totalCost": 18.317489115,
+      "totalCost": 18.320294115,
       "totalTokens": 2425226
     },
     {
@@ -1146,7 +1146,7 @@ exit: 0
     "cacheReadTokens": 1308300,
     "inputTokens": 1262107,
     "outputTokens": 60566,
-    "totalCost": 28.075049425000003,
+    "totalCost": 28.074755625,
     "totalTokens": 2652038,
     "unpricedModels": [
       "GLM-5.3",

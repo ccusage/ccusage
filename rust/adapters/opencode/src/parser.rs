@@ -338,8 +338,7 @@ impl OpenCodeUsage {
         };
         let (usage, extra_total_tokens) =
             apply_total_token_fallback(usage, self.tokens.reasoning, self.tokens.total);
-        // NOTE(2026-11-17): OpenCode writes cost: 0 when its model price is unknown. Treat that value as absent so token-based pricing can fill it in.
-        let recorded_cost = self.stored_cost.filter(|cost| *cost > 0.0);
+        let recorded_cost = ccusage_core::cost::recorded_cost(self.stored_cost);
         let cost_only = self.kind == UsageKind::Aggregate && recorded_cost.is_some();
         if usage.input_tokens == 0
             && usage.output_tokens == 0

@@ -39,7 +39,7 @@ serde_json.workspace = true
 sqlite.workspace = true
 zstd.workspace = true
 
-[target.'cfg(all(target_os = "linux", target_env = "musl"))'.dependencies]
+[target.'cfg(any(target_os = "macos", all(target_os = "linux", target_env = "musl")))'.dependencies]
 mimalloc.workspace = true
 
 [lints]

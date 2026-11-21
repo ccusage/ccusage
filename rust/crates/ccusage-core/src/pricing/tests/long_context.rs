@@ -293,3 +293,66 @@ fn recorded_threshold_migration_groups_use_the_resolved_model_boundary() {
         );
     }
 }
+
+#[test]
+fn claude_long_context_tiers_bill_anthropics_published_rates_whichever_row_wins() {
+    use super::super::{LongContext, LongContextMode, LongContextRates};
+    crate::test_support::install_pricing_snapshots();
+    let sonnet_4 = LongContext {
+        threshold: 200_000,
+        mode: LongContextMode::WholeRequest,
+        rates: LongContextRates {
+            input: Some(6e-6),
+            output: Some(22.5e-6),
+            cache_create: Some(7.5e-6),
+            cache_create_1h: Some(12e-6),
+            cache_read: Some(0.6e-6),
+        },
+    };
+    let haiku_5_5 = LongContext {
+        threshold: 100_000,
+        mode: LongContextMode::WholeRequest,
+        rates: LongContextRates {
+            input: Some(0.5e-6),
+            output: Some(2.5e-6),
+            cache_create: Some(0.625e-6),
+            cache_create_1h: Some(1e-6),
+            cache_read: Some(0.05e-6),
+        },
+    };
+    let offline = PricingMap::load_embedded();
+    let mut online = PricingMap::load_embedded();
+    online.refresh_litellm(|load| {
+        assert!(load(super::build_time_pricing_json()));
+        Ok(())
+    });
+    for (mode, pricing) in [("offline", &offline), ("online", &online)] {
+        for (model, expected) in [
+            ("claude-sonnet-4", sonnet_4),
+            ("claude-sonnet-4-20250514", sonnet_4),
+            ("anthropic.claude-sonnet-4-20250514-v1:0", sonnet_4),
+            ("claude-sonnet-4.5", sonnet_4),
+            ("claude-sonnet-4-5", sonnet_4),
+            ("claude-sonnet-4-5-20250929", sonnet_4),
+            ("claude-sonnet-4-5@20250929", sonnet_4),
+            ("claude-sonnet-4-5-20250929-thinking", sonnet_4),
+            ("claude-haiku-5-5", haiku_5_5),
+        ] {
+            let rates = pricing
+                .resolve_at(Some(model), &[(model, MatchKind::Fuzzy)], None)
+                .map(|(_, rates)| rates)
+                .unwrap();
+            assert_eq!(rates.long_context, Some(expected), "{mode} {model}");
+        }
+        let regional = pricing
+            .find("us.anthropic.claude-sonnet-4-5-20250929-v1:0")
+            .unwrap();
+        assert_eq!(
+            regional
+                .long_context
+                .and_then(|context| context.rates.input),
+            Some(6.6e-6),
+            "{mode}: a row off Anthropic's list price keeps its own tier"
+        );
+    }
+}

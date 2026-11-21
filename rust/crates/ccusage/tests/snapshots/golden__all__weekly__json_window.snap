@@ -10,7 +10,7 @@ exit: 0
     "cacheReadTokens": 668794,
     "inputTokens": 1070549,
     "outputTokens": 37494,
-    "totalCost": 15.286711300000002,
+    "totalCost": 15.289943500000001,
     "totalTokens": 1787423,
     "unpricedModels": [
       "GLM-5.3",
@@ -111,7 +111,7 @@ exit: 0
           "cacheCreation1hTokens": 1000,
           "cacheCreationTokens": 2750,
           "cacheReadTokens": 55060,
-          "cost": 0.7988364999999998,
+          "cost": 0.8030364999999998,
           "inputTokens": 15447,
           "missingPricing": true,
           "modelName": "claude-sonnet-4-20250514",
@@ -296,19 +296,19 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 5000,
-          "cost": 0.0046569,
-          "inputTokens": 1511,
-          "modelName": "kimi-k2-thinking",
-          "outputTokens": 821
-        },
-        {
-          "cacheCreationTokens": 0,
           "cacheReadTokens": 3000,
           "cost": 0.0042,
           "inputTokens": 600,
           "modelName": "[openclaw] claude-sonnet-4-20250514",
           "outputTokens": 100
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 5000,
+          "cost": 0.0037091000000000003,
+          "inputTokens": 1511,
+          "modelName": "kimi-k2-thinking",
+          "outputTokens": 821
         },
         {
           "cacheCreationTokens": 20,
@@ -321,7 +321,7 @@ exit: 0
         {
           "cacheCreationTokens": 50,
           "cacheReadTokens": 700,
-          "cost": 0.0030800000000000003,
+          "cost": 0.0030600000000000002,
           "inputTokens": 150,
           "modelName": "grok-code-fast-1",
           "outputTokens": 440,
@@ -695,7 +695,7 @@ exit: 0
       ],
       "outputTokens": 37494,
       "period": "2025-12-29",
-      "totalCost": 15.286711300000002,
+      "totalCost": 15.289943500000001,
       "totalTokens": 1787423
     }
   ]

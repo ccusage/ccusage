@@ -10,7 +10,7 @@ exit: 0
     "cacheReadTokens": 1308270,
     "inputTokens": 1261097,
     "outputTokens": 60446,
-    "totalCost": 4.292484425000002,
+    "totalCost": 4.287504625000001,
     "totalTokens": 2650838,
     "unpricedModels": [
       "GLM-5.3",
@@ -163,7 +163,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.000165,
+          "cost": 0.000185,
           "inputTokens": 100,
           "modelName": "kimi-k2-thinking",
           "outputTokens": 50
@@ -231,7 +231,7 @@ exit: 0
       ],
       "outputTokens": 1640,
       "period": "2025-12-22",
-      "totalCost": 0.049185000000000006,
+      "totalCost": 0.049205000000000006,
       "totalTokens": 11430
     },
     {
@@ -388,14 +388,6 @@ exit: 0
           "outputTokens": 500
         },
         {
-          "cacheCreationTokens": 900,
-          "cacheReadTokens": 17000,
-          "cost": 0.012631899999999998,
-          "inputTokens": 4511,
-          "modelName": "kimi-k2-thinking",
-          "outputTokens": 1431
-        },
-        {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 6500,
           "cost": 0.01219375,
@@ -434,6 +426,14 @@ exit: 0
           "inputTokens": 520,
           "modelName": "gpt-6.1-sol",
           "outputTokens": 57
+        },
+        {
+          "cacheCreationTokens": 900,
+          "cacheReadTokens": 17000,
+          "cost": 0.009374100000000002,
+          "inputTokens": 4511,
+          "modelName": "kimi-k2-thinking",
+          "outputTokens": 1431
         },
         {
           "cacheCreationTokens": 70,
@@ -493,14 +493,6 @@ exit: 0
           "outputTokens": 1193
         },
         {
-          "cacheCreationTokens": 50,
-          "cacheReadTokens": 700,
-          "cost": 0.0030399999999999993,
-          "inputTokens": 1570,
-          "modelName": "grok-code-fast-1",
-          "outputTokens": 640
-        },
-        {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 2000,
           "cost": 0.00279,
@@ -539,6 +531,14 @@ exit: 0
           "inputTokens": 100,
           "modelName": "claude-haiku-4.5",
           "outputTokens": 245
+        },
+        {
+          "cacheCreationTokens": 50,
+          "cacheReadTokens": 700,
+          "cost": 0.0012980000000000001,
+          "inputTokens": 1570,
+          "modelName": "grok-code-fast-1",
+          "outputTokens": 640
         },
         {
           "cacheCreationTokens": 0,
@@ -992,7 +992,7 @@ exit: 0
       ],
       "outputTokens": 58299,
       "period": "2025-12-29",
-      "totalCost": 4.239945675000002,
+      "totalCost": 4.234945875000002,
       "totalTokens": 2635890
     },
     {

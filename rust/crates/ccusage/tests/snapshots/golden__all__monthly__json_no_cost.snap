@@ -201,13 +201,6 @@ exit: 0
           "outputTokens": 740
         },
         {
-          "cacheCreationTokens": 900,
-          "cacheReadTokens": 17000,
-          "inputTokens": 4511,
-          "modelName": "kimi-k2-thinking",
-          "outputTokens": 999
-        },
-        {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 4400,
           "inputTokens": 2400,
@@ -234,6 +227,13 @@ exit: 0
           "inputTokens": 2300,
           "modelName": "qwen3-coder-plus",
           "outputTokens": 901
+        },
+        {
+          "cacheCreationTokens": 900,
+          "cacheReadTokens": 17000,
+          "inputTokens": 4511,
+          "modelName": "kimi-k2-thinking",
+          "outputTokens": 999
         },
         {
           "cacheCreationTokens": 50,

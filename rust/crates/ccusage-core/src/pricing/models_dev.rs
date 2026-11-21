@@ -137,7 +137,7 @@ struct ModelsDevLimit {
 impl PricingMap {
     pub(super) fn load_models_dev_json_missing(&mut self, json: &str) -> Option<usize> {
         let raw = parse_models_dev_json(json)?;
-        Some(match raw {
+        let loaded = match raw {
             ModelsDevJson::Providers(providers) => {
                 let rules = models_dev_catalog_rules();
                 let mut ranked: Vec<_> = providers.into_iter().collect();
@@ -173,7 +173,9 @@ impl PricingMap {
                 let mut claims = FxHashMap::default();
                 self.load_models_dev_models(models, "", MODELS_DEV_TRUST_OWNER, false, &mut claims)
             }
-        })
+        };
+        self.curate_long_context();
+        Some(loaded)
     }
 
     fn load_models_dev_models(
