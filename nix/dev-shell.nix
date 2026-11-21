@@ -43,6 +43,7 @@
             typos-lsp
             oxfmt
             config.packages.actionlint
+            config.packages.blacksmith
             zizmor
             config.packages.oxlint
             just
