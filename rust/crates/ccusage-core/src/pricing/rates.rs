@@ -197,6 +197,8 @@ impl OverrideFields {
     const FLEX: u16 = 1024;
     const RATES: u16 =
         Self::INPUT | Self::OUTPUT | Self::CACHE_CREATE | Self::CACHE_READ | Self::CACHE_CREATE_1H;
+    const LONG_RATES: u16 =
+        Self::LONG_INPUT | Self::LONG_OUTPUT | Self::LONG_CACHE_CREATE | Self::LONG_CACHE_READ;
 }
 
 impl Pricing {
@@ -261,6 +263,10 @@ impl Pricing {
         }
         self.long_context = Some(long_context);
         self
+    }
+
+    pub(super) fn explicit_long_rate_fields(&self) -> u16 {
+        self.explicit_fields & OverrideFields::LONG_RATES
     }
 
     pub(super) fn replace_tier_with_explicit_rates(&mut self) {

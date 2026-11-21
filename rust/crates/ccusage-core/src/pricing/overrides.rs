@@ -245,7 +245,7 @@ impl PricingMap {
                     }
                 }
             };
-            let mut explicit_fields = 0;
+            let mut explicit_fields = pricing.explicit_long_rate_fields();
             for patch in &slot.patches {
                 pricing.apply_override(patch);
                 explicit_fields |= pricing.explicit_fields;

@@ -860,6 +860,28 @@ fn a_bare_override_covers_host_qualified_labels_with_their_own_catalogue_rate() 
 }
 
 #[test]
+fn a_layered_override_keeps_the_above_threshold_rates_its_parent_spells_out() {
+    let _aliases = crate::model_aliases::set_model_aliases_for_tests([("tiered-child", "tiered")]);
+    let mut pricing = tiered_test_pricing();
+    let parent = ccusage_cli::PricingOverride {
+        input_cost_per_token: Some(50e-6),
+        input_cost_per_token_above_200k_tokens: Some(80e-6),
+        ..Default::default()
+    };
+    let child = ccusage_cli::PricingOverride {
+        input_cost_per_token: Some(60e-6),
+        ..Default::default()
+    };
+    let (parent_key, child_key) = ("tiered".to_owned(), "tiered-child".to_owned());
+    pricing.apply_overrides([(&parent_key, &parent), (&child_key, &child)]);
+
+    let entry = pricing.find("tiered-child").unwrap();
+    assert_eq!(entry.input, 60e-6);
+    let tier = entry.long_context.unwrap();
+    assert_eq!((tier.threshold, tier.rates.input), (32_000, Some(80e-6)));
+}
+
+#[test]
 fn a_full_label_override_wins_over_the_bare_key() {
     crate::test_support::install_pricing_snapshots();
     let embedded = PricingMap::load_embedded();
