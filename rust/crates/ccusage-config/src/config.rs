@@ -161,16 +161,12 @@ impl ConfigContext {
     }
 
     fn option_paths(&self) -> Vec<String> {
-        self.option_paths_for_agent(self.command.agent.as_deref())
-    }
-
-    fn option_paths_for_agent(&self, agent: Option<&str>) -> Vec<String> {
         let report = &self.command.report;
         let mut paths = vec!["defaults".to_string()];
-        if let Some(agent) = agent {
+        if let Some(agent) = &self.command.agent {
             paths.extend([
                 format!("commands.{report}"),
-                format!("commands.{agent} {report}"),
+                format!("commands.{}", self.command.raw),
                 format!("commands.{agent}:{report}"),
                 format!("{agent}.defaults"),
                 format!("{agent}.commands.{report}"),

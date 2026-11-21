@@ -117,7 +117,7 @@ fn run_bucket(shared: SharedArgs, bucket: Bucket, project: Option<&str>) -> Resu
 fn run_session(args: SessionArgs, project: Option<&str>) -> Result<()> {
     let shared = args.shared.clone();
     if let Some(id) = args.id {
-        return run_session_id(&id, &shared, project);
+        return run_session_id(&id, &shared);
     }
 
     let mut rows = load_session_rows(&shared, project)?;
@@ -176,8 +176,8 @@ fn load_session_rows(shared: &SharedArgs, project: Option<&str>) -> Result<Vec<U
     Ok(rows)
 }
 
-fn run_session_id(id: &str, shared: &SharedArgs, project: Option<&str>) -> Result<()> {
-    let entries = load_entries_since(shared, project)?;
+fn run_session_id(id: &str, shared: &SharedArgs) -> Result<()> {
+    let entries = load_entries_since(shared, None)?;
     let mut session_entries = entries
         .into_iter()
         .filter(|entry| {

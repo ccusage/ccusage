@@ -328,9 +328,11 @@ For a source-focused command, or each source within a unified report, options ar
 
 ### Filter Claude Code by project
 
-Set `claude.defaults.project` or `defaults.project` to filter Claude Code usage in daily, weekly, monthly, session, and blocks reports. In unified reports, the filter applies to the Claude Code contribution, including in report sections.
+Set `claude.defaults.project` or `defaults.project` to filter Claude Code usage in daily, weekly, monthly, session, and blocks reports. Unified totals combine project-filtered Claude usage with usage from other agents. The table and JSON include a note when this filter is active, including in reports with multiple sections.
 
 Set `claude.commands.<report>.project` or `commands.<report>.project` to configure a filter for a specific report. For `ccusage claude daily`, the `--project` flag overrides the configured value.
+
+`ccusage blocks` and `ccusage session --id <id>` use the same config sections as their `ccusage claude` equivalents. An explicit session lookup with `--id` ignores the configured project filter.
 
 ## Command-Specific Options
 

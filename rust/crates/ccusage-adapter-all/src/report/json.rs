@@ -55,8 +55,12 @@ pub(crate) fn print_sections_report_json(
     include_agents: bool,
     jq: Option<&str>,
     no_cost: bool,
+    note: Option<&str>,
 ) -> Result<()> {
     let mut report = sections_report_json(sections, command_kind, include_agents);
+    if let Some(note) = note {
+        report.fields.push(("notes", json!([note])));
+    }
     if no_cost {
         report.strip_costs();
     }

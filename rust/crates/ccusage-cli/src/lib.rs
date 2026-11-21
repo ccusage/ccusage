@@ -12,7 +12,7 @@ pub use agents::{
 pub use ccusage_environment as environment;
 pub use date::{DateBound, DayLabel, IsoDate, parse_digits, weekday_from_epoch_days};
 pub use limits::{ContextThresholds, SessionLength, TokenLimit};
-pub use options::{OptionArity, command_tokens, is_shared_flag, option_arity};
+pub use options::{OptionArity, command_has_flag, command_tokens, is_shared_flag, option_arity};
 pub use types::{
     AgentCommand, AgentCommandArgs, AgentOptions, AgentReportKind, BlocksArgs, ClaudeReport,
     CliConfig, CodexSpeed, CodexStatuslineArgs, ColorChoice, Command, CostMode, CostSource,

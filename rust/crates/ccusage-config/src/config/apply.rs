@@ -98,15 +98,11 @@ impl ccusage_cli::CliConfig for ConfigContext {
 
     fn agent_options(&self, agent: &str) -> AgentOptions {
         let mut resolved = AgentOptions::default();
-        if self.layers.is_empty() {
-            return resolved;
-        }
         if agent == "claude" {
             resolved.claude_project = self
-                .option_paths_for_agent(Some(agent))
+                .option_maps()
                 .into_iter()
                 .rev()
-                .filter_map(|path| self.layers.get(&path))
                 .find_map(|options| options.claude.project.as_ref())
                 .cloned();
             return resolved;

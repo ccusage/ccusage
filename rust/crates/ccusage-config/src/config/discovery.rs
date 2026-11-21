@@ -5,7 +5,7 @@ use std::{
 
 use serde_json::Value;
 
-use ccusage_cli::command_tokens;
+use ccusage_cli::{command_has_flag, command_tokens};
 
 use super::{ConfigCommand, config_error, pi_stores::parse_named_pi_stores};
 
@@ -161,6 +161,13 @@ pub(super) fn detect_config_command(args: &[String]) -> ConfigCommand {
             raw: format!("{first} {report}"),
             agent: Some(first.clone()),
             report,
+        };
+    }
+    if first == "blocks" || (first == "session" && command_has_flag(args, &["--id", "-i"])) {
+        return ConfigCommand {
+            raw: format!("claude {first}"),
+            agent: Some("claude".to_string()),
+            report: first.clone(),
         };
     }
     ConfigCommand {
