@@ -26,7 +26,7 @@ description: Runs local changes on a Blacksmith testbox. Use for Linux builds, L
   binaries on the same box, against a byte-copy control.
 - Every fixture benchmark, build and size check runs on Blacksmith (testboxes,
   `binary-size.yaml`, `profile-instructions.yaml`), one box per lever or PR, so
-  measurements run in parallel instead of queueing on a local machine.
+  measurements run in parallel instead of queuing on a local machine.
 - The owner's MacBook: only the final real-log confirmation, because real logs
   must never leave that machine.
 - Local `just fmt`, `just typecheck`, and `just test` stay fine; a testbox is
