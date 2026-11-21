@@ -33,7 +33,7 @@ jobs:
           disk-job: test
           save: 'false'
       - name: Warm the dev shell
-        run: nix develop --command cargo fetch --locked
+        run: nix develop --command cargo fetch --manifest-path rust/Cargo.toml --locked
       - uses: useblacksmith/run-testbox@9b976c32aa3bcbffb348889673585a5deee1b2f3 # v2
         if: always()
 
@@ -56,7 +56,7 @@ jobs:
           cache-scope: build-linux-x64
           save: 'false'
       - name: Warm the dev shell
-        run: nix develop --command cargo fetch --locked
+        run: nix develop --command cargo fetch --manifest-path rust/Cargo.toml --locked
       - name: Install perf tooling
         run: nix profile install --inputs-from . nixpkgs#just nixpkgs#valgrind
       - name: Generate fixtures
