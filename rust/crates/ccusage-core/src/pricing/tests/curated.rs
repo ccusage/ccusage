@@ -338,6 +338,7 @@ fn disputed_list_prices_bill_the_vendor_rate_online_and_offline() {
         assert!(load(
             r#"{
                 "vertex_ai/gemini-2.0-flash": {"input_cost_per_token": 1.5e-7, "output_cost_per_token": 6e-7, "litellm_provider": "vertex_ai"},
+                "gemini-2.0-flash": {"input_cost_per_token": 1.5e-7, "output_cost_per_token": 6e-7, "litellm_provider": "vertex_ai-language-models"},
                 "deepseek/deepseek-v3.2": {"input_cost_per_token": 2.8e-7, "output_cost_per_token": 4e-7, "cache_read_input_token_cost": 2.8e-8, "litellm_provider": "deepseek"},
                 "deepseek/deepseek-chat": {"input_cost_per_token": 2.8e-7, "output_cost_per_token": 4.2e-7, "cache_creation_input_token_cost": 0, "cache_read_input_token_cost": 2.8e-8, "litellm_provider": "deepseek"}
             }"#

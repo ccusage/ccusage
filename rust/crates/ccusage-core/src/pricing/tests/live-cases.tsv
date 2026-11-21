@@ -20,3 +20,5 @@
 109-opencode|gpt-6-luna-decisions|F:gpt-6-luna-decisions|o:0|S5|vercel_ai_gateway/openai/gpt-6-luna-decisions|
 110-droid|baai/bge-m3|F:baai/bge-m3|o:0|S4|baai/bge-m3|
 111-claude|ollama/gpt-oss:20b-cloud|F:ollama/gpt-oss:20b-cloud|0/0|S2|ollama/gpt-oss:20b-cloud|
+092-droid/google|gemini-2-0-flash|S:google/gemini-2-0-flash,S:vertex_ai/gemini-2-0-flash,F:gemini-2-0-flash,F:google/gemini-2-0-flash,F:vertex_ai/gemini-2-0-flash,F:openrouter/google/gemini-2-0-flash|0.15/0.6|S2|vertex_ai/gemini-2.0-flash|
+092-droid|gemini-2-0-flash|F:gemini-2-0-flash,F:google/gemini-2-0-flash,F:vertex_ai/gemini-2-0-flash,F:openrouter/google/gemini-2-0-flash|0.1/0.4/0.025|S2|gemini-2.0-flash|
