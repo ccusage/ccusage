@@ -1,6 +1,6 @@
 ---
 name: blacksmith-testbox
-description: Runs local changes on a Blacksmith testbox. Use for Linux builds, Linux static binary size, Linux-only tests, or CI-like hyperfine and callgrind comparisons that a local machine cannot give.
+description: Runs local changes on a Blacksmith testbox. Use for Linux builds and static binary size, Linux-only tests, or Linux or macOS fixture benchmarks too long for a local machine.
 ---
 
 # Blacksmith Testbox
@@ -21,14 +21,21 @@ description: Runs local changes on a Blacksmith testbox. Use for Linux builds, L
 - `testbox-bench.yaml`: CI-like timing and instruction counts. Generated fixtures are
   under `$CCUSAGE_FIXTURES` on the box; start the remote command string with
   `source ~/ccusage-fixtures.env &&`, never source it locally.
-- The owner's MacBook: timing that should reflect the owner's machine.
+- `testbox-bench-macos.yaml`: the same fixtures on a macOS runner, for macOS
+  timing. Absolute times differ from any laptop; compare only ratios of two
+  binaries on the same box, against a byte-copy control.
+- Every fixture benchmark, build and size check runs on Blacksmith (testboxes,
+  `binary-size.yaml`, `profile-instructions.yaml`), one box per lever or PR, so
+  measurements run in parallel instead of queuing on a local machine.
+- The owner's MacBook: only the final real-log confirmation, because real logs
+  must never leave that machine.
 - Local `just fmt`, `just typecheck`, and `just test` stay fine; a testbox is
   not required for them.
 
 ## Session
 
 - Run every `blacksmith` command from the repository root.
-- Start with `blacksmith testbox warmup testbox-<dev|bench>.yaml`; one workflow
+- Start with `blacksmith testbox warmup testbox-<dev|bench|bench-macos>.yaml`; one workflow
   per box, because every job in a dispatched workflow starts a runner. Wait
   with `blacksmith testbox status --id <id> --wait`, never a sleep loop.
 - Run commands as `blacksmith testbox run --id <id> 'nix develop --command <cmd>'`,
