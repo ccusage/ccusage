@@ -757,6 +757,74 @@ mod pricing_identity_tests {
     }
 
     #[test]
+    fn a_configured_alias_prices_a_provider_request_at_the_alias_target() {
+        ccusage_test_support::install_pricing_snapshots();
+        let _aliases = ccusage_core::model_aliases::set_model_aliases_for_tests([(
+            "alias-source-model",
+            "alias-target-model",
+        )]);
+        let mut pricing = ccusage_core::PricingMap::default();
+        pricing.load_json(
+            r#"{
+                "openai/alias-source-model": {"litellm_provider": "openai", "input_cost_per_token": 1e-6, "output_cost_per_token": 2e-6},
+                "alias-target-model": {"input_cost_per_token": 7e-6, "output_cost_per_token": 9e-6}
+            }"#,
+        );
+        let entry = HermesEntry {
+            timestamp: ccusage_core::parse_ts_timestamp("2026-11-17T10:00:00Z").unwrap(),
+            session_id: "s".into(),
+            model: "alias-source-model".into(),
+            provider: "openai".into(),
+            usage: TokenUsageRaw {
+                input_tokens: 1_000,
+                output_tokens: 1_000,
+                ..Default::default()
+            },
+            message_count: 1,
+            cost_usd: None,
+        };
+        let (cost, missing) = price_hermes(&entry, PriceTable::Calculate(&pricing));
+        assert!((cost - 0.016).abs() < 1e-12, "{cost}");
+        assert_eq!(missing, None);
+    }
+
+    #[test]
+    fn a_provider_qualified_override_beats_a_configured_alias() {
+        ccusage_test_support::install_pricing_snapshots();
+        let _aliases = ccusage_core::model_aliases::set_model_aliases_for_tests([(
+            "alias-source-model",
+            "alias-target-model",
+        )]);
+        let mut pricing = ccusage_core::PricingMap::default();
+        pricing.load_json(
+            r#"{"alias-target-model": {"input_cost_per_token": 7e-6, "output_cost_per_token": 9e-6}}"#,
+        );
+        let id = "openai/alias-source-model".to_owned();
+        let rates = ccusage_core::cli::PricingOverride {
+            input_cost_per_token: Some(1e-6),
+            output_cost_per_token: Some(2e-6),
+            ..Default::default()
+        };
+        let pricing = pricing.with_user_overrides([(&id, &rates)]);
+        let entry = HermesEntry {
+            timestamp: ccusage_core::parse_ts_timestamp("2026-11-17T10:00:00Z").unwrap(),
+            session_id: "s".into(),
+            model: "alias-source-model".into(),
+            provider: "openai".into(),
+            usage: TokenUsageRaw {
+                input_tokens: 1_000,
+                output_tokens: 1_000,
+                ..Default::default()
+            },
+            message_count: 1,
+            cost_usd: None,
+        };
+        let (cost, missing) = price_hermes(&entry, PriceTable::Calculate(&pricing));
+        assert!((cost - 0.003).abs() < 1e-12, "{cost}");
+        assert_eq!(missing, None);
+    }
+
+    #[test]
     fn a_bare_override_prices_a_provider_request_above_the_context_threshold() {
         ccusage_test_support::install_pricing_snapshots();
         let id = "glm-4.7".to_owned();

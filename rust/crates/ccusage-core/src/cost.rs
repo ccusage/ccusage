@@ -165,22 +165,6 @@ pub fn stored_cost_for_mode(cost_usd: Option<f64>, mode: CostMode) -> Option<f64
     cost_usd.filter(|_| mode == CostMode::Auto)
 }
 
-pub fn missing_pricing_model_for_token_total(
-    model: Option<&str>,
-    total_tokens: u64,
-    pricing: Option<&PricingMap>,
-) -> Option<String> {
-    if total_tokens == 0 {
-        return None;
-    }
-    let model = model?;
-    let pricing = pricing?;
-    pricing
-        .find(model)
-        .is_none()
-        .then(|| crate::model_aliases::resolve_model_name(model).into_owned())
-}
-
 fn calculate_cost_from_pricing(usage: crate::TokenUsageRaw, pricing: &Pricing) -> f64 {
     let (cache_create_5m_tokens, cache_create_1h_tokens) =
         if let Some(breakdown) = usage.cache_creation {

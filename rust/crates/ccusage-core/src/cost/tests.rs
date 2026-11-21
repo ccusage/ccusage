@@ -308,29 +308,6 @@ fn an_empty_cost_sum_is_positive_zero() {
 }
 
 #[test]
-fn zero_rate_pricing_is_not_missing_pricing() {
-    crate::test_support::install_pricing_snapshots();
-    let mut pricing = PricingMap::default();
-    pricing.load_json(
-        r#"{ "free-model": { "litellm_provider": "openai", "input_cost_per_token": 0, "output_cost_per_token": 0 } }"#,
-    );
-
-    assert_eq!(
-        missing_pricing_model_for_token_total(Some("free-model"), 100, Some(&pricing)),
-        None
-    );
-    assert_eq!(
-        missing_pricing_model_for_token_total(Some("unknown-model"), 100, Some(&pricing)),
-        Some("unknown-model".to_string())
-    );
-    assert_eq!(
-        missing_pricing_model_for_token_total(Some("unknown-model"), 0, Some(&pricing)),
-        None,
-        "usage without tokens is not reported"
-    );
-}
-
-#[test]
 fn stored_costs_suppress_missing_pricing_detection() {
     let pricing = PricingMap::default();
     let usage = crate::TokenUsageRaw {

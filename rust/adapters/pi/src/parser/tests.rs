@@ -645,3 +645,34 @@ fn auto_reports_missing_pricing_for_invalid_source_cost() {
         Some("unknown-model")
     );
 }
+
+#[test]
+fn a_raw_id_override_beats_a_configured_alias_for_a_labeled_model() {
+    ccusage_test_support::install_pricing_snapshots();
+    let _aliases = ccusage_core::model_aliases::set_model_aliases_for_tests([(
+        "pi-alias-source",
+        "pi-alias-target",
+    )]);
+    let fixture = fs_fixture!({
+        "sessions/project-a/agent_session-a.jsonl": r#"{"type":"message","timestamp":"2026-01-02T00:00:00.000Z","message":{"role":"assistant","model":"pi-alias-source","usage":{"input":1000,"output":2000}}}"#,
+    });
+    let mut pricing = ccusage_core::PricingMap::default();
+    pricing.load_json(
+        r#"{"pi-alias-target": {"input_cost_per_token": 0.1, "output_cost_per_token": 0.1}}"#,
+    );
+    let model = "pi-alias-source".to_owned();
+    let rates = crate::cli::PricingOverride {
+        input_cost_per_token: Some(0.001),
+        output_cost_per_token: Some(0.002),
+        ..Default::default()
+    };
+    let pricing = pricing.with_user_overrides([(&model, &rates)]);
+    let entries = read_session_file(
+        &fixture.path("sessions/project-a/agent_session-a.jsonl"),
+        &jiff::tz::TimeZone::UTC,
+        CostMode::Auto,
+        PriceTable::Auto(&pricing),
+    )
+    .unwrap();
+    assert_eq!(entries[0].cost, 5.0);
+}
