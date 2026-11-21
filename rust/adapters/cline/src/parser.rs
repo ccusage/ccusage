@@ -5,7 +5,11 @@ use ccusage_core::{
 };
 use std::sync::Arc;
 
-use ccusage_adapter_common::{UnitError, billing::price_entry_for_provider, units::read_json};
+use ccusage_adapter_common::{
+    UnitError,
+    billing::{host_provider, price_entry_for_provider},
+    units::read_json,
+};
 use ccusage_core::{Diagnostics, Skip, SkipKind};
 use serde_json::Value;
 
@@ -201,7 +205,7 @@ fn loaded_entry(
     let provider_model = provider
         .as_deref()
         .filter(|_| !model.contains('/'))
-        .map(|provider| format!("{provider}/{model}"));
+        .map(|provider| format!("{}/{model}", host_provider(provider).unwrap_or(provider)));
     let candidates: Vec<_> = std::iter::once((model.as_str(), MatchKind::Fuzzy))
         .chain(
             provider_model

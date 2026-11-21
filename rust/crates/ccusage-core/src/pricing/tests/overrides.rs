@@ -755,6 +755,26 @@ fn a_family_thinking_rule_matches_an_override_spelled_with_either_separator() {
     }
 }
 
+#[test]
+fn a_google_spelled_override_inherits_the_gemini_row_like_its_vendor_spelling() {
+    crate::test_support::install_pricing_snapshots();
+    let base = PricingMap::load_embedded();
+    let inherited = |key: &str| {
+        let overrides = build_overrides(key, |o| {
+            o.input_cost_per_token = Some(50e-6);
+        });
+        let found = base
+            .with_user_overrides(overrides.iter())
+            .find(key)
+            .unwrap();
+        (found.output, found.cache_read_rate_at(found.input))
+    };
+
+    let vendor = inherited("gemini/gemini-2.5-pro");
+    assert_eq!(vendor.0, 10e-6);
+    assert_eq!(inherited("google/gemini-2.5-pro"), vendor);
+}
+
 fn tiered_test_pricing() -> PricingMap {
     let mut pricing = PricingMap::default();
     pricing.insert_test_pricing(

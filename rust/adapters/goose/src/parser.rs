@@ -9,7 +9,11 @@ use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
 
 use crate::{LoadedEntry, TokenUsageRaw, date_at};
-use ccusage_adapter_common::{billing::price_entry_for_provider, jsonl, sqlite::read_i64};
+use ccusage_adapter_common::{
+    billing::{host_provider, price_entry_for_provider},
+    jsonl,
+    sqlite::read_i64,
+};
 use ccusage_core::SkipKind;
 
 // NOTE(2026-05-19, #1035): Goose embeds the model name in model_config_json on the SQLite session row. Parsing that object recovers the session's model attribution.
@@ -184,7 +188,7 @@ fn parse_goose_timestamp(value: &str) -> Option<crate::TimestampMs> {
 
 fn normalize_provider(provider: Option<&str>, model: &str) -> String {
     if let Some(provider) = provider {
-        return provider.replace('-', "_");
+        return host_provider(provider).map_or_else(|| provider.replace('-', "_"), str::to_owned);
     }
     if model.starts_with("claude-") {
         return "anthropic".to_string();

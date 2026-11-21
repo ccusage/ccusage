@@ -209,3 +209,20 @@ fn embedded_build_time_pricing_is_filtered() {
     assert!(!json.contains("vertex_ai/"));
     assert!(json.contains("claude-opus-4-6"));
 }
+
+#[test]
+fn google_zero_token_rate_rows_are_left_unpriced_whether_free_tier_or_priced_per_request() {
+    crate::test_support::install_pricing_snapshots();
+    let mut pricing = PricingMap::default();
+    pricing.load_json(
+        r#"{
+            "gemini/gemma-3-27b-it": {"litellm_provider": "gemini", "input_cost_per_token": 0, "output_cost_per_token": 0},
+            "gemini/lyria-3.5": {"litellm_provider": "gemini", "input_cost_per_token": 0, "output_cost_per_token": 0, "output_cost_per_image": 0.08},
+            "gemini/gemini-2.5-flash": {"litellm_provider": "gemini", "input_cost_per_token": 3e-7, "output_cost_per_token": 2.5e-6}
+        }"#,
+    );
+
+    assert!(pricing.find("gemini/gemma-3-27b-it").is_none());
+    assert!(pricing.find("gemini/lyria-3.5").is_none());
+    assert_eq!(pricing.find("gemini/gemini-2.5-flash").unwrap().input, 3e-7);
+}

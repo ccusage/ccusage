@@ -6,7 +6,7 @@ use ccusage_core::{
 use std::sync::Arc;
 
 use ccusage_adapter_common::{
-    billing::price_entry_for_provider,
+    billing::{host_provider, price_entry_for_provider},
     sqlite::{read_count, read_f64},
 };
 use ccusage_core::SkipKind;
@@ -123,11 +123,14 @@ fn normalize_provider(value: Option<&str>, model: &str) -> String {
     let Some(value) = value.map(str::trim).filter(|value| !value.is_empty()) else {
         return infer_provider_from_model(model).to_string();
     };
+    if let Some(host) = host_provider(value) {
+        return host.to_string();
+    }
     let normalized = value.to_ascii_lowercase().replace('-', "_");
     match normalized.as_str() {
         "anthropic" | "claude" => "anthropic".to_string(),
         "openai" | "openai_codex" => "openai".to_string(),
-        "google" | "google_ai" | "gemini" | "vertex" | "vertex_ai" => "google".to_string(),
+        "google" | "google_ai" | "gemini" => "google".to_string(),
         "openrouter" => "openrouter".to_string(),
         "xai" => "xai".to_string(),
         "groq" => "groq".to_string(),
@@ -683,6 +686,65 @@ mod pricing_identity_tests {
             let (cost, missing) = price_hermes(&entry, PriceTable::Calculate(&pricing));
             assert!((cost - expected).abs() < 1e-12, "{provider}: {cost}");
             assert_eq!(missing, None, "{provider}");
+        }
+    }
+
+    #[test]
+    fn a_vertex_record_with_no_vertex_row_bills_googles_dated_rate() {
+        ccusage_test_support::install_pricing_snapshots();
+        let pricing = ccusage_core::PricingMap::load_embedded();
+        for logged in ["vertex_ai", "google-vertex", "google"] {
+            let entry = HermesEntry {
+                timestamp: ccusage_core::parse_ts_timestamp("2026-12-02T00:00:00Z").unwrap(),
+                session_id: "session-gemini".to_string(),
+                model: "gemini-4-argon".to_string(),
+                provider: normalize_provider(Some(logged), "gemini-4-argon"),
+                usage: TokenUsageRaw {
+                    input_tokens: 1_000_000,
+                    ..TokenUsageRaw::default()
+                },
+                message_count: 1,
+                cost_usd: None,
+            };
+            let (cost, missing) = price_hermes(&entry, PriceTable::Calculate(&pricing));
+            assert!((cost - 4.0).abs() < 1e-9, "{logged}: {cost}");
+            assert_eq!(missing, None, "{logged}");
+        }
+    }
+
+    #[test]
+    fn vertex_records_bill_the_vertex_listing_and_google_records_the_gemini_api_rate() {
+        ccusage_test_support::install_pricing_snapshots();
+        let mut pricing = ccusage_core::PricingMap::default();
+        pricing.load_json(
+            r#"{
+                "gemini/gemini-4-argon": {"litellm_provider": "gemini", "input_cost_per_token": 2e-6, "output_cost_per_token": 1e-5},
+                "vertex_ai/gemini-4-argon": {"litellm_provider": "vertex_ai-language-models", "input_cost_per_token": 2.5e-6, "output_cost_per_token": 1.2e-5}
+            }"#,
+        );
+        for (logged, expected) in [
+            ("vertex_ai", 2.5),
+            ("vertex", 2.5),
+            ("Vertex-AI", 2.5),
+            ("google-vertex", 2.5),
+            ("google_vertex", 2.5),
+            ("google", 4.0),
+        ] {
+            let entry = HermesEntry {
+                timestamp: ccusage_core::parse_ts_timestamp("2026-12-02T00:00:00Z").unwrap(),
+                session_id: "session-gemini".to_string(),
+                model: "gemini-4-argon".to_string(),
+                provider: normalize_provider(Some(logged), "gemini-4-argon"),
+                usage: TokenUsageRaw {
+                    input_tokens: 1_000_000,
+                    ..TokenUsageRaw::default()
+                },
+                message_count: 1,
+                cost_usd: None,
+            };
+            let (cost, missing) = price_hermes(&entry, PriceTable::Calculate(&pricing));
+            assert!((cost - expected).abs() < 1e-9, "{logged}: {cost}");
+            assert_eq!(missing, None, "{logged}");
         }
     }
 
