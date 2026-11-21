@@ -78,7 +78,7 @@
                             "RSS base" (data/format-memory-size (get-in base [:rss :median]))
                             "RSS PR" (data/format-memory-size (get-in head [:rss :median]))
                             "RSS ratio" (format-ratio-spread (:rss comparison))]
-                           (when instructions? ["Instructions ratio" (format-ratio-spread (:instructions comparison))])
+                           (when instructions? ["Instructions ratio" (format "%.2f" (double (get-in comparison [:instructions :median])))])
                            ["Verdict" (comparison-verdict comparison)])))
           results)))
 

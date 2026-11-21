@@ -210,6 +210,12 @@
         (is (= 3 (count rounds)))
         (is (every? #(= 150.0 (get-in % ["PR" :instructions])) rounds))
         (is (= 1.5 (get-in (benchmark/compare-variants rounds "base" "PR" 0.1) [:instructions :median])))
+        (testing "the one instruction count renders as a single ratio, not a spread"
+          (let [comparison (benchmark/compare-variants rounds "base" "PR" 0.1)
+                markdown (report/table-md (report/comparison-rows [{:command "daily" :base (benchmark/variant-summary rounds "base")
+                                                                    :head (benchmark/variant-summary rounds "PR") :comparison comparison}]))]
+            (is (.contains markdown "| 1.50 |"))
+            (is (not (.contains markdown "1.50 (1.50–1.50)")))))
         (testing "every warmup and measured round runs both binaries, alternating which goes first"
           (is (= ["/b" "/p" "/b" "/p" "/p" "/b" "/b" "/p"] @calls)))))))
 
