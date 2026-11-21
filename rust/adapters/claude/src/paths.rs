@@ -15,6 +15,7 @@ use crate::{
     cli_error, date_range_bounds_ms,
     fast::{FxHashMap, FxHashSet, LinePrefilter},
     parse_ts_timestamp, resolve_tz,
+    usage_wire::Text,
 };
 use ccusage_adapter_common::{read_discovered_paths, visit_usage_files as visit_usage_files_in};
 
@@ -476,13 +477,14 @@ fn read_exact_at(mut file: &File, buffer: &mut [u8], offset: u64) -> io::Result<
 fn record_timestamp(line: &[u8]) -> Option<i64> {
     #[derive(Deserialize)]
     struct TimestampProbe<'a> {
-        timestamp: Option<&'a str>,
+        #[serde(borrow)]
+        timestamp: Option<Text<'a>>,
     }
 
     serde_json::from_slice::<TimestampProbe<'_>>(line)
         .ok()?
         .timestamp
-        .and_then(parse_ts_timestamp)
+        .and_then(|timestamp| parse_ts_timestamp(&timestamp.0))
         .map(|timestamp| timestamp.as_millis())
 }
 

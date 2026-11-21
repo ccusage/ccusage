@@ -587,6 +587,11 @@ fn judges_a_stale_transcript_by_its_latest_record_before_a_tail_without_timestam
             false,
         ),
         (
+            "in-window record whose timestamp carries an escape",
+            r#"{"timestamp":"2026-09-21T12:00:00\u005a","message":{"id":"m","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":1}}}"#.to_string(),
+            true,
+        ),
+        (
             "no record timestamps",
             r#"{"type":"summary"}"#.to_string(),
             false,
