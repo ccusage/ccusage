@@ -85,32 +85,7 @@ fn exact_override_wins_over_gpt_5_6_alias() {
     assert_eq!(entry.output, sol.output);
     assert_eq!(entry.cache_create, sol.cache_create);
     assert_eq!(entry.cache_read, sol.cache_read);
-    assert_eq!(
-        entry.long_context.and_then(|context| context.rates.input),
-        sol.long_context.and_then(|context| context.rates.input)
-    );
-    assert_eq!(
-        entry.long_context.and_then(|context| context.rates.output),
-        sol.long_context.and_then(|context| context.rates.output)
-    );
-    assert_eq!(
-        entry
-            .long_context
-            .and_then(|context| context.rates.cache_create),
-        sol.long_context
-            .and_then(|context| context.rates.cache_create)
-    );
-    assert_eq!(
-        entry
-            .long_context
-            .and_then(|context| context.rates.cache_read),
-        sol.long_context
-            .and_then(|context| context.rates.cache_read)
-    );
-    assert_eq!(
-        entry.long_context.map(|context| context.threshold),
-        sol.long_context.map(|context| context.threshold)
-    );
+    assert_eq!(entry.long_context, None);
     assert_eq!(entry.fast_multiplier, sol.fast_multiplier);
     assert_eq!(pricing.context_limit("gpt-5.6"), Some(654_321));
 }
@@ -146,10 +121,7 @@ fn partial_override_preserves_existing_fields() {
     assert_eq!(entry.output, 20e-6);
     assert_eq!(entry.cache_create, Some(30e-6));
     assert_eq!(entry.cache_read, Some(40e-6));
-    assert_eq!(
-        entry.long_context.and_then(|context| context.rates.input),
-        Some(15e-6)
-    );
+    assert_eq!(entry.long_context, None);
     assert_eq!(entry.fast_multiplier, 1.5);
     assert_eq!(entry.flex_multiplier, 0.5);
 }
@@ -202,7 +174,7 @@ fn missing_max_input_tokens_does_not_clobber_existing_limit() {
 }
 
 #[test]
-fn input_override_recomputes_absent_cache_rates_and_preserves_published_tiers() {
+fn input_override_recomputes_absent_cache_rates_and_drops_published_tiers() {
     let mut pricing = PricingMap::default();
     pricing.insert_test_pricing(
         "claude-model".to_string(),
@@ -231,18 +203,7 @@ fn input_override_recomputes_absent_cache_rates_and_preserves_published_tiers() 
     assert!((entry.cache_creation_rate() - 2.5e-6).abs() < 1e-15);
     assert_eq!(entry.cache_read, None);
     assert!((entry.cache_read_rate_at(entry.input) - 2e-7).abs() < 1e-15);
-    assert_eq!(
-        entry
-            .long_context
-            .and_then(|context| context.rates.cache_create),
-        Some(4.6875e-6)
-    );
-    assert_eq!(
-        entry
-            .long_context
-            .and_then(|context| context.rates.cache_read),
-        Some(3.75e-7)
-    );
+    assert_eq!(entry.long_context, None);
 }
 
 #[test]
@@ -534,7 +495,7 @@ fn resolver_table_override_stands_in_for_the_qualified_vendor_row() {
     ] {
         let rate = map.find(model).expect(case);
         assert_eq!((rate.input, rate.output), (50.0, 2.0), "{case}");
-        assert_eq!(rate.long_context.unwrap().rates.input, Some(5.0), "{case}");
+        assert_eq!(rate.long_context, None, "{case}");
         assert_eq!(map.context_limit(model), Some(120_000), "{case}");
     }
 }
@@ -792,4 +753,171 @@ fn a_family_thinking_rule_matches_an_override_spelled_with_either_separator() {
             assert_eq!((found.input, found.output), (7e-6, 8e-6), "{key}: {model}");
         }
     }
+}
+
+fn tiered_test_pricing() -> PricingMap {
+    let mut pricing = PricingMap::default();
+    pricing.insert_test_pricing(
+        "tiered".to_string(),
+        Pricing {
+            input: 1e-6,
+            output: 2e-6,
+            long_context: crate::pricing::LongContextRates {
+                input: Some(0.5e-6),
+                output: Some(1e-6),
+                cache_read: Some(0.1e-6),
+                ..Default::default()
+            }
+            .marginal()
+            .map(|tier| crate::pricing::LongContext {
+                threshold: 32_000,
+                ..tier
+            }),
+            ..Pricing::empty()
+        },
+    );
+    pricing
+}
+
+#[test]
+fn a_base_rate_only_override_is_the_price_at_every_context_size() {
+    let mut pricing = tiered_test_pricing();
+    let overrides = build_overrides("tiered", |o| {
+        o.input_cost_per_token = Some(50e-6);
+        o.output_cost_per_token = Some(50e-6);
+    });
+    pricing.apply_overrides(overrides.iter());
+
+    let entry = pricing.find("tiered").unwrap();
+    assert_eq!((entry.input, entry.output), (50e-6, 50e-6));
+    assert_eq!(entry.long_context, None);
+}
+
+#[test]
+fn an_override_tier_holds_only_the_above_threshold_rates_it_spells_out() {
+    let mut pricing = tiered_test_pricing();
+    let overrides = build_overrides("tiered", |o| {
+        o.input_cost_per_token = Some(50e-6);
+        o.output_cost_per_token = Some(50e-6);
+        o.input_cost_per_token_above_200k_tokens = Some(80e-6);
+    });
+    pricing.apply_overrides(overrides.iter());
+
+    let tier = pricing.find("tiered").unwrap().long_context.unwrap();
+    assert_eq!(tier.threshold, 32_000);
+    assert_eq!(
+        (tier.rates.input, tier.rates.output, tier.rates.cache_read),
+        (Some(80e-6), None, None)
+    );
+}
+
+#[test]
+fn an_override_tier_bills_omitted_one_hour_writes_at_the_base_one_hour_rate() {
+    let mut pricing = tiered_test_pricing();
+    let overrides = build_overrides("tiered", |o| {
+        o.cache_creation_input_token_cost_above_1hr = Some(0.0);
+        o.input_cost_per_token_above_200k_tokens = Some(2e-6);
+    });
+    pricing.apply_overrides(overrides.iter());
+
+    let entry = pricing.find("tiered").unwrap();
+    assert_eq!(entry.one_hour_cache_creation_rate_above_200k(), Some(0.0));
+}
+
+#[test]
+fn an_override_without_token_rates_keeps_the_published_tier() {
+    let mut pricing = tiered_test_pricing();
+    let overrides = build_overrides("tiered", |o| {
+        o.max_input_tokens = Some(500_000);
+    });
+    pricing.apply_overrides(overrides.iter());
+
+    let rates = pricing.find("tiered").unwrap().long_context.unwrap().rates;
+    assert_eq!((rates.input, rates.output), (Some(0.5e-6), Some(1e-6)));
+}
+
+#[test]
+fn a_bare_override_covers_host_qualified_labels_with_their_own_catalogue_rate() {
+    crate::test_support::install_pricing_snapshots();
+    let embedded = PricingMap::load_embedded();
+    let rates = ccusage_cli::PricingOverride {
+        input_cost_per_token: Some(50e-6),
+        output_cost_per_token: Some(50e-6),
+        ..Default::default()
+    };
+    for (key, label) in [("gpt-5.5", "azure/gpt-5.5"), ("glm-4.7", "zai/glm-4.7")] {
+        let published = embedded.find(label).unwrap();
+        assert_ne!(
+            (published.input, published.output),
+            (50e-6, 50e-6),
+            "{label}"
+        );
+        let id = key.to_owned();
+        let pricing = embedded.with_user_overrides([(&id, &rates)]);
+        let rate = pricing.find(label).unwrap();
+        assert_eq!((rate.input, rate.output), (50e-6, 50e-6), "{label}");
+    }
+}
+
+#[test]
+fn a_layered_override_keeps_the_above_threshold_rates_its_parent_spells_out() {
+    let _aliases = crate::model_aliases::set_model_aliases_for_tests([("tiered-child", "tiered")]);
+    let mut pricing = tiered_test_pricing();
+    let parent = ccusage_cli::PricingOverride {
+        input_cost_per_token: Some(50e-6),
+        input_cost_per_token_above_200k_tokens: Some(80e-6),
+        ..Default::default()
+    };
+    let child = ccusage_cli::PricingOverride {
+        input_cost_per_token: Some(60e-6),
+        ..Default::default()
+    };
+    let (parent_key, child_key) = ("tiered".to_owned(), "tiered-child".to_owned());
+    pricing.apply_overrides([(&parent_key, &parent), (&child_key, &child)]);
+
+    let entry = pricing.find("tiered-child").unwrap();
+    assert_eq!(entry.input, 60e-6);
+    let tier = entry.long_context.unwrap();
+    assert_eq!((tier.threshold, tier.rates.input), (32_000, Some(80e-6)));
+}
+
+#[test]
+fn a_layered_override_tier_on_an_untiered_parent_uses_the_published_threshold() {
+    let _aliases = crate::model_aliases::set_model_aliases_for_tests([("tiered-child", "tiered")]);
+    let mut pricing = tiered_test_pricing();
+    let parent = ccusage_cli::PricingOverride {
+        input_cost_per_token: Some(50e-6),
+        ..Default::default()
+    };
+    let child = ccusage_cli::PricingOverride {
+        input_cost_per_token: Some(60e-6),
+        input_cost_per_token_above_200k_tokens: Some(80e-6),
+        ..Default::default()
+    };
+    let (parent_key, child_key) = ("tiered".to_owned(), "tiered-child".to_owned());
+    pricing.apply_overrides([(&parent_key, &parent), (&child_key, &child)]);
+
+    assert_eq!(pricing.find("tiered").unwrap().long_context, None);
+    let entry = pricing.find("tiered-child").unwrap();
+    assert_eq!(entry.input, 60e-6);
+    let tier = entry.long_context.unwrap();
+    assert_eq!((tier.threshold, tier.rates.input), (32_000, Some(80e-6)));
+}
+
+#[test]
+fn a_full_label_override_wins_over_the_bare_key() {
+    crate::test_support::install_pricing_snapshots();
+    let embedded = PricingMap::load_embedded();
+    let at = |rate| ccusage_cli::PricingOverride {
+        input_cost_per_token: Some(rate),
+        output_cost_per_token: Some(rate),
+        ..Default::default()
+    };
+    let (bare, full) = ("gpt-5.5".to_owned(), "azure/gpt-5.5".to_owned());
+    let (bare_rate, full_rate) = (at(50e-6), at(7e-6));
+    let pricing = embedded.with_user_overrides([(&bare, &bare_rate), (&full, &full_rate)]);
+    let host = pricing.find("azure/gpt-5.5").unwrap();
+    assert_eq!((host.input, host.output), (7e-6, 7e-6));
+    let direct = pricing.find("gpt-5.5").unwrap();
+    assert_eq!((direct.input, direct.output), (50e-6, 50e-6));
 }

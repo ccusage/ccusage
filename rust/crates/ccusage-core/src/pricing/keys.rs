@@ -67,11 +67,16 @@ fn contains_pricing_key((value, raw_value): (&str, &str), (key, raw_key): (&str,
 }
 
 // NOTE(2026-11-21, #2226): The fuzzy pass tests every catalogue key against a short model id, and building a substring searcher per pair cost more than the search. Scanning for the key's first byte and comparing from there finds the same non-overlapping positions as `str::match_indices`.
-fn key_positions<'a>(value: &'a str, key: &'a str) -> impl Iterator<Item = usize> + 'a {
-    let (value, key) = (value.as_bytes(), key.as_bytes());
+fn key_positions<'a>(text: &'a str, key: &'a str) -> impl Iterator<Item = usize> + 'a {
+    let (value, key) = (text.as_bytes(), key.as_bytes());
     let mut start = 0;
     std::iter::from_fn(move || {
-        let (&first, _) = key.split_first()?;
+        let Some((&first, _)) = key.split_first() else {
+            let index = start;
+            let next = text.get(index..)?.chars().next();
+            start = next.map_or(text.len() + 1, |char| index + char.len_utf8());
+            return Some(index);
+        };
         while start + key.len() <= value.len() {
             let index = start + memchr::memchr(first, &value[start..=value.len() - key.len()])?;
             if value[index..].starts_with(key) {
@@ -276,6 +281,9 @@ mod tests {
             ("abc", "abcd"),
             ("gpt-5-4-codex", "gpt-5-4"),
             ("x", "x"),
+            ("unlisted[1m]", ""),
+            ("é1", ""),
+            ("", ""),
         ] {
             let expected: Vec<_> = value.match_indices(key).map(|(index, _)| index).collect();
             assert_eq!(

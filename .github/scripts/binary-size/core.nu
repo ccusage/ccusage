@@ -6,6 +6,8 @@ export const targets = [
         target: linux-x64
         os: blacksmith-32vcpu-ubuntu-2404
         package: ccusage-release-linux-x64
+        # NOTE(2026-11-21, #2429): Refs older than the `ccusage-release-*` packages ship the same binary under the attribute release.yaml used before. Measuring that attribute keeps those refs in the comparison instead of dropping their rows.
+        fallback: ccusage-static
         cache_scope: build-linux-x64
         symbols: true
     }
@@ -13,6 +15,7 @@ export const targets = [
         target: linux-arm64
         os: blacksmith-32vcpu-ubuntu-2404-arm
         package: ccusage-release-linux-arm64
+        fallback: ccusage-static
         cache_scope: build-linux-arm64
         symbols: true
     }
@@ -20,6 +23,7 @@ export const targets = [
         target: darwin-arm64
         os: blacksmith-12vcpu-macos-26
         package: ccusage-release-darwin-arm64
+        fallback: ccusage
         cache_scope: build-mac-arm64
         # NOTE(2026-11-21): `llvm-nm --print-size` reports zero for every Mach-O symbol. A symbol twin there would rank nothing.
         symbols: false
@@ -75,6 +79,20 @@ export def matrix [refs: list<record>, targets: list<record>]: nothing -> list<r
             $target | merge $ref | insert id $"($ref.slug)-($target.target)"
         }
     } | flatten
+}
+
+# Refs that predate the `ccusage-release-<target>` packages still ship their binary under an older
+# attribute, so a commit without the release package is measured through that one instead.
+export def resolve-attribute [package: string, fallback: string, available: list<string>]: nothing -> string {
+    if $package in $available {
+        $package
+    } else if $fallback in $available {
+        $fallback
+    } else {
+        error make {
+            msg: $"Neither ($package) nor ($fallback) is a package in this commit; has ($available | str join ', ')"
+        }
+    }
 }
 
 # Rows of `llvm-size -A`, which reads ELF and Mach-O alike. Mach-O repeats section names across
@@ -151,7 +169,9 @@ def target-report [
     let found = $refs | each {|ref|
         {ref: $ref build: ($builds | where ref == $ref.ref and target == $target.target | get --optional 0)}
     }
-    let base = $found | first | get build
+    # NOTE(2026-11-21, #2429): A ref that predates the packages this workflow builds fails, so the first build that exists, not the requested base, anchors deltas and symbol diffs. The summary names that ref whenever it differs from the requested base.
+    let base = $found | where {|pair| $pair.build != null } | get --optional 0.build
+    let base_sections = $base.sections?
     let rows = $found | each {|pair|
         let ref = $pair.ref
         let build = $pair.build
@@ -162,10 +182,11 @@ def target-report [
                 sha: $ref.sha
                 built: true
                 bytes: $build.bytes
-                delta: (delta $base.bytes? $build.bytes)
+                attribute: ($build.attribute? | default $target.package)
+                delta: (delta ($base.bytes?) $build.bytes)
                 sections: $build.sections
                 section_deltas: (
-                    $build.sections | items {|key value| {key: $key value: (delta ($base.sections? | get --optional $key) $value)} }
+                    $build.sections | items {|key value| {key: $key value: (delta ($base_sections | get --optional $key) $value)} }
                     | transpose --header-row --as-record
                 )
                 within_limit: (if $limit == null { null } else { $build.bytes <= $limit })
@@ -176,7 +197,7 @@ def target-report [
         null => []
         _ if ($base.symbols? == null) => []
         _ => (
-            $found | skip 1 | get build | where {|build| $build != null and $build.symbols? != null }
+            $found | get build | where {|build| $build != null and $build.symbols? != null and $build.ref != $base.ref }
             | each {|build|
                 symbol-deltas $base.symbols $build.symbols $count
                 | insert base $base.ref
@@ -187,6 +208,7 @@ def target-report [
     {
         target: $target.target
         package: $target.package
+        base: ($base.ref?)
         rows: $rows
         symbols: $symbols
     }
@@ -200,7 +222,7 @@ export def report [
     --count: int = 20
 ]: nothing -> record {
     {
-        base: ($refs | first | get ref)
+        requested_base: ($refs | first | get ref)
         limit: $limit
         refs: $refs
         targets: (
@@ -273,10 +295,27 @@ def symbol-table [kind: string, rows: list<any>]: nothing -> list<string> {
     }
 }
 
-def target-md [target: record, limit]: nothing -> list<string> {
-    let base = $target.rows | first
+def target-md [target: record, limit, requested_base: string]: nothing -> list<string> {
+    let base = $target.base
+    let base_bytes = $target.rows | where {|row| $row.ref == $base } | get --optional 0 | get --optional bytes
     let limit_header = if $limit == null { '' } else { ' Limit |' }
     let limit_rule = if $limit == null { '' } else { ' :---: |' }
+    let base_note = match $base {
+        null => ['No ref built for this target.']
+        $base if $base == $requested_base => [$"Deltas are against `($base)`."]
+        $base => [
+            $"Deltas are against `($base)`; the requested base `($requested_base)` did not build."
+        ]
+    }
+    let fallback_note = (
+        $target.rows
+        | where {|row| ($row.built? == true) and $row.attribute? != $target.package }
+        | group-by attribute --to-table
+        | each {|group|
+            let refs = $group.items | get ref | each {|ref| $"`($ref)`" } | str join ', '
+            $"`($target.package)` is missing in ($refs); measured `($group.attribute)` instead."
+        }
+    )
     let rows = $target.rows | each {|row|
         if not $row.built {
             let filler = if $limit == null { 5 } else { 6 }
@@ -291,8 +330,8 @@ def target-md [target: record, limit]: nothing -> list<string> {
                 $"`($row.ref)`"
                 $"`(short $row.sha)`"
                 (bytes-cell $row.bytes)
-                (if $row.ref == $base.ref { 'base' } else { delta-cell $row.delta })
-                (if $row.ref == $base.ref { '' } else { percent-cell $base.bytes? $row.bytes })
+                (if $row.ref == $base { 'base' } else { delta-cell $row.delta })
+                (if $row.ref == $base { '' } else { percent-cell $base_bytes $row.bytes })
                 (section-cell $row text)
                 (section-cell $row rodata)
                 (section-cell $row eh_frame)
@@ -312,6 +351,9 @@ def target-md [target: record, limit]: nothing -> list<string> {
     [
         $"## ($target.target) \(`($target.package)`\)"
         ''
+        ...$base_note
+        ...$fallback_note
+        ''
         $"| Ref | SHA | Bytes | Δ bytes | Δ % | text | rodata | eh_frame |($limit_header)"
         $"| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |($limit_rule)"
         ...$rows
@@ -328,12 +370,12 @@ export def report-md [report: record]: nothing -> string {
     [
         '# Release binary sizes'
         ''
-        $"Deltas are against `($report.base)`. Section sizes come from `llvm-size -A`; on macOS, text, rodata, and eh_frame are `__text`, `__TEXT,__const`, and `__eh_frame`."
+        'Deltas are against the first ref that built in each target. Section sizes come from `llvm-size -A`; on macOS, text, rodata, and eh_frame are `__text`, `__TEXT,__const`, and `__eh_frame`.'
         ''
         ...$limit
         ...(
             $report.targets
-            | each {|target| target-md $target $report.limit }
+            | each {|target| target-md $target $report.limit $report.requested_base }
             | flatten
         )
     ] | str join "\n"

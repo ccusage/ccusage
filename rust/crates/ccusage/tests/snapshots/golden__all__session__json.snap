@@ -182,6 +182,14 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
+          "cacheReadTokens": 3000,
+          "cost": 0.0042,
+          "inputTokens": 600,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 100
+        },
+        {
+          "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.003,
           "inputTokens": 500,
@@ -195,15 +203,6 @@ exit: 0
           "inputTokens": 40,
           "modelName": "gpt-5",
           "outputTokens": 10
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 3000,
-          "cost": 0.0,
-          "inputTokens": 600,
-          "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 100,
-          "storedCost": 0.0
         }
       ],
       "modelsUsed": [
@@ -214,7 +213,7 @@ exit: 0
       ],
       "outputTokens": 622,
       "period": "ses-beta",
-      "totalCost": 2.0032430000000003,
+      "totalCost": 2.0074430000000003,
       "totalTokens": 12895
     },
     {
@@ -2371,29 +2370,6 @@ exit: 0
       "totalTokens": 150
     },
     {
-      "agent": "kimi",
-      "cacheCreationTokens": 600,
-      "cacheReadTokens": 13000,
-      "inputTokens": 3511,
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 600,
-          "cacheReadTokens": 13000,
-          "cost": 0.0099819,
-          "inputTokens": 3511,
-          "modelName": "kimi-k2-thinking",
-          "outputTokens": 1231
-        }
-      ],
-      "modelsUsed": [
-        "kimi-k2-thinking"
-      ],
-      "outputTokens": 1231,
-      "period": "session-old-1",
-      "totalCost": 0.0099819,
-      "totalTokens": 18592
-    },
-    {
       "agent": "qwen",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 1280,
@@ -2621,6 +2597,29 @@ exit: 0
       "period": "session-beta",
       "totalCost": 0.00784,
       "totalTokens": 3979
+    },
+    {
+      "agent": "kimi",
+      "cacheCreationTokens": 600,
+      "cacheReadTokens": 13000,
+      "inputTokens": 3511,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 600,
+          "cacheReadTokens": 13000,
+          "cost": 0.0074941,
+          "inputTokens": 3511,
+          "modelName": "kimi-k2-thinking",
+          "outputTokens": 1231
+        }
+      ],
+      "modelsUsed": [
+        "kimi-k2-thinking"
+      ],
+      "outputTokens": 1231,
+      "period": "session-old-1",
+      "totalCost": 0.0074941,
+      "totalTokens": 18592
     },
     {
       "agent": "gemini",
@@ -3294,29 +3293,6 @@ exit: 0
       "totalTokens": 1300
     },
     {
-      "agent": "kimi",
-      "cacheCreationTokens": 300,
-      "cacheReadTokens": 4000,
-      "inputTokens": 1100,
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 300,
-          "cacheReadTokens": 4000,
-          "cost": 0.002815,
-          "inputTokens": 1100,
-          "modelName": "kimi-k2-thinking",
-          "outputTokens": 250
-        }
-      ],
-      "modelsUsed": [
-        "kimi-k2-thinking"
-      ],
-      "outputTokens": 250,
-      "period": "session-old-2",
-      "totalCost": 0.002815,
-      "totalTokens": 5650
-    },
-    {
       "agent": "droid",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 2500,
@@ -3415,6 +3391,29 @@ exit: 0
       "period": "lab-zero-root",
       "totalCost": 0.0022500000000000003,
       "totalTokens": 1100
+    },
+    {
+      "agent": "kimi",
+      "cacheCreationTokens": 300,
+      "cacheReadTokens": 4000,
+      "inputTokens": 1100,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 300,
+          "cacheReadTokens": 4000,
+          "cost": 0.0020649999999999996,
+          "inputTokens": 1100,
+          "modelName": "kimi-k2-thinking",
+          "outputTokens": 250
+        }
+      ],
+      "modelsUsed": [
+        "kimi-k2-thinking"
+      ],
+      "outputTokens": 250,
+      "period": "session-old-2",
+      "totalCost": 0.0020649999999999996,
+      "totalTokens": 5650
     },
     {
       "agent": "dsh",
@@ -5555,7 +5554,7 @@ exit: 0
     "cacheReadTokens": 1309200,
     "inputTokens": 1262732,
     "outputTokens": 60668,
-    "totalCost": 28.854018425000024,
+    "totalCost": 28.85498062500003,
     "totalTokens": 2653785,
     "unpricedModels": [
       "GLM-5.3",

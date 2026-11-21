@@ -11,16 +11,21 @@
    {:fixture :proxy :option :proxy-fixture-dir :label "requestless proxy"
     :desc "Claude logs written through a gateway that drops `requestId`, so responses are deduplicated along `uuid`/`parentUuid` chains"}
    {:fixture :small :option :small-fixture-dir :label "tiny"
-    :desc "a few MiB of Claude logs, so fixed startup cost such as building the pricing map dominates"}])
+    :desc "a few MiB of Claude logs, so fixed startup cost such as building the pricing map dominates"}
+   {:fixture :opencode :option :opencode-fixture-dir :label "large OpenCode database" :env-var "OPENCODE_DATA_DIR"
+    :desc "a WAL-mode `opencode.db` whose `session_message` payloads, up to 48 KiB, hold long content before their token counts, so reading payloads dominates"}])
 
 (def median-mtime "{median-mtime}")
+(def recent-mtime "{recent-mtime}")
 
 (def shape-commands
   [{:fixture :large :command (str "claude daily --since " median-mtime)}
+   {:fixture :large :command (str "claude daily --since " recent-mtime)}
    {:fixture :large :command "codex session"}
    {:fixture :many-files :command "claude daily"}
    {:fixture :proxy :command "claude daily"}
-   {:fixture :small :command "daily"}])
+   {:fixture :small :command "daily"}
+   {:fixture :opencode :command "opencode daily"}])
 
 (def cli-spec
   {:base-bin {:ref "FILE" :desc "Base ccusage binary, built from the PR's base commit"}
@@ -33,6 +38,7 @@
    :many-files-fixture-dir {:ref "DIR" :desc "Claude fixture generated with --claude-shape many-small-files; optional"}
    :proxy-fixture-dir {:ref "DIR" :desc "Claude fixture generated with --claude-shape requestless-proxy; optional"}
    :small-fixture-dir {:ref "DIR" :desc "Claude fixture of a few MiB; optional"}
+   :opencode-fixture-dir {:ref "DIR" :desc "OpenCode fixture (OPENCODE_DATA_DIR) generated with --opencode-output-dir; optional"}
    :output {:ref "FILE"}
    :runs {:coerce :long :default 11 :ref "N" :desc "Interleaved measured rounds; at least 3"}
    :warmup {:coerce :long :default 2 :ref "N" :desc "Interleaved warmup rounds"}

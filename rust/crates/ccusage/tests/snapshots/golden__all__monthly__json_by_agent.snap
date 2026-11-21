@@ -825,7 +825,7 @@ exit: 0
             {
               "cacheCreationTokens": 900,
               "cacheReadTokens": 17000,
-              "cost": 0.0115519,
+              "cost": 0.0082941,
               "inputTokens": 4511,
               "modelName": "kimi-k2-thinking",
               "outputTokens": 999
@@ -845,7 +845,7 @@ exit: 0
             "kimi-k2-thinking"
           ],
           "outputTokens": 2929,
-          "totalCost": 0.0528969,
+          "totalCost": 0.0496391,
           "totalTokens": 71310
         },
         {
@@ -1371,14 +1371,6 @@ exit: 0
           "outputTokens": 740
         },
         {
-          "cacheCreationTokens": 900,
-          "cacheReadTokens": 17000,
-          "cost": 0.0115519,
-          "inputTokens": 4511,
-          "modelName": "kimi-k2-thinking",
-          "outputTokens": 999
-        },
-        {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 4400,
           "cost": 0.010350000000000002,
@@ -1410,6 +1402,14 @@ exit: 0
           "inputTokens": 2300,
           "modelName": "qwen3-coder-plus",
           "outputTokens": 901
+        },
+        {
+          "cacheCreationTokens": 900,
+          "cacheReadTokens": 17000,
+          "cost": 0.0082941,
+          "inputTokens": 4511,
+          "modelName": "kimi-k2-thinking",
+          "outputTokens": 999
         },
         {
           "cacheCreationTokens": 50,
@@ -1666,7 +1666,7 @@ exit: 0
       ],
       "outputTokens": 31767,
       "period": "2025-12",
-      "totalCost": 21.188781409999994,
+      "totalCost": 21.185523609999994,
       "totalTokens": 470837
     },
     {
@@ -2494,20 +2494,19 @@ exit: 0
             },
             {
               "cacheCreationTokens": 0,
+              "cacheReadTokens": 3000,
+              "cost": 0.0042,
+              "inputTokens": 600,
+              "modelName": "claude-sonnet-4-20250514",
+              "outputTokens": 100
+            },
+            {
+              "cacheCreationTokens": 0,
               "cacheReadTokens": 0,
               "cost": 0.003,
               "inputTokens": 500,
               "modelName": "anthropic/claude-sonnet-4",
               "outputTokens": 100
-            },
-            {
-              "cacheCreationTokens": 0,
-              "cacheReadTokens": 3000,
-              "cost": 0.0,
-              "inputTokens": 600,
-              "modelName": "claude-sonnet-4-20250514",
-              "outputTokens": 100,
-              "storedCost": 0.0
             }
           ],
           "modelsUsed": [
@@ -2518,7 +2517,7 @@ exit: 0
             "kilo-mystery-1"
           ],
           "outputTokens": 952,
-          "totalCost": 1.457725,
+          "totalCost": 1.461925,
           "totalTokens": 12452
         },
         {
@@ -2546,7 +2545,7 @@ exit: 0
             {
               "cacheCreationTokens": 0,
               "cacheReadTokens": 0,
-              "cost": 0.001245,
+              "cost": 0.001265,
               "inputTokens": 100,
               "modelName": "kimi-k2-thinking",
               "outputTokens": 482
@@ -2568,7 +2567,7 @@ exit: 0
             "kimi-mystery-1"
           ],
           "outputTokens": 997,
-          "totalCost": 0.0051424999999999995,
+          "totalCost": 0.0051624999999999996,
           "totalTokens": 9197
         },
         {
@@ -2957,7 +2956,7 @@ exit: 0
           "cacheCreation1hTokens": 1000,
           "cacheCreationTokens": 2240,
           "cacheReadTokens": 40760,
-          "cost": 0.6065190000000001,
+          "cost": 0.6107190000000001,
           "inputTokens": 10487,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 3989,
@@ -3186,7 +3185,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.001245,
+          "cost": 0.001265,
           "inputTokens": 100,
           "modelName": "kimi-k2-thinking",
           "outputTokens": 482
@@ -3560,7 +3559,7 @@ exit: 0
       ],
       "outputTokens": 28292,
       "period": "2026-01",
-      "totalCost": 6.8816582649999996,
+      "totalCost": 6.8858782650000006,
       "totalTokens": 2177683
     },
     {
@@ -3621,7 +3620,7 @@ exit: 0
     "cacheReadTokens": 1308300,
     "inputTokens": 1262107,
     "outputTokens": 60566,
-    "totalCost": 28.073793424999995,
+    "totalCost": 28.074755624999995,
     "totalTokens": 2652038,
     "unpricedModels": [
       "GLM-5.3",
