@@ -110,7 +110,7 @@ struct CodexRecordedUsage {
 }
 
 const _: () = assert!(size_of::<CodexAttribution>() == 40);
-const _: () = assert!(size_of::<(CodexUsageKey, SmallVec<[CodexRecordedUsage; 1]>)>() == 136);
+const _: () = assert!(size_of::<(CodexUsageKey, SmallVec<[CodexRecordedUsage; 1]>)>() == 128);
 
 #[derive(Default)]
 struct CodexLineage {
