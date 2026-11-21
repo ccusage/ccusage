@@ -40,14 +40,7 @@ jobs:
       - name: Generate fixtures
         run: |
           fixtures="$RUNNER_TEMP/ccusage-fixtures"
-          just generate-large-fixture \
-            "$fixtures/large" \
-            "$fixtures/large-codex" \
-            --grok-output-dir "$fixtures/large-grok"
-          generator=apps/ccusage/scripts/generate-large-fixture.ts
-          "$generator" --output-dir "$fixtures/many-files" --claude-shape many-small-files
-          "$generator" --output-dir "$fixtures/proxy" --claude-shape requestless-proxy --size-mib 1024
-          "$generator" --output-dir "$fixtures/small" --size-mib 4
+          just generate-benchmark-fixtures "$fixtures"
           printf 'export CCUSAGE_FIXTURES=%q\n' "$fixtures" > "$HOME/ccusage-fixtures.env"
       - uses: useblacksmith/run-testbox@9b976c32aa3bcbffb348889673585a5deee1b2f3 # v2
         if: always()

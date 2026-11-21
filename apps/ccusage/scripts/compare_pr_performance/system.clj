@@ -69,3 +69,8 @@
                  grok-fixture-dir (assoc "GROK_HOME" grok-fixture-dir)
                  true (assoc "HOME" empty-home))
                (assoc report-vars "LOG_LEVEL" "0"))})
+
+(defn shape-env
+  [{:keys [env-var] :or {env-var "CLAUDE_CONFIG_DIR"}} dir empty-home]
+  {:clean? true
+   :vars (into (array-map env-var dir "HOME" empty-home) (assoc report-vars "LOG_LEVEL" "0"))})
