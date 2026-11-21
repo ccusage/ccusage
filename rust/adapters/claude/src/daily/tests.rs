@@ -38,8 +38,8 @@ fn read_daily_usage_file(
 }
 
 #[test]
-fn usage_prefilter_matches_the_gate_marker_on_generated_lines() {
-    let marker = ccusage_core::fast::LinePrefilter::all(&[br#""usage""#]);
+fn usage_prefilter_matches_the_original_marker_on_generated_lines() {
+    let original = ccusage_core::fast::LinePrefilter::all(&[br#""usage":{"#]);
     for escaped_letters in 0_u8..32 {
         let mut key = String::new();
         for (index, &letter) in b"usage".iter().enumerate() {
@@ -71,7 +71,7 @@ fn usage_prefilter_matches_the_gate_marker_on_generated_lines() {
                             super::read::admit(&JsonText::new(prefix)),
                             Err(super::read::Refusal::NotUsage)
                         ),
-                        marker.matches(prefix),
+                        original.matches(prefix),
                         "prefilter decision for {:?}",
                         &line[..end],
                     );
