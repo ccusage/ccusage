@@ -16,6 +16,13 @@ pub(super) fn with_names<T>(model: &str, mut choose: impl FnMut(&str) -> Option<
         })
 }
 
+pub(super) fn unlabeled_model(label: &str) -> &str {
+    label
+        .strip_prefix('[')
+        .and_then(|label| label.split_once("] "))
+        .map_or(label, |(_, model)| model)
+}
+
 pub(super) fn last_segment(key: &str) -> &str {
     key.rsplit_once('/').map_or(key, |(_, segment)| segment)
 }

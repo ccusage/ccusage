@@ -298,19 +298,16 @@ impl PricingMap {
                 row,
             });
         }
-        if let Some(model) = reported {
-            let alias = crate::model_aliases::resolve_model_name(model);
-            if alias != model
-                && let Some(row) = Pass::CANDIDATE
-                    .into_iter()
-                    .filter(|pass| pass.searches(lookup))
-                    .find_map(|pass| matching(alias.as_ref(), pass))
-            {
-                return Some(RequestHit {
-                    candidate: None,
-                    row,
-                });
-            }
+        if let Some(alias) = reported.and_then(configured_alias)
+            && let Some(row) = Pass::CANDIDATE
+                .into_iter()
+                .filter(|pass| pass.searches(lookup))
+                .find_map(|pass| matching(alias.as_ref(), pass))
+        {
+            return Some(RequestHit {
+                candidate: None,
+                row,
+            });
         }
         let has_fallback = candidates
             .iter()
@@ -570,4 +567,11 @@ impl PricingMap {
         };
         limit(Lookup::Pricing).or_else(|| limit(Lookup::Context))
     }
+}
+
+fn configured_alias(label: &str) -> Option<std::borrow::Cow<'_, str>> {
+    [label, super::unlabeled_model(label)]
+        .into_iter()
+        .map(|model| (model, crate::model_aliases::resolve_model_name(model)))
+        .find_map(|(model, alias)| (alias != model).then_some(alias))
 }

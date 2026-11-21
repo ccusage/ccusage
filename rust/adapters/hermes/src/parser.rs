@@ -733,25 +733,31 @@ mod pricing_identity_tests {
     fn a_configured_alias_prices_a_provider_request_at_the_alias_target() {
         ccusage_test_support::install_pricing_snapshots();
         let _aliases = ccusage_core::model_aliases::set_model_aliases_for_tests([(
-            "gpt-5.5",
-            "claude-opus-4-8",
+            "alias-source-model",
+            "alias-target-model",
         )]);
-        let pricing = ccusage_core::PricingMap::load_embedded();
+        let mut pricing = ccusage_core::PricingMap::default();
+        pricing.load_json(
+            r#"{
+                "openai/alias-source-model": {"litellm_provider": "openai", "input_cost_per_token": 1e-6, "output_cost_per_token": 2e-6},
+                "alias-target-model": {"input_cost_per_token": 7e-6, "output_cost_per_token": 9e-6}
+            }"#,
+        );
         let entry = HermesEntry {
             timestamp: ccusage_core::parse_ts_timestamp("2026-11-17T10:00:00Z").unwrap(),
             session_id: "s".into(),
-            model: "gpt-5.5".into(),
+            model: "alias-source-model".into(),
             provider: "openai".into(),
             usage: TokenUsageRaw {
-                input_tokens: 1_000_000,
-                output_tokens: 1_000_000,
+                input_tokens: 1_000,
+                output_tokens: 1_000,
                 ..Default::default()
             },
             message_count: 1,
             cost_usd: None,
         };
         let (cost, missing) = price_hermes(&entry, PriceTable::Calculate(&pricing));
-        assert!((cost - 30.0).abs() < 1e-9, "{cost}");
+        assert!((cost - 0.016).abs() < 1e-12, "{cost}");
         assert_eq!(missing, None);
     }
 

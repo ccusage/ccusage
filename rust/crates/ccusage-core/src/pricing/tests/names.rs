@@ -189,28 +189,38 @@ fn builtin_price_aliases_require_an_explicit_table_entry() {
 #[test]
 fn a_configured_alias_prices_a_model_that_has_its_own_rate() {
     crate::test_support::install_pricing_snapshots();
-    let unaliased = PricingMap::load_embedded();
-    let target = unaliased.find("claude-opus-4-8").unwrap();
-    let own = unaliased.find("gpt-5.5").unwrap();
-    assert_ne!((own.input, own.output), (target.input, target.output));
-    let _aliases =
-        crate::model_aliases::set_model_aliases_for_tests([("gpt-5.5", "claude-opus-4-8")]);
-    let pricing = PricingMap::load_embedded();
-
-    let found = pricing.find("gpt-5.5").unwrap();
-    assert_eq!((found.input, found.output), (target.input, target.output));
-    let (_, provider) = pricing
-        .resolve_at(
-            Some("gpt-5.5"),
-            &[
-                ("openai/gpt-5.5", MatchKind::StrictExact),
-                ("gpt-5.5", MatchKind::Fuzzy),
-            ],
-            None,
-        )
-        .unwrap();
+    let _aliases = crate::model_aliases::set_model_aliases_for_tests([(
+        "alias-source-model",
+        "alias-target-model",
+    )]);
+    let mut pricing = PricingMap::default();
     assert_eq!(
-        (provider.input, provider.output),
-        (target.input, target.output)
+        pricing.load_json(
+            r#"{
+                "alias-source-model": {"input_cost_per_token": 1e-6, "output_cost_per_token": 2e-6},
+                "openai/alias-source-model": {"litellm_provider": "openai", "input_cost_per_token": 1e-6, "output_cost_per_token": 2e-6},
+                "alias-target-model": {"input_cost_per_token": 7e-6, "output_cost_per_token": 9e-6}
+            }"#,
+        ),
+        3
     );
+    let found = pricing.find("alias-source-model").unwrap();
+    assert_eq!((found.input, found.output), (7e-6, 9e-6));
+    for reported in ["alias-source-model", "[pi] alias-source-model"] {
+        let (_, provider) = pricing
+            .resolve_at(
+                Some(reported),
+                &[
+                    ("openai/alias-source-model", MatchKind::StrictExact),
+                    ("alias-source-model", MatchKind::Fuzzy),
+                ],
+                None,
+            )
+            .unwrap();
+        assert_eq!(
+            (provider.input, provider.output),
+            (7e-6, 9e-6),
+            "{reported}"
+        );
+    }
 }
