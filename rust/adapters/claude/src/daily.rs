@@ -1,5 +1,5 @@
 use ccusage_core::Diagnostics;
-use std::{path::PathBuf, sync::Arc};
+use std::{borrow::Cow, path::PathBuf, sync::Arc};
 
 use crate::{
     Result, Speed, TokenUsageRaw, UsageSummary,
@@ -123,7 +123,7 @@ fn sessions(deduped: &DedupedDailyEntries) -> MainThreadSessions {
     )
 }
 
-pub(super) struct ParsedUsage {
+pub(super) struct ParsedUsage<'a> {
     pub(super) key: DedupKey,
     pub(super) date: IsoDate,
     pub(super) project: Arc<str>,
@@ -132,14 +132,14 @@ pub(super) struct ParsedUsage {
     pub(super) missing_pricing_model: Option<String>,
     pub(super) stored_cost: Option<f64>,
     pub(super) raw_model: Option<String>,
-    pub(super) timestamp_text: String,
-    pub(super) version: Option<String>,
-    pub(super) recorded_session_id: Option<String>,
+    pub(super) timestamp_text: Cow<'a, str>,
+    pub(super) version: Option<Cow<'a, str>>,
+    pub(super) recorded_session_id: Option<Arc<str>>,
     pub(super) cost_usd: Option<f64>,
     pub(super) is_api_error_message: Option<bool>,
 }
 
-impl ParsedUsage {
+impl ParsedUsage<'_> {
     pub(super) fn display_model(
         raw_model: Option<String>,
         usage: &TokenUsageRaw,

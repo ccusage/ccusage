@@ -565,6 +565,12 @@ fn partial_deepseek_v4_override_keeps_schedule_for_unspecified_fields() {
     assert_eq!(peak.cache_read.unwrap() * 1e6, 0.014);
     assert_eq!(peak.cache_create.unwrap() * 1e6, 0.44);
 
+    let long_context = peak.long_context.unwrap().rates;
+    assert_eq!(long_context.input, Some(9e-6));
+    assert_eq!(long_context.output, Some(1.32e-6));
+    assert_eq!(long_context.cache_create, Some(0.44e-6));
+    assert_eq!(long_context.cache_read, Some(0.014e-6));
+
     let off_peak = pricing
         .find_at("deepseek-v4-flash", timestamp("2026-08-17T04:00:00Z"))
         .unwrap();
@@ -572,6 +578,29 @@ fn partial_deepseek_v4_override_keeps_schedule_for_unspecified_fields() {
     assert_eq!(off_peak.output * 1e6, 0.66);
     assert_eq!(off_peak.cache_read.unwrap() * 1e6, 0.007);
     assert_eq!(off_peak.cache_create.unwrap() * 1e6, 0.22);
+}
+
+#[test]
+fn base_only_scheduled_override_replaces_the_schedule_above_the_long_context_split() {
+    crate::test_support::install_pricing_snapshots();
+    let model = "deepseek-v4-flash".to_string();
+    let override_value = ccusage_cli::PricingOverride {
+        input_cost_per_token: Some(9e-6),
+        output_cost_per_token: Some(10e-6),
+        cache_creation_input_token_cost: Some(7e-6),
+        cache_read_input_token_cost: Some(8e-6),
+        ..Default::default()
+    };
+    let pricing = PricingMap::load_with_overrides(true, false, [(&model, &override_value)]);
+
+    let peak = pricing
+        .find_at("deepseek-v4-flash", timestamp("2026-08-17T01:00:00Z"))
+        .unwrap();
+    let rates = peak.long_context.unwrap().rates;
+    assert_eq!(rates.input, Some(9e-6));
+    assert_eq!(rates.output, Some(10e-6));
+    assert_eq!(rates.cache_create, Some(7e-6));
+    assert_eq!(rates.cache_read, Some(8e-6));
 }
 
 #[test]

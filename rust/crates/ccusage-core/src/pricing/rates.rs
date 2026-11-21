@@ -222,30 +222,31 @@ impl Pricing {
             Some(rates.cache_read),
             OverrideFields::CACHE_READ
         );
-        long_context.rates.input = match explicit {
-            Some(entry) if entry.explicit_fields & OverrideFields::LONG_INPUT != 0 => {
-                entry.long_context.and_then(|context| context.rates.input)
-            }
-            _ => Some(rates.input),
-        };
-        long_context.rates.output = match explicit {
-            Some(entry) if entry.explicit_fields & OverrideFields::LONG_OUTPUT != 0 => {
-                entry.long_context.and_then(|context| context.rates.output)
-            }
-            _ => Some(rates.output),
-        };
-        long_context.rates.cache_create = match explicit {
-            Some(entry) if entry.explicit_fields & OverrideFields::LONG_CACHE_CREATE != 0 => entry
-                .long_context
-                .and_then(|context| context.rates.cache_create),
-            _ => Some(rates.cache_create),
-        };
-        long_context.rates.cache_read = match explicit {
-            Some(entry) if entry.explicit_fields & OverrideFields::LONG_CACHE_READ != 0 => entry
-                .long_context
-                .and_then(|context| context.rates.cache_read),
-            _ => Some(rates.cache_read),
-        };
+        let overridden = |bit: u16| explicit.is_some_and(|entry| entry.explicit_fields & bit != 0);
+        // NOTE(2026-11-20, #2373): `scheduled!` already resolved each base field to its override or schedule rate. The fields above the split therefore inherit `self.$field` unless a long rate is explicit.
+        macro_rules! long_scheduled {
+            ($field:ident, $bit:expr, $wrap:expr) => {
+                long_context.rates.$field = if overridden($bit) {
+                    explicit
+                        .and_then(|entry| entry.long_context)
+                        .and_then(|context| context.rates.$field)
+                } else {
+                    $wrap(self.$field)
+                };
+            };
+        }
+        long_scheduled!(input, OverrideFields::LONG_INPUT, Some);
+        long_scheduled!(output, OverrideFields::LONG_OUTPUT, Some);
+        long_scheduled!(
+            cache_create,
+            OverrideFields::LONG_CACHE_CREATE,
+            std::convert::identity
+        );
+        long_scheduled!(
+            cache_read,
+            OverrideFields::LONG_CACHE_READ,
+            std::convert::identity
+        );
         scheduled!(
             cache_create_1h,
             self.cache_create_1h,
