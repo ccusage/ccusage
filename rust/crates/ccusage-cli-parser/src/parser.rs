@@ -18,7 +18,7 @@ use errors::{invocation_error, last_option_error, report_flag_alias_error};
 use shared::{SharedFlag, parse_shared_arg, parse_shared_arg_for_command, read_shared_flag};
 use values::{
     parse_cost_source, parse_report_sections, parse_visual_burn_rate, parse_week_day,
-    resolve_timezone, validate_date_window,
+    replace_configured_window_with_last, resolve_timezone, validate_date_window,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -135,9 +135,10 @@ fn parse_invocation(
         Some(command) => parse_command(&command, parser, config, root_options)?,
     };
     parser.finish()?;
-    if let Some(message) = last_option_error(&command) {
+    if let Some(message) = last_option_error(&command, parser) {
         return Err(message);
     }
+    replace_configured_window_with_last(&mut command);
     validate_date_window(&mut command, parser, config)?;
     resolve_timezone(&mut command, parser, config, known_timezone)?;
     Ok(command)

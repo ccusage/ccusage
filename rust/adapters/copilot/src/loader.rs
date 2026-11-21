@@ -132,7 +132,7 @@ pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<Loade
         .chain(credit_gaps)
         .map(|entry| usage_entry_to_loaded(entry, tz, shared.mode, pricing))
         .collect::<Vec<_>>();
-    entries.sort_by_key(|entry| entry.timestamp);
+    LoadedEntry::sort_by_timestamp(&mut entries);
     Ok(entries)
 }
 

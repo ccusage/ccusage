@@ -1,4 +1,4 @@
-use memchr::{memchr, memmem::Finder};
+use memchr::{memchr, memchr_iter, memmem::Finder};
 use smallvec::SmallVec;
 
 #[cfg(test)]
@@ -139,10 +139,16 @@ struct Marker {
 }
 
 // NOTE(2026-11-17): RFC 8259 §7 limits JSON escapes to strings. A bracket outside a string can therefore anchor every spelling of a marker.
+// NOTE(2026-11-21, #2367): RFC 8259 §2 allows whitespace around structural tokens. The run before the bracket is therefore matched token by token, not as one literal.
 struct Anchor {
-    literal: Finder<'static>,
     index: usize,
     run_start: usize,
+    before_bracket: SmallVec<[Token; 4]>,
+}
+
+struct Token {
+    byte: u8,
+    spaced: bool,
 }
 
 impl Anchor {
@@ -155,11 +161,32 @@ impl Anchor {
             .iter()
             .rposition(|&is_content| is_content)
             .map_or(0, |content| content + 1);
+        let before_bracket = marker[run_start..=index]
+            .windows(2)
+            .rev()
+            .map(|pair| Token {
+                byte: pair[0],
+                spaced: pair.iter().any(|byte| b":,{}[]".contains(byte)),
+            })
+            .collect();
         Some(Self {
-            literal: Finder::new(&marker[run_start..=index]).into_owned(),
             index,
             run_start,
+            before_bracket,
         })
+    }
+
+    fn run_at(&self, line: &[u8], bracket_at: usize) -> Option<usize> {
+        let mut end = bracket_at;
+        for token in &self.before_bracket {
+            if token.spaced {
+                while end > 0 && matches!(line[end - 1], b' ' | b'\t' | b'\n' | b'\r') {
+                    end -= 1;
+                }
+            }
+            end = end.checked_sub(1).filter(|&at| line[at] == token.byte)?;
+        }
+        Some(end)
     }
 }
 
@@ -197,18 +224,18 @@ impl Marker {
     fn spelled_at_anchor(&self, line: &[u8], anchor: &Anchor) -> bool {
         let marker = self.finder.needle();
         let mut first_backslash = None;
-        let mut from = 0;
-        while let Some(found) = anchor.literal.find(&line[from..]) {
-            let run_at = from + found;
-            from = run_at + 1;
-            let after = run_at + anchor.index - anchor.run_start + 1;
-            if anchor.index + 1 < marker.len() && !self.matches_at(anchor.index + 1, &line[after..])
+        for bracket_at in memchr_iter(marker[anchor.index], line) {
+            if anchor.index + 1 < marker.len()
+                && !self.matches_at(anchor.index + 1, &line[bracket_at + 1..])
             {
                 continue;
             }
+            let Some(run_at) = anchor.run_at(line, bracket_at) else {
+                continue;
+            };
             let verbatim = run_at
                 .checked_sub(anchor.run_start)
-                .is_some_and(|start| line[start..run_at].iter().eq(&marker[..anchor.run_start]));
+                .is_some_and(|start| line[start..run_at] == marker[..anchor.run_start]);
             if verbatim
                 || first_backslash
                     .get_or_insert_with(|| memchr(b'\\', line))

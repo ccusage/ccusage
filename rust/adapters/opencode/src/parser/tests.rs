@@ -894,7 +894,7 @@ fn prices_a_foreign_router_without_the_deepseek_schedule() {
     let created = ccusage_core::parse_ts_timestamp("2026-11-17T10:00:00Z")
         .unwrap()
         .as_millis();
-    for (provider, expected) in [("openrouter", 0.0015), ("deepseek", 0.00088)] {
+    for (provider, expected) in [("openrouter", 0.0015), ("deepseek", 0.00075)] {
         let entry = message_value_to_entry(
             message(json!({
                 "id": "message-deepseek",

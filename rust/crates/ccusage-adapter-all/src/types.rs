@@ -185,7 +185,7 @@ impl AllAccumulator {
         for breakdown in &mut agent_breakdowns {
             breakdown.period = period.clone();
         }
-        agent_breakdowns.sort_by(|a, b| a.agent.cmp(b.agent));
+        ccusage_core::sort::stable_by(&mut agent_breakdowns, |a, b| a.agent.cmp(b.agent));
         let model_breakdowns = merge_by_model(
             agent_breakdowns
                 .iter()
@@ -244,6 +244,6 @@ fn merge_by_model<'a>(items: impl IntoIterator<Item = &'a ModelBreakdown>) -> Ve
         });
         breakdowns[index].merge(item);
     }
-    breakdowns.sort_by(|a, b| b.cost.total_cmp(&a.cost));
+    ModelBreakdown::sort_by_cost_desc(&mut breakdowns);
     breakdowns
 }

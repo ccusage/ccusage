@@ -110,7 +110,7 @@ pub fn summarize_source_sessions_in_order(entries: &[LoadedEntry]) -> Result<Vec
     let mut groups = session_groups(entries, crate::source::SessionScope::Source)
         .into_values()
         .collect::<Vec<_>>();
-    groups.sort_by_key(|(index, _)| *index);
+    ccusage_core::sort::stable_by_key(&mut groups, |(index, _)| *index);
     groups
         .into_iter()
         .map(|(_, group)| group.into_summary())

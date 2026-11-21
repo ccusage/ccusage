@@ -144,7 +144,7 @@ impl PricingMap {
                 let provider_id = |key: &String, provider: &ModelsDevProvider| {
                     provider.id.clone().unwrap_or_else(|| key.clone())
                 };
-                ranked.sort_by(|(left_key, left), (right_key, right)| {
+                crate::sort::stable_by(&mut ranked, |(left_key, left), (right_key, right)| {
                     let left_id = provider_id(left_key, left);
                     let right_id = provider_id(right_key, right);
                     rules
@@ -187,7 +187,7 @@ impl PricingMap {
         let rules = models_dev_catalog_rules();
         let mut loaded_count = 0;
         let mut sources: Vec<_> = models.into_iter().collect();
-        sources.sort_by(|(left, _), (right, _)| left.cmp(right));
+        crate::sort::stable_by(&mut sources, |(left, _), (right, _)| left.cmp(right));
         for (model_key, model) in sources {
             let Some(cost) = models_dev_usable_cost(rules, &model_key, &model) else {
                 continue;

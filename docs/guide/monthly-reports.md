@@ -78,7 +78,7 @@ ccusage monthly --last 1
 ccusage monthly --last 6
 ```
 
-`--last` cannot be combined with `--since` or `--until`.
+`--last` cannot be combined with `--since` or `--until` on the command line. A `since` or `until` set in a [configuration file](/guide/config-files) is not a conflict: `--last` replaces that window.
 
 ### Sort Order
 

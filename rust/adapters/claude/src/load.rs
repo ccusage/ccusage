@@ -74,7 +74,7 @@ pub(super) struct ClaudeEntry {
     pub(super) recorded_session_id: Option<Arc<str>>,
     pub(super) original_model: Option<String>,
     pub(super) request: dedupe::Request,
-    pub(super) is_sidechain: Option<bool>,
+    pub(super) is_sidechain: bool,
     pub(super) entry: LoadedEntry,
 }
 
@@ -368,7 +368,7 @@ impl dedupe::DedupEntry for ClaudeEntry {
     }
 
     fn is_sidechain(&self) -> bool {
-        self.is_sidechain == Some(true)
+        self.is_sidechain
     }
 
     fn usage(&self) -> &TokenUsageRaw {
@@ -403,7 +403,7 @@ pub(super) fn read_usage_file_with_diagnostics(
                 recorded_session_id: parsed.recorded_session_id,
                 original_model: parsed.raw_model,
                 request: parsed.key.request,
-                is_sidechain: parsed.key.is_sidechain,
+                is_sidechain: parsed.is_sidechain,
                 entry: LoadedEntry {
                     model,
                     usage_limit_reset_time: usage_limit_reset_time_from_line_bytes(
@@ -411,7 +411,7 @@ pub(super) fn read_usage_file_with_diagnostics(
                         parsed.is_api_error_message,
                     ),
                     usage: parsed.usage,
-                    message_id: parsed.key.message_id,
+                    message_id: parsed.key.message_id.map(String::from),
                     version: parsed.version.map(Cow::into_owned),
                     recorded_cost: parsed.cost_usd,
                     timestamp: parsed.key.timestamp,

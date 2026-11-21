@@ -1,4 +1,4 @@
-use super::{CacheDefaults, PricingSchedule, ScheduledRates};
+use super::{CacheDefaults, PricingSchedule, ScheduledRates, Successor};
 
 // NOTE(2026-11-20): OpenAI charges no cache-write surcharge through GPT-5.5 and reads cached input at 0.1× on current models at https://developers.openai.com/api/docs/guides/prompt-caching. Use these multipliers when a row omits cache rates.
 pub(super) const WRITES_AT_INPUT_RATE: CacheDefaults = CacheDefaults {
@@ -254,6 +254,8 @@ pub(super) static ALIASES: &[(&str, &str)] = &[
 
 // NOTE(2026-08-31, #1679): DeepSeek V4 changed rates on August 16, 2026. Preserve the earlier rates for earlier usage (rates recorded in #1643).
 // NOTE(2026-11-17): DeepSeek lists weekday peak windows of 01:00–04:00 and 06:00–10:00 UTC at https://api-docs.deepseek.com/quick_start/pricing/. Use UTC so report timezone cannot change the rate.
+// NOTE(2026-11-20, #2401): DeepSeek's new pricing took effect at 04:00 UTC on September 10, 2026, and the retired V4 Flash ids are billed at the Flash rates from that instant: https://api-docs.deepseek.com/news/news260910/. Legacy ids hand off to the `deepseek-flash` rates from then on.
+const DEEPSEEK_V4_1_FLASH_MS: i64 = 1_789_012_800_000;
 const DEEPSEEK_V4_FLASH: PricingSchedule = PricingSchedule {
     cutoff_ms: 1_786_896_000_000,
     peak_weekdays: 1..=5,
@@ -276,7 +278,13 @@ const DEEPSEEK_V4_FLASH: PricingSchedule = PricingSchedule {
         cache_create: 0.44e-6,
         cache_read: 0.014e-6,
     },
+    // NOTE(2026-11-20, #2401): DeepSeek retired V4 Flash but still accepts `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp` at https://api-docs.deepseek.com/quick_start/pricing/. Both ids follow this handoff instead of the V4 Flash rates above.
+    successor: Some(Successor {
+        from_ms: DEEPSEEK_V4_1_FLASH_MS,
+        schedule: &DEEPSEEK_FLASH,
+    }),
 };
+// NOTE(2026-11-20, #2401): DeepSeek planned to route `deepseek-v4-pro` to V4.1 Flash on September 14, 2026 but kept serving it with unchanged billing instead, and the pricing page still lists its own rates at https://api-docs.deepseek.com/quick_start/pricing/. Give it no successor so it keeps the V4 Pro schedule.
 const DEEPSEEK_V4_PRO: PricingSchedule = PricingSchedule {
     cutoff_ms: 1_786_896_000_000,
     peak_weekdays: 1..=5,
@@ -299,9 +307,39 @@ const DEEPSEEK_V4_PRO: PricingSchedule = PricingSchedule {
         cache_create: 1.32e-6,
         cache_read: 0.044e-6,
     },
+    successor: None,
+};
+
+// NOTE(2026-11-20, #2268): DeepSeek launched deepseek-flash with V4.1 rates at 04:00 UTC on September 10, 2026: https://api-docs.deepseek.com/news/news260910/. Its rates differ from the retired V4 Flash schedule.
+const DEEPSEEK_FLASH: PricingSchedule = PricingSchedule {
+    cutoff_ms: DEEPSEEK_V4_1_FLASH_MS,
+    peak_weekdays: 1..=5,
+    peak_hours: &[1..4, 6..10],
+    before: ScheduledRates {
+        input: 0.3e-6,
+        output: 1.2e-6,
+        cache_create: 0.3e-6,
+        cache_read: 0.006e-6,
+    },
+    off_peak: ScheduledRates {
+        input: 0.15e-6,
+        output: 0.6e-6,
+        cache_create: 0.15e-6,
+        cache_read: 0.003e-6,
+    },
+    peak: ScheduledRates {
+        input: 0.3e-6,
+        output: 1.2e-6,
+        cache_create: 0.3e-6,
+        cache_read: 0.006e-6,
+    },
+    successor: None,
 };
 
 pub(super) static SCHEDULES: &[(&str, PricingSchedule)] = &[
+    ("deepseek-flash", DEEPSEEK_FLASH),
     ("deepseek-v4-flash", DEEPSEEK_V4_FLASH),
+    // NOTE(2026-11-20, #2401): DeepSeek's August 21, 2026 V4 Flash Vision Exp release prices only image tokens at V4-Flash rates: https://api-docs.deepseek.com/news/news260821/. The alias therefore shares the V4 Flash schedule, including the September 10, 2026 handoff.
+    ("deepseek-v4-flash-vision-exp", DEEPSEEK_V4_FLASH),
     ("deepseek-v4-pro", DEEPSEEK_V4_PRO),
 ];

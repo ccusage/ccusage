@@ -30,7 +30,7 @@ pub fn run_daily(args: DailyArgs) -> Result<()> {
         args.project.as_deref(),
         args.instances || args.project.is_some(),
     )?;
-    sort_summaries(&mut rows, &shared.order.unwrap_or_default(), |row| {
+    sort_summaries(&mut rows, &shared.order.unwrap_or_default(), &|row| {
         row.date.as_deref().unwrap_or_default()
     });
 
@@ -68,7 +68,7 @@ pub fn run_bucket(shared: SharedArgs, bucket: Bucket) -> Result<()> {
         .map(|entry| entry.entry)
         .collect::<Vec<_>>();
     let mut daily = summarize_by_day(&entries)?;
-    sort_summaries(&mut daily, &shared.order.unwrap_or_default(), |row| {
+    sort_summaries(&mut daily, &shared.order.unwrap_or_default(), &|row| {
         row.date.as_deref().unwrap_or_default()
     });
 
@@ -76,7 +76,7 @@ pub fn run_bucket(shared: SharedArgs, bucket: Bucket) -> Result<()> {
     sort_summaries(
         &mut buckets,
         &shared.order.unwrap_or_default(),
-        |row| match bucket {
+        &|row| match bucket {
             Bucket::Monthly => row.month.as_deref().unwrap_or_default(),
             Bucket::Weekly(_) => row.week.as_deref().unwrap_or_default(),
         },
@@ -116,7 +116,7 @@ pub fn run_session(args: SessionArgs) -> Result<()> {
             || row.cache_creation_tokens > 0
             || row.cache_read_tokens > 0
     });
-    rows.sort_by(|a, b| match session_cost_ordering(&shared) {
+    ccusage_core::sort::stable_by(&mut rows, |a, b| match session_cost_ordering(&shared) {
         SortOrder::Asc => a.total_cost.total_cmp(&b.total_cost),
         SortOrder::Desc => b.total_cost.total_cmp(&a.total_cost),
     });
@@ -193,7 +193,12 @@ fn run_session_id(id: &str, shared: &SharedArgs) -> Result<()> {
 
     if wants_json(shared) {
         if shared.requested_order() == Some(SortOrder::Desc) {
-            session_entries.sort_by_key(|entry| std::cmp::Reverse(entry.timestamp));
+            // NOTE(2026-11-21): The entries are already sorted ascending. Flipping each equal-timestamp run back keeps ties in the order a stable descending sort gives.
+            session_entries.reverse();
+            for run in session_entries.chunk_by_mut(|left, right| left.timestamp == right.timestamp)
+            {
+                run.reverse();
+            }
         }
         let output = json!({
             "sessionId": id,

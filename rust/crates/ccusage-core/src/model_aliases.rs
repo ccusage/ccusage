@@ -50,15 +50,14 @@ fn parse_model_aliases(raw: &str) -> BTreeMap<String, String> {
         .and_then(|inner| inner.strip_suffix('}'))
         .unwrap_or(trimmed);
 
-    stripped
-        .split([',', ';', '\n'])
-        .filter_map(|pair| {
-            let (from, to) = pair.split_once('=')?;
-            let from = from.trim();
-            let to = to.trim();
-            (!from.is_empty() && !to.is_empty()).then(|| (from.to_string(), to.to_string()))
-        })
-        .collect()
+    let mut aliases = BTreeMap::new();
+    aliases.extend(stripped.split([',', ';', '\n']).filter_map(|pair| {
+        let (from, to) = pair.split_once('=')?;
+        let from = from.trim();
+        let to = to.trim();
+        (!from.is_empty() && !to.is_empty()).then(|| (from.to_string(), to.to_string()))
+    }));
+    aliases
 }
 
 #[doc(hidden)]
