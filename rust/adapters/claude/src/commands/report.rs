@@ -193,7 +193,7 @@ fn run_session_id(id: &str, shared: &SharedArgs) -> Result<()> {
 
     if wants_json(shared) {
         if shared.requested_order() == Some(SortOrder::Desc) {
-            // The entries are already sorted ascending. Flipping each equal-timestamp run back keeps ties in the order a stable descending sort gives.
+            // NOTE(2026-11-21): The entries are already sorted ascending. Flipping each equal-timestamp run back keeps ties in the order a stable descending sort gives.
             session_entries.reverse();
             for run in session_entries.chunk_by_mut(|left, right| left.timestamp == right.timestamp)
             {
