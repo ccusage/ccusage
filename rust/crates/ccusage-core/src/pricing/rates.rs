@@ -147,6 +147,7 @@ pub(super) struct PricingSchedule {
     pub(super) peak_weekdays: std::ops::RangeInclusive<u32>,
     pub(super) peak_hours: &'static [std::ops::Range<i64>],
     pub(super) before: Option<ScheduledRates>,
+    pub(super) before_long_context: Option<LongContext>,
     pub(super) off_peak: ScheduledRates,
     pub(super) peak: ScheduledRates,
     pub(super) successor: Option<Successor>,
@@ -159,14 +160,14 @@ pub(super) struct Successor {
 }
 
 impl PricingSchedule {
-    fn rates_at(&self, timestamp: TimestampMs) -> Option<ScheduledRates> {
+    fn rates_at(&self, timestamp: TimestampMs) -> Option<(ScheduledRates, Option<LongContext>)> {
         if let Some(successor) = &self.successor
             && timestamp.as_millis() >= successor.from_ms
         {
             return successor.schedule.rates_at(timestamp);
         }
         if timestamp.as_millis() < self.cutoff_ms {
-            return self.before;
+            return self.before.map(|rates| (rates, self.before_long_context));
         }
         let weekday =
             ccusage_cli::weekday_from_epoch_days(timestamp.as_millis().div_euclid(MILLIS_PER_DAY));
@@ -174,9 +175,9 @@ impl PricingSchedule {
         if self.peak_weekdays.contains(&weekday)
             && self.peak_hours.iter().any(|window| window.contains(&hour))
         {
-            Some(self.peak)
+            Some((self.peak, None))
         } else {
-            Some(self.off_peak)
+            Some((self.off_peak, None))
         }
     }
 }
@@ -204,10 +205,12 @@ impl OverrideFields {
 impl Pricing {
     pub(super) fn at(mut self, schedule: &PricingSchedule, timestamp: TimestampMs) -> Self {
         let explicit = (self.explicit_fields != 0).then_some(self);
-        let Some(rates) = schedule.rates_at(timestamp) else {
+        let Some((rates, tier)) = schedule.rates_at(timestamp) else {
             return self;
         };
-        let mut long_context = self.long_context.unwrap_or(LongContext::empty_marginal());
+        let mut long_context = tier
+            .or(self.long_context)
+            .unwrap_or(LongContext::empty_marginal());
         macro_rules! scheduled {
             ($field:ident, $rate:expr, $bit:expr) => {
                 self.$field = match explicit {
@@ -230,27 +233,42 @@ impl Pricing {
         );
         let overridden = |bit: u16| explicit.is_some_and(|entry| entry.explicit_fields & bit != 0);
         // NOTE(2026-11-20, #2373): `scheduled!` already resolved each base field to its override or schedule rate. The fields above the split therefore inherit `self.$field` unless a long rate is explicit.
+        // NOTE(2026-11-21, #2226): A schedule's own tier prices the fields above the split only where the override leaves the base rate alone, so a base-rate override stays the price at every context size (#2198).
         macro_rules! long_scheduled {
-            ($field:ident, $bit:expr, $wrap:expr) => {
+            ($field:ident, $bit:expr, $base_bit:expr, $wrap:expr) => {
                 long_context.rates.$field = if overridden($bit) {
                     explicit
                         .and_then(|entry| entry.long_context)
                         .and_then(|context| context.rates.$field)
-                } else {
+                } else if overridden($base_bit) {
                     $wrap(self.$field)
+                } else {
+                    tier.map_or($wrap(self.$field), |tier| tier.rates.$field)
                 };
             };
         }
-        long_scheduled!(input, OverrideFields::LONG_INPUT, Some);
-        long_scheduled!(output, OverrideFields::LONG_OUTPUT, Some);
+        long_scheduled!(
+            input,
+            OverrideFields::LONG_INPUT,
+            OverrideFields::INPUT,
+            Some
+        );
+        long_scheduled!(
+            output,
+            OverrideFields::LONG_OUTPUT,
+            OverrideFields::OUTPUT,
+            Some
+        );
         long_scheduled!(
             cache_create,
             OverrideFields::LONG_CACHE_CREATE,
+            OverrideFields::CACHE_CREATE,
             std::convert::identity
         );
         long_scheduled!(
             cache_read,
             OverrideFields::LONG_CACHE_READ,
+            OverrideFields::CACHE_READ,
             std::convert::identity
         );
         scheduled!(

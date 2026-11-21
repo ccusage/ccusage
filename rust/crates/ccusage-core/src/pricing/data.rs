@@ -329,6 +329,7 @@ const DEEPSEEK_V4_FLASH: PricingSchedule = PricingSchedule {
         cache_create: 0.14e-6,
         cache_read: 0.0028e-6,
     }),
+    before_long_context: None,
     off_peak: ScheduledRates {
         input: 0.22e-6,
         output: 0.66e-6,
@@ -358,6 +359,7 @@ const DEEPSEEK_V4_PRO: PricingSchedule = PricingSchedule {
         cache_create: 0.435e-6,
         cache_read: 0.003625e-6,
     }),
+    before_long_context: None,
     off_peak: ScheduledRates {
         input: 0.66e-6,
         output: 1.98e-6,
@@ -384,6 +386,7 @@ const DEEPSEEK_FLASH: PricingSchedule = PricingSchedule {
         cache_create: 0.3e-6,
         cache_read: 0.006e-6,
     }),
+    before_long_context: None,
     off_peak: ScheduledRates {
         input: 0.15e-6,
         output: 0.6e-6,
@@ -412,6 +415,7 @@ const fn date_step(
         peak_weekdays: 0..=6,
         peak_hours: &[],
         before: Some(before),
+        before_long_context: None,
         off_peak: after,
         peak: after,
         successor: None,
@@ -453,12 +457,28 @@ const GEMINI_FLASH_2027: PricingSchedule = date_step(
     },
 );
 
-// NOTE(2026-11-21, #2226): https://ai.google.dev/gemini-api/docs/deprecations and the pricing page state that from December 1, 2026 every `gemini-2.5-pro` request routes to `gemini-3.8-flash` and is billed at Gemini 3.8 Flash rates. Until then the id keeps its own row, including its above-200K tier, and from then on it follows the 3.8 Flash schedule.
+// NOTE(2026-11-21, #2226): https://ai.google.dev/gemini-api/docs/deprecations and the pricing page state that from December 1, 2026 every `gemini-2.5-pro` request routes to `gemini-3.8-flash` and is billed at Gemini 3.8 Flash rates. Until then it bills Google's published $1.25 input, $10.00 output and $0.125 cached, with the whole-request tier of $2.50, $15.00 and $0.25 above 200K, and from then on it follows the 3.8 Flash schedule.
 const GEMINI_2_5_PRO: PricingSchedule = PricingSchedule {
     cutoff_ms: GEMINI_DECEMBER_2026_MS,
     peak_weekdays: 0..=6,
     peak_hours: &[],
-    before: None,
+    before: Some(ScheduledRates {
+        input: 1.25e-6,
+        output: 10.0e-6,
+        cache_create: 1.25e-6,
+        cache_read: 0.125e-6,
+    }),
+    before_long_context: Some(LongContext {
+        threshold: 200_000,
+        mode: LongContextMode::WholeRequest,
+        rates: LongContextRates {
+            input: Some(2.5e-6),
+            output: Some(15.0e-6),
+            cache_create: Some(2.5e-6),
+            cache_create_1h: None,
+            cache_read: Some(0.25e-6),
+        },
+    }),
     off_peak: ScheduledRates {
         input: 0.75e-6,
         output: 3.75e-6,
@@ -477,12 +497,18 @@ const GEMINI_2_5_PRO: PricingSchedule = PricingSchedule {
     }),
 };
 
-// NOTE(2026-11-21, #2226): The same pages state that from December 1, 2026 every `gemini-2.5-flash` request routes to `gemini-3.5-flash-lite` and is billed at Gemini 3.5 Flash-Lite rates, listed as $0.30 input, $2.50 output and $0.03 cached. Until then the id keeps its own row.
+// NOTE(2026-11-21, #2226): The same pages state that from December 1, 2026 every `gemini-2.5-flash` request routes to `gemini-3.5-flash-lite` and is billed at Gemini 3.5 Flash-Lite rates, listed as $0.30 input, $2.50 output and $0.03 cached. Until then it bills Gemini 2.5 Flash's published rates, which are the same.
 const GEMINI_2_5_FLASH: PricingSchedule = PricingSchedule {
     cutoff_ms: GEMINI_DECEMBER_2026_MS,
     peak_weekdays: 0..=6,
     peak_hours: &[],
-    before: None,
+    before: Some(ScheduledRates {
+        input: 0.3e-6,
+        output: 2.5e-6,
+        cache_create: 0.3e-6,
+        cache_read: 0.03e-6,
+    }),
+    before_long_context: None,
     off_peak: ScheduledRates {
         input: 0.3e-6,
         output: 2.5e-6,

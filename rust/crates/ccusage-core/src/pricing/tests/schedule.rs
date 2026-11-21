@@ -1059,3 +1059,34 @@ fn an_inherited_override_tier_bills_one_hour_writes_at_the_scheduled_base_rate()
     assert_eq!((input, long_input), (0.22e-6, Some(1e-6)));
     assert_eq!(rate, Some(0.22e-6));
 }
+
+#[test]
+fn gemini_2_5_keeps_its_published_rates_before_the_rebilling_whatever_the_row_says() {
+    crate::test_support::install_pricing_snapshots();
+    let mut pricing = PricingMap::default();
+    pricing.load_json(
+        r#"{
+            "gemini/gemini-2.5-pro": {"litellm_provider": "gemini", "input_cost_per_token": 7.5e-7, "output_cost_per_token": 3.75e-6},
+            "gemini/gemini-2.5-flash": {"litellm_provider": "gemini", "input_cost_per_token": 9e-7, "output_cost_per_token": 9e-6}
+        }"#,
+    );
+    let rates = |model, instant| {
+        let found = pricing.find_at(model, timestamp(instant)).unwrap();
+        let tier = found
+            .long_context
+            .and_then(|context| context.rates.input)
+            .map(|rate| rate * 1e6);
+        (found.input * 1e6, found.output * 1e6, tier)
+    };
+
+    assert_eq!(
+        rates("gemini-2.5-pro", "2026-11-30T23:59:59Z"),
+        (1.25, 10.0, Some(2.5))
+    );
+    assert_eq!(
+        rates("gemini-2.5-pro", "2026-12-01T00:00:00Z"),
+        (0.75, 3.75, Some(0.75))
+    );
+    assert_eq!(rates("gemini-2.5-flash", "2026-11-30T23:59:59Z").0, 0.3);
+    assert_eq!(rates("gemini-2.5-flash", "2026-12-01T00:00:00Z").0, 0.3);
+}
