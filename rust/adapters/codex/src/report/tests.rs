@@ -167,3 +167,60 @@ fn non_cached_input_tokens_excludes_cache_reads_and_creation() {
     assert_eq!(non_cached_input_tokens(100, 60, 30), 10);
     assert_eq!(non_cached_input_tokens(100, 90, 20), 0);
 }
+
+#[test]
+fn focused_report_marks_a_free_vendor_model_billed_through_a_paid_host_as_estimated() {
+    ccusage_test_support::install_pricing_snapshots();
+    let pricing = PricingMap::load_embedded();
+    let usage = || CodexModelUsage {
+        total_tokens: 105,
+        ..CodexModelUsage::from_buckets(
+            crate::CodexUsageBucket {
+                input_tokens: 100,
+                output_tokens: 5,
+                ..Default::default()
+            },
+            Default::default(),
+        )
+    };
+    let mut group = CodexGroup {
+        input_tokens: 200,
+        output_tokens: 10,
+        total_tokens: 210,
+        ..CodexGroup::default()
+    };
+    group
+        .models
+        .insert("kyma/glm-4.7-flash".to_string(), usage());
+    group.models.insert("gpt-5.5".to_string(), usage());
+    let groups = BTreeMap::from([("2026-08-20".to_string(), group)]);
+
+    let report = report_from_groups(
+        &groups,
+        AgentReportKind::Daily,
+        Some(&pricing),
+        CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
+        CostMode::Calculate,
+    );
+    let models = &report["daily"][0]["models"];
+    assert_eq!(models["kyma/glm-4.7-flash"]["estimatedPricing"], true);
+    assert!(models["gpt-5.5"].get("estimatedPricing").is_none());
+    assert_eq!(
+        report["totals"]["estimatedModels"],
+        json!(["kyma/glm-4.7-flash"])
+    );
+
+    let display = report_from_groups(
+        &groups,
+        AgentReportKind::Daily,
+        Some(&pricing),
+        CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
+        CostMode::Display,
+    );
+    assert!(display["totals"].get("estimatedModels").is_none());
+    assert!(
+        display["daily"][0]["models"]["kyma/glm-4.7-flash"]
+            .get("estimatedPricing")
+            .is_none()
+    );
+}

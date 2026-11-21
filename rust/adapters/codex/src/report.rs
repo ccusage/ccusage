@@ -4,9 +4,10 @@ use serde_json::{Value, json};
 
 use crate::{
     CodexGroup, CodexModelUsage, CodexTimestampedUsage, PricingMap, Result, SimpleTable,
-    attach_unpriced_models,
+    attach_estimated_models, attach_unpriced_models,
     cli::{AgentReportKind, CostMode, SharedArgs},
-    print_box_title, print_missing_pricing_warnings_for_models, sum_costs,
+    print_box_title, print_estimated_pricing_notes_for_models,
+    print_missing_pricing_warnings_for_models, sum_costs,
 };
 
 use super::speed::CodexSpeedPolicy;
@@ -37,6 +38,7 @@ pub(super) fn report_from_groups(
     let mut totals = totals_json(groups.values(), pricing, speed);
     if mode != CostMode::Display {
         attach_unpriced_models(&mut totals, codex_missing_pricing_models(groups, pricing));
+        attach_estimated_models(&mut totals, codex_estimated_models(groups, pricing));
     }
     json!({
         rows_key(kind): rows,
@@ -157,6 +159,19 @@ pub(crate) fn codex_missing_pricing_models(
     models.into_iter().collect()
 }
 
+fn codex_estimated_models(
+    groups: &BTreeMap<String, CodexGroup>,
+    pricing: Option<&PricingMap>,
+) -> Vec<String> {
+    let models = groups
+        .values()
+        .flat_map(|group| group.models.keys())
+        .filter(|model| codex_model_estimated(model, pricing))
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    models.into_iter().collect()
+}
+
 pub(super) fn print_table_from_groups(
     groups: &BTreeMap<String, CodexGroup>,
     kind: AgentReportKind,
@@ -212,6 +227,8 @@ pub(super) fn print_table_from_groups(
             missing_models.iter().map(String::as_str),
             shared.offline,
         );
+        let estimated_models = codex_estimated_models(groups, pricing);
+        print_estimated_pricing_notes_for_models(estimated_models.iter().map(String::as_str));
     }
     Ok(())
 }

@@ -63,7 +63,7 @@ pub(crate) fn estimated_models<'a>(
         .collect()
 }
 
-fn attach_estimated_models(totals: &mut Value, models: Vec<String>) {
+pub fn attach_estimated_models(totals: &mut Value, models: Vec<String>) {
     if !models.is_empty() {
         totals["estimatedModels"] = json!(models);
     }

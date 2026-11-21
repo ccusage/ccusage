@@ -9,9 +9,7 @@ pub fn print_missing_pricing_warnings_for_models<'a>(
     }
 }
 
-pub(crate) fn print_estimated_pricing_notes_for_models<'a>(
-    models: impl IntoIterator<Item = &'a str>,
-) {
+pub fn print_estimated_pricing_notes_for_models<'a>(models: impl IntoIterator<Item = &'a str>) {
     for model in models.into_iter().collect::<BTreeSet<_>>() {
         ccusage_terminal::errln!(
             "INFO  Estimated pricing for {model}: its vendor lists it free, but it ran through a paid host with no price of its own; cost uses the closest paid listing."

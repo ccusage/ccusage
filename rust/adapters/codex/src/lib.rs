@@ -1,11 +1,12 @@
 use ccusage_adapter_common::chunk_file_indexes_by_size;
 use ccusage_core::{
     Color, ColumnKind, MILLIS_PER_DAY, Pricing, PricingMap, Result, SimpleTable, TimestampMs,
-    attach_unpriced_models, cli, cli_error, color, date_range_bounds_ms, fast,
-    format_breakdown_model_label, format_currency, format_models_multiline, format_number,
+    attach_estimated_models, attach_unpriced_models, cli, cli_error, color, date_range_bounds_ms,
+    fast, format_breakdown_model_label, format_currency, format_models_multiline, format_number,
     format_rfc3339_millis, json_float, model_aliases, parse_ts_timestamp, pricing, print_box_title,
-    print_json_or_jq, print_missing_pricing_warnings_for_models, resolve_tz,
-    sanitize_terminal_text, sum_costs, terminal_style, terminal_width, wants_json,
+    print_estimated_pricing_notes_for_models, print_json_or_jq,
+    print_missing_pricing_warnings_for_models, resolve_tz, sanitize_terminal_text, sum_costs,
+    terminal_style, terminal_width, wants_json,
 };
 
 mod aggregate;

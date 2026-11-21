@@ -9,7 +9,10 @@ use crate::{
     speed::CodexSpeedPolicy,
 };
 
-use super::{calculate_group_cost, codex_model_missing_pricing, non_cached_input_tokens};
+use super::{
+    calculate_group_cost, codex_model_estimated, codex_model_missing_pricing,
+    non_cached_input_tokens,
+};
 
 pub(super) fn rows_key(kind: AgentReportKind) -> &'static str {
     match kind {
@@ -49,6 +52,9 @@ pub(super) fn group_json(
         let mut value = model_usage_json(usage);
         if mode != CostMode::Display && codex_model_missing_pricing(model, usage, pricing) {
             value["missingPricing"] = json!(true);
+        }
+        if mode != CostMode::Display && codex_model_estimated(model, pricing) {
+            value["estimatedPricing"] = json!(true);
         }
         models.insert(model.clone(), value);
     }
