@@ -1,6 +1,7 @@
 use std::{
     fs,
     path::{Path, PathBuf},
+    sync::{Mutex, PoisonError},
     thread,
 };
 
@@ -83,23 +84,18 @@ where
         Split::BySize(path) => chunk_indexes_by_size(items, path, workers),
         Split::ByCount => chunk_by_count(items.len(), workers),
     };
-    let map = &map;
-    let mut results = thread::scope(|scope| {
-        chunks
+    let results = Mutex::new(Vec::with_capacity(items.len()));
+    run_chunks(chunks, &|chunk| {
+        let done = chunk
             .into_iter()
-            .map(|chunk| {
-                spawn_scoped_worker(scope, move || {
-                    chunk
-                        .into_iter()
-                        .map(|index| (index, map(&items[index])))
-                        .collect::<Vec<_>>()
-                })
-            })
-            .collect::<Vec<_>>()
-            .into_iter()
-            .flat_map(join_worker)
-            .collect::<Vec<_>>()
+            .map(|index| (index, map(&items[index])))
+            .collect::<Vec<_>>();
+        results
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend(done);
     });
+    let mut results = results.into_inner().unwrap_or_else(PoisonError::into_inner);
     for slot in 0..results.len() {
         while results[slot].0 != slot {
             let target = results[slot].0;
@@ -109,10 +105,18 @@ where
     results.into_iter().map(|(_, result)| result).collect()
 }
 
-fn join_worker<T>(handle: thread::ScopedJoinHandle<'_, T>) -> T {
-    handle
-        .join()
-        .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+fn run_chunks(chunks: Vec<Vec<usize>>, work: &(dyn Fn(Vec<usize>) + Sync)) {
+    thread::scope(|scope| {
+        let workers = chunks
+            .into_iter()
+            .map(|chunk| spawn_scoped_worker(scope, move || work(chunk)))
+            .collect::<Vec<_>>();
+        for worker in workers {
+            worker
+                .join()
+                .unwrap_or_else(|panic| std::panic::resume_unwind(panic));
+        }
+    });
 }
 
 #[cfg(test)]
