@@ -306,7 +306,7 @@ const fn premium_until_1m_ga(input: f64, output: f64, tier: [f64; 5]) -> Pricing
     };
     PricingSchedule {
         cutoff_ms: ANTHROPIC_1M_GA_MS,
-        peak_weekdays: 1..=0,
+        peak_weekdays: 1..=5,
         peak_hours: &[],
         before: ScheduledRates {
             long_context: Some(whole_request(200_000, tier)),
