@@ -186,7 +186,8 @@ fn load_rows_in_parallel(
     let (scan, lanes) = pin_snapshots(workers, open)?;
     let mut statement = prepare_session_message_query(&scan, schema, context, "rowid").ok()?;
     let diagnostics = context.diagnostics.for_table(schema.table.name());
-    let mut round = Vec::with_capacity(lanes.len() * PENDING_BATCH_ROWS);
+    let round_rows = lanes.len() * PENDING_BATCH_ROWS;
+    let mut round = Vec::with_capacity(round_rows);
     // NOTE(2026-11-21): The ordered scan stops at the first SQLite error. Metadata skips wait for their round so the ones after a worker error are dropped too.
     let mut unreadable = Vec::new();
     let (mut rows, mut entries) = (0_u32, 0_u32);
@@ -212,7 +213,7 @@ fn load_rows_in_parallel(
                 true
             }
         };
-        if done || round.len() == round.capacity() {
+        if done || round.len() == round_rows {
             if !round.is_empty()
                 && let Err(failed) = apply_round(
                     &lanes,
