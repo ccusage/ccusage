@@ -43,7 +43,8 @@
    :runs {:coerce :long :default 11 :ref "N" :desc "Interleaved measured rounds; at least 3"}
    :warmup {:coerce :long :default 2 :ref "N" :desc "Interleaved warmup rounds"}
    :threshold {:coerce :double :default 0.1 :ref "RATIO" :desc "CPU-time and RSS change that counts as a regression"}
-   :wall-threshold {:coerce :double :default 0.05 :ref "RATIO" :desc "Wall-time change that counts as a regression"}
+;; NOTE(2026-11-21, #2449): Two byte-copy control runs on the Linux runner kept every row's median wall ratio within 4% of 1.00. Twice that stays clear of that noise and still catches #2407's 1.3x.
+   :wall-threshold {:coerce :double :default 0.08 :ref "RATIO" :desc "Wall-time change that counts as a regression"}
    :help {:alias :h :coerce :boolean}})
 
 (defn fail! [message data]

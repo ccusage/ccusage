@@ -33,7 +33,7 @@
 
 (deftest cli-parsing
   (testing "defaults"
-    (is (= {:runs 11 :warmup 2 :threshold 0.1 :wall-threshold 0.05}
+    (is (= {:runs 11 :warmup 2 :threshold 0.1 :wall-threshold 0.08}
            (select-keys (data/parse-cli required-args) [:runs :warmup :threshold :wall-threshold])))
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #"--wall-threshold must be between 0 and 1"
                           (data/parse-cli (into required-args ["--wall-threshold" "0"])))))
