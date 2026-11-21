@@ -379,3 +379,23 @@ fn disputed_list_prices_bill_the_vendor_rate_online_and_offline() {
         "a published zero write rate stays"
     );
 }
+
+#[test]
+fn curated_deepseek_row_keeps_the_write_rate_its_loaded_row_publishes() {
+    crate::test_support::install_pricing_snapshots();
+    for (published, expected) in [("0", 0.0), ("5e-7", 0.5e-6)] {
+        let mut pricing = PricingMap::load_embedded();
+        pricing.refresh_litellm(|load| {
+            assert!(load(&format!(
+                r#"{{"deepseek/deepseek-v3.2": {{"input_cost_per_token": 2.8e-7, "output_cost_per_token": 4e-7, "cache_creation_input_token_cost": {published}, "litellm_provider": "deepseek"}}}}"#
+            )));
+            Ok(())
+        });
+        let rates = pricing.find("deepseek-v3.2").unwrap();
+        assert_eq!(
+            (rates.output, rates.cache_creation_rate()),
+            (0.42e-6, expected),
+            "{published}"
+        );
+    }
+}
