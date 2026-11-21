@@ -15,15 +15,14 @@ use ccusage_core::AdditionalTokens;
 const DEFAULT_CODEBUFF_MODEL: &str = "codebuff-unknown";
 
 #[derive(Clone, Default)]
-pub(super) struct AssistantUsage {
+struct AssistantUsage {
     model: Option<String>,
     credits: f64,
     input_tokens: u64,
-    pub(super) output_tokens: u64,
+    output_tokens: Option<u64>,
     cache_creation_input_tokens: u64,
     cache_read_input_tokens: u64,
-    pub(super) extra_total_tokens: u64,
-    fallback_output_tokens: u64,
+    total_tokens: u64,
 }
 
 pub(super) struct CodebuffEntry {
@@ -35,7 +34,7 @@ pub(super) struct CodebuffEntry {
     pub(super) credits: f64,
     pub(super) usage: TokenUsageRaw,
     pub(super) extra_total_tokens: u64,
-    fallback_output_tokens: u64,
+    pub(super) reported_output_tokens: u64,
     pub(super) dedup_key: String,
 }
 
@@ -76,12 +75,27 @@ pub(super) fn load_chat_file(
             .model
             .clone()
             .unwrap_or_else(|| DEFAULT_CODEBUFF_MODEL.to_string());
+        let raw_usage = TokenUsageRaw {
+            input_tokens: usage.input_tokens,
+            output_tokens: usage.output_tokens.unwrap_or_default(),
+            cache_creation_input_tokens: usage.cache_creation_input_tokens,
+            cache_read_input_tokens: usage.cache_read_input_tokens,
+            speed: None,
+            cache_creation: None,
+        };
+        let additional = AdditionalTokens::from_total(raw_usage, 0, usage.total_tokens);
+        let (report_usage, extra_total_tokens) = if usage.output_tokens.is_some() {
+            (raw_usage, additional.report_remainder)
+        } else {
+            additional.for_report(raw_usage)
+        };
         let dedup_key = dedup_key(
             message,
             &context.session_id,
             timestamp,
             &model,
-            &usage,
+            report_usage,
+            extra_total_tokens,
             ordinal,
         );
         entries.push(CodebuffEntry {
@@ -91,16 +105,9 @@ pub(super) fn load_chat_file(
             provider: infer_provider(&model).to_string(),
             model,
             credits: usage.credits,
-            usage: TokenUsageRaw {
-                input_tokens: usage.input_tokens,
-                output_tokens: usage.output_tokens,
-                cache_creation_input_tokens: usage.cache_creation_input_tokens,
-                cache_read_input_tokens: usage.cache_read_input_tokens,
-                speed: None,
-                cache_creation: None,
-            },
-            extra_total_tokens: usage.extra_total_tokens,
-            fallback_output_tokens: usage.fallback_output_tokens,
+            usage: raw_usage,
+            extra_total_tokens,
+            reported_output_tokens: report_usage.output_tokens,
             dedup_key,
         });
     }
@@ -209,7 +216,7 @@ fn extract_usage_from_run_state(
     found.then_some(usage)
 }
 
-pub(super) fn parse_usage_object(value: Option<&Value>) -> AssistantUsage {
+fn parse_usage_object(value: Option<&Value>) -> AssistantUsage {
     let mut usage = AssistantUsage::default();
     let Some(record) = value.and_then(Value::as_object) else {
         return usage;
@@ -223,15 +230,14 @@ pub(super) fn parse_usage_object(value: Option<&Value>) -> AssistantUsage {
             "prompt_tokens",
         ],
     );
-    usage.output_tokens = pick_u64(
-        record,
-        &[
-            "outputTokens",
-            "output_tokens",
-            "completionTokens",
-            "completion_tokens",
-        ],
-    );
+    usage.output_tokens = [
+        "outputTokens",
+        "output_tokens",
+        "completionTokens",
+        "completion_tokens",
+    ]
+    .iter()
+    .find_map(|key| record.get(*key).and_then(Value::as_u64));
     usage.cache_read_input_tokens =
         pick_u64(record, &["cacheReadInputTokens", "cache_read_input_tokens"])
             .max(pick_nested_u64(
@@ -255,20 +261,7 @@ pub(super) fn parse_usage_object(value: Option<&Value>) -> AssistantUsage {
             "cached_tokens_created",
         ],
     );
-    let total_tokens = pick_u64(record, &["totalTokens", "total_tokens", "total"]);
-    let raw_usage = TokenUsageRaw {
-        input_tokens: usage.input_tokens,
-        output_tokens: usage.output_tokens,
-        cache_creation_input_tokens: usage.cache_creation_input_tokens,
-        cache_read_input_tokens: usage.cache_read_input_tokens,
-        speed: None,
-        cache_creation: None,
-    };
-    let (report_usage, extra_total_tokens) =
-        AdditionalTokens::from_total(raw_usage, 0, total_tokens).for_report(raw_usage);
-    usage.fallback_output_tokens = report_usage.output_tokens - raw_usage.output_tokens;
-    usage.output_tokens = report_usage.output_tokens;
-    usage.extra_total_tokens = extra_total_tokens;
+    usage.total_tokens = pick_u64(record, &["totalTokens", "total_tokens", "total"]);
     usage.credits = number_field(record, "credits");
     usage.model = string_field(record, "model");
     usage
@@ -278,9 +271,8 @@ fn merge_fallback(target: &mut AssistantUsage, fallback: AssistantUsage) {
     if target.input_tokens == 0 {
         target.input_tokens = fallback.input_tokens;
     }
-    if target.output_tokens == 0 {
+    if target.output_tokens.is_none() {
         target.output_tokens = fallback.output_tokens;
-        target.fallback_output_tokens = fallback.fallback_output_tokens;
     }
     if target.cache_creation_input_tokens == 0 {
         target.cache_creation_input_tokens = fallback.cache_creation_input_tokens;
@@ -288,8 +280,8 @@ fn merge_fallback(target: &mut AssistantUsage, fallback: AssistantUsage) {
     if target.cache_read_input_tokens == 0 {
         target.cache_read_input_tokens = fallback.cache_read_input_tokens;
     }
-    if target.extra_total_tokens == 0 {
-        target.extra_total_tokens = fallback.extra_total_tokens;
+    if target.total_tokens == 0 {
+        target.total_tokens = fallback.total_tokens;
     }
     if target.credits <= 0.0 {
         target.credits = fallback.credits;
@@ -301,10 +293,10 @@ fn merge_fallback(target: &mut AssistantUsage, fallback: AssistantUsage) {
 
 fn has_signal(usage: &AssistantUsage) -> bool {
     usage.input_tokens > 0
-        || usage.output_tokens > 0
+        || usage.output_tokens.unwrap_or_default() > 0
         || usage.cache_creation_input_tokens > 0
         || usage.cache_read_input_tokens > 0
-        || usage.extra_total_tokens > 0
+        || usage.total_tokens > 0
         || usage.credits > 0.0
 }
 
@@ -343,7 +335,8 @@ fn dedup_key(
     session_id: &str,
     timestamp: crate::TimestampMs,
     model: &str,
-    usage: &AssistantUsage,
+    usage: TokenUsageRaw,
+    extra_total_tokens: u64,
     ordinal: usize,
 ) -> String {
     if let Some(id) = string_field(message, "id") {
@@ -356,7 +349,7 @@ fn dedup_key(
         usage.output_tokens,
         usage.cache_read_input_tokens,
         usage.cache_creation_input_tokens,
-        usage.extra_total_tokens
+        extra_total_tokens
     )
 }
 
@@ -396,14 +389,8 @@ pub(super) fn price_codebuff(
         .collect();
     let entry_pricing = EntryPricing {
         granularity: UsageGranularity::Request,
-        usage: TokenUsageRaw {
-            output_tokens: entry.usage.output_tokens - entry.fallback_output_tokens,
-            ..entry.usage
-        },
+        usage: entry.usage,
         reasoning_tokens: 0,
-        residual_tokens: entry
-            .extra_total_tokens
-            .saturating_add(entry.fallback_output_tokens),
         reported_model: Some(&entry.model),
         candidates: &candidates,
         stored_cost: None,
@@ -474,7 +461,7 @@ mod pricing_identity_tests {
             credits: 0.0,
             usage: TokenUsageRaw::default(),
             extra_total_tokens: 0,
-            fallback_output_tokens: 0,
+            reported_output_tokens: 0,
             dedup_key: String::new(),
         };
         assert_eq!(
@@ -501,7 +488,7 @@ mod pricing_identity_tests {
                     ..TokenUsageRaw::default()
                 },
                 extra_total_tokens: 0,
-                fallback_output_tokens: 0,
+                reported_output_tokens: 1_000,
                 dedup_key: String::new(),
             };
 

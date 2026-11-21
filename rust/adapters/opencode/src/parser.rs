@@ -375,7 +375,6 @@ impl OpenCodeUsage {
             granularity,
             usage,
             reasoning_tokens: additional.reasoning,
-            residual_tokens: additional.residual,
             reported_model: Some(&model),
             candidates: &candidates,
             stored_cost: recorded_cost,

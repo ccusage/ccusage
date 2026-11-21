@@ -632,7 +632,6 @@ pub(super) fn event_to_loaded(
             granularity: UsageGranularity::Request,
             usage,
             reasoning_tokens: event.reasoning_tokens,
-            residual_tokens: additional.residual,
             reported_model: Some(&event.model),
             candidates: &candidates,
             stored_cost: None,

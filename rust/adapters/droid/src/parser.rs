@@ -179,7 +179,6 @@ pub(super) fn price_droid(
         granularity: UsageGranularity::Aggregate,
         usage: entry.usage,
         reasoning_tokens: entry.additional.reasoning,
-        residual_tokens: entry.additional.residual,
         reported_model: Some(&entry.model),
         candidates: &candidates,
         stored_cost: None,

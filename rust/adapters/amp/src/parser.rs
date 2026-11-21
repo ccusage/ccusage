@@ -157,7 +157,7 @@ fn counted_usage(
         || usage.output_tokens != 0
         || usage.cache_creation_input_tokens != 0
         || usage.cache_read_input_tokens != 0
-        || additional.residual != 0;
+        || additional.report_remainder != 0;
     counts_tokens.then_some((usage, additional))
 }
 
@@ -387,7 +387,6 @@ fn amp_entry(
                 ..record.usage
             },
             reasoning_tokens: 0,
-            residual_tokens: record.additional.residual,
             reported_model: Some(&record.model),
             candidates: &candidates,
             stored_cost: None,

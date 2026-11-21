@@ -197,7 +197,6 @@ fn usage_entry_to_loaded(
                 ..usage
             },
             reasoning_tokens,
-            residual_tokens: remainder - reasoning_tokens,
             reported_model: Some(&entry.model),
             candidates,
             stored_cost: cost_usd,

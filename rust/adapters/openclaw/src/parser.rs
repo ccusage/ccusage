@@ -423,7 +423,6 @@ pub(super) fn entry_to_loaded(
         granularity: UsageGranularity::Request,
         usage,
         reasoning_tokens: 0,
-        residual_tokens: additional.residual,
         reported_model: Some(identity.display()),
         candidates: &candidates,
         stored_cost: entry.cost,

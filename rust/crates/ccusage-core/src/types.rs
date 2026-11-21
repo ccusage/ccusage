@@ -342,25 +342,27 @@ pub fn checked_total_usage_tokens(usage: TokenUsageRaw, extra_total_tokens: u64)
 #[derive(Debug, Clone, Copy, Default)]
 pub struct AdditionalTokens {
     pub reasoning: u64,
-    pub residual: u64,
+    /// Unclassified tokens included in the reported usage total.
+    pub report_remainder: u64,
 }
 
 impl AdditionalTokens {
     pub fn from_total(usage: TokenUsageRaw, reasoning: u64, total: u64) -> Self {
         Self {
             reasoning,
-            residual: total.saturating_sub(total_usage_tokens(usage).saturating_add(reasoning)),
+            report_remainder: total
+                .saturating_sub(total_usage_tokens(usage).saturating_add(reasoning)),
         }
     }
 
     pub fn total(self) -> u64 {
-        self.reasoning.saturating_add(self.residual)
+        self.reasoning.saturating_add(self.report_remainder)
     }
 
     /// Preserves the legacy report fallback that fills a missing output bucket from the recorded total.
     pub fn for_report(self, mut usage: TokenUsageRaw) -> (TokenUsageRaw, u64) {
         if usage.output_tokens == 0 {
-            usage.output_tokens = self.residual;
+            usage.output_tokens = self.report_remainder;
             (usage, self.reasoning)
         } else {
             (usage, self.total())
@@ -404,7 +406,7 @@ mod tests {
             ..Default::default()
         };
         let additional = AdditionalTokens::from_total(usage, 0, 175);
-        assert_eq!(additional.residual, 50);
+        assert_eq!(additional.report_remainder, 50);
         let (usage, extra_total_tokens) = additional.for_report(usage);
 
         assert_eq!(usage.input_tokens, 100);
@@ -423,7 +425,7 @@ mod tests {
         };
         let additional = AdditionalTokens::from_total(usage, 10, 200);
         assert_eq!(additional.reasoning, 10);
-        assert_eq!(additional.residual, 15);
+        assert_eq!(additional.report_remainder, 15);
         let (usage, extra_total_tokens) = additional.for_report(usage);
 
         assert_eq!(usage.output_tokens, 50);

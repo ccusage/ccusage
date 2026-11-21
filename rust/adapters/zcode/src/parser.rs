@@ -59,7 +59,7 @@ pub(super) fn row_to_entry(
     };
     let additional =
         ccusage_core::AdditionalTokens::from_total(usage, 0, row.computed_total_tokens);
-    if total_usage_tokens(usage) == 0 && additional.residual == 0 {
+    if total_usage_tokens(usage) == 0 && additional.report_remainder == 0 {
         return Ok(None);
     }
     let (Some(id), Some(session_id), Some(raw_model)) = (
@@ -110,7 +110,6 @@ pub(super) fn row_to_entry(
         granularity: UsageGranularity::Request,
         usage: cost_usage,
         reasoning_tokens: 0,
-        residual_tokens: additional.residual,
         reported_model: Some(&raw_model),
         candidates: &candidates,
         stored_cost: None,

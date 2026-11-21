@@ -1,6 +1,4 @@
-use std::collections::HashSet;
-
-use ccusage_adapter_common::{read_units, source::LoadContext};
+use ccusage_adapter_common::{dedupe::dedupe_highest_rank, read_units, source::LoadContext};
 
 use crate::{LoadedEntry, Result};
 
@@ -15,13 +13,14 @@ pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let loaded = read_units(&files, cx.shared.single_thread, cx.diagnostics, |file| {
         read_session_file(file, cx.diagnostics)
     });
-    let mut entries = Vec::new();
-    let mut seen = HashSet::new();
-    for entry in loaded.into_iter().flatten().flatten() {
-        if seen.insert(dsh_entry_key(&entry)) {
-            entries.push(dsh_entry_to_loaded(entry, cx.window.timezone(), pricing));
-        }
-    }
+    let mut entries = dedupe_highest_rank(
+        loaded.into_iter().flatten().flatten(),
+        dsh_entry_key,
+        |entry| entry.billable_output_tokens(),
+    )
+    .into_iter()
+    .map(|entry| dsh_entry_to_loaded(entry, cx.window.timezone(), pricing))
+    .collect::<Vec<_>>();
     LoadedEntry::sort_by_timestamp(&mut entries);
     Ok(entries)
 }
@@ -176,6 +175,38 @@ mod tests {
             warnings.contains("zstd stream is corrupt; earlier records were kept"),
             "{warnings}"
         );
+    }
+
+    #[test]
+    fn duplicate_dsh_reports_prefer_the_copy_with_recorded_output() {
+        ccusage_test_support::install_pricing_snapshots();
+        let mut pricing = PricingMap::default();
+        pricing.load_json(r#"{"sample":{"input_cost_per_token":1,"output_cost_per_token":2}}"#);
+        let usage = |tokens: &str| {
+            format!(
+                "{{\"type\":\"session\",\"id\":\"duplicate\",\"createdAt\":1785015039278}}\n\
+             {{\"type\":\"request/header\",\"data\":{{\"header\":{{\"config\":{{\"model\":\"sample\"}}}}}}}}\n\
+             {{\"type\":\"assistant/message\",\"data\":{{\"usage\":{tokens}}}}}"
+            )
+        };
+        let total_only = usage(r#"{"totalTokens":5}"#);
+        let recorded = usage(r#"{"inputTokens":0,"outputTokens":5,"totalTokens":5}"#);
+        let first = fs_fixture!({"sessions/p/duplicate/session.v4.jsonl": total_only});
+        let second = fs_fixture!({"sessions/p/duplicate/session.v4.jsonl": recorded});
+        for [first, second] in [[first.root(), second.root()], [second.root(), first.root()]] {
+            let roots = format!("{},{}", first.display(), second.display());
+            Environment::with_var(DSH_HOME_ENV, &roots).run(|| {
+                let entries = ccusage_adapter_common::testing::entries(
+                    &crate::SOURCE,
+                    &SharedArgs::default(),
+                    Default::default(),
+                    Some(&pricing),
+                )
+                .unwrap();
+                assert_eq!(entries.len(), 1);
+                assert_eq!(entries[0].cost, 10.0);
+            })
+        }
     }
 
     #[test]

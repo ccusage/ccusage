@@ -58,6 +58,9 @@ They map directly to input, output, cache read and cache write. A `totalTokens` 
 the sum of those buckets is preserved through the shared extra-token fallback, so the report
 total matches the harness total.
 
+When uncached input is recorded and output is absent, the exact full-call total can recover
+output after subtracting uncached input and both cache buckets.
+
 Assistant messages and attempts use the route from the most recent `request/header` or
 `request/context`; compaction summaries use the provider and model they name. A request without a
 model is reported as `unknown`, and a missing session ID falls back to the session directory name.

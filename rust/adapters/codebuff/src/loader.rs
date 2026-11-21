@@ -51,7 +51,10 @@ fn to_loaded_entry(
         missing_pricing_model,
         estimated_pricing,
         message_count: None,
-        usage: entry.usage,
+        usage: ccusage_core::TokenUsageRaw {
+            output_tokens: entry.reported_output_tokens,
+            ..entry.usage
+        },
         message_id: Some(entry.dedup_key.clone()),
         version: None,
         recorded_cost: None,
@@ -97,7 +100,7 @@ mod tests {
         })
     }
 
-    use super::super::{parser::parse_usage_object, paths::CODEBUFF_DATA_DIR_ENV};
+    use super::super::paths::CODEBUFF_DATA_DIR_ENV;
     use super::*;
     use crate::cli::SharedArgs;
     use crate::{TokenUsageRaw, cli::AgentReportKind, parse_ts_timestamp};
@@ -329,13 +332,56 @@ mod tests {
     }
 
     #[test]
-    fn falls_back_to_total_tokens_when_codebuff_parts_are_missing() {
-        let usage = parse_usage_object(Some(&serde_json::json!({
-            "totalTokens": 789
-        })));
+    fn prices_recorded_provider_output_when_primary_usage_only_has_a_total() {
+        ccusage_test_support::install_pricing_snapshots();
+        let fixture = fs_fixture!({
+            "projects/p/chats/2026-01-02T03-04-05.000Z/chat-messages.json": r#"[
+                {"role":"assistant","metadata":{"runState":{"sessionState":{"mainAgentState":{"messageHistory":[
+                    {"role":"assistant","providerOptions":{
+                        "usage":{"totalTokens":180},
+                        "codebuff":{"model":"sample","usage":{"inputTokens":100,"outputTokens":50}}
+                    }}
+                ]}}}}}
+            ]"#,
+        });
+        let mut pricing = ccusage_core::PricingMap::default();
+        pricing.load_json(r#"{"sample":{"input_cost_per_token":1,"output_cost_per_token":2}}"#);
+        Environment::with_var(CODEBUFF_DATA_DIR_ENV, fixture.root()).run(|| {
+            let entries = ccusage_adapter_common::testing::entries(
+                &crate::SOURCE,
+                &SharedArgs::default(),
+                Default::default(),
+                Some(&pricing),
+            )
+            .unwrap();
+            assert_eq!(entries.len(), 1);
+            assert_eq!(entries[0].cost, 200.0);
+            assert_eq!(entries[0].usage.output_tokens, 50);
+            assert_eq!(entries[0].extra_total_tokens, 30);
+        });
+    }
 
-        assert_eq!(usage.output_tokens, 789);
-        assert_eq!(usage.extra_total_tokens, 0);
+    #[test]
+    fn falls_back_to_total_tokens_when_codebuff_parts_are_missing() {
+        let fixture = fs_fixture!({
+            "projects/p/chats/2026-01-02T03-04-05.000Z/chat-messages.json": r#"[
+                {"role":"assistant","metadata":{"usage":{"totalTokens":789}}},
+                {"role":"assistant","metadata":{"usage":{"totalTokens":789,"outputTokens":0}}}
+            ]"#,
+        });
+        let mut entries = super::super::parser::load_chat_file(
+            &fixture.path("projects/p/chats/2026-01-02T03-04-05.000Z/chat-messages.json"),
+            &Diagnostics::new("codebuff"),
+        )
+        .unwrap()
+        .into_iter()
+        .map(|entry| to_loaded_entry(entry, &JiffTimeZone::UTC, PriceTable::Display));
+        let missing_output = entries.next().unwrap();
+        assert_eq!(missing_output.usage.output_tokens, 789);
+        assert_eq!(missing_output.extra_total_tokens, 0);
+        let explicit_zero = entries.next().unwrap();
+        assert_eq!(explicit_zero.usage.output_tokens, 0);
+        assert_eq!(explicit_zero.extra_total_tokens, 789);
     }
 
     #[test]

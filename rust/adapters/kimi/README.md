@@ -13,6 +13,10 @@ with the same session, message ID (when present), timestamp, model, and token
 counts, ccusage keeps the first copy. Usage records without a valid timestamp
 are skipped with a diagnostic.
 
+Duplicate records with matching report counts keep the copy with the most
+recorded output tokens. A total-only copy contributes its usage once and
+supplies no billable output of its own.
+
 ## Build layer
 
 Built in the `adapters` Crane artifact layer.

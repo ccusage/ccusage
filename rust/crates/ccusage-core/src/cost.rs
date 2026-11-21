@@ -19,8 +19,6 @@ pub struct EntryPricing<'a> {
     pub granularity: UsageGranularity,
     /// Explicit reasoning tokens outside the recorded output bucket.
     pub reasoning_tokens: u64,
-    /// The unexplained difference between the recorded total and known buckets.
-    pub residual_tokens: u64,
     pub reported_model: Option<&'a str>,
     pub candidates: &'a [(&'a str, crate::pricing::MatchKind)],
     pub stored_cost: Option<f64>,

@@ -108,7 +108,7 @@ pub(super) struct KimiUsageEntry {
     output_tokens: u64,
     cache_creation_tokens: u64,
     cache_read_tokens: u64,
-    residual_tokens: u64,
+    report_remainder: u64,
 }
 
 use super::paths::WireFile;
@@ -231,7 +231,7 @@ fn entry_from_usage_record(
         output_tokens: usage.output_tokens,
         cache_creation_tokens: usage.cache_creation_input_tokens,
         cache_read_tokens: usage.cache_read_input_tokens,
-        residual_tokens: 0,
+        report_remainder: 0,
     })
 }
 
@@ -256,9 +256,9 @@ fn entry_from_status_update(
         speed: None,
         cache_creation: None,
     };
-    let residual_tokens =
-        ccusage_core::AdditionalTokens::from_total(usage, 0, token_usage.total).residual;
-    let Some(counted_tokens) = ccusage_core::checked_total_usage_tokens(usage, residual_tokens)
+    let report_remainder =
+        ccusage_core::AdditionalTokens::from_total(usage, 0, token_usage.total).report_remainder;
+    let Some(counted_tokens) = ccusage_core::checked_total_usage_tokens(usage, report_remainder)
     else {
         diagnostics.record(Skip::record(
             file_path,
@@ -292,7 +292,7 @@ fn entry_from_status_update(
         output_tokens: usage.output_tokens,
         cache_creation_tokens: usage.cache_creation_input_tokens,
         cache_read_tokens: usage.cache_read_input_tokens,
-        residual_tokens,
+        report_remainder,
     })
 }
 
@@ -334,6 +334,10 @@ pub(super) struct KimiEntryKey {
 }
 
 impl KimiUsageEntry {
+    pub(super) fn billable_output_tokens(&self) -> u64 {
+        self.output_tokens
+    }
+
     pub(super) fn dedupe_key(&self) -> KimiEntryKey {
         let (usage, extra_total_tokens) = self.additional().for_report(self.usage());
         KimiEntryKey {
@@ -365,7 +369,7 @@ impl KimiUsageEntry {
     fn additional(&self) -> ccusage_core::AdditionalTokens {
         ccusage_core::AdditionalTokens {
             reasoning: 0,
-            residual: self.residual_tokens,
+            report_remainder: self.report_remainder,
         }
     }
 }
@@ -415,7 +419,6 @@ fn price_kimi_usage(
             granularity: UsageGranularity::Request,
             usage,
             reasoning_tokens: 0,
-            residual_tokens: entry.residual_tokens,
             reported_model: Some(&entry.model),
             candidates: &candidates,
             stored_cost: None,
@@ -671,7 +674,7 @@ mod tests {
             output_tokens: usage.output_tokens,
             cache_creation_tokens: usage.cache_creation_input_tokens,
             cache_read_tokens: usage.cache_read_input_tokens,
-            residual_tokens: 0,
+            report_remainder: 0,
         };
         let at_cutoff = KimiUsageEntry {
             timestamp: TimestampMs::from_millis(1_776_698_890_072),
@@ -713,7 +716,7 @@ mod pricing_identity_tests {
             output_tokens: 0,
             cache_creation_tokens: 0,
             cache_read_tokens: 0,
-            residual_tokens: 0,
+            report_remainder: 0,
         };
         assert_eq!(
             model_candidates(&entry)

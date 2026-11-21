@@ -1140,7 +1140,6 @@ fn an_explicit_base_rate_override_wins_over_a_scheduled_tier_at_every_size() {
                     ..Default::default()
                 },
                 reasoning_tokens: 0,
-                residual_tokens: 0,
                 reported_model: Some("grok-code-fast-1"),
                 candidates: &candidates,
                 stored_cost: None,

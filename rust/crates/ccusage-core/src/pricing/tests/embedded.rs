@@ -632,7 +632,6 @@ fn xai_cost(
                 ..Default::default()
             },
             reasoning_tokens: 0,
-            residual_tokens: 0,
             reported_model: Some(model),
             candidates: &candidates,
             stored_cost: None,

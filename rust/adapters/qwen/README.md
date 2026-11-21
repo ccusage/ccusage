@@ -14,6 +14,8 @@ providers include `thoughtsTokenCount` in `candidatesTokenCount`. Gemini-style
 records can store it separately. The share of the recorded total left after
 prompt and candidate tokens bounds how much separately recorded thinking is
 added for pricing.
+When the candidate count is absent and the prompt count is recorded, the
+difference between the total and prompt counts is output including thinking.
 
 Each assistant usage record must carry a valid timestamp. Records without one
 are skipped with an invalid-timestamp diagnostic instead of using the chat

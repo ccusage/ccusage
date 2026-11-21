@@ -57,16 +57,17 @@ fn candidate_entry_pricing_bills_reasoning_and_ignores_residual_tokens() {
         }}"#,
     );
     let candidates = [("priced", crate::pricing::MatchKind::Exact)];
+    let usage = crate::TokenUsageRaw {
+        input_tokens: 2,
+        output_tokens: 3,
+        ..Default::default()
+    };
+    let additional = crate::AdditionalTokens::from_total(usage, 4, 14);
     let priced = price_entry(
         EntryPricing {
             granularity: UsageGranularity::Request,
-            usage: crate::TokenUsageRaw {
-                input_tokens: 2,
-                output_tokens: 3,
-                ..Default::default()
-            },
-            reasoning_tokens: 4,
-            residual_tokens: 5,
+            usage,
+            reasoning_tokens: additional.reasoning,
             reported_model: None,
             candidates: &candidates,
             stored_cost: Some(99.0),
@@ -101,7 +102,6 @@ fn candidate_entry_modes_keep_stored_costs_separate_from_lookup_results() {
                     ..Default::default()
                 },
                 reasoning_tokens: 0,
-                residual_tokens: 0,
                 reported_model: None,
                 candidates: &candidates,
                 stored_cost,
@@ -119,13 +119,12 @@ fn candidate_entry_modes_keep_stored_costs_separate_from_lookup_results() {
 fn candidate_entry_missing_pricing_requires_billable_usage_and_a_lookup() {
     let map = PricingMap::default();
     let candidates = [("missing", crate::pricing::MatchKind::Fuzzy)];
-    for (input_tokens, reasoning_tokens, residual_tokens, mode, stored_cost, missing) in [
-        (0, 0, 0, CostMode::Calculate, None, false),
-        (1, 0, 0, CostMode::Calculate, None, true),
-        (0, 1, 0, CostMode::Calculate, None, true),
-        (0, 0, 1, CostMode::Calculate, None, false),
-        (1, 0, 0, CostMode::Display, None, false),
-        (1, 0, 0, CostMode::Auto, Some(0.0), false),
+    for (input_tokens, reasoning_tokens, mode, stored_cost, missing) in [
+        (0, 0, CostMode::Calculate, None, false),
+        (1, 0, CostMode::Calculate, None, true),
+        (0, 1, CostMode::Calculate, None, true),
+        (1, 0, CostMode::Display, None, false),
+        (1, 0, CostMode::Auto, Some(0.0), false),
     ] {
         let result = price_entry(
             EntryPricing {
@@ -135,7 +134,6 @@ fn candidate_entry_missing_pricing_requires_billable_usage_and_a_lookup() {
                     ..Default::default()
                 },
                 reasoning_tokens,
-                residual_tokens,
                 reported_model: None,
                 candidates: &candidates,
                 stored_cost,
@@ -168,7 +166,6 @@ fn candidate_entry_pricing_uses_the_selected_schedule_and_fast_multiplier() {
                 ..Default::default()
             },
             reasoning_tokens: 0,
-            residual_tokens: 0,
             reported_model: None,
             candidates: &candidates,
             stored_cost: None,
@@ -327,7 +324,6 @@ fn stored_costs_suppress_missing_pricing_detection() {
                 granularity: UsageGranularity::Request,
                 usage,
                 reasoning_tokens: 0,
-                residual_tokens: 0,
                 reported_model: Some("unknown-model"),
                 candidates: &[("unknown-model", crate::pricing::MatchKind::Fuzzy)],
                 stored_cost,
@@ -738,7 +734,6 @@ fn price_with_granularity(map: &PricingMap, model: &str, granularity: UsageGranu
             },
             granularity,
             reasoning_tokens: 0,
-            residual_tokens: 0,
             reported_model: None,
             candidates: &candidates,
             stored_cost: None,
@@ -787,7 +782,6 @@ fn aggregated_usage_is_priced_at_the_base_tier_of_a_marginal_model() {
                 },
                 granularity,
                 reasoning_tokens: 0,
-                residual_tokens: 0,
                 reported_model: None,
                 candidates: &candidates,
                 stored_cost: None,

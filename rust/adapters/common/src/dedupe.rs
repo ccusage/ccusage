@@ -1,4 +1,7 @@
-use std::{collections::HashSet, hash::Hash};
+use std::{
+    collections::{HashMap, HashSet, hash_map::Entry},
+    hash::Hash,
+};
 
 pub fn dedupe_first_wins<T, K: Eq + Hash>(
     records: impl IntoIterator<Item = T>,
@@ -18,6 +21,30 @@ pub fn dedupe_last_wins<T, K: Eq + Hash>(
     let records: Vec<_> = records.into_iter().collect();
     let mut kept = dedupe_first_wins(records.into_iter().rev(), |record| key(record));
     kept.reverse();
+    kept
+}
+
+pub fn dedupe_highest_rank<T, K: Eq + Hash, R: Ord>(
+    records: impl IntoIterator<Item = T>,
+    mut key: impl FnMut(&T) -> K,
+    mut rank: impl FnMut(&T) -> R,
+) -> Vec<T> {
+    let mut positions = HashMap::<K, usize>::new();
+    let mut kept = Vec::new();
+    for record in records {
+        match positions.entry(key(&record)) {
+            Entry::Vacant(position) => {
+                position.insert(kept.len());
+                kept.push(record);
+            }
+            Entry::Occupied(position) => {
+                let previous = &mut kept[*position.get()];
+                if rank(&record) > rank(previous) {
+                    *previous = record;
+                }
+            }
+        }
+    }
     kept
 }
 

@@ -272,7 +272,7 @@ fn read_session_file_data_with_context(
         };
         let additional = ccusage_core::AdditionalTokens::from_total(usage, 0, total);
         let Some(counted_tokens) =
-            ccusage_core::checked_total_usage_tokens(usage, additional.residual)
+            ccusage_core::checked_total_usage_tokens(usage, additional.report_remainder)
         else {
             diagnostics.record(Skip::record(
                 path,
@@ -314,7 +314,6 @@ fn read_session_file_data_with_context(
                 granularity: UsageGranularity::Request,
                 usage,
                 reasoning_tokens: 0,
-                residual_tokens: additional.residual,
                 reported_model: identity.as_ref().map(AgentModel::display),
                 candidates: &candidates,
                 stored_cost: source_cost,
