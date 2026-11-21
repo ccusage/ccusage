@@ -19,9 +19,6 @@ fn apply_config_to_daily_args(args: &mut DailyArgs, config: &ConfigContext) {
         if let Some(instances) = options.instances {
             args.instances = instances;
         }
-        if let Some(project) = options.project {
-            args.project = Some(project);
-        }
         if let Some(project_aliases) = options.project_aliases {
             args.project_aliases = Some(project_aliases);
         }
@@ -101,13 +98,17 @@ impl ccusage_cli::CliConfig for ConfigContext {
 
     fn agent_options(&self, agent: &str) -> AgentOptions {
         let mut resolved = AgentOptions::default();
+        if agent == "claude" {
+            resolved.claude_project = self
+                .option_maps()
+                .into_iter()
+                .rev()
+                .find_map(|options| options.claude.project.as_ref())
+                .cloned();
+            return resolved;
+        }
         for options in self.option_maps() {
             match agent {
-                "claude" if self.command.report == "daily" => {
-                    if let Some(project) = options.daily.clone().project {
-                        resolved.claude_project = Some(project);
-                    }
-                }
                 "codex" => {
                     if let Some(speed) = options.codex.clone().speed {
                         resolved.codex_speed = speed.into();

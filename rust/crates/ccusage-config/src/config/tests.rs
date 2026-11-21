@@ -466,6 +466,22 @@ fn colon_commands_select_only_registered_reports() {
     }
 }
 
+#[test]
+fn legacy_claude_commands_select_claude_layers() {
+    for (args, expected) in [
+        (&["blocks"][..], Some("claude")),
+        (&["session", "--id", "target"], Some("claude")),
+        (&["session", "--id=target"], Some("claude")),
+        (&["session", "-i", "target"], Some("claude")),
+        (&["session"], None),
+        (&["session", "--jq", "--id"], None),
+    ] {
+        let args = args.iter().map(|arg| (*arg).to_owned()).collect::<Vec<_>>();
+        let command = super::detect_config_command(&args);
+        assert_eq!(command.agent.as_deref(), expected, "{args:?}");
+    }
+}
+
 use serde_json::{Value, json};
 
 use super::{

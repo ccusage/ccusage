@@ -87,7 +87,7 @@ fn schema_option_sets_expose_expected_keys() {
         "until",
     ];
 
-    assert_schema_properties(&schema, &["defaults"], &shared);
+    assert_schema_properties(&schema, &["defaults"], &with_keys(&shared, &["project"]));
     assert_schema_properties(
         &schema,
         &["commands", "daily"],
@@ -96,14 +96,14 @@ fn schema_option_sets_expose_expected_keys() {
     assert_schema_properties(
         &schema,
         &["commands", "weekly"],
-        &with_keys(&shared, &["startOfWeek"]),
+        &with_keys(&shared, &["project", "startOfWeek"]),
     );
     assert_schema_properties(
         &schema,
         &["commands", "blocks"],
         &with_keys(
             &shared,
-            &["active", "recent", "sessionLength", "tokenLimit"],
+            &["active", "project", "recent", "sessionLength", "tokenLimit"],
         ),
     );
     assert_schema_properties(
@@ -169,6 +169,18 @@ fn agent_configs_expose_only_supported_option_sets() {
     assert!(schema_property(&schema, &["qwen", "defaults", "openClawPath"]).is_none());
     assert!(schema_property(&schema, &["grok", "defaults", "grokPath"]).is_none());
     assert!(schema_property(&schema, &["openclaw", "defaults", "grokPath"]).is_none());
+}
+
+#[test]
+fn schema_exposes_project_in_every_claude_report_section() {
+    let schema = generated_schema();
+    assert!(schema_property(&schema, &["claude", "defaults", "project"]).is_some());
+    for report in ["daily", "weekly", "monthly", "session", "blocks"] {
+        assert!(schema_property(&schema, &["commands", report, "project"]).is_some());
+        assert!(schema_property(&schema, &["claude", "commands", report, "project"]).is_some());
+    }
+    assert!(schema_property(&schema, &["codex", "defaults", "project"]).is_none());
+    assert!(schema_property(&schema, &["claude", "commands", "statusline", "project"]).is_none());
 }
 
 #[test]

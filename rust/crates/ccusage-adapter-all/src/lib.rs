@@ -82,6 +82,10 @@ pub fn run(args: AgentCommandArgs) -> Result<()> {
     let sources = args.sources;
     let include_agents = args.by_agent;
     let start_of_week = args.start_of_week;
+    let note = sources
+        .get("claude")
+        .is_some_and(|source| source.options.claude_project.is_some())
+        .then_some("The project filter applies only to Claude Code usage.");
     if let Some(sections) = args.sections {
         let sections = requested_sections(kind, sections);
         let result = loader::load_sections(&sections, &shared, &sources, start_of_week)?;
@@ -93,6 +97,7 @@ pub fn run(args: AgentCommandArgs) -> Result<()> {
                 include_agents,
                 shared.jq.as_deref(),
                 shared.no_cost,
+                note,
             );
         }
         for (section_kind, rows) in &result.sections {
@@ -103,15 +108,22 @@ pub fn run(args: AgentCommandArgs) -> Result<()> {
                 result.detected_agents_for(*section_kind),
             )?;
         }
-        return Ok(());
+    } else {
+        let result = loader::load_rows(kind, &shared, &sources, start_of_week)?;
+        emit_diagnostics(&result.diagnostics, &shared, &sources);
+        if wants_json(&shared) {
+            let mut output = report::report_json_with_agents(&result.rows, kind, include_agents);
+            if let Some(note) = note {
+                output["notes"] = serde_json::json!([note]);
+            }
+            return print_json_or_jq(output, shared.jq.as_deref(), shared.no_cost);
+        }
+        report::print_table(&result.rows, kind, &shared, &result.detected_agents)?;
     }
-    let result = loader::load_rows(kind, &shared, &sources, start_of_week)?;
-    emit_diagnostics(&result.diagnostics, &shared, &sources);
-    if wants_json(&shared) {
-        let output = report::report_json_with_agents(&result.rows, kind, include_agents);
-        return print_json_or_jq(output, shared.jq.as_deref(), shared.no_cost);
+    if let Some(note) = note {
+        ccusage_core::errln!("INFO  {note}");
     }
-    report::print_table(&result.rows, kind, &shared, &result.detected_agents)
+    Ok(())
 }
 
 fn run_opencode(args: AgentCommandArgs) -> Result<()> {

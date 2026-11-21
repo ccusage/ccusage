@@ -1964,49 +1964,202 @@ fn config_warnings_follow_log_level() {
 }
 
 #[test]
-fn configured_project_preserves_base_report_scope() {
-    let fixture = Fixture::new();
-    write_two_model_session(&fixture);
-    for config in [
-        r#"{"defaults":{"project":"missing"}}"#,
-        r#"{"claude":{"defaults":{"project":"missing"}}}"#,
-        r#"{"commands":{"daily":{"project":"missing"},"weekly":{"project":"missing"},"monthly":{"project":"missing"},"session":{"project":"missing"}}}"#,
-    ] {
-        let path = fixture.write_file("config.json", config);
-        for prefix in [vec![], vec!["claude"]] {
-            for (report, expected) in [
-                ("daily", 0.0),
-                ("monthly", 10.75),
-                ("weekly", 10.75),
-                ("session", 10.75),
-            ] {
-                let output = claude_command(&fixture)
-                    .args(&prefix)
-                    .args([
-                        report,
-                        "--offline",
-                        "--json",
-                        "--mode",
-                        "display",
-                        "--config",
-                    ])
-                    .arg(&path)
-                    .output()
-                    .unwrap();
-                assert!(
-                    output.status.success(),
-                    "{}",
-                    String::from_utf8_lossy(&output.stderr)
-                );
-                let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-                assert_eq!(
-                    json["totals"]["totalCost"].as_f64().unwrap_or(0.0),
-                    expected,
-                    "{prefix:?} {report}: {json}"
-                );
+fn configured_project_filters_focused_and_unified_claude_reports() {
+    let fixture = project_filter_fixture();
+    for report in ["daily", "weekly", "monthly", "session"] {
+        for config in project_filter_configs(report) {
+            for command in [&[report][..], &["claude", report]] {
+                let json = report_with_project_config(&fixture, command, &config);
+                assert_eq!(json["totals"]["totalCost"], 1.25, "{command:?}: {config}");
             }
         }
     }
+}
+
+#[test]
+fn configured_project_filters_claude_blocks() {
+    let fixture = project_filter_fixture();
+    for config in project_filter_configs("blocks") {
+        for command in [&["blocks"][..], &["claude", "blocks"]] {
+            let json = report_with_project_config(&fixture, command, &config);
+            let costs = json["blocks"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|block| block["costUSD"].as_f64().unwrap())
+                .collect::<Vec<_>>();
+            assert_eq!(costs, [1.25], "{command:?}: {config}");
+        }
+    }
+}
+
+#[test]
+fn legacy_blocks_use_claude_config_for_project_and_token_limit() {
+    let fixture = Fixture::new();
+    for (project, cost) in [("a", 1.25), ("b", 2.5)] {
+        fixture.write_file(
+            format!("projects/{project}/session.jsonl"),
+            [
+                usage_line("2026-09-15T12:00:00Z", project, project, "first", cost),
+                usage_line("2026-09-15T12:30:00Z", project, project, "second", 0.0),
+            ]
+            .join("\n"),
+        );
+    }
+    let config = serde_json::from_str(
+        r#"{"claude":{"commands":{"blocks":{"project":"a","tokenLimit":1000}}}}"#,
+    )
+    .unwrap();
+    let json = report_with_project_config(&fixture, &["blocks"], &config);
+    let blocks = json["blocks"].as_array().unwrap();
+    assert_eq!(blocks.len(), 1);
+    assert_eq!(blocks[0]["costUSD"], 1.25);
+    assert_eq!(blocks[0]["tokenLimitStatus"]["limit"], 1000);
+}
+
+#[test]
+fn explicit_claude_session_id_ignores_configured_project() {
+    let fixture = project_filter_fixture();
+    fixture.write_file(
+        "projects/project-b/target.jsonl",
+        usage_line("2026-09-15T12:00:00Z", "target", "target", "target", 4.0),
+    );
+    let config = serde_json::json!({"claude": {"defaults": {"project": "project-a"}}});
+    for command in [
+        &["session", "--id=target"][..],
+        &["claude", "session", "-i", "target"],
+    ] {
+        let json = report_with_project_config(&fixture, command, &config);
+        assert_eq!(json["totalCost"], 4.0, "{command:?}");
+    }
+}
+
+#[test]
+fn legacy_session_id_uses_claude_report_config() {
+    let fixture = project_filter_fixture();
+    let config = serde_json::json!({"claude": {"commands": {"session": {"since": "20260916"}}}});
+    let json = report_with_project_config(&fixture, &["session", "-i", "session"], &config);
+    assert!(json.is_null(), "{json}");
+}
+
+#[test]
+fn unified_project_filter_preserves_other_agents_and_explains_its_scope() {
+    let fixture = project_filter_fixture();
+    fixture.write_file(
+        "grok/sessions/other-project/grok-session/updates.jsonl",
+        r#"{"timestamp":1789473600,"params":{"sessionId":"grok-session","update":{"sessionUpdate":"turn_completed","usage":{"inputTokens":20,"outputTokens":10,"modelUsage":{"grok-4.5-build":{"inputTokens":20,"outputTokens":10}}}},"_meta":{"eventId":"grok-event"}}}"#,
+    );
+    let path = fixture.write_file("config.json", r#"{"defaults":{"project":"project-a"}}"#);
+    let note = "The project filter applies only to Claude Code usage.";
+    for report in ["daily", "weekly", "monthly", "session"] {
+        let mut cmd = claude_command(&fixture);
+        cmd.env("GROK_HOME", fixture.path("grok"));
+        let output = run_command(
+            cmd,
+            &[
+                report,
+                "--offline",
+                "--json",
+                "--config",
+                path.to_str().unwrap(),
+            ],
+            None,
+        );
+        let json: serde_json::Value = serde_json::from_str(&output).unwrap();
+        assert_eq!(json["totals"]["totalTokens"], 42, "{report}: {json}");
+        assert_eq!(json["notes"], serde_json::json!([note]), "{report}: {json}");
+    }
+
+    let args = [
+        "weekly",
+        "--sections",
+        "monthly,session",
+        "--offline",
+        "--config",
+        path.to_str().unwrap(),
+    ];
+    let table = run_ccusage_output(&fixture, &args, None);
+    assert_eq!(
+        String::from_utf8_lossy(&table.stderr).matches(note).count(),
+        1
+    );
+    let json = run_ccusage(&fixture, &[&args[..], &["--json"]].concat(), None);
+    let json: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(json["notes"], serde_json::json!([note]));
+}
+
+#[test]
+fn daily_project_flag_overrides_configured_project() {
+    let fixture = project_filter_fixture();
+    let config = serde_json::json!({"claude": {"commands": {"daily": {"project": "project-a"}}}});
+    let json = report_with_project_config(
+        &fixture,
+        &["claude", "daily", "--project", "project-b"],
+        &config,
+    );
+    assert_eq!(json["totals"]["totalCost"], 2.5);
+}
+
+fn project_filter_fixture() -> Fixture {
+    let fixture = Fixture::new();
+    for (suffix, cost) in [("a", 1.25), ("b", 2.5)] {
+        fixture.write_file(
+            format!("projects/project-{suffix}/session.jsonl"),
+            usage_line(
+                "2026-09-15T12:00:00Z",
+                "session",
+                &format!("message-{suffix}"),
+                &format!("request-{suffix}"),
+                cost,
+            ),
+        );
+    }
+    fixture
+}
+
+fn project_filter_configs(report: &str) -> [serde_json::Value; 6] {
+    use serde_json::json;
+
+    [
+        json!({"defaults": {"project": "project-a"}}),
+        json!({"claude": {"defaults": {"project": "project-a"}}}),
+        json!({"commands": {report: {"project": "project-a"}}}),
+        json!({
+            "defaults": {"project": "project-b"},
+            "commands": {report: {"project": "project-a"}}
+        }),
+        json!({"commands": {
+            (format!("claude {report}")): {"project": "project-b"},
+            (format!("claude:{report}")): {"project": "project-a"}
+        }}),
+        json!({"claude": {
+            "defaults": {"project": "project-b"},
+            "commands": {report: {"project": "project-a"}}
+        }}),
+    ]
+}
+
+fn report_with_project_config(
+    fixture: &Fixture,
+    command: &[&str],
+    config: &serde_json::Value,
+) -> serde_json::Value {
+    let path = fixture.write_file("config.json", config.to_string());
+    let args = [
+        command,
+        &[
+            "--offline",
+            "--json",
+            "--mode",
+            "display",
+            "--config",
+            path.to_str().unwrap(),
+        ],
+    ]
+    .concat();
+    let mut cmd = claude_command(fixture);
+    cmd.env("CCUSAGE_TEST_NOW", "2026-09-15T13:00:00Z");
+    serde_json::from_str(&run_command(cmd, &args, None)).unwrap()
 }
 
 #[test]

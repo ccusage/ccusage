@@ -92,7 +92,11 @@ fn applies_schema_documented_config_file_options() {
     };
 
     let cli = parse_with_config(&["ccusage", "claude", "weekly"], &config);
-    let Command::Weekly(args) = cli else {
+    let Command::Claude {
+        report: ClaudeReport::Weekly(args),
+        ..
+    } = cli
+    else {
         panic!("expected weekly command");
     };
     assert!(args.shared.json);
@@ -100,7 +104,11 @@ fn applies_schema_documented_config_file_options() {
     assert_eq!(args.start_of_week, WeekDay::Monday);
 
     let cli = parse_with_config(&["ccusage", "claude", "blocks"], &config);
-    let Command::Blocks(args) = cli else {
+    let Command::Claude {
+        report: ClaudeReport::Blocks(args),
+        ..
+    } = cli
+    else {
         panic!("expected blocks command");
     };
     assert!(args.active);
