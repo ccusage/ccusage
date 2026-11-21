@@ -50,7 +50,7 @@ pub(crate) fn resolve_opencode_claims(
 
 #[cfg(test)]
 mod tests {
-    use super::super::last_window::last_periods_since;
+    use super::super::last_window::{last_periods_since, last_periods_until};
     use ccusage_cli::{AgentReportKind, CodexSpeed, Command, CostMode, PeriodUnit, WeekDay};
     use ccusage_core::{date_at, resolve_tz};
     use ccusage_test_support::fs_fixture;
@@ -565,6 +565,10 @@ mod tests {
                 unified.start_of_week
             )
         );
+        assert_eq!(
+            codex.shared.until,
+            last_periods_until(PeriodUnit::Week, today, unified.start_of_week)
+        );
     }
 
     #[test]
@@ -593,6 +597,10 @@ mod tests {
                 today,
                 WeekDay::Friday
             )
+        );
+        assert_eq!(
+            codex.shared.until,
+            last_periods_until(PeriodUnit::Week, today, WeekDay::Friday)
         );
     }
 
