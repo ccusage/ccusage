@@ -89,10 +89,15 @@ pub(crate) struct SharedOptions {
 pub(crate) struct DailySpecificOptions {
     /// Show per-session project instances.
     pub(crate) instances: Option<bool>,
-    /// Filter to a project name or path.
-    pub(crate) project: Option<String>,
     /// JSON object or path mapping project paths to display aliases.
     pub(crate) project_aliases: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+#[cfg_attr(any(feature = "schema", test), derive(schemars::JsonSchema))]
+pub(crate) struct ClaudeOptions {
+    /// Filter Claude Code daily, weekly, monthly, session, and blocks reports to one project.
+    pub(crate) project: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]

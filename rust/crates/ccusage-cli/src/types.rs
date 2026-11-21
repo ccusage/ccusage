@@ -69,13 +69,20 @@ impl ReportClock {
 
 pub enum Command {
     All(AgentCommandArgs),
+    Claude {
+        report: ClaudeReport,
+        project: Option<String>,
+    },
+    Statusline(StatuslineArgs),
+    Agent(StandardAgent, AgentCommand),
+}
+
+pub enum ClaudeReport {
     Daily(DailyArgs),
     Monthly(SharedArgs),
     Weekly(WeeklyArgs),
     Session(SessionArgs),
     Blocks(BlocksArgs),
-    Statusline(StatuslineArgs),
-    Agent(StandardAgent, AgentCommand),
 }
 
 pub enum AgentCommand {
@@ -91,6 +98,13 @@ pub enum PeriodUnit {
 }
 
 impl Command {
+    pub fn claude_report(report: ClaudeReport) -> Self {
+        Self::Claude {
+            report,
+            project: None,
+        }
+    }
+
     pub fn agent_report(agent: StandardAgent, args: AgentCommandArgs) -> Self {
         Self::Agent(agent, AgentCommand::Report(args))
     }
@@ -98,11 +112,13 @@ impl Command {
     pub fn shared(&self) -> Option<&SharedArgs> {
         match self {
             Self::All(args) | Self::Agent(_, AgentCommand::Report(args)) => Some(&args.shared),
-            Self::Daily(args) => Some(&args.shared),
-            Self::Monthly(shared) => Some(shared),
-            Self::Weekly(args) => Some(&args.shared),
-            Self::Session(args) => Some(&args.shared),
-            Self::Blocks(args) => Some(&args.shared),
+            Self::Claude { report, .. } => Some(match report {
+                ClaudeReport::Daily(args) => &args.shared,
+                ClaudeReport::Monthly(shared) => shared,
+                ClaudeReport::Weekly(args) => &args.shared,
+                ClaudeReport::Session(args) => &args.shared,
+                ClaudeReport::Blocks(args) => &args.shared,
+            }),
             Self::Agent(_, AgentCommand::Statusline(args)) => Some(&args.shared),
             Self::Statusline(_) => None,
         }
@@ -111,11 +127,13 @@ impl Command {
     pub fn shared_mut(&mut self) -> Option<&mut SharedArgs> {
         match self {
             Self::All(args) | Self::Agent(_, AgentCommand::Report(args)) => Some(&mut args.shared),
-            Self::Daily(args) => Some(&mut args.shared),
-            Self::Monthly(shared) => Some(shared),
-            Self::Weekly(args) => Some(&mut args.shared),
-            Self::Session(args) => Some(&mut args.shared),
-            Self::Blocks(args) => Some(&mut args.shared),
+            Self::Claude { report, .. } => Some(match report {
+                ClaudeReport::Daily(args) => &mut args.shared,
+                ClaudeReport::Monthly(shared) => shared,
+                ClaudeReport::Weekly(args) => &mut args.shared,
+                ClaudeReport::Session(args) => &mut args.shared,
+                ClaudeReport::Blocks(args) => &mut args.shared,
+            }),
             Self::Agent(_, AgentCommand::Statusline(args)) => Some(&mut args.shared),
             Self::Statusline(_) => None,
         }
@@ -124,13 +142,13 @@ impl Command {
     pub fn period(&self) -> Option<(PeriodUnit, WeekDay)> {
         match self {
             Self::All(args) | Self::Agent(_, AgentCommand::Report(args)) => args.period(),
-            Self::Daily(_) => Some((PeriodUnit::Day, WeekDay::Monday)),
-            Self::Monthly(_) => Some((PeriodUnit::Month, WeekDay::Monday)),
-            Self::Weekly(args) => Some((PeriodUnit::Week, args.start_of_week)),
-            Self::Session(_)
-            | Self::Blocks(_)
-            | Self::Statusline(_)
-            | Self::Agent(_, AgentCommand::Statusline(_)) => None,
+            Self::Claude { report, .. } => match report {
+                ClaudeReport::Daily(_) => Some((PeriodUnit::Day, WeekDay::Monday)),
+                ClaudeReport::Monthly(_) => Some((PeriodUnit::Month, WeekDay::Monday)),
+                ClaudeReport::Weekly(args) => Some((PeriodUnit::Week, args.start_of_week)),
+                ClaudeReport::Session(_) | ClaudeReport::Blocks(_) => None,
+            },
+            Self::Statusline(_) | Self::Agent(_, AgentCommand::Statusline(_)) => None,
         }
     }
 }
@@ -185,7 +203,6 @@ pub const DATE_BOUND_FORMATS: &str = "YYYY-MM-DD or YYYYMMDD";
 pub struct DailyArgs {
     pub shared: SharedArgs,
     pub instances: bool,
-    pub project: Option<String>,
     pub project_aliases: Option<String>,
 }
 
@@ -486,10 +503,10 @@ mod tests {
 
     #[test]
     fn command_projections_keep_the_report_options_and_week_start() {
-        let mut command = Command::Weekly(WeeklyArgs {
+        let mut command = Command::claude_report(ClaudeReport::Weekly(WeeklyArgs {
             shared: SharedArgs::with_defaults(),
             start_of_week: WeekDay::Sunday,
-        });
+        }));
         assert_eq!(command.period(), Some((PeriodUnit::Week, WeekDay::Sunday)));
         command.shared_mut().unwrap().offline = true;
         assert!(command.shared().unwrap().offline);

@@ -1,5 +1,5 @@
 use ccusage_cli::{
-    AgentCommand, AgentCommandArgs, AgentId, AgentReportKind, CliConfig, CodexSpeed,
+    AgentCommand, AgentCommandArgs, AgentId, AgentReportKind, ClaudeReport, CliConfig, CodexSpeed,
     CodexStatuslineArgs, CodexStatuslineOption, Command, DailyArgs, SessionArgs, SharedArgs,
     StandardAgent, WeekDay, WeeklyArgs,
 };
@@ -62,9 +62,9 @@ fn parse_claude_daily_command(
     let mut args = DailyArgs {
         shared,
         instances: false,
-        project: None,
         project_aliases: None,
     };
+    let mut project = None;
     config.apply_daily_args(&mut args);
     while parser.peek().is_some() {
         if parse_shared_arg_for_command(parser, &mut args.shared)? {
@@ -72,14 +72,17 @@ fn parse_claude_daily_command(
         }
         match parser.next_flag()?.as_str() {
             "-i" | "--instances" => args.instances = true,
-            "-p" | "--project" => args.project = Some(parser.value_for("--project")?),
+            "-p" | "--project" => project = Some(parser.value_for("--project")?),
             "--project-aliases" => {
                 args.project_aliases = Some(parser.value_for("--project-aliases")?)
             }
             flag => return Err(format!("Unknown daily option '{flag}'")),
         }
     }
-    Ok(Command::Daily(args))
+    Ok(Command::Claude {
+        report: ClaudeReport::Daily(args),
+        project,
+    })
 }
 
 fn parse_claude_monthly_command(
@@ -90,7 +93,7 @@ fn parse_claude_monthly_command(
     while parser.peek().is_some() {
         parse_shared_arg(parser, &mut shared)?;
     }
-    Ok(Command::Monthly(shared))
+    Ok(Command::claude_report(ClaudeReport::Monthly(shared)))
 }
 
 fn parse_claude_weekly_command(
@@ -114,7 +117,7 @@ fn parse_claude_weekly_command(
             flag => return Err(format!("Unknown weekly option '{flag}'")),
         }
     }
-    Ok(Command::Weekly(args))
+    Ok(Command::claude_report(ClaudeReport::Weekly(args)))
 }
 
 fn parse_claude_session_command(
@@ -132,7 +135,7 @@ fn parse_claude_session_command(
             flag => return Err(format!("Unknown session option '{flag}'")),
         }
     }
-    Ok(Command::Session(args))
+    Ok(Command::claude_report(ClaudeReport::Session(args)))
 }
 
 fn parse_claude_command(

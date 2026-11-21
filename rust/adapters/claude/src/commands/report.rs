@@ -3,7 +3,10 @@ use std::sync::Arc;
 use ccusage_core::{
     DEFAULT_RECENT_DAYS, MILLIS_PER_DAY, ReportWindow, Result, SessionAccumulator, TimestampMs,
     UsageSummary,
-    cli::{BlocksArgs, DailyArgs, SessionArgs, SharedArgs, SortOrder, session_cost_ordering},
+    cli::{
+        BlocksArgs, ClaudeReport, DailyArgs, SessionArgs, SharedArgs, SortOrder,
+        session_cost_ordering,
+    },
     fast::FxHashMap,
     print_json_or_jq, print_usage_table, sort_summaries,
     summary::{Bucket, summarize_bucket, summarize_by_day},
@@ -23,13 +26,21 @@ mod json;
 
 use json::{group_project_output, session_summary_json, summary_json};
 
-pub fn run_daily(args: DailyArgs) -> Result<()> {
+pub fn run_report(report: ClaudeReport, project: Option<&str>) -> Result<()> {
+    match report {
+        ClaudeReport::Daily(args) => run_daily(args, project),
+        ClaudeReport::Monthly(shared) => run_bucket(shared, Bucket::Monthly, project),
+        ClaudeReport::Weekly(args) => {
+            run_bucket(args.shared, Bucket::Weekly(args.start_of_week), project)
+        }
+        ClaudeReport::Session(args) => run_session(args, project),
+        ClaudeReport::Blocks(args) => run_blocks(args, project),
+    }
+}
+
+fn run_daily(args: DailyArgs, project: Option<&str>) -> Result<()> {
     let shared = args.shared.clone();
-    let mut rows = load_daily_summaries(
-        &shared,
-        args.project.as_deref(),
-        args.instances || args.project.is_some(),
-    )?;
+    let mut rows = load_daily_summaries(&shared, project, args.instances || project.is_some())?;
     sort_summaries(&mut rows, &shared.order.unwrap_or_default(), &|row| {
         row.date.as_deref().unwrap_or_default()
     });
@@ -62,8 +73,8 @@ pub fn run_daily(args: DailyArgs) -> Result<()> {
     Ok(())
 }
 
-pub fn run_bucket(shared: SharedArgs, bucket: Bucket) -> Result<()> {
-    let entries = load_entries_since(&shared, None)?
+fn run_bucket(shared: SharedArgs, bucket: Bucket, project: Option<&str>) -> Result<()> {
+    let entries = load_entries_since(&shared, project)?
         .into_iter()
         .map(|entry| entry.entry)
         .collect::<Vec<_>>();
@@ -103,13 +114,13 @@ pub fn run_bucket(shared: SharedArgs, bucket: Bucket) -> Result<()> {
     Ok(())
 }
 
-pub fn run_session(args: SessionArgs) -> Result<()> {
+fn run_session(args: SessionArgs, project: Option<&str>) -> Result<()> {
     let shared = args.shared.clone();
     if let Some(id) = args.id {
-        return run_session_id(&id, &shared);
+        return run_session_id(&id, &shared, project);
     }
 
-    let mut rows = load_session_rows(&shared)?;
+    let mut rows = load_session_rows(&shared, project)?;
     rows.retain(|row| {
         row.input_tokens > 0
             || row.output_tokens > 0
@@ -141,8 +152,8 @@ pub fn run_session(args: SessionArgs) -> Result<()> {
     Ok(())
 }
 
-fn load_session_rows(shared: &SharedArgs) -> Result<Vec<UsageSummary>> {
-    let entries = load_entries_since(shared, None)?;
+fn load_session_rows(shared: &SharedArgs, project: Option<&str>) -> Result<Vec<UsageSummary>> {
+    let entries = load_entries_since(shared, project)?;
     let mut grouped = Vec::<SessionAccumulator>::new();
     let mut group_indexes = FxHashMap::<(Arc<str>, Arc<str>), usize>::default();
     for entry in &entries {
@@ -165,8 +176,8 @@ fn load_session_rows(shared: &SharedArgs) -> Result<Vec<UsageSummary>> {
     Ok(rows)
 }
 
-fn run_session_id(id: &str, shared: &SharedArgs) -> Result<()> {
-    let entries = load_entries_since(shared, None)?;
+fn run_session_id(id: &str, shared: &SharedArgs, project: Option<&str>) -> Result<()> {
+    let entries = load_entries_since(shared, project)?;
     let mut session_entries = entries
         .into_iter()
         .filter(|entry| {
@@ -230,11 +241,11 @@ fn run_session_id(id: &str, shared: &SharedArgs) -> Result<()> {
     )
 }
 
-pub fn run_blocks(args: BlocksArgs) -> Result<()> {
+fn run_blocks(args: BlocksArgs, project: Option<&str>) -> Result<()> {
     let session_duration = args.session_length;
     let shared = args.shared.clone();
     let now = shared.clock.now().into();
-    let entries = load_entries(&shared, None)?;
+    let entries = load_entries(&shared, project)?;
     let mut blocks = identify_session_blocks(entries, session_duration, now);
     let window = ReportWindow::from_shared(&shared);
     filter_blocks_by_date(&mut blocks, &window);
@@ -351,7 +362,7 @@ mod tests {
             "projects/project-a/session-a/chat.jsonl": log,
         });
         Environment::with_var("CLAUDE_CONFIG_DIR", fixture.root())
-            .run(|| load_session_rows(&shared).unwrap())
+            .run(|| load_session_rows(&shared, None).unwrap())
     }
 
     #[test]

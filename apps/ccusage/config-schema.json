@@ -1930,6 +1930,11 @@
 											"markdownDescription": "Runtime pricing overrides keyed by raw model name.",
 											"type": "object"
 										},
+										"project": {
+											"description": "Filter Claude Code daily, weekly, monthly, session, and blocks reports to one project.",
+											"markdownDescription": "Filter Claude Code daily, weekly, monthly, session, and blocks reports to one project.",
+											"type": "string"
+										},
 										"recent": {
 											"description": "Show recent session blocks.",
 											"markdownDescription": "Show recent session blocks.",
@@ -2123,8 +2128,8 @@
 											"type": "object"
 										},
 										"project": {
-											"description": "Filter to a project name or path.",
-											"markdownDescription": "Filter to a project name or path.",
+											"description": "Filter Claude Code daily, weekly, monthly, session, and blocks reports to one project.",
+											"markdownDescription": "Filter Claude Code daily, weekly, monthly, session, and blocks reports to one project.",
 											"type": "string"
 										},
 										"projectAliases": {
@@ -2305,6 +2310,11 @@
 											"markdownDescription": "Runtime pricing overrides keyed by raw model name.",
 											"type": "object"
 										},
+										"project": {
+											"description": "Filter Claude Code daily, weekly, monthly, session, and blocks reports to one project.",
+											"markdownDescription": "Filter Claude Code daily, weekly, monthly, session, and blocks reports to one project.",
+											"type": "string"
+										},
 										"since": {
 											"description": "Filter from date (YYYY-MM-DD or YYYYMMDD).",
 											"markdownDescription": "Filter from date (YYYY-MM-DD or YYYYMMDD).",
@@ -2478,6 +2488,11 @@
 											"description": "Runtime pricing overrides keyed by raw model name.",
 											"markdownDescription": "Runtime pricing overrides keyed by raw model name.",
 											"type": "object"
+										},
+										"project": {
+											"description": "Filter Claude Code daily, weekly, monthly, session, and blocks reports to one project.",
+											"markdownDescription": "Filter Claude Code daily, weekly, monthly, session, and blocks reports to one project.",
+											"type": "string"
 										},
 										"since": {
 											"description": "Filter from date (YYYY-MM-DD or YYYYMMDD).",
@@ -2787,6 +2802,11 @@
 											"markdownDescription": "Runtime pricing overrides keyed by raw model name.",
 											"type": "object"
 										},
+										"project": {
+											"description": "Filter Claude Code daily, weekly, monthly, session, and blocks reports to one project.",
+											"markdownDescription": "Filter Claude Code daily, weekly, monthly, session, and blocks reports to one project.",
+											"type": "string"
+										},
 										"since": {
 											"description": "Filter from date (YYYY-MM-DD or YYYYMMDD).",
 											"markdownDescription": "Filter from date (YYYY-MM-DD or YYYYMMDD).",
@@ -3014,8 +3034,8 @@
 									"type": "object"
 								},
 								"project": {
-									"description": "Filter to a project name or path.",
-									"markdownDescription": "Filter to a project name or path.",
+									"description": "Filter Claude Code daily, weekly, monthly, session, and blocks reports to one project.",
+									"markdownDescription": "Filter Claude Code daily, weekly, monthly, session, and blocks reports to one project.",
 									"type": "string"
 								},
 								"projectAliases": {
@@ -6014,6 +6034,11 @@
 									"markdownDescription": "Runtime pricing overrides keyed by raw model name.",
 									"type": "object"
 								},
+								"project": {
+									"description": "Filter Claude Code daily, weekly, monthly, session, and blocks reports to one project.",
+									"markdownDescription": "Filter Claude Code daily, weekly, monthly, session, and blocks reports to one project.",
+									"type": "string"
+								},
 								"recent": {
 									"description": "Show recent session blocks.",
 									"markdownDescription": "Show recent session blocks.",
@@ -6345,8 +6370,8 @@
 									"type": "object"
 								},
 								"project": {
-									"description": "Filter to a project name or path.",
-									"markdownDescription": "Filter to a project name or path.",
+									"description": "Filter Claude Code daily, weekly, monthly, session, and blocks reports to one project.",
+									"markdownDescription": "Filter Claude Code daily, weekly, monthly, session, and blocks reports to one project.",
 									"type": "string"
 								},
 								"projectAliases": {
@@ -6719,6 +6744,11 @@
 									"markdownDescription": "Runtime pricing overrides keyed by raw model name.",
 									"type": "object"
 								},
+								"project": {
+									"description": "Filter Claude Code daily, weekly, monthly, session, and blocks reports to one project.",
+									"markdownDescription": "Filter Claude Code daily, weekly, monthly, session, and blocks reports to one project.",
+									"type": "string"
+								},
 								"since": {
 									"description": "Filter from date (YYYY-MM-DD or YYYYMMDD).",
 									"markdownDescription": "Filter from date (YYYY-MM-DD or YYYYMMDD).",
@@ -6988,6 +7018,11 @@
 									"description": "Runtime pricing overrides keyed by raw model name.",
 									"markdownDescription": "Runtime pricing overrides keyed by raw model name.",
 									"type": "object"
+								},
+								"project": {
+									"description": "Filter Claude Code daily, weekly, monthly, session, and blocks reports to one project.",
+									"markdownDescription": "Filter Claude Code daily, weekly, monthly, session, and blocks reports to one project.",
+									"type": "string"
 								},
 								"since": {
 									"description": "Filter from date (YYYY-MM-DD or YYYYMMDD).",
@@ -7296,6 +7331,11 @@
 									"description": "Runtime pricing overrides keyed by raw model name.",
 									"markdownDescription": "Runtime pricing overrides keyed by raw model name.",
 									"type": "object"
+								},
+								"project": {
+									"description": "Filter Claude Code daily, weekly, monthly, session, and blocks reports to one project.",
+									"markdownDescription": "Filter Claude Code daily, weekly, monthly, session, and blocks reports to one project.",
+									"type": "string"
 								},
 								"since": {
 									"description": "Filter from date (YYYY-MM-DD or YYYYMMDD).",
@@ -8397,6 +8437,11 @@
 							"description": "Runtime pricing overrides keyed by raw model name.",
 							"markdownDescription": "Runtime pricing overrides keyed by raw model name.",
 							"type": "object"
+						},
+						"project": {
+							"description": "Filter Claude Code daily, weekly, monthly, session, and blocks reports to one project.",
+							"markdownDescription": "Filter Claude Code daily, weekly, monthly, session, and blocks reports to one project.",
+							"type": "string"
 						},
 						"since": {
 							"description": "Filter from date (YYYY-MM-DD or YYYYMMDD).",
