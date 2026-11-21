@@ -4,7 +4,7 @@ use jiff::civil::Date as JiffDate;
 
 use crate::WeekDay;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct IsoDate {
     year: i32,
     month: u32,
@@ -108,6 +108,10 @@ fn parse_date(value: &str, dashed_only: bool) -> Option<IsoDate> {
 impl IsoDate {
     pub fn parse(value: &str) -> Option<Self> {
         parse_date(value, true)
+    }
+
+    pub fn month_start(self) -> Self {
+        Self { day: 1, ..self }
     }
 
     pub fn format_month(self) -> String {

@@ -1,6 +1,8 @@
 use super::accumulate::codex_period_for;
+use super::intern::StringInterner;
 use super::*;
 use crate::parse_ts_timestamp;
+use compact_str::CompactString;
 
 use ccusage_test_support::fs_fixture;
 use serde_json::json;
@@ -279,6 +281,12 @@ fn selects_codex_period_for_each_report_kind() {
         timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
         ..SharedArgs::default()
     };
+    let mut sessions = StringInterner::default();
+    let session = sessions
+        .intern("sessions/child.jsonl", || {
+            CompactString::new("sessions/child.jsonl")
+        })
+        .unwrap();
 
     for (kind, expected) in [
         (AgentReportKind::Daily, "2026-05-29"),
@@ -289,10 +297,11 @@ fn selects_codex_period_for_each_report_kind() {
         assert_eq!(
             codex_period_for(
                 timestamp,
-                Some("sessions/child.jsonl"),
+                session,
                 kind,
                 &ccusage_core::ReportWindow::from_shared(&shared),
             )
+            .map(|period| period.label(kind, &sessions))
             .as_deref(),
             Some(expected),
         );
@@ -364,6 +373,34 @@ fn records_flex_usage_in_model_buckets() {
 }
 
 #[test]
+fn keys_every_day_of_a_month_to_one_monthly_period() {
+    let window = ccusage_core::ReportWindow::from_shared(&SharedArgs {
+        timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+        ..SharedArgs::default()
+    });
+    let session = StringInterner::default()
+        .intern("session", || CompactString::new("session"))
+        .unwrap();
+    let monthly = |timestamp| {
+        codex_period_for(
+            parse_ts_timestamp(timestamp).unwrap(),
+            session,
+            AgentReportKind::Monthly,
+            &window,
+        )
+    };
+
+    assert_eq!(
+        monthly("2026-05-01T00:00:00.000Z"),
+        monthly("2026-05-31T23:59:59.000Z")
+    );
+    assert_ne!(
+        monthly("2026-05-31T23:59:59.000Z"),
+        monthly("2026-06-01T00:00:00.000Z")
+    );
+}
+
+#[test]
 fn omits_codex_period_outside_date_bounds() {
     let shared = SharedArgs {
         since: Some("20260528".parse().unwrap()),
@@ -371,33 +408,23 @@ fn omits_codex_period_outside_date_bounds() {
         until: Some("20260530".parse().unwrap()),
         ..SharedArgs::default()
     };
+    let session = StringInterner::default()
+        .intern("sessions/child.jsonl", || {
+            CompactString::new("sessions/child.jsonl")
+        })
+        .unwrap();
 
     for timestamp in ["2026-05-27T23:59:59.000Z", "2026-05-31T00:00:00.000Z"] {
         assert_eq!(
             codex_period_for(
                 parse_ts_timestamp(timestamp).unwrap(),
-                Some("sessions/child.jsonl"),
+                session,
                 AgentReportKind::Daily,
                 &ccusage_core::ReportWindow::from_shared(&shared),
             ),
             None,
         );
     }
-}
-
-#[test]
-fn omits_session_period_without_session_id() {
-    let timestamp = parse_ts_timestamp("2026-05-29T08:01:00.000Z").unwrap();
-
-    assert_eq!(
-        codex_period_for(
-            timestamp,
-            None,
-            AgentReportKind::Session,
-            &ccusage_core::ReportWindow::from_shared(&SharedArgs::default()),
-        ),
-        None,
-    );
 }
 
 #[test]
@@ -2212,4 +2239,80 @@ fn settles_repeated_fork_requests_at_the_depth_used_for_pairing() {
         400,
         &[100, 100, 200],
     );
+}
+
+#[test]
+fn folds_many_sessions_to_the_same_groups_with_and_without_worker_threads() {
+    ccusage_test_support::install_pricing_snapshots();
+    let event_line = |session: usize, event: usize| {
+        let day = (session * 7 + event) % 56;
+        token_count_line(
+            &format!(
+                "2026-{:02}-{:02}T{:02}:{:02}:00.000Z",
+                5 + day / 28,
+                1 + day % 28,
+                event % 24,
+                session,
+            ),
+            if event.is_multiple_of(3) {
+                "gpt-5"
+            } else {
+                "gpt-5-mini"
+            },
+            json!({
+                "input_tokens": 100 + session * 10 + event,
+                "output_tokens": 1 + event,
+                "total_tokens": 101 + session * 10 + event * 2,
+            }),
+        )
+    };
+    let fixture = ccusage_test_support::Fixture::new();
+    for session in 0..24 {
+        let copied = (session % 2 == 1).then(|| (0..5).map(|event| event_line(session - 1, event)));
+        let lines = copied
+            .into_iter()
+            .flatten()
+            .chain((0..1_000).map(|event| event_line(session, event)))
+            .collect::<Vec<_>>();
+        fixture.write_file(
+            format!("sessions/session-{session:02}.jsonl"),
+            lines.join("\n"),
+        );
+    }
+    let groups = |kind, single_thread| {
+        let shared = SharedArgs {
+            single_thread,
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+            ..SharedArgs::default()
+        };
+        load_groups_from_directory(&fixture.path("sessions"), &shared, kind)
+            .unwrap()
+            .into_iter()
+            .map(|(period, group)| {
+                let models = group
+                    .models
+                    .iter()
+                    .map(|(model, usage)| (model.clone(), usage.total_tokens))
+                    .collect::<Vec<_>>();
+                (
+                    period,
+                    group.input_tokens,
+                    group.output_tokens,
+                    group.total_tokens,
+                    group.last_activity,
+                    models,
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+
+    for (kind, periods) in [
+        (AgentReportKind::Daily, 56),
+        (AgentReportKind::Monthly, 2),
+        (AgentReportKind::Session, 24),
+    ] {
+        let single = groups(kind, true);
+        assert_eq!(single.len(), periods, "{kind:?}");
+        assert_eq!(groups(kind, false), single, "{kind:?}");
+    }
 }
