@@ -221,7 +221,7 @@ impl PricingMap {
     ) -> Option<(&'a str, Pricing)> {
         let lookup = match route {
             BillingRoute::Direct(_) => Lookup::DirectPricing,
-            BillingRoute::Foreign => Lookup::Pricing,
+            BillingRoute::Host(_) | BillingRoute::Foreign => Lookup::Pricing,
         };
         let (model, found, hit) =
             self.resolve_row_with(reported_model, candidates, lookup, models_dev_pricing)?;
