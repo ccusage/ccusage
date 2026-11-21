@@ -2114,27 +2114,6 @@ exit: 0
       "totalTokens": 150
     },
     {
-      "agent": "kimi",
-      "cacheCreationTokens": 600,
-      "cacheReadTokens": 13000,
-      "inputTokens": 3511,
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 600,
-          "cacheReadTokens": 13000,
-          "inputTokens": 3511,
-          "modelName": "kimi-k2-thinking",
-          "outputTokens": 1231
-        }
-      ],
-      "modelsUsed": [
-        "kimi-k2-thinking"
-      ],
-      "outputTokens": 1231,
-      "period": "session-old-1",
-      "totalTokens": 18592
-    },
-    {
       "agent": "qwen",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 1280,
@@ -2341,6 +2320,27 @@ exit: 0
       "outputTokens": 489,
       "period": "session-beta",
       "totalTokens": 3979
+    },
+    {
+      "agent": "kimi",
+      "cacheCreationTokens": 600,
+      "cacheReadTokens": 13000,
+      "inputTokens": 3511,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 600,
+          "cacheReadTokens": 13000,
+          "inputTokens": 3511,
+          "modelName": "kimi-k2-thinking",
+          "outputTokens": 1231
+        }
+      ],
+      "modelsUsed": [
+        "kimi-k2-thinking"
+      ],
+      "outputTokens": 1231,
+      "period": "session-old-1",
+      "totalTokens": 18592
     },
     {
       "agent": "gemini",
@@ -2953,27 +2953,6 @@ exit: 0
       "totalTokens": 1300
     },
     {
-      "agent": "kimi",
-      "cacheCreationTokens": 300,
-      "cacheReadTokens": 4000,
-      "inputTokens": 1100,
-      "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 300,
-          "cacheReadTokens": 4000,
-          "inputTokens": 1100,
-          "modelName": "kimi-k2-thinking",
-          "outputTokens": 250
-        }
-      ],
-      "modelsUsed": [
-        "kimi-k2-thinking"
-      ],
-      "outputTokens": 250,
-      "period": "session-old-2",
-      "totalTokens": 5650
-    },
-    {
       "agent": "droid",
       "cacheCreationTokens": 0,
       "cacheReadTokens": 2500,
@@ -3064,6 +3043,27 @@ exit: 0
       "outputTokens": 100,
       "period": "lab-zero-root",
       "totalTokens": 1100
+    },
+    {
+      "agent": "kimi",
+      "cacheCreationTokens": 300,
+      "cacheReadTokens": 4000,
+      "inputTokens": 1100,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 300,
+          "cacheReadTokens": 4000,
+          "inputTokens": 1100,
+          "modelName": "kimi-k2-thinking",
+          "outputTokens": 250
+        }
+      ],
+      "modelsUsed": [
+        "kimi-k2-thinking"
+      ],
+      "outputTokens": 250,
+      "period": "session-old-2",
+      "totalTokens": 5650
     },
     {
       "agent": "dsh",

@@ -656,7 +656,7 @@ mod pricing_identity_tests {
             ("gemini-3.5-flash", "gemini-3-5-flash", 1.5, 9.0),
             ("glm-4.7", "glm-4-7", 0.6, 2.2),
             ("o1", "o1", 15.0, 60.0),
-            ("deepseek-v3.2", "deepseek-v3-2", 0.28, 0.40),
+            ("deepseek-v3.2", "deepseek-v3-2", 0.28, 0.42),
             (
                 "deepseek-v3-2-251201",
                 "deepseek-v3-2-251201",
