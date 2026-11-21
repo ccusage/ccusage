@@ -16,9 +16,11 @@
     :desc "a WAL-mode `opencode.db` whose `session_message` payloads, up to 48 KiB, hold long content before their token counts, so reading payloads dominates"}])
 
 (def median-mtime "{median-mtime}")
+(def recent-mtime "{recent-mtime}")
 
 (def shape-commands
   [{:fixture :large :command (str "claude daily --since " median-mtime)}
+   {:fixture :large :command (str "claude daily --since " recent-mtime)}
    {:fixture :large :command "codex session"}
    {:fixture :many-files :command "claude daily"}
    {:fixture :proxy :command "claude daily"}

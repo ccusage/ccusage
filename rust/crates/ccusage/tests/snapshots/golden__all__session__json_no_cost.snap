@@ -160,6 +160,13 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
+          "cacheReadTokens": 3000,
+          "inputTokens": 600,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 100
+        },
+        {
+          "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "inputTokens": 500,
           "modelName": "anthropic/claude-sonnet-4",
@@ -171,13 +178,6 @@ exit: 0
           "inputTokens": 40,
           "modelName": "gpt-5",
           "outputTokens": 10
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 3000,
-          "inputTokens": 600,
-          "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 100
         }
       ],
       "modelsUsed": [

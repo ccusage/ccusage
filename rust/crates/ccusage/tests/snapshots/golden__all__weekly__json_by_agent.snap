@@ -10,7 +10,7 @@ exit: 0
     "cacheReadTokens": 1308300,
     "inputTokens": 1262107,
     "outputTokens": 60566,
-    "totalCost": 28.073793424999998,
+    "totalCost": 28.077993425000003,
     "totalTokens": 2652038,
     "unpricedModels": [
       "GLM-5.3",
@@ -1754,7 +1754,7 @@ exit: 0
             {
               "cacheCreationTokens": 300,
               "cacheReadTokens": 7000,
-              "cost": 0.500405,
+              "cost": 0.504605,
               "inputTokens": 1660,
               "modelName": "claude-sonnet-4-20250514",
               "outputTokens": 315,
@@ -1797,7 +1797,7 @@ exit: 0
             "kilo-mystery-1"
           ],
           "outputTokens": 1769,
-          "totalCost": 3.9909105,
+          "totalCost": 3.9951105,
           "totalTokens": 30212
         },
         {
@@ -2302,7 +2302,7 @@ exit: 0
           "cacheCreation1hTokens": 1000,
           "cacheCreationTokens": 6440,
           "cacheReadTokens": 106720,
-          "cost": 3.6453550000000003,
+          "cost": 3.6495550000000003,
           "inputTokens": 30748,
           "missingPricing": true,
           "modelName": "claude-sonnet-4-20250514",
@@ -3027,7 +3027,7 @@ exit: 0
       ],
       "outputTokens": 58299,
       "period": "2025-12-29",
-      "totalCost": 24.239072174999997,
+      "totalCost": 24.243272175,
       "totalTokens": 2635890
     },
     {

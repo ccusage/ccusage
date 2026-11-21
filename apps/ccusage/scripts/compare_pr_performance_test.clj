@@ -228,6 +228,9 @@
         (testing "the cut-off is the fixture's median transcript day, so it prunes some but not all files"
           (is (= "claude daily --since 20260608" command))
           (is (< 0 pruned 5))))
+      (testing "the recent cut-off is the fixture's 95th-percentile transcript day, so it prunes most files by mtime"
+        (is (= "claude daily --since 20260613" (system/resolve-command (str "claude daily --since " data/recent-mtime) dir)))
+        (is (some #{{:fixture :large :command (str "claude daily --since " data/recent-mtime)}} data/shape-commands)))
       (testing "an empty fixture cannot silently prune nothing"
         (is (thrown-with-msg? clojure.lang.ExceptionInfo #"No Claude transcripts"
                               (system/resolve-command (str "claude daily --since " data/median-mtime) (str (babashka.fs/path dir "none"))))))
