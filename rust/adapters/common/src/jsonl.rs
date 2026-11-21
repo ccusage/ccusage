@@ -299,7 +299,7 @@ fn line_reader(capacity: usize, input: Input) -> Lines {
         Input::Zstd(reader) => return Lines::Zstd(reader),
     };
     let mut buffer = LINE_BUFFER.take();
-    // NOTE(2026-11-21, #2406): A metadata probe still starts with the policy's read size when reusing a buffer grown by an earlier file.
+    // NOTE(2026-11-21, #2406): A previous file can grow the reused buffer. Start with the policy's read window so metadata probes avoid larger initial reads.
     buffer.resize(capacity, 0);
     Lines::Plain(LineReader::with_buffer(buffer, file))
 }
