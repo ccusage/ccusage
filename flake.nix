@@ -57,7 +57,7 @@
         ./nix/pnpm.nix
         ./nix/tirith.nix
         ./nix/static-package.nix
-        ./nix/darwin-x64-package.nix
+        ./nix/darwin-package.nix
         ./nix/tests.nix
         ./nix/checks.nix
         ./nix/dev-shell.nix
