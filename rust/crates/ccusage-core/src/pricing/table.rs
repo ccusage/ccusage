@@ -340,7 +340,7 @@ impl<'a> Reader<'a> {
         let rows = map.rows_mut();
         let entries = &mut rows.entries;
         let count = self.keys.usize();
-        entries.reserve(count);
+        entries.rows.reserve_exact(count);
         for _ in 0..count {
             let shared = self.keys.usize();
             let suffix = self.keys.usize();

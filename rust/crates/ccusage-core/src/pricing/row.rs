@@ -322,11 +322,6 @@ pub(super) struct Entries {
 }
 
 impl Entries {
-    pub(super) fn reserve(&mut self, count: usize) {
-        self.rows.reserve_exact(count);
-        self.literal.reserve(count);
-    }
-
     pub(super) fn contains_key(&self, key: &str) -> bool {
         self.literal.contains_key(key)
     }
