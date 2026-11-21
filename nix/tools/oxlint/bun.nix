@@ -89,44 +89,44 @@
     url = "https://registry.npmjs.org/@oxlint/binding-win32-x64-msvc/-/binding-win32-x64-msvc-1.94.0.tgz";
     hash = "sha512-I3eZdd4bemIJQDNv9XDV/FEofDxIoN32tzCv98wIgLdW05EqxZb5hF4AwPrRzHD/dQhl0n7KgPy5AQPfM0HWrA==";
   };
-  "@tsrs/darwin-arm64@7.1.0-beta.tsrs2" = fetchurl {
-    url = "https://registry.npmjs.org/@tsrs/darwin-arm64/-/darwin-arm64-7.1.0-beta.tsrs2.tgz";
-    hash = "sha512-VMsXBPFD0SO5p7XrXhLutPmnpHc4kMIt7uztBJoHr/5Jd6qC8eH/TomobdPGugw27U3uiW2wJDqYjqYq5fxoCA==";
+  "@tsrs/darwin-arm64@7.1.0-beta.tsrs3" = fetchurl {
+    url = "https://registry.npmjs.org/@tsrs/darwin-arm64/-/darwin-arm64-7.1.0-beta.tsrs3.tgz";
+    hash = "sha512-R1Rh692Gy7XxuDS6Ds+BexqiuHawqH4KVftLu4Ty0vh7cjIPHm4MdWtlU/0MdrbdlJpnGo6Ul1W5BpHIiP+Zgw==";
   };
-  "@tsrs/darwin-x64@7.1.0-beta.tsrs2" = fetchurl {
-    url = "https://registry.npmjs.org/@tsrs/darwin-x64/-/darwin-x64-7.1.0-beta.tsrs2.tgz";
-    hash = "sha512-cNVbvIaKasKYjAI4aBfCE+gpa188JMb3GORyK9SDMZOEib9toEAAO7XCImOkazkLPq45UZxmxfCgBKMpMNWfug==";
+  "@tsrs/darwin-x64@7.1.0-beta.tsrs3" = fetchurl {
+    url = "https://registry.npmjs.org/@tsrs/darwin-x64/-/darwin-x64-7.1.0-beta.tsrs3.tgz";
+    hash = "sha512-F2IHae89mxUuSTGTbC9WfGdDKeZ12/TQo0tMYRc55llUKmxC7gJ3+1C1uwKXiZG7c6sTg07EYct9pnxEql/85Q==";
   };
-  "@tsrs/linux-arm64-gnu@7.1.0-beta.tsrs2" = fetchurl {
-    url = "https://registry.npmjs.org/@tsrs/linux-arm64-gnu/-/linux-arm64-gnu-7.1.0-beta.tsrs2.tgz";
-    hash = "sha512-g1wZyn53DDQsIeu19i0YTYZCwY8eEZetR2MjgZK8XIznA6GSir67pEBaAsxpLZzOD7Z6UPjnoSP6w6ft08JnWQ==";
+  "@tsrs/linux-arm64-gnu@7.1.0-beta.tsrs3" = fetchurl {
+    url = "https://registry.npmjs.org/@tsrs/linux-arm64-gnu/-/linux-arm64-gnu-7.1.0-beta.tsrs3.tgz";
+    hash = "sha512-13V8kMb0iTEv/IY4DUZF4RKO2QycTlty3U3TSLOHLmvyLY+MOcmvg2ixzKm71uCHG0YVZgyUiCjiw8ZdqevT1A==";
   };
-  "@tsrs/linux-arm64-musl@7.1.0-beta.tsrs2" = fetchurl {
-    url = "https://registry.npmjs.org/@tsrs/linux-arm64-musl/-/linux-arm64-musl-7.1.0-beta.tsrs2.tgz";
-    hash = "sha512-vt23JfDe8ECKOC9G7dpYY3dzC8EFKBKuNCLaYbTJgemKN0GbxvWN3chm5LotjNYuROv2cED1AUTJEE1+k5oDGw==";
+  "@tsrs/linux-arm64-musl@7.1.0-beta.tsrs3" = fetchurl {
+    url = "https://registry.npmjs.org/@tsrs/linux-arm64-musl/-/linux-arm64-musl-7.1.0-beta.tsrs3.tgz";
+    hash = "sha512-k9P/n40siZyt1kUUlxfefWDVj/189AsVQIPN3uoIpALx2Y59Ow+7i49fanxDexmGcZTKEfNB2gF2FeWET6o4TQ==";
   };
-  "@tsrs/linux-x64-gnu@7.1.0-beta.tsrs2" = fetchurl {
-    url = "https://registry.npmjs.org/@tsrs/linux-x64-gnu/-/linux-x64-gnu-7.1.0-beta.tsrs2.tgz";
-    hash = "sha512-4QlsTwQSAnx5KrNeWDg/+HKSjBhsFPU2JsMZzK2vn+8hxNXDD3gbiP6dP7dD7ohdJdSAy+jm6uY2F4XyLpIyRQ==";
+  "@tsrs/linux-x64-gnu@7.1.0-beta.tsrs3" = fetchurl {
+    url = "https://registry.npmjs.org/@tsrs/linux-x64-gnu/-/linux-x64-gnu-7.1.0-beta.tsrs3.tgz";
+    hash = "sha512-erepwUH0NoRDjLeHEEEruh0Gd2/t0n2PHfJwXNlgSNbGM94+nNNZop0sYmjAtx63MadiC9YQXO6blTEQDVpDOg==";
   };
-  "@tsrs/linux-x64-musl@7.1.0-beta.tsrs2" = fetchurl {
-    url = "https://registry.npmjs.org/@tsrs/linux-x64-musl/-/linux-x64-musl-7.1.0-beta.tsrs2.tgz";
-    hash = "sha512-ZGwwZiaA8hUh5kKIktDifI5b9pfprjU0so4Pkkx9NLvgdIhJVjYt0sGOVdNPDdpk6NG+96ld8sH70hRUav7w/g==";
+  "@tsrs/linux-x64-musl@7.1.0-beta.tsrs3" = fetchurl {
+    url = "https://registry.npmjs.org/@tsrs/linux-x64-musl/-/linux-x64-musl-7.1.0-beta.tsrs3.tgz";
+    hash = "sha512-/qGDUjkuRWNUaTJ8ChRnhJPnmALgCZN6TSVwj3uyGp5Nj8OZ/rulEwciHCsynBaX7KgoWP0SvmvPuPycSJq56g==";
   };
-  "@tsrs/win32-arm64@7.1.0-beta.tsrs2" = fetchurl {
-    url = "https://registry.npmjs.org/@tsrs/win32-arm64/-/win32-arm64-7.1.0-beta.tsrs2.tgz";
-    hash = "sha512-P6WGeHGKNz3+BLrC0aBDiEHTvqTl95T15sBv20om3y7RwFpTNCWUYuxkDXUWciltxyGgjRh1enUJ4dTUZ7SQbQ==";
+  "@tsrs/win32-arm64@7.1.0-beta.tsrs3" = fetchurl {
+    url = "https://registry.npmjs.org/@tsrs/win32-arm64/-/win32-arm64-7.1.0-beta.tsrs3.tgz";
+    hash = "sha512-Q6QtafSuUL3Ram8X/6n0gtUyC/qOmQ1bFsqkCkbwYGMIU/P7l7fsJgMQ0BBKSJBkvfwfZvZ8JpgR9+yrsRumWw==";
   };
-  "@tsrs/win32-x64@7.1.0-beta.tsrs2" = fetchurl {
-    url = "https://registry.npmjs.org/@tsrs/win32-x64/-/win32-x64-7.1.0-beta.tsrs2.tgz";
-    hash = "sha512-ICto2KzEv99ScmQInd/ItESq0V8MBA7MYakNEQX45cgqGLeFIrv64X9X/avNcRJVqOE1SvAGXk68uysAPOqjWA==";
+  "@tsrs/win32-x64@7.1.0-beta.tsrs3" = fetchurl {
+    url = "https://registry.npmjs.org/@tsrs/win32-x64/-/win32-x64-7.1.0-beta.tsrs3.tgz";
+    hash = "sha512-mITdFPru52C0Ws7D7DyLd+pISSwd3GIzM+v4elsXhW5o1n0FJpEr57WDcN8humkhxQinprzOELGIn4qiEXj2jw==";
   };
   "oxlint@1.94.0" = fetchurl {
     url = "https://registry.npmjs.org/oxlint/-/oxlint-1.94.0.tgz";
     hash = "sha512-Fnt+3wSKRhtLmvgRfxgRX0excSPCoyiXRol4eWKZLtXxWMQtwQ3KjKQUYXOw5loyinfnZfGzh4RCYf7opfL0vw==";
   };
-  "tsrs@7.1.0-beta.tsrs2" = fetchurl {
-    url = "https://registry.npmjs.org/tsrs/-/tsrs-7.1.0-beta.tsrs2.tgz";
-    hash = "sha512-T6O1mYbPe7B5ZSudwqJcn7hfn66w3wXsCd+GpXyDPsRmei71W6WAidlj+QWaYgmfpbmMqzcryKcg5aVg8DOSXw==";
+  "tsrs@7.1.0-beta.tsrs3" = fetchurl {
+    url = "https://registry.npmjs.org/tsrs/-/tsrs-7.1.0-beta.tsrs3.tgz";
+    hash = "sha512-iDcoaNkX4j3ZCtO3F40R7gVB2/9oyVQwJ12hb0iWBo3egT13oYpG9wQSPFCiGN7d+uq9FGTwlG0WsQNMBTEGzA==";
   };
 }
