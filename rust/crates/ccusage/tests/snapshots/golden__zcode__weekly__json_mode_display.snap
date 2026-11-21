@@ -1,0 +1,167 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage zcode weekly --offline --json --mode display
+---
+exit: 0
+--- stdout ---
+{
+  "totals": {
+    "cacheCreationTokens": 820,
+    "cacheReadTokens": 2360,
+    "inputTokens": 8831,
+    "outputTokens": 2877,
+    "totalCost": 0.0,
+    "totalTokens": 15038
+  },
+  "weekly": [
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 11,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 11,
+          "modelName": "gpt-5",
+          "outputTokens": 7
+        }
+      ],
+      "modelsUsed": [
+        "gpt-5"
+      ],
+      "outputTokens": 7,
+      "totalCost": 0.0,
+      "totalTokens": 18,
+      "week": "1970-01-19"
+    },
+    {
+      "cacheCreationTokens": 30,
+      "cacheReadTokens": 50,
+      "inputTokens": 250,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 30,
+          "cacheReadTokens": 50,
+          "cost": 0.0,
+          "inputTokens": 100,
+          "modelName": "GLM-5.2",
+          "outputTokens": 50
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 150,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 25
+        }
+      ],
+      "modelsUsed": [
+        "GLM-5.2",
+        "claude-opus-4-20250514"
+      ],
+      "outputTokens": 75,
+      "totalCost": 0.0,
+      "totalTokens": 405,
+      "week": "2025-12-22"
+    },
+    {
+      "cacheCreationTokens": 790,
+      "cacheReadTokens": 2310,
+      "inputTokens": 8570,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 140,
+          "cacheReadTokens": 560,
+          "cost": 0.0,
+          "inputTokens": 1600,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 360
+        },
+        {
+          "cacheCreationTokens": 400,
+          "cacheReadTokens": 1200,
+          "cost": 0.0,
+          "inputTokens": 2720,
+          "modelName": "GLM-5.3",
+          "outputTokens": 650
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 200,
+          "cost": 0.0,
+          "inputTokens": 500,
+          "modelName": "GLM-5.2",
+          "outputTokens": 90
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 200,
+          "cost": 0.0,
+          "inputTokens": 1600,
+          "modelName": "GLM-5.3-Flash",
+          "outputTokens": 800
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 300,
+          "modelName": "zcode-mystery-1",
+          "outputTokens": 70
+        },
+        {
+          "cacheCreationTokens": 50,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 450,
+          "modelName": "glm-5.3",
+          "outputTokens": 100
+        },
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 100,
+          "cost": 0.0,
+          "inputTokens": 500,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 120
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 650,
+          "modelName": "gpt-5",
+          "outputTokens": 485
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 50,
+          "cost": 0.0,
+          "inputTokens": 250,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 120
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514",
+        "GLM-5.3",
+        "GLM-5.2",
+        "GLM-5.3-Flash",
+        "zcode-mystery-1",
+        "glm-5.3",
+        "claude-haiku-4-5-20251001",
+        "gpt-5",
+        "claude-opus-4-20250514"
+      ],
+      "outputTokens": 2795,
+      "totalCost": 0.0,
+      "totalTokens": 14615,
+      "week": "2025-12-29"
+    }
+  ]
+}
+
+--- stderr ---

@@ -349,5 +349,126 @@ expression: reports
         "total": 840
       }
     ]
+  },
+  "weekly": {
+    "json": {
+      "totals": {
+        "cacheCreationTokens": 5,
+        "cacheReadTokens": 20,
+        "inputTokens": 1000,
+        "outputTokens": 220,
+        "totalCost": 0.007987000000000001,
+        "totalTokens": 1255
+      },
+      "weekly": [
+        {
+          "cacheCreationTokens": 5,
+          "cacheReadTokens": 20,
+          "inputTokens": 100,
+          "modelBreakdowns": [
+            {
+              "cacheCreationTokens": 5,
+              "cacheReadTokens": 20,
+              "cost": 0.000187,
+              "inputTokens": 100,
+              "modelName": "gemini-3-pro",
+              "outputTokens": 30
+            }
+          ],
+          "modelsUsed": [
+            "gemini-3-pro"
+          ],
+          "outputTokens": 30,
+          "totalCost": 0.000187,
+          "totalTokens": 165,
+          "week": "2026-05-04"
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "inputTokens": 200,
+          "modelBreakdowns": [
+            {
+              "cacheCreationTokens": 0,
+              "cacheReadTokens": 0,
+              "cost": 0.0008,
+              "inputTokens": 200,
+              "modelName": "gemini-3.6-flash",
+              "outputTokens": 50
+            }
+          ],
+          "modelsUsed": [
+            "gemini-3.6-flash"
+          ],
+          "outputTokens": 50,
+          "totalCost": 0.0008,
+          "totalTokens": 250,
+          "week": "2026-06-08"
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "inputTokens": 700,
+          "modelBreakdowns": [
+            {
+              "cacheCreationTokens": 0,
+              "cacheReadTokens": 0,
+              "cost": 0.007,
+              "inputTokens": 700,
+              "modelName": "claude-opus-5-5",
+              "outputTokens": 140
+            }
+          ],
+          "modelsUsed": [
+            "claude-opus-5-5"
+          ],
+          "outputTokens": 140,
+          "totalCost": 0.007,
+          "totalTokens": 840,
+          "week": "2026-06-15"
+        }
+      ]
+    },
+    "table": [
+      {
+        "cacheCreate": 5,
+        "cacheRead": 20,
+        "cost": 0.000187,
+        "firstColumn": "Week",
+        "input": 100,
+        "models": [
+          "gemini-3-pro"
+        ],
+        "output": 30,
+        "period": "2026-05-04",
+        "total": 165
+      },
+      {
+        "cacheCreate": 0,
+        "cacheRead": 0,
+        "cost": 0.0008,
+        "firstColumn": "Week",
+        "input": 200,
+        "models": [
+          "gemini-3.6-flash"
+        ],
+        "output": 50,
+        "period": "2026-06-08",
+        "total": 250
+      },
+      {
+        "cacheCreate": 0,
+        "cacheRead": 0,
+        "cost": 0.007,
+        "firstColumn": "Week",
+        "input": 700,
+        "models": [
+          "claude-opus-5-5"
+        ],
+        "output": 140,
+        "period": "2026-06-15",
+        "total": 840
+      }
+    ]
   }
 }

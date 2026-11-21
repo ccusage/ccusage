@@ -1,6 +1,6 @@
 # Weekly Usage
 
-Weekly usage aggregates usage by week, providing a mid-range view between daily and monthly usage. `ccusage weekly` covers every detected source; `ccusage claude weekly`, `ccusage opencode weekly`, `ccusage cline weekly`, and `ccusage dsh weekly` focus the same view on one source.
+Weekly usage aggregates usage by week, providing a mid-range view between daily and monthly usage. `ccusage weekly` covers every detected source. Use `ccusage <agent> weekly` to focus the report on Antigravity, Claude Code, Cline, Copilot, DeepSeek Harness, Kimi, OpenCode, or ZCode.
 
 ## Basic Usage
 
