@@ -238,7 +238,6 @@ fn unrepresentable_advisor_usage_is_diagnosed_and_dropped() {
     });
     let path = fixture.path("projects/project-a/session-a.jsonl");
     let diagnostics = Diagnostics::new("claude");
-    let path = fixture.path("projects/project-a/session-a.jsonl");
     let loaded = super::read_daily_usage_file_with_diagnostics(
         &path,
         crate::paths::fixture_projects_root(&path).as_deref(),

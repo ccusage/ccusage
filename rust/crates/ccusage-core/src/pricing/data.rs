@@ -254,7 +254,7 @@ pub(super) static ALIASES: &[(&str, &str)] = &[
 
 // NOTE(2026-08-31, #1679): DeepSeek V4 changed rates on August 16, 2026. Preserve the earlier rates for earlier usage (rates recorded in #1643).
 // NOTE(2026-11-17): DeepSeek lists weekday peak windows of 01:00–04:00 and 06:00–10:00 UTC at https://api-docs.deepseek.com/quick_start/pricing/. Use UTC so report timezone cannot change the rate.
-// NOTE(2026-11-20, #2401): V4.1 Flash launched and DeepSeek retired V4 Flash at 04:00 UTC on September 10, 2026: https://api-docs.deepseek.com/news/news260910/. Legacy ids hand off to the `deepseek-flash` rates at that instant.
+// NOTE(2026-11-20, #2401): DeepSeek's new pricing took effect at 04:00 UTC on September 10, 2026, and the retired V4 Flash ids are billed at the Flash rates from that instant: https://api-docs.deepseek.com/news/news260910/. Legacy ids hand off to the `deepseek-flash` rates from then on.
 const DEEPSEEK_V4_1_FLASH_MS: i64 = 1_789_012_800_000;
 const DEEPSEEK_V4_FLASH: PricingSchedule = PricingSchedule {
     cutoff_ms: 1_786_896_000_000,
@@ -339,7 +339,7 @@ const DEEPSEEK_FLASH: PricingSchedule = PricingSchedule {
 pub(super) static SCHEDULES: &[(&str, PricingSchedule)] = &[
     ("deepseek-flash", DEEPSEEK_FLASH),
     ("deepseek-v4-flash", DEEPSEEK_V4_FLASH),
-    // NOTE(2026-11-20, #2401): DeepSeek billed V4 Flash Vision Exp at V4 Flash pricing from its August 21, 2026 release: https://api-docs.deepseek.com/news/news260821/. It shares the V4 Flash schedule and its September 10, 2026 handoff.
+    // NOTE(2026-11-20, #2401): DeepSeek's August 21, 2026 V4 Flash Vision Exp release prices only image tokens at V4-Flash rates: https://api-docs.deepseek.com/news/news260821/. The alias therefore shares the V4 Flash schedule, including the September 10, 2026 handoff.
     ("deepseek-v4-flash-vision-exp", DEEPSEEK_V4_FLASH),
     ("deepseek-v4-pro", DEEPSEEK_V4_PRO),
 ];
