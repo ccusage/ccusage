@@ -69,7 +69,7 @@ generate-benchmark-fixtures root:
     root="$1"
     generator=apps/ccusage/scripts/generate-large-fixture.ts
     "$generator" --output-dir "$root/large" --codex-output-dir "$root/large-codex" \
-        --grok-output-dir "$root/large-grok" --opencode-output-dir "$root/opencode"
+        --grok-output-dir "$root/large-grok" --opencode-output-dir "$root/opencode" --opencode-size-mib 256
     "$generator" --output-dir "$root/many-files" --claude-shape many-small-files
     "$generator" --output-dir "$root/proxy" --claude-shape requestless-proxy --size-mib 1024
     "$generator" --output-dir "$root/small" --size-mib 4
