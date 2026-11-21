@@ -19,14 +19,17 @@ pub(super) use links::{parse_block_links, parse_line_links};
 #[derive(Debug)]
 pub(super) struct ClaudeEntry {
     pub(super) key: DedupKey,
+    pub(super) is_sidechain: bool,
     pub(super) date: IsoDate,
     pub(super) project: Arc<str>,
     pub(super) usage: TokenUsageRaw,
     pub(super) cost: f64,
-    pub(super) model: Option<String>,
-    pub(super) missing_pricing_model: Option<String>,
+    pub(super) model: Option<Arc<str>>,
+    pub(super) missing_pricing: bool,
     pub(super) recorded_cost: RecordedCost,
 }
+
+const _: () = assert!(size_of::<ClaudeEntry>() == 192);
 
 #[derive(Clone, Copy, Debug)]
 pub(super) enum RecordedCost {
@@ -74,7 +77,7 @@ impl DedupEntry for ClaudeEntry {
     }
 
     fn is_sidechain(&self) -> bool {
-        self.key.is_sidechain == Some(true)
+        self.is_sidechain
     }
 
     fn usage(&self) -> &TokenUsageRaw {

@@ -127,6 +127,7 @@ mod tests {
         let usage = parse_token_usage(Some(&serde_json::json!({
             "totalTokens": 456
         })))
+        .unwrap()
         .unwrap();
 
         assert_eq!(usage.output_tokens, 456);
@@ -208,6 +209,52 @@ mod tests {
 
             assert_eq!(entries.len(), 1);
             assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+        })
+    }
+
+    #[test]
+    fn overflowing_token_counts_are_diagnosed_instead_of_panicking() {
+        ccusage_test_support::install_pricing_snapshots();
+        let fixture = fs_fixture!({
+            "overflow.settings.json": serde_json::json!({
+                "model": "gpt-5",
+                "providerLockTimestamp": "2026-05-01T01:02:03.000Z",
+                "tokenUsage": {"inputTokens": u64::MAX, "outputTokens": 1}
+            })
+            .to_string(),
+            "thinking-overflow.settings.json": serde_json::json!({
+                "model": "gpt-5",
+                "providerLockTimestamp": "2026-05-01T01:02:03.000Z",
+                "tokenUsage": {"inputTokens": u64::MAX, "thinkingTokens": 1}
+            })
+            .to_string(),
+            "healthy.settings.json": r#"{
+                "model": "gpt-5",
+                "providerLockTimestamp": "2026-05-02T01:02:03.000Z",
+                "tokenUsage": {"inputTokens": 100, "outputTokens": 50}
+            }"#,
+        });
+        Environment::with_var(DROID_SESSIONS_DIR_ENV, fixture.root()).run(|| {
+            let shared = SharedArgs::default();
+            let pricing = ccusage_core::PricingMap::load_embedded();
+            let window = ReportWindow::from_shared(&shared);
+            let diagnostics = Diagnostics::new("droid");
+            let cx = LoadContext {
+                shared: &shared,
+                kind: AgentReportKind::Daily,
+                window: &window,
+                pricing: ccusage_adapter_common::source::ReportPricing::Supplied(&pricing),
+                options: SourceOptions::default(),
+                diagnostics: &diagnostics,
+            };
+
+            let entries = load_entries_with_context(&cx).unwrap();
+
+            assert_eq!(entries.len(), 1);
+            assert_eq!(entries[0].session_id.as_ref(), "healthy");
+            assert_eq!(entries[0].usage.input_tokens, 100);
+            assert_eq!(entries[0].usage.output_tokens, 50);
+            assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 2);
         })
     }
 

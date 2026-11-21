@@ -52,7 +52,7 @@ fn focused_rows(source: &dyn EntrySource, args: &AgentCommandArgs) -> Result<Vec
             crate::source::SummaryKind::for_report(kind, args.start_of_week),
         )
     })?;
-    sort_summaries(&mut rows, &shared.order.unwrap_or_default(), |row| {
+    sort_summaries(&mut rows, &shared.order.unwrap_or_default(), &|row| {
         source.sort_key(row)
     });
     Ok(rows)

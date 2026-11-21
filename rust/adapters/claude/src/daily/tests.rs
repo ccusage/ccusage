@@ -114,11 +114,11 @@ fn usage_prefilter_preserves_typed_record_admission() {
         ),
         (
             r#""timestamp":"2026-01-02T10:00:00Z","message":{"\u0075sage": {"input_tokens":30,"output_tokens":1}}"#,
-            NoMarker,
+            Accepted(30),
         ),
         (
             r#""timestamp":"2026-01-02T10:00:00Z","message":{"usage": {"input_tokens":30,"output_tokens":1}}"#,
-            NoMarker,
+            Accepted(30),
         ),
         (
             r#""timestamp":"2026-01-02T10:00:00Z","decoy":{"\u0075sage":{}},"message":{"usage": {"input_tokens":30,"output_tokens":1}}"#,
@@ -139,6 +139,46 @@ fn usage_prefilter_preserves_typed_record_admission() {
         };
         assert_eq!(actual, expected, "{line}");
     }
+}
+
+#[test]
+fn counts_usage_written_with_json_whitespace() {
+    for (key, colon) in [
+        ("usage", ":"),
+        ("usage", ": "),
+        ("usage", " : "),
+        ("usage", ":\t"),
+        (r"\u0075sage", ": "),
+    ] {
+        let fields = format!(
+            r#""message":{{"id":"m1","model":"claude-sonnet-4-20250514","{key}"{colon}{{"input_tokens":100,"output_tokens":2}}}}"#
+        );
+        let line = format!(
+            r#"{{"type":"assistant","timestamp":"2026-09-11T12:00:00.000Z","sessionId":"session-a",{fields}}}"#
+        );
+        let fixture = fs_fixture!({
+            "projects/project-a/session-a.jsonl": line,
+        });
+        let path = fixture.path("projects/project-a/session-a.jsonl");
+        let loaded = read_daily_usage_file(&path, &JiffTimeZone::UTC, CostMode::Display, None);
+        assert_eq!(loaded.len(), 1, "{key}{colon}");
+        assert_eq!(loaded[0].usage.input_tokens, 100, "{key}{colon}");
+        assert_eq!(loaded[0].usage.output_tokens, 2, "{key}{colon}");
+        assert!(super::has_usage(&path), "{key}{colon}");
+    }
+}
+
+#[test]
+fn counts_wrapped_usage_written_with_json_whitespace() {
+    let fixture = fs_fixture!({
+        "projects/project-a/session-a.jsonl": r#"{"type":"progress","sessionId":"session-a","data":{"message":{"timestamp":"2026-09-11T12:00:00.000Z","message":{"id":"m1","model":"claude-sonnet-4-20250514","usage": {"input_tokens":100,"output_tokens":2}}}}}"#,
+    });
+    let path = fixture.path("projects/project-a/session-a.jsonl");
+    let loaded = read_daily_usage_file(&path, &JiffTimeZone::UTC, CostMode::Display, None);
+    assert_eq!(loaded.len(), 1);
+    assert_eq!(loaded[0].usage.input_tokens, 100);
+    assert_eq!(loaded[0].usage.output_tokens, 2);
+    assert!(super::has_usage(&path));
 }
 
 #[test]
@@ -1096,10 +1136,10 @@ fn daily_loaded_entry(fixture: DailyEntryFixture) -> ClaudeEntry {
         key: super::DedupKey {
             timestamp: TimestampMs::from_millis(1_774_000_000_000),
             session_id: Arc::from("session-a"),
-            message_id: Some(fixture.message_id.to_string()),
-            request: crate::dedupe::Request::Id(fixture.request_id.to_string()),
-            is_sidechain: Some(fixture.is_sidechain),
+            message_id: Some(fixture.message_id.into()),
+            request: crate::dedupe::Request::Id(fixture.request_id.into()),
         },
+        is_sidechain: fixture.is_sidechain,
         date: ccusage_core::cli::IsoDate::parse("2026-03-29").unwrap(),
         project: Arc::from("project-a"),
         usage: TokenUsageRaw {
@@ -1111,8 +1151,8 @@ fn daily_loaded_entry(fixture: DailyEntryFixture) -> ClaudeEntry {
             cache_creation: None,
         },
         cost: 0.0,
-        model: Some("claude-sonnet-4-20250514".to_string()),
-        missing_pricing_model: None,
+        model: Some(Arc::from("claude-sonnet-4-20250514")),
+        missing_pricing: false,
         recorded_cost: super::RecordedCost::Absent,
     }
 }

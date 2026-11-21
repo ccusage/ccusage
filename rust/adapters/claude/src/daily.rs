@@ -125,6 +125,7 @@ fn sessions(deduped: &DedupedDailyEntries) -> MainThreadSessions {
 
 pub(super) struct ParsedUsage<'a> {
     pub(super) key: DedupKey,
+    pub(super) is_sidechain: bool,
     pub(super) date: IsoDate,
     pub(super) project: Arc<str>,
     pub(super) usage: TokenUsageRaw,
@@ -155,17 +156,49 @@ impl ParsedUsage<'_> {
         })
     }
 
-    fn into_daily(self) -> ClaudeEntry {
+    fn into_daily(self, models: &mut DisplayModels) -> ClaudeEntry {
         ClaudeEntry {
-            model: Self::display_model(self.raw_model, &self.usage),
+            model: models.intern(self.raw_model.as_deref(), &self.usage),
             key: self.key,
+            is_sidechain: self.is_sidechain,
             date: self.date,
             project: self.project,
             usage: self.usage,
             cost: self.cost,
-            missing_pricing_model: self.missing_pricing_model,
+            missing_pricing: self.missing_pricing_model.is_some(),
             recorded_cost: RecordedCost::new(self.cost_usd, self.stored_cost),
         }
+    }
+}
+
+struct DisplayModel {
+    raw: Box<str>,
+    fast: bool,
+    display: Option<Arc<str>>,
+}
+
+#[derive(Default)]
+struct DisplayModels(smallvec::SmallVec<[DisplayModel; 2]>);
+
+impl DisplayModels {
+    fn intern(&mut self, raw_model: Option<&str>, usage: &TokenUsageRaw) -> Option<Arc<str>> {
+        let raw_model = raw_model?;
+        let fast = matches!(usage.speed, Some(Speed::Fast));
+        if let Some(known) = self
+            .0
+            .iter()
+            .find(|known| known.fast == fast && known.raw.as_ref() == raw_model)
+        {
+            return known.display.clone();
+        }
+        let display =
+            ParsedUsage::display_model(Some(raw_model.to_owned()), usage).map(Arc::<str>::from);
+        self.0.push(DisplayModel {
+            raw: raw_model.into(),
+            fast,
+            display: display.clone(),
+        });
+        display
     }
 }
 
