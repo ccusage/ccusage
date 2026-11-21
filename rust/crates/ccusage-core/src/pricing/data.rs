@@ -253,6 +253,22 @@ pub(super) struct CuratedLongContext {
     pub(super) input: f64,
     pub(super) output: f64,
     pub(super) long_context: Option<LongContext>,
+    pub(super) schedule: Option<&'static str>,
+}
+
+const fn whole_request(threshold: u64, tier: [f64; 5]) -> LongContext {
+    let [input, output, cache_create, cache_create_1h, cache_read] = tier;
+    LongContext {
+        threshold,
+        mode: LongContextMode::WholeRequest,
+        rates: LongContextRates {
+            input: Some(input),
+            output: Some(output),
+            cache_create: Some(cache_create),
+            cache_create_1h: Some(cache_create_1h),
+            cache_read: Some(cache_read),
+        },
+    }
 }
 
 const fn whole_request_tier(
@@ -261,27 +277,11 @@ const fn whole_request_tier(
     threshold: u64,
     tier: [f64; 5],
 ) -> CuratedLongContext {
-    let [
-        tier_input,
-        tier_output,
-        cache_create,
-        cache_create_1h,
-        cache_read,
-    ] = tier;
     CuratedLongContext {
         input,
         output,
-        long_context: Some(LongContext {
-            threshold,
-            mode: LongContextMode::WholeRequest,
-            rates: LongContextRates {
-                input: Some(tier_input),
-                output: Some(tier_output),
-                cache_create: Some(cache_create),
-                cache_create_1h: Some(cache_create_1h),
-                cache_read: Some(cache_read),
-            },
-        }),
+        long_context: Some(whole_request(threshold, tier)),
+        schedule: None,
     }
 }
 
@@ -290,6 +290,32 @@ const fn standard_rates_only(input: f64, output: f64) -> CuratedLongContext {
         input,
         output,
         long_context: None,
+        schedule: None,
+    }
+}
+
+const ANTHROPIC_1M_GA_MS: i64 = 1_773_360_000_000;
+
+const fn premium_until_1m_ga(input: f64, output: f64, tier: [f64; 5]) -> PricingSchedule {
+    let standard = ScheduledRates {
+        input,
+        output,
+        cache_create: input * 1.25,
+        cache_read: input * 0.1,
+        long_context: None,
+    };
+    PricingSchedule {
+        cutoff_ms: ANTHROPIC_1M_GA_MS,
+        peak_weekdays: 1..=0,
+        peak_hours: &[],
+        before: ScheduledRates {
+            long_context: Some(whole_request(200_000, tier)),
+            ..standard
+        },
+        off_peak: standard,
+        peak: standard,
+        successor: None,
+        follows_row: true,
     }
 }
 
@@ -305,9 +331,21 @@ const ANTHROPIC_HAIKU_5_5_LONG_CONTEXT: CuratedLongContext = whole_request_tier(
     [0.5e-6, 2.5e-6, 0.625e-6, 1e-6, 0.05e-6],
 );
 
-// NOTE(2026-11-21, #2451): Anthropic bills the full 1M window of Claude 4.6 and later models, other than Haiku 5.5, at standard rates ("A 900k-token request is billed at the same per-token rate as a 9k-token request") at https://platform.claude.com/docs/en/about-claude/pricing, effective March 13, 2026, when the window left beta for Opus 4.6 and Sonnet 4.6 "at standard pricing" (https://platform.claude.com/docs/en/release-notes/overview). models.dev still lists a 200K tier for some Sonnet 4.6, Opus 4.6 and Opus 4.7 spellings, so rows at these list rates drop it. Beta requests above 200K before that date paid the premium; rows carry no date, so they bill at standard rates like the main 4.6 ids already do.
-const ANTHROPIC_SONNET_4_6: CuratedLongContext = standard_rates_only(3e-6, 15e-6);
-const ANTHROPIC_OPUS_4_6: CuratedLongContext = standard_rates_only(5e-6, 25e-6);
+// NOTE(2026-11-21, #2451): Anthropic bills the full 1M window of Claude 4.6 and later models, other than Haiku 5.5, at standard rates ("A 900k-token request is billed at the same per-token rate as a 9k-token request") at https://platform.claude.com/docs/en/about-claude/pricing. models.dev still lists a 200K tier for some Sonnet 4.6, Opus 4.6 and Opus 4.7 spellings, so rows at these list rates drop it. Opus 4.7 and 4.8 launched after the change and never had a premium.
+// NOTE(2026-11-21, #2451): Until the 1M window left beta "at standard pricing" on March 13, 2026 (https://platform.claude.com/docs/en/release-notes/overview), Opus 4.6 and Sonnet 4.6 requests exceeding 200K input tokens paid the long context pricing that the February 2026 entry on the same page names: $10 / $37.50 for Opus 4.6 and $6 / $22.50 for Sonnet 4.6 per 1M, every token of the request, caching multipliers on top, at https://web.archive.org/web/20260301150515/https://platform.claude.com/docs/en/about-claude/pricing. The release note gives no hour, so the premium ends at 00:00 UTC that day.
+const SONNET_4_6_1M_BETA: PricingSchedule =
+    premium_until_1m_ga(3e-6, 15e-6, [6e-6, 22.5e-6, 7.5e-6, 12e-6, 0.6e-6]);
+const OPUS_4_6_1M_BETA: PricingSchedule =
+    premium_until_1m_ga(5e-6, 25e-6, [10e-6, 37.5e-6, 12.5e-6, 20e-6, 1e-6]);
+const ANTHROPIC_SONNET_4_6: CuratedLongContext = CuratedLongContext {
+    schedule: Some("claude-sonnet-4-6"),
+    ..standard_rates_only(3e-6, 15e-6)
+};
+const ANTHROPIC_OPUS_4_6: CuratedLongContext = CuratedLongContext {
+    schedule: Some("claude-opus-4-6"),
+    ..standard_rates_only(5e-6, 25e-6)
+};
+const ANTHROPIC_OPUS_4_7: CuratedLongContext = standard_rates_only(5e-6, 25e-6);
 
 pub(super) static ANTHROPIC_LONG_CONTEXT: &[(&str, CuratedLongContext)] = &[
     ("claude-sonnet-4", ANTHROPIC_SONNET_4_LONG_CONTEXT),
@@ -316,8 +354,8 @@ pub(super) static ANTHROPIC_LONG_CONTEXT: &[(&str, CuratedLongContext)] = &[
     ("claude-sonnet-4-6", ANTHROPIC_SONNET_4_6),
     ("claude-4-6-sonnet", ANTHROPIC_SONNET_4_6),
     ("claude-opus-4-6", ANTHROPIC_OPUS_4_6),
-    ("claude-opus-4-7", ANTHROPIC_OPUS_4_6),
-    ("claude-opus-4-8", ANTHROPIC_OPUS_4_6),
+    ("claude-opus-4-7", ANTHROPIC_OPUS_4_7),
+    ("claude-opus-4-8", ANTHROPIC_OPUS_4_7),
 ];
 
 pub(super) static ALIASES: &[(&str, &str)] = &[
@@ -428,4 +466,6 @@ pub(super) static SCHEDULES: &[(&str, PricingSchedule)] = &[
     // NOTE(2026-11-20, #2401): DeepSeek's August 21, 2026 V4 Flash Vision Exp release prices only image tokens at V4-Flash rates: https://api-docs.deepseek.com/news/news260821/. The alias therefore shares the V4 Flash schedule, including the September 10, 2026 handoff.
     ("deepseek-v4-flash-vision-exp", DEEPSEEK_V4_FLASH),
     ("deepseek-v4-pro", DEEPSEEK_V4_PRO),
+    ("claude-sonnet-4-6", SONNET_4_6_1M_BETA),
+    ("claude-opus-4-6", OPUS_4_6_1M_BETA),
 ];

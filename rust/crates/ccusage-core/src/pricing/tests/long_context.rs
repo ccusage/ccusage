@@ -385,3 +385,76 @@ fn claude_4_6_and_later_bill_a_long_request_at_standard_rates_whichever_row_wins
         }
     }
 }
+
+#[test]
+fn claude_4_6_long_requests_paid_the_premium_until_the_1m_window_left_beta() {
+    use super::super::{LongContext, LongContextMode, LongContextRates};
+    crate::test_support::install_pricing_snapshots();
+    let tier = |[input, output, cache_create, cache_create_1h, cache_read]: [f64; 5]| LongContext {
+        threshold: 200_000,
+        mode: LongContextMode::WholeRequest,
+        rates: LongContextRates {
+            input: Some(input),
+            output: Some(output),
+            cache_create: Some(cache_create),
+            cache_create_1h: Some(cache_create_1h),
+            cache_read: Some(cache_read),
+        },
+    };
+    let sonnet = tier([6e-6, 22.5e-6, 7.5e-6, 12e-6, 0.6e-6]);
+    let opus = tier([10e-6, 37.5e-6, 12.5e-6, 20e-6, 1e-6]);
+    let offline = PricingMap::load_embedded();
+    let mut online = PricingMap::load_embedded();
+    online.refresh_litellm(|load| {
+        assert!(load(super::build_time_pricing_json()));
+        Ok(())
+    });
+    let before = super::timestamp("2026-03-12T23:59:59Z");
+    let after = super::timestamp("2026-03-13T00:00:00Z");
+    for (mode, pricing) in [("offline", &offline), ("online", &online)] {
+        for (model, premium, [cost_before, cost_after]) in [
+            ("claude-sonnet-4-6", sonnet, [1.8225, 0.915]),
+            ("claude-sonnet-4.6", sonnet, [1.8225, 0.915]),
+            ("claude-sonnet-4-6-thinking", sonnet, [1.8225, 0.915]),
+            ("anthropic-claude-4.6-sonnet", sonnet, [1.8225, 0.915]),
+            ("anthropic/claude-sonnet-4.6", sonnet, [1.8225, 0.915]),
+            ("claude-opus-4-6", opus, [3.0375, 1.525]),
+            ("anthropic-claude-opus-4.6", opus, [3.0375, 1.525]),
+            ("anthropic/claude-opus-4.6", opus, [3.0375, 1.525]),
+        ] {
+            for (instant, expected) in [(before, cost_before), (after, cost_after)] {
+                let candidates = [(model, MatchKind::Fuzzy)];
+                let cost = crate::cost::price_entry(
+                    crate::cost::EntryPricing {
+                        granularity: crate::cost::UsageGranularity::Request,
+                        usage: crate::TokenUsageRaw {
+                            input_tokens: 300_000,
+                            output_tokens: 1_000,
+                            ..Default::default()
+                        },
+                        reasoning_tokens: 0,
+                        residual_tokens: 0,
+                        reported_model: Some(model),
+                        candidates: &candidates,
+                        stored_cost: None,
+                        timestamp: Some(instant),
+                    },
+                    crate::cost::PriceTable::Calculate(pricing),
+                )
+                .cost;
+                assert!(
+                    (cost - expected).abs() < 1e-9,
+                    "{mode} {model}: {cost} != {expected}"
+                );
+            }
+            let early = pricing.find_at(model, before).unwrap();
+            assert_eq!(early.long_context, Some(premium), "{mode} {model} before");
+            let late = pricing.find_at(model, after).unwrap();
+            let long_input = late
+                .long_context
+                .and_then(|context| context.rates.input)
+                .unwrap_or(late.input);
+            assert_eq!(long_input, late.input, "{mode} {model} after");
+        }
+    }
+}
