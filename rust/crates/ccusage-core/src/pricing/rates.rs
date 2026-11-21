@@ -197,6 +197,10 @@ impl OverrideFields {
     const CACHE_CREATE_1H: u16 = 256;
     const FAST: u16 = 512;
     const FLEX: u16 = 1024;
+    const RATES: u16 =
+        Self::INPUT | Self::OUTPUT | Self::CACHE_CREATE | Self::CACHE_READ | Self::CACHE_CREATE_1H;
+    const LONG_RATES: u16 =
+        Self::LONG_INPUT | Self::LONG_OUTPUT | Self::LONG_CACHE_CREATE | Self::LONG_CACHE_READ;
 }
 
 impl Pricing {
@@ -262,8 +266,44 @@ impl Pricing {
         );
         scheduled!(fast_multiplier, self.fast_multiplier, OverrideFields::FAST);
         scheduled!(flex_multiplier, self.flex_multiplier, OverrideFields::FLEX);
+        if explicit.is_some() {
+            long_context.rates.cache_create_1h = Some(self.one_hour_cache_creation_rate());
+        }
         self.long_context = Some(long_context);
         self
+    }
+
+    pub(super) fn explicit_long_rate_fields(&self) -> u16 {
+        self.explicit_fields & OverrideFields::LONG_RATES
+    }
+
+    pub(super) fn replace_tier_with_explicit_rates(&mut self) {
+        let explicit = self.explicit_fields;
+        if explicit & OverrideFields::RATES == 0 {
+            return;
+        }
+        let kept = |bit: u16, rate: Option<f64>| rate.filter(|_| explicit & bit != 0);
+        let one_hour = self.one_hour_cache_creation_rate();
+        self.long_context = self.long_context.and_then(|context| {
+            LongContextRates {
+                input: kept(OverrideFields::LONG_INPUT, context.rates.input),
+                output: kept(OverrideFields::LONG_OUTPUT, context.rates.output),
+                cache_create: kept(
+                    OverrideFields::LONG_CACHE_CREATE,
+                    context.rates.cache_create,
+                ),
+                cache_create_1h: None,
+                cache_read: kept(OverrideFields::LONG_CACHE_READ, context.rates.cache_read),
+            }
+            .marginal()
+            .map(|marginal| LongContext {
+                rates: LongContextRates {
+                    cache_create_1h: Some(one_hour),
+                    ..marginal.rates
+                },
+                ..context
+            })
+        });
     }
 
     pub(super) fn apply_override(&mut self, value: &PricingOverride) {

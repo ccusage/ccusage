@@ -182,7 +182,7 @@ fn candidate_entry_pricing_uses_the_selected_schedule_and_fast_multiplier() {
 }
 
 #[test]
-fn published_cache_rates_survive_an_input_override_without_a_cache_read_rate() {
+fn an_input_override_keeps_the_published_base_cache_rate_and_drops_the_tier() {
     crate::test_support::install_pricing_snapshots();
     let mut pricing = PricingMap::default();
     pricing.load_json(
@@ -209,7 +209,7 @@ fn published_cache_rates_survive_an_input_override_without_a_cache_read_rate() {
         cache_read_input_tokens: 200_001,
         ..Default::default()
     };
-    assert_eq!(calculate_cost_from_pricing(usage, &entry), 1_440_012.0);
+    assert_eq!(calculate_cost_from_pricing(usage, &entry), 1_440_007.2);
 }
 
 #[test]
