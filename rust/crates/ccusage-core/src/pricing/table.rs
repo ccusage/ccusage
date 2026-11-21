@@ -81,6 +81,8 @@ const LIMITS: usize = 5;
 const RATES: usize = 6;
 type EncodedId = [u8; 4];
 type Record = [u8; (RATES + 1) * size_of::<EncodedId>()];
+const ROWS_PER_PAGE: usize = 64;
+type RowPage = [OnceLock<Box<Row>>; ROWS_PER_PAGE];
 
 fn push_offset(bytes: &mut Vec<u8>, offset: usize) {
     bytes.extend_from_slice(
@@ -445,7 +447,7 @@ pub(super) struct EmbeddedRows {
     sensitive: [&'static [EncodedId]; 3],
     exact_only: &'static [EncodedId],
     folded: [&'static [EncodedId]; 3],
-    decoded: OnceLock<Box<[OnceLock<Box<Row>>]>>,
+    decoded: OnceLock<Box<[OnceLock<Box<RowPage>>]>>,
 }
 
 impl EmbeddedRows {
@@ -508,12 +510,14 @@ impl EmbeddedRows {
 
     pub(super) fn row(&self, id: usize) -> Option<&Row> {
         let record = self.records.get(id)?;
-        let cells = self.decoded.get_or_init(|| {
+        let pages = self.decoded.get_or_init(|| {
             std::iter::repeat_with(OnceLock::new)
-                .take(self.len())
+                .take(self.len().div_ceil(ROWS_PER_PAGE))
                 .collect()
         });
-        Some(cells[id].get_or_init(|| Box::new(self.decode_row(record))))
+        let page = pages[id / ROWS_PER_PAGE]
+            .get_or_init(|| Box::new([const { OnceLock::new() }; ROWS_PER_PAGE]));
+        Some(page[id % ROWS_PER_PAGE].get_or_init(|| Box::new(self.decode_row(record))))
     }
 
     pub(super) fn materialize(&self) -> super::Entries {
@@ -537,10 +541,16 @@ impl EmbeddedRows {
     }
 
     #[cfg(test)]
-    pub(super) fn decoded_row_count(&self) -> usize {
-        self.decoded.get().map_or(0, |cells| {
-            cells.iter().filter(|cell| cell.get().is_some()).count()
-        })
+    pub(super) fn decode_cache_counts(&self) -> (usize, usize) {
+        self.decoded
+            .get()
+            .into_iter()
+            .flat_map(|pages| pages.iter())
+            .filter_map(OnceLock::get)
+            .fold((0, 0), |(slots, rows), page| {
+                let decoded_rows = page.iter().filter(|cell| cell.get().is_some()).count();
+                (slots + page.len(), rows + decoded_rows)
+            })
     }
 }
 

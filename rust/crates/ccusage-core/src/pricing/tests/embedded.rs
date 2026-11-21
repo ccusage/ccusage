@@ -36,27 +36,31 @@ fn lookup_decodes_only_matching_embedded_rows() {
     crate::test_support::install_pricing_snapshots();
     let table = decode_pricing_table(ccusage_pricing_snapshots::PRICING_TABLE);
     let rows = &table.rows.rows;
-    assert_eq!(rows.decoded_row_count(), 0);
-    assert_eq!(table.models_dev.rows.decoded_row_count(), 0);
+    assert_eq!(rows.decode_cache_counts(), (0, 0));
+    assert_eq!(table.models_dev.rows.decode_cache_counts(), (0, 0));
 
+    let ready = std::sync::Barrier::new(4);
     std::thread::scope(|scope| {
         for _ in 0..4 {
             scope.spawn(|| {
                 let identity = OnceLock::new();
                 let name = Name::new("gpt-5.5", &identity);
+                ready.wait();
                 let row = rows.exact(name, Lookup::Pricing, false).unwrap();
                 assert_eq!(row.row.rates().input, 5e-6);
             });
         }
     });
-    assert_eq!(rows.decoded_row_count(), 1);
+    let (slots, decoded) = rows.decode_cache_counts();
+    assert_eq!(decoded, 1);
+    assert!(slots < rows.keys().count());
     assert!(
         table
             .rows
             .find("no-such-model-for-lazy-pricing-test")
             .is_none()
     );
-    assert_eq!(rows.decoded_row_count(), 1);
+    assert_eq!(rows.decode_cache_counts(), (slots, 1));
 }
 
 #[test]

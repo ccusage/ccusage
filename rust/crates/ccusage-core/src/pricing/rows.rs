@@ -171,10 +171,11 @@ impl PricingRows {
     }
 
     #[cfg(test)]
-    pub(super) fn decoded_row_count(&self) -> usize {
+    pub(super) fn decode_cache_counts(&self) -> (usize, usize) {
         self.embedded
             .as_deref()
-            .map_or(self.entries.rows.len(), EmbeddedRows::decoded_row_count)
+            .expect("cache counts require embedded rows")
+            .decode_cache_counts()
     }
 
     fn id(&self, key: &str) -> Option<usize> {
