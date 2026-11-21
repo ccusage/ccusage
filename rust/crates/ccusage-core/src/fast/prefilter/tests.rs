@@ -98,7 +98,6 @@ fn line_prefilter_finds_bracketed_markers_through_their_bracket() {
         assert!(prefilter.matches(line.as_bytes()), "{line}");
     }
     for line in [
-        r#"{"message":{"usage" :{}}}"#.to_owned(),
         r#"{"text":"\"usage\":{"}"#.to_owned(),
         format!(r#"{{"us\\{a}ge":{{}}}}"#),
         format!(r#"{{"us{a}ge":[]}}"#),
@@ -106,6 +105,35 @@ fn line_prefilter_finds_bracketed_markers_through_their_bracket() {
         format!(r#"{{"{}":{{}}}}"#, unicode_escape("00e9")),
     ] {
         assert!(!prefilter.matches(line.as_bytes()), "{line}");
+    }
+}
+
+#[test]
+fn line_prefilter_admits_json_whitespace_before_a_bracket() {
+    let prefilter = LinePrefilter::all(&[br#""usage":{"#]);
+    let u = unicode_escape("0075");
+
+    for line in [
+        r#"{"message":{"usage":{}}}"#.to_owned(),
+        r#"{"message":{"usage" : {}}}"#.to_owned(),
+        r#"{"message":{"usage": {}}}"#.to_owned(),
+        r#"{"message":{"usage" :{}}}"#.to_owned(),
+        "{\"message\":{\"usage\"\t:\t{}}}".to_owned(),
+        "{\"message\":{\"usage\"\r\n:\n {}}}".to_owned(),
+        format!(r#"{{"message":{{"{u}sage" : {{}}}}}}"#),
+        format!("{{\"n\":\"\\n\",\"{u}sage\":\t{{}}}}"),
+    ] {
+        assert!(prefilter.matches(line.as_bytes()), "{line:?}");
+    }
+    for line in [
+        r#"{"message":{"usage ":{}}}"#.to_owned(),
+        r#"{"message":{"usage": []}}"#.to_owned(),
+        r#"{"message":{"usage" x {}}}"#.to_owned(),
+        r#"{"message":{"usage" : 1, "x": {}}}"#.to_owned(),
+        "{\"message\":{\"usage\"\u{a0}:{}}}".to_owned(),
+        format!(r#"{{"message":{{"{u}sage" : 1}}}}"#),
+    ] {
+        assert!(!prefilter.matches(line.as_bytes()), "{line:?}");
     }
 }
 
@@ -121,7 +149,7 @@ fn line_prefilter_follows_escapes_after_a_bracket() {
     assert!(!prefilter.matches(br#"{"k":{ "a/b":1}}"#));
 }
 
-fn spellings(marker: &[u8], line: &[u8], start: usize) -> Vec<usize> {
+fn spellings(marker: &[u8], line: &[u8], start: usize, whitespace: bool) -> Vec<usize> {
     let mut in_string = marker.first() != Some(&b'"');
     let content = marker
         .iter()
@@ -130,6 +158,20 @@ fn spellings(marker: &[u8], line: &[u8], start: usize) -> Vec<usize> {
             byte != b'"' && in_string
         })
         .collect::<Vec<_>>();
+    let anchor =
+        (0..marker.len()).find(|&index| !content[index] && b"{}[]".contains(&marker[index]));
+    let spaced = |index: usize| {
+        anchor.is_some_and(|anchor| {
+            whitespace
+                && index > 0
+                && index <= anchor
+                && !content[index - 1]
+                && (index..=anchor).all(|run| !content[run])
+                && [marker[index - 1], marker[index]]
+                    .iter()
+                    .any(|byte| b":,{}[]".contains(byte))
+        })
+    };
     let mut found = Vec::new();
     let mut pending = vec![(0, start, 0)];
     while let Some((index, at, escapes)) = pending.pop() {
@@ -139,6 +181,9 @@ fn spellings(marker: &[u8], line: &[u8], start: usize) -> Vec<usize> {
         }
         if line.get(at) == Some(&marker[index]) {
             pending.push((index + 1, at + 1, escapes));
+        }
+        if spaced(index) && line.get(at).is_some_and(|byte| b" \t\n\r".contains(byte)) {
+            pending.push((index, at + 1, escapes));
         }
         let real_escape = index > 0
             || line[..at]
@@ -180,7 +225,7 @@ fn spellings(marker: &[u8], line: &[u8], start: usize) -> Vec<usize> {
 
 fn spells(marker: &[u8], line: &[u8], escaped_only: bool) -> bool {
     (0..=line.len()).any(|start| {
-        spellings(marker, line, start)
+        spellings(marker, line, start, !escaped_only)
             .into_iter()
             .any(|escapes| !escaped_only || escapes > 0)
     })
@@ -197,6 +242,7 @@ fn line_prefilter_admits_exactly_the_lines_that_spell_its_markers() {
         b"]",
         b",",
         b" ",
+        b"\t",
         b"\\",
         b"\\\\",
         br"\/",
@@ -249,8 +295,10 @@ fn line_prefilter_admits_exactly_the_lines_that_spell_its_markers() {
                 .flat_map(|_| fragments[next(fragments.len())].clone())
                 .collect::<Vec<_>>();
             let text = String::from_utf8_lossy(&line);
-            assert_eq!(all.matches(&line), old_all.matches(&line), "old all {text}");
-            assert_eq!(any.matches(&line), old_any.matches(&line), "old any {text}");
+            if !line.iter().any(|byte| b" \t".contains(byte)) {
+                assert_eq!(all.matches(&line), old_all.matches(&line), "old all {text}");
+                assert_eq!(any.matches(&line), old_any.matches(&line), "old any {text}");
+            }
             assert_eq!(
                 any.matches_escaped(&line),
                 old_any.matches_escaped(&line),

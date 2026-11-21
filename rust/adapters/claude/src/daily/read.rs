@@ -23,7 +23,7 @@ use crate::{
 };
 
 use super::{
-    ClaudeEntry, ParsedUsage, parse_usage_line,
+    ClaudeEntry, DisplayModels, ParsedUsage, parse_usage_line,
     record::{ClaudeUsageRecord, is_valid_usage_record},
     response_chain::ResponseChains,
 };
@@ -101,13 +101,14 @@ pub(super) fn read_daily_usage_file_with_diagnostics(
     pricing: PriceTable<'_>,
     diagnostics: &Diagnostics,
 ) -> Vec<ClaudeEntry> {
+    let mut models = DisplayModels::default();
     read_usage_file(
         path,
         projects_root,
         tz,
         pricing,
         diagnostics,
-        |parsed, _| parsed.into_daily(),
+        |parsed, _| parsed.into_daily(&mut models),
     )
 }
 
@@ -150,7 +151,7 @@ pub(crate) fn read_usage_file<E>(
     tz: &JiffTimeZone,
     pricing: PriceTable<'_>,
     diagnostics: &Diagnostics,
-    build: impl Fn(ParsedUsage<'_>, &[u8]) -> E,
+    mut build: impl FnMut(ParsedUsage<'_>, &[u8]) -> E,
 ) -> Vec<E> {
     let project: Arc<str> = Arc::from(extract_project(path, projects_root));
     let (path_session_id, _) = crate::paths::extract_session_parts(path, projects_root);
@@ -233,10 +234,10 @@ pub(crate) fn read_usage_file<E>(
             key: DedupKey {
                 timestamp,
                 session_id,
-                message_id: data.message.id,
+                message_id: data.message.id.map(String::into_boxed_str),
                 request: Request::new(data.request_id, response),
-                is_sidechain: data.is_sidechain,
             },
+            is_sidechain: data.is_sidechain == Some(true),
             date: date_at(timestamp, tz),
             project: Arc::clone(&project),
             usage,
@@ -270,10 +271,10 @@ pub(crate) fn read_usage_file<E>(
                             .key
                             .message_id
                             .as_ref()
-                            .map(|id| format!("{id}:advisor:{index}")),
+                            .map(|id| format!("{id}:advisor:{index}").into_boxed_str()),
                         request: parent.key.request.clone(),
-                        is_sidechain: parent.key.is_sidechain,
                     },
+                    is_sidechain: parent.is_sidechain,
                     date: parent.date,
                     project: Arc::clone(&project),
                     usage: advisor.usage,

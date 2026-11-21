@@ -30,7 +30,7 @@ pub fn run_daily(args: DailyArgs) -> Result<()> {
         args.project.as_deref(),
         args.instances || args.project.is_some(),
     )?;
-    sort_summaries(&mut rows, &shared.order.unwrap_or_default(), |row| {
+    sort_summaries(&mut rows, &shared.order.unwrap_or_default(), &|row| {
         row.date.as_deref().unwrap_or_default()
     });
 
@@ -68,7 +68,7 @@ pub fn run_bucket(shared: SharedArgs, bucket: Bucket) -> Result<()> {
         .map(|entry| entry.entry)
         .collect::<Vec<_>>();
     let mut daily = summarize_by_day(&entries)?;
-    sort_summaries(&mut daily, &shared.order.unwrap_or_default(), |row| {
+    sort_summaries(&mut daily, &shared.order.unwrap_or_default(), &|row| {
         row.date.as_deref().unwrap_or_default()
     });
 
@@ -76,7 +76,7 @@ pub fn run_bucket(shared: SharedArgs, bucket: Bucket) -> Result<()> {
     sort_summaries(
         &mut buckets,
         &shared.order.unwrap_or_default(),
-        |row| match bucket {
+        &|row| match bucket {
             Bucket::Monthly => row.month.as_deref().unwrap_or_default(),
             Bucket::Weekly(_) => row.week.as_deref().unwrap_or_default(),
         },

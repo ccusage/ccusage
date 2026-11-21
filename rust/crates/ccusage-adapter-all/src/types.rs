@@ -244,6 +244,6 @@ fn merge_by_model<'a>(items: impl IntoIterator<Item = &'a ModelBreakdown>) -> Ve
         });
         breakdowns[index].merge(item);
     }
-    breakdowns.sort_by(|a, b| b.cost.total_cmp(&a.cost));
+    ModelBreakdown::sort_by_cost_desc(&mut breakdowns);
     breakdowns
 }

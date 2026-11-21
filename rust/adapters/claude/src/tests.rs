@@ -842,10 +842,42 @@ pub(crate) fn requestless_response_cases() -> Vec<(&'static str, Vec<String>, us
             chained_assistant("a2", Some("a1"), LATER_BLOCK, message_id, 100, None),
         ]
     };
+    let spaced_usage = |line: String| line.replace(r#""usage":{"#, r#""usage": {"#);
     vec![
         ("chained anthropic message id", two_blocks("msg_01AbC2DeF3"), 1),
         ("chained response message id", two_blocks("resp_0123456789abcdef"), 1),
         ("chained proxy message id", two_blocks("gateway-7f3a"), 1),
+        (
+            "chained blocks written with JSON whitespace",
+            two_blocks("gateway-7f3a")
+                .into_iter()
+                .map(spaced_usage)
+                .collect(),
+            1,
+        ),
+        (
+            "a block written with JSON whitespace does not bridge a response chain",
+            vec![
+                chained_assistant("a1", None, FIRST_BLOCK, "gateway-1", 100, None),
+                spaced_usage(chained_assistant(
+                    "b1",
+                    Some("a1"),
+                    LATER_BLOCK,
+                    "gateway-2",
+                    200,
+                    None,
+                )),
+                chained_assistant(
+                    "a2",
+                    Some("b1"),
+                    "2026-05-22T02:34:41.000Z",
+                    "gateway-1",
+                    100,
+                    None,
+                ),
+            ],
+            3,
+        ),
         (
             "blocks around their own tool result",
             vec![
@@ -1569,8 +1601,8 @@ fn loaded_usage_entry(fixture: UsageEntryFixture) -> ClaudeEntry {
         source_timestamp: "2026-03-29T07:00:00.000Z".to_string(),
         recorded_session_id: Some(Arc::from("session-a")),
         original_model: Some("claude-sonnet-4-20250514".to_string()),
-        request: crate::dedupe::Request::Id(fixture.request_id.to_string()),
-        is_sidechain: Some(fixture.is_sidechain),
+        request: crate::dedupe::Request::Id(fixture.request_id.into()),
+        is_sidechain: fixture.is_sidechain,
         entry: LoadedEntry {
             usage: TokenUsageRaw {
                 input_tokens: 0,
