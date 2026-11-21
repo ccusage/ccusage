@@ -85,7 +85,7 @@ impl Overrides {
         vendor_len: impl FnOnce() -> Option<usize>,
     ) -> Option<usize> {
         self.id_identity(identity).or_else(|| {
-            // NOTE(2026-11-21, #2465): A vendor ID is a key suffix, and normalization preserves byte offsets.
+            // NOTE(2026-11-21, #2465): Normalization swaps ASCII bytes one for one. The vendor ID can use the same suffix offset in the normalized key.
             self.id_identity(&identity[identity.len() - vendor_len()?..])
         })
     }

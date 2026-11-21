@@ -240,7 +240,8 @@ impl PricingRows {
             Some(rows) => (id, rows.key(id), rows.identity(id)),
             None => {
                 let key = self.entries.rows[id].key.as_ref();
-                let identity = normalized.unwrap()[id].as_deref().unwrap_or(key);
+                let keys = normalized.expect("live pricing keys are normalized before lookup");
+                let identity = keys[id].as_deref().unwrap_or(key);
                 (id, key, identity)
             }
         })
