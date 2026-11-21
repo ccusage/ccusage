@@ -89,18 +89,25 @@ impl PricingHandle {
     fn new(row: &Row, hit: CachedHit) -> Self {
         Self {
             rates: row.rates(),
-            schedule: row.schedule.filter(|_| hit.scheduled()),
+            schedule: row.schedule.filter(|_| {
+                hit.scheduled() || (hit.is_models_dev() && row.source == super::Source::ModelsDev)
+            }),
         }
     }
 
     fn on_route(row: &Row, route: BillingRoute, reported: &str, matched: &str) -> Self {
         let schedule = match route {
-            BillingRoute::Direct => [reported, matched].into_iter().find_map(|name| {
-                let resolved = crate::model_aliases::resolve_model_name(name);
-                [resolved.as_ref(), name]
-                    .into_iter()
-                    .find_map(|name| schedule_for(last_segment(name)))
-            }),
+            BillingRoute::Direct => [reported, matched]
+                .into_iter()
+                .find_map(|name| {
+                    let resolved = crate::model_aliases::resolve_model_name(name);
+                    [resolved.as_ref(), name]
+                        .into_iter()
+                        .find_map(|name| schedule_for(last_segment(name)))
+                })
+                .or(row
+                    .schedule
+                    .filter(|_| row.source == super::Source::ModelsDev)),
             BillingRoute::Foreign => None,
         };
         Self {

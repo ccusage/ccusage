@@ -325,18 +325,21 @@ const DEEPSEEK_V4_FLASH: PricingSchedule = PricingSchedule {
         output: 0.28e-6,
         cache_create: 0.14e-6,
         cache_read: 0.0028e-6,
+        long_context: None,
     },
     off_peak: ScheduledRates {
         input: 0.22e-6,
         output: 0.66e-6,
         cache_create: 0.22e-6,
         cache_read: 0.007e-6,
+        long_context: None,
     },
     peak: ScheduledRates {
         input: 0.44e-6,
         output: 1.32e-6,
         cache_create: 0.44e-6,
         cache_read: 0.014e-6,
+        long_context: None,
     },
     // NOTE(2026-11-20, #2401): DeepSeek retired V4 Flash but still accepts `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp` at https://api-docs.deepseek.com/quick_start/pricing/. Both ids follow this handoff instead of the V4 Flash rates above.
     successor: Some(Successor {
@@ -354,18 +357,21 @@ const DEEPSEEK_V4_PRO: PricingSchedule = PricingSchedule {
         output: 0.87e-6,
         cache_create: 0.435e-6,
         cache_read: 0.003625e-6,
+        long_context: None,
     },
     off_peak: ScheduledRates {
         input: 0.66e-6,
         output: 1.98e-6,
         cache_create: 0.66e-6,
         cache_read: 0.022e-6,
+        long_context: None,
     },
     peak: ScheduledRates {
         input: 1.32e-6,
         output: 3.96e-6,
         cache_create: 1.32e-6,
         cache_read: 0.044e-6,
+        long_context: None,
     },
     successor: None,
 };
@@ -380,18 +386,21 @@ const DEEPSEEK_FLASH: PricingSchedule = PricingSchedule {
         output: 1.2e-6,
         cache_create: 0.3e-6,
         cache_read: 0.006e-6,
+        long_context: None,
     },
     off_peak: ScheduledRates {
         input: 0.15e-6,
         output: 0.6e-6,
         cache_create: 0.15e-6,
         cache_read: 0.003e-6,
+        long_context: None,
     },
     peak: ScheduledRates {
         input: 0.3e-6,
         output: 1.2e-6,
         cache_create: 0.3e-6,
         cache_read: 0.006e-6,
+        long_context: None,
     },
     successor: None,
 };

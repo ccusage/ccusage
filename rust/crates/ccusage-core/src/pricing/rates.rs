@@ -139,6 +139,7 @@ pub(super) struct ScheduledRates {
     pub(super) output: f64,
     pub(super) cache_create: f64,
     pub(super) cache_read: f64,
+    pub(super) long_context: Option<LongContext>,
 }
 
 #[derive(Debug)]
@@ -205,7 +206,10 @@ impl Pricing {
     pub(super) fn at(mut self, schedule: &PricingSchedule, timestamp: TimestampMs) -> Self {
         let explicit = (self.explicit_fields != 0).then_some(self);
         let rates = schedule.rates_at(timestamp);
-        let mut long_context = self.long_context.unwrap_or(LongContext::empty_marginal());
+        let mut long_context = rates
+            .long_context
+            .or(self.long_context)
+            .unwrap_or(LongContext::empty_marginal());
         macro_rules! scheduled {
             ($field:ident, $rate:expr, $bit:expr) => {
                 self.$field = match explicit {
@@ -235,7 +239,10 @@ impl Pricing {
                         .and_then(|entry| entry.long_context)
                         .and_then(|context| context.rates.$field)
                 } else {
-                    $wrap(self.$field)
+                    match rates.long_context {
+                        Some(tier) => tier.rates.$field,
+                        None => $wrap(self.$field),
+                    }
                 };
             };
         }
