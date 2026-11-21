@@ -61,6 +61,11 @@ const SOURCE_MASK: u8 = 0b11;
 const SCOPE_DIRECT: u8 = 1 << 2;
 const EXACT_ONLY: u8 = 1 << 3;
 const WHOLE_REQUEST_TIERS: u8 = 1 << 4;
+const HOST_SHIFT: u8 = 5;
+const HOST_MASK: u8 = 0b11 << HOST_SHIFT;
+const _: () = assert!(data::HOSTS.len() <= (HOST_MASK >> HOST_SHIFT) as usize);
+const _: () =
+    assert!(HOST_MASK & (SOURCE_MASK | SCOPE_DIRECT | EXACT_ONLY | WHOLE_REQUEST_TIERS) == 0);
 
 const NO_LONG_CONTEXT: u8 = 0;
 const LONG_CONTEXT_MARGINAL: u8 = 1;
@@ -175,9 +180,10 @@ impl Writer {
             0
         };
         let exact_only = if row.exact_only { EXACT_ONLY } else { 0 };
-        self.flags.push(
-            source | scope | exact_only | (u8::from(row.whole_request_tiers) * WHOLE_REQUEST_TIERS),
-        );
+        let whole_request = u8::from(row.whole_request_tiers) * WHOLE_REQUEST_TIERS;
+        let host = row.host.map_or(0, |host| (host + 1) << HOST_SHIFT);
+        self.flags
+            .push(source | scope | exact_only | whole_request | host);
         varint(
             &mut self.flags,
             row.vendor_start.map_or(0, |start| start.get() as u64),
@@ -333,7 +339,9 @@ impl<'a> Reader<'a> {
         let mut map = PricingMap::default();
         let rows = map.rows_mut();
         let entries = &mut rows.entries;
-        for _ in 0..self.keys.usize() {
+        let count = self.keys.usize();
+        entries.rows.reserve_exact(count);
+        for _ in 0..count {
             let shared = self.keys.usize();
             let suffix = self.keys.usize();
             let suffix = std::str::from_utf8(self.keys.take(suffix))
@@ -371,6 +379,7 @@ impl<'a> Reader<'a> {
             .usize()
             .checked_sub(1)
             .map(|index| &data::SCHEDULES[index].1);
+        let host = ((flags & HOST_MASK) >> HOST_SHIFT).checked_sub(1);
         let context_limit = self.limits.u64().checked_sub(1);
         Row {
             key: Arc::default(),
@@ -382,6 +391,7 @@ impl<'a> Reader<'a> {
             whole_request_tiers: flags & WHOLE_REQUEST_TIERS != 0,
             scope,
             vendor_start,
+            host,
         }
     }
 

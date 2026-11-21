@@ -152,6 +152,7 @@ pub(super) enum Pass {
     S34,
     S3f,
     S56,
+    Host,
 }
 
 impl Pass {
@@ -161,9 +162,14 @@ impl Pass {
         !matches!((lookup, self), (Lookup::Context | Lookup::Paid, Self::S3f))
     }
 
-    pub(super) fn allows(self, kind: MatchKind) -> bool {
+    pub(super) fn allows(self, model: &str, kind: MatchKind, reported: Option<&str>) -> bool {
         match self {
             Self::S2 => true,
+            Self::Host => {
+                matches!(kind, MatchKind::StrictExact | MatchKind::Exact)
+                    || reported == Some(model)
+                    || !model.contains('/')
+            }
             Self::S34 | Self::S3f => kind != MatchKind::StrictExact,
             Self::S56 => matches!(kind, MatchKind::Fuzzy | MatchKind::Fallback),
             Self::Label => false,
@@ -264,9 +270,10 @@ struct NameForms {
 #[derive(Debug, Default)]
 struct NameSlot {
     forms: Option<Option<Arc<NameForms>>>,
-    prices: [ResultCell; 5],
-    limits: Option<Box<[ResultCell; 5]>>,
-    paid: Option<Box<[ResultCell; 5]>>,
+    prices: [ResultCell; 6],
+    direct_prices: Option<Box<[ResultCell; 6]>>,
+    limits: Option<Box<[ResultCell; 6]>>,
+    paid: Option<Box<[ResultCell; 6]>>,
 }
 
 const _: () = assert!(size_of::<NameSlot>() <= 96);
@@ -275,6 +282,7 @@ impl NameSlot {
     fn result(&self, lookup: Lookup, pass: Pass) -> Option<Option<CachedHit>> {
         let slots = match lookup {
             Lookup::Pricing => &self.prices,
+            Lookup::DirectPricing => self.direct_prices.as_deref()?,
             Lookup::Context => self.limits.as_deref()?,
             Lookup::Paid => self.paid.as_deref()?,
         };
@@ -289,6 +297,7 @@ impl NameSlot {
     ) -> Option<CachedHit> {
         let slots = match lookup {
             Lookup::Pricing => &mut self.prices,
+            Lookup::DirectPricing => self.direct_prices.get_or_insert_with(Box::default),
             Lookup::Context => self.limits.get_or_insert_with(Box::default),
             Lookup::Paid => self.paid.get_or_insert_with(Box::default),
         };
@@ -446,12 +455,19 @@ pub(super) struct RequestHit {
 struct RequestSlot {
     reported: Option<Box<str>>,
     candidates: Box<[(Box<str>, MatchKind)]>,
+    direct: bool,
     hit: Arc<OnceLock<Option<RequestHit>>>,
 }
 
 impl RequestSlot {
-    fn matches(&self, reported: Option<&str>, candidates: &[(&str, MatchKind)]) -> bool {
-        self.reported.as_deref() == reported
+    fn matches(
+        &self,
+        reported: Option<&str>,
+        candidates: &[(&str, MatchKind)],
+        direct: bool,
+    ) -> bool {
+        self.direct == direct
+            && self.reported.as_deref() == reported
             && self.candidates.len() == candidates.len()
             && self
                 .candidates
@@ -469,13 +485,17 @@ impl RequestCache {
         &self,
         reported: Option<&str>,
         candidates: &[(&str, MatchKind)],
+        direct: bool,
         init: impl FnOnce() -> Option<RequestHit>,
     ) -> Option<RequestHit> {
         let mut hasher = FxHasher::default();
         reported.hash(&mut hasher);
         candidates.hash(&mut hasher);
+        if direct {
+            direct.hash(&mut hasher);
+        }
         let hash = hasher.finish();
-        let matches = |slot: &&RequestSlot| slot.matches(reported, candidates);
+        let matches = |slot: &&RequestSlot| slot.matches(reported, candidates, direct);
         let pending = {
             let table = self.0.read().unwrap_or_else(|error| error.into_inner());
             if let Some(slot) = table
@@ -503,6 +523,7 @@ impl RequestCache {
                     .iter()
                     .map(|(name, kind)| ((*name).into(), *kind))
                     .collect(),
+                direct,
                 hit: Arc::clone(&hit),
             });
             hit

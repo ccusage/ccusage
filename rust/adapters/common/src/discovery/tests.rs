@@ -55,3 +55,10 @@ fn reads_discovered_work_before_discovery_returns() {
     assert_eq!(results[0].0.index, 0);
     assert_eq!(results[0].1, 14);
 }
+
+#[test]
+fn parses_grouped_files_on_every_core_up_to_sixteen() {
+    let workers = [1, 2, 4, 12, 16, 17, 24, 32, 48].map(super::grouped_workers);
+
+    assert_eq!(workers, [1, 2, 4, 12, 16, 16, 16, 22, 32]);
+}

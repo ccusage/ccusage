@@ -9,6 +9,7 @@ use super::{
 #[derive(Clone, Copy)]
 pub(super) enum Lookup {
     Pricing,
+    DirectPricing,
     Context,
     Paid,
 }
@@ -17,6 +18,7 @@ impl Lookup {
     pub(super) fn includes(self, row: &Row) -> bool {
         match self {
             Self::Pricing => true,
+            Self::DirectPricing => !row.is_bedrock(),
             Self::Context => row.context_limit.is_some(),
             Self::Paid => !row.is_free(),
         }
@@ -273,8 +275,30 @@ impl PricingRows {
             })
     }
 
+    pub(super) fn host_row(
+        &self,
+        name: Name<'_>,
+        host: u8,
+        lookup: Lookup,
+        fold: bool,
+    ) -> Option<RowMatch<'_>> {
+        self.exact_on_index(name, lookup, fold, Some(host))
+    }
+
     pub(super) fn exact(&self, name: Name<'_>, lookup: Lookup, fold: bool) -> Option<RowMatch<'_>> {
-        if !fold && let Some(literal) = self.literal(name.raw(), lookup) {
+        self.exact_on_index(name, lookup, fold, None)
+    }
+
+    #[inline(never)]
+    fn exact_on_index(
+        &self,
+        name: Name<'_>,
+        lookup: Lookup,
+        fold: bool,
+        host: Option<u8>,
+    ) -> Option<RowMatch<'_>> {
+        let on_host = |found: &RowMatch<'_>| host.is_none() || found.row.host == host;
+        if !fold && let Some(literal) = self.literal(name.raw(), lookup).filter(on_host) {
             return Some(literal);
         }
         let identity = if fold {
@@ -282,8 +306,13 @@ impl PricingRows {
         } else {
             Cow::Borrowed(name.identity())
         };
-        self.indexed_rows(&identity, Index::Identity, fold)
-            .filter(|found| lookup.includes(found.row))
+        let index = if host.is_some() {
+            Index::BareHosted
+        } else {
+            Index::Identity
+        };
+        self.indexed_rows(&identity, index, fold)
+            .filter(|found| lookup.includes(found.row) && on_host(found))
             .min_by_key(|found| {
                 (
                     fold && !found.key.eq_ignore_ascii_case(name.raw()),

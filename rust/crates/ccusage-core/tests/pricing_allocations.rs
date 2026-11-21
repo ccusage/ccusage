@@ -11,6 +11,7 @@ static ALLOCATOR: &StatsAlloc<System> = &INSTRUMENTED_SYSTEM;
 #[test]
 fn repeated_pricing_neither_allocates_nor_reallocates() {
     ccusage_test_support::install_pricing_snapshots();
+    host_pass_does_not_allocate_to_compare_prefixes();
     for multiple_candidates in [false, true] {
         let mut pricing = PricingMap::default();
         let rows: serde_json::Map<String, serde_json::Value> = (0..20)
@@ -66,4 +67,34 @@ fn repeated_pricing_neither_allocates_nor_reallocates() {
             "multiple candidates: {multiple_candidates}"
         );
     }
+}
+
+fn host_pass_does_not_allocate_to_compare_prefixes() {
+    let mut pricing = PricingMap::default();
+    let model = "Example-Host/sample";
+    assert_eq!(
+        pricing.load_json(
+            r#"{"Example-Host/sample":{"input_cost_per_token":1,"output_cost_per_token":1}}"#,
+        ),
+        1,
+    );
+    let resolve = |reported, kind| {
+        assert_eq!(
+            pricing
+                .resolve_at(reported, &[(model, kind)], None)
+                .expect("the host comparison fixture has an exact pricing row")
+                .1
+                .input,
+            1.0,
+        );
+    };
+    resolve(None, MatchKind::Fuzzy);
+    let region = Region::new(ALLOCATOR);
+    resolve(Some("fuzzy"), MatchKind::Fuzzy);
+    let without_host = region.change();
+    let region = Region::new(ALLOCATOR);
+    resolve(Some("exact"), MatchKind::Exact);
+    let with_host = region.change();
+    assert_eq!(with_host.allocations, without_host.allocations);
+    assert_eq!(with_host.reallocations, without_host.reallocations);
 }

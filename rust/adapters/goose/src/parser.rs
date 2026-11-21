@@ -79,7 +79,11 @@ pub(super) fn row_to_entry(
         .ok_or(RowRejection::InvalidTimestamp)?;
 
     let reasoning_tokens = total_tokens.saturating_sub(input_tokens.saturating_add(output_tokens));
-    let provider_id = normalize_provider(provider_name.as_deref(), &model);
+    let provider_name = provider_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|provider| !provider.is_empty());
+    let provider_id = normalize_provider(provider_name, &model);
     let usage = TokenUsageRaw {
         input_tokens,
         output_tokens,
@@ -91,7 +95,12 @@ pub(super) fn row_to_entry(
 
     let mut candidates = vec![(model.clone(), MatchKind::Fuzzy)];
     if provider_id != "goose" {
-        candidates.push((format!("{provider_id}/{model}"), MatchKind::Fuzzy));
+        let kind = if provider_name.is_some() {
+            MatchKind::Exact
+        } else {
+            MatchKind::Fuzzy
+        };
+        candidates.push((format!("{provider_id}/{model}"), kind));
     }
     let candidates: Vec<_> = candidates
         .iter()
@@ -107,7 +116,7 @@ pub(super) fn row_to_entry(
         stored_cost: None,
         timestamp: Some(timestamp),
     };
-    let priced = price_entry_for_provider(entry_pricing, provider_name.as_deref(), pricing);
+    let priced = price_entry_for_provider(entry_pricing, provider_name, pricing);
     let cost = priced.cost;
     let estimated_pricing = priced.estimated;
     let missing_pricing_model = priced
@@ -180,9 +189,6 @@ fn parse_goose_timestamp(value: &str) -> Option<crate::TimestampMs> {
 }
 
 fn normalize_provider(provider: Option<&str>, model: &str) -> String {
-    let provider = provider
-        .map(str::trim)
-        .filter(|provider| !provider.is_empty());
     if let Some(provider) = provider {
         return host_provider(provider).map_or_else(|| provider.replace('-', "_"), str::to_owned);
     }
@@ -211,7 +217,7 @@ mod tests {
         let mut row = connection.prepare(r#"SELECT 's', '{"model_name":"sample"}', 'vendor', '2026-05-19 00:00:00', 100, 100, 0, 100, 100, 0"#).unwrap();
         assert_eq!(row.next().unwrap(), sqlite::State::Row);
         let mut pricing = ccusage_core::PricingMap::default();
-        pricing.load_json(r#"{"sample":{"litellm_provider": "openai", "input_cost_per_token":0,"output_cost_per_token":0},"vendor/sample":{"input_cost_per_token":1,"output_cost_per_token":1}}"#);
+        pricing.load_json(r#"{"sample":{"litellm_provider": "openai", "input_cost_per_token":1,"output_cost_per_token":1},"vendor/sample":{"input_cost_per_token":0,"output_cost_per_token":0}}"#);
         let loaded = super::row_to_entry(
             &row,
             &jiff::tz::TimeZone::UTC,
@@ -270,6 +276,42 @@ mod pricing_identity_tests {
             .unwrap();
 
         assert!((loaded.cost - 7.125).abs() < 1e-9, "{}", loaded.cost);
+    }
+
+    #[test]
+    fn inferred_openrouter_does_not_override_the_vendor_price() {
+        ccusage_test_support::install_pricing_snapshots();
+        let mut pricing = ccusage_core::PricingMap::default();
+        pricing.load_json(
+            r#"{
+                "qwen-test":{"litellm_provider":"dashscope","input_cost_per_token":1,"output_cost_per_token":1},
+                "openrouter/qwen-test":{"litellm_provider":"openrouter","input_cost_per_token":2,"output_cost_per_token":2}
+            }"#,
+        );
+        let fixture = ccusage_test_support::Fixture::new();
+        let connection = sqlite::open(fixture.path("row.db")).unwrap();
+        let mut row = connection
+            .prepare(
+                r#"SELECT 's', '{"model_name":"qwen-test"}', ?, '2026-11-17T10:00:00Z', 100, 100, 0, 100, 100, 0"#,
+            )
+            .unwrap();
+        for (provider, expected) in [
+            (None, 100.0),
+            (Some(" "), 100.0),
+            (Some("openrouter"), 200.0),
+        ] {
+            if let Some(provider) = provider {
+                row.bind((1, provider)).unwrap();
+            } else {
+                row.bind((1, sqlite::Value::Null)).unwrap();
+            }
+            assert_eq!(row.next().unwrap(), sqlite::State::Row);
+            let loaded = row_to_entry(&row, &JiffTimeZone::UTC, PriceTable::Calculate(&pricing))
+                .unwrap()
+                .unwrap();
+            assert_eq!(loaded.cost, expected, "{provider:?}");
+            row.reset().unwrap();
+        }
     }
 
     #[test]

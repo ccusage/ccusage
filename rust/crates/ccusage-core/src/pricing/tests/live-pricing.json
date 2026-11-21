@@ -102,5 +102,30 @@
 		"litellm_provider": "xai",
 		"max_input_tokens": 256000,
 		"output_cost_per_token": 2e-6
+	},
+	"deepseek.v3.2": {
+		"input_cost_per_token": 6.2e-7,
+		"litellm_provider": "bedrock_converse",
+		"output_cost_per_token": 1.85e-6
+	},
+	"openrouter/deepseek/deepseek-v4-flash": {
+		"input_cost_per_token": 9e-8,
+		"litellm_provider": "openrouter",
+		"output_cost_per_token": 1.8e-7
+	},
+	"vertex_ai/gemini-2.5-flash": {
+		"input_cost_per_token": 3.5e-7,
+		"litellm_provider": "vertex_ai-language-models",
+		"output_cost_per_token": 2.6e-6
+	},
+	"bedrock/moonshotai.kimi-k2-thinking": {
+		"input_cost_per_token": 6e-7,
+		"litellm_provider": "bedrock",
+		"output_cost_per_token": 2.5e-6
+	},
+	"bedrock_mantle/ap-northeast-1/moonshotai.kimi-k2-thinking": {
+		"input_cost_per_token": 7.3e-7,
+		"litellm_provider": "bedrock_mantle",
+		"output_cost_per_token": 3.03e-6
 	}
 }

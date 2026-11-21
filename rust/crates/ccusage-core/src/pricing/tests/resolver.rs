@@ -1,4 +1,4 @@
-use super::{MatchKind, PricingMap, layered, timestamp};
+use super::{BillingRoute, MatchKind, PricingMap, layered, timestamp};
 
 #[test]
 fn case_insensitive_identity_beats_a_hosted_fuzzy_hit() {
@@ -66,7 +66,7 @@ fn case_fallback_keeps_the_direct_vendors_schedule() {
 }
 
 #[test]
-fn direct_litellm_row_beats_the_bare_hosted_spelling() {
+fn vendor_spellings_bill_the_vendor_row_and_the_bedrock_spelling_bills_bedrock() {
     crate::test_support::install_pricing_snapshots();
     let mut pricing = PricingMap::default();
     pricing.load_json(
@@ -83,15 +83,137 @@ fn direct_litellm_row_beats_the_bare_hosted_spelling() {
             }
         }"#,
     );
-    for model in [
-        "deepseek-v3-2",
-        "deepseek-v3.2",
-        "deepseek.v3.2",
-        "deepseek/deepseek-v3.2",
+    for (model, input, output) in [
+        ("deepseek-v3-2", 0.28e-6, 0.40e-6),
+        ("deepseek-v3.2", 0.28e-6, 0.40e-6),
+        ("deepseek/deepseek-v3.2", 0.28e-6, 0.40e-6),
+        ("deepseek.v3.2", 0.62e-6, 1.85e-6),
     ] {
         let price = pricing.find(model).unwrap();
-        assert_eq!(price.input, 0.28e-6, "{model}");
-        assert_eq!(price.output, 0.40e-6, "{model}");
+        assert_eq!((price.input, price.output), (input, output), "{model}");
+    }
+}
+
+#[test]
+fn direct_vendor_requests_do_not_use_bedrock_rows_for_dotted_ids() {
+    crate::test_support::install_pricing_snapshots();
+    let model = "deepseek.v4.flash";
+    let direct_candidates = [
+        ("deepseek/deepseek.v4.flash", MatchKind::Exact),
+        (model, MatchKind::Fuzzy),
+    ];
+    let candidates = [(model, MatchKind::Fuzzy)];
+    for host_key in ["deepseek.v4.flash", "bedrock/deepseek.v4.flash"] {
+        let mut pricing = PricingMap::default();
+        assert_eq!(
+            pricing.load_json(&format!(
+                r#"{{"{host_key}":{{"litellm_provider":"bedrock","input_cost_per_token":2,"output_cost_per_token":2}}}}"#,
+            )),
+            1,
+        );
+        assert!(
+            pricing
+                .resolve_on_route_at(
+                    Some(model),
+                    &candidates,
+                    BillingRoute::Direct("deepseek"),
+                    None
+                )
+                .is_none(),
+            "{host_key}"
+        );
+        assert!(
+            pricing
+                .resolve_at(Some(model), &direct_candidates, None)
+                .is_none(),
+            "{host_key}",
+        );
+        assert_eq!(pricing.find(model).unwrap().input, 2.0, "{host_key}");
+        assert_eq!(
+            pricing.load_json(
+                r#"{"deepseek/deepseek.v4.flash":{"litellm_provider":"deepseek","input_cost_per_token":1,"output_cost_per_token":1}}"#,
+            ),
+            1,
+        );
+        assert_eq!(
+            pricing
+                .resolve_on_route_at(Some(model), &candidates, BillingRoute::Foreign, None)
+                .unwrap()
+                .1
+                .input,
+            2.0,
+            "{host_key}",
+        );
+        assert_eq!(
+            pricing
+                .resolve_on_route_at(
+                    Some(model),
+                    &candidates,
+                    BillingRoute::Direct("deepseek"),
+                    None
+                )
+                .unwrap()
+                .1
+                .input,
+            1.0,
+            "{host_key}",
+        );
+    }
+}
+
+#[test]
+fn logged_host_precedes_inference_from_a_dotted_model_id() {
+    crate::test_support::install_pricing_snapshots();
+    let mut pricing = PricingMap::default();
+    pricing.load_json(
+        r#"{
+            "deepseek.v3.2":{"litellm_provider":"bedrock_converse","input_cost_per_token":2,"output_cost_per_token":2},
+            "azure/deepseek.v3.2":{"litellm_provider":"azure","input_cost_per_token":3,"output_cost_per_token":3},
+            "azure/DeepSeek.v3.1":{"litellm_provider":"azure","input_cost_per_token":4,"output_cost_per_token":4},
+            "deepseek.v3.1":{"litellm_provider":"bedrock_converse","input_cost_per_token":2,"output_cost_per_token":2},
+            "deepseek.v3":{"litellm_provider":"bedrock_converse","input_cost_per_token":2,"output_cost_per_token":2}
+        }"#,
+    );
+    for (model, kind, expected) in [
+        ("deepseek.v3.2", MatchKind::Exact, 3.0),
+        ("deepseek.v3.1", MatchKind::StrictExact, 4.0),
+        ("deepseek.v3", MatchKind::Exact, 2.0),
+    ] {
+        let qualified = format!("azure/{model}");
+        let candidates = [(model, MatchKind::Fuzzy), (qualified.as_str(), kind)];
+        assert_eq!(
+            pricing
+                .resolve_at(Some(model), &candidates, None)
+                .unwrap()
+                .1
+                .input,
+            expected,
+            "{model}",
+        );
+    }
+}
+
+#[test]
+fn mixed_case_dotted_ids_and_host_prefixes_select_the_same_listing() {
+    crate::test_support::install_pricing_snapshots();
+    let mut pricing = PricingMap::default();
+    pricing.load_json(
+        r#"{
+            "bedrock/Amazon.Nova":{"litellm_provider":"bedrock","input_cost_per_token":2,"output_cost_per_token":2},
+            "nova":{"input_cost_per_token":1,"output_cost_per_token":1}
+        }"#,
+    );
+    for model in ["AmAzOn-BeDrOcK/Amazon.Nova", "Amazon.Nova"] {
+        let candidates = [("nova", MatchKind::Fuzzy), (model, MatchKind::Fuzzy)];
+        assert_eq!(
+            pricing
+                .resolve_at(Some(model), &candidates, None)
+                .unwrap()
+                .1
+                .input,
+            2.0,
+            "{model}",
+        );
     }
 }
 

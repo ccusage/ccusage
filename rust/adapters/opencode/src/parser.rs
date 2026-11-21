@@ -513,10 +513,10 @@ fn open_code_model_candidates(model: &str, provider: &str) -> Vec<(String, Match
     if provider != "unknown" {
         let provider =
             host_provider(provider).map_or_else(|| provider.replace('-', "_"), str::to_owned);
-        candidates.extend(
-            base.into_iter()
-                .map(|(model, kind)| (format!("{provider}/{model}"), kind)),
-        );
+        candidates.extend(base.into_iter().enumerate().map(|(index, (model, kind))| {
+            let kind = if index == 0 { MatchKind::Exact } else { kind };
+            (format!("{provider}/{model}"), kind)
+        }));
     }
     candidates.dedup();
     candidates

@@ -206,9 +206,12 @@ fn loaded_entry(
         .as_deref()
         .filter(|_| !model.contains('/'))
         .map(|provider| format!("{}/{model}", host_provider(provider).unwrap_or(provider)));
-    let candidates: Vec<_> = std::iter::once(model.as_str())
-        .chain(provider_model.as_deref())
-        .map(|name| (name, MatchKind::Fuzzy))
+    let candidates: Vec<_> = std::iter::once((model.as_str(), MatchKind::Fuzzy))
+        .chain(
+            provider_model
+                .as_deref()
+                .map(|name| (name, MatchKind::Exact)),
+        )
         .collect();
     let entry_pricing = EntryPricing {
         granularity: UsageGranularity::Request,
