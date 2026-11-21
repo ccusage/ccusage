@@ -147,15 +147,16 @@ fn accumulate_codex_usage_into_model_usage(
     // NOTE(2026-07-09, #1414): OpenAI applies long-context rates to every token in a request once its input exceeds that model's threshold. The split has to happen before requests are summed.
     let is_long_context = event.input_tokens > model.long_context_threshold;
     let usage = CodexUsageBucket::from_usage(event, is_long_context);
-    model_usage.add_usage(usage, attribution.service_tier);
+    let tier = attribution.pricing_tier();
+    model_usage.add_usage(usage, tier);
     if model.time_dependent {
         let timestamped_usage = model_usage
             .timestamped_usage
             .entry(timestamp.as_millis())
             .or_default();
         timestamped_usage.usage += usage;
-        if let Some(tier) = attribution.service_tier {
-            timestamped_usage.recorded_usage[tier] += usage;
+        if let Some(tier) = tier {
+            timestamped_usage.tier_usage[tier] += usage;
         }
     }
     model_usage.is_fallback |= attribution.is_fallback;

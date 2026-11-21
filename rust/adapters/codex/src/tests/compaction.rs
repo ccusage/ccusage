@@ -208,7 +208,7 @@ fn all_report_modes_keep_the_first_compaction_copy_in_serial_and_parallel() {
             let groups = load_groups_from_directory(fixture.root(), &shared, kind).unwrap();
             assert_eq!(groups.len(), 1);
             assert_eq!(
-                groups.values().next().unwrap().models["gpt-5"].recorded_usage
+                groups.values().next().unwrap().models["gpt-5"].tier_usage
                     [crate::CodexServiceTier::Fast]
                     .input_tokens,
                 300
@@ -217,7 +217,7 @@ fn all_report_modes_keep_the_first_compaction_copy_in_serial_and_parallel() {
                 &groups,
                 kind,
                 Some(&pricing),
-                CodexSpeedPolicy::Auto(Standard),
+                CodexSpeedPolicy::Auto,
                 CostMode::Auto,
             )
         });
@@ -264,13 +264,13 @@ fn direct_reports_merge_recorded_tiers_of_duplicate_compactions() {
         let recorded = [
             (
                 Standard,
-                usage.recorded_usage[crate::CodexServiceTier::Standard],
+                usage.tier_usage[crate::CodexServiceTier::Standard],
             ),
-            (Fast, usage.recorded_usage[crate::CodexServiceTier::Fast]),
-            (Flex, usage.recorded_usage[crate::CodexServiceTier::Flex]),
+            (Fast, usage.tier_usage[crate::CodexServiceTier::Fast]),
+            (Flex, usage.tier_usage[crate::CodexServiceTier::Flex]),
             (
                 Ultrafast,
-                usage.recorded_usage[crate::CodexServiceTier::Ultrafast],
+                usage.tier_usage[crate::CodexServiceTier::Ultrafast],
             ),
         ];
         let input_tokens = |tier| {

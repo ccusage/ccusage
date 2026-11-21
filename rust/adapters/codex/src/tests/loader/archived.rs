@@ -138,8 +138,8 @@ fn selected_session_input_tokens(
     let groups = paths::collect_deduped_codex_usage_files(sources, &diagnostics);
     let selected = groups
         .iter()
-        .map(|CodexUsageFileGroup { dir, files }| {
-            paths::filter_codex_usage_files(dir, files, shared)
+        .map(|CodexUsageFileGroup { source, files }| {
+            paths::filter_codex_usage_files(source.dir(), files, shared)
         })
         .collect::<Vec<_>>();
     crate::aggregate::load_groups_from_file_selection(

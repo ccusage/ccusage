@@ -199,7 +199,7 @@ fn refresh(
     shared.until = Some(today);
     let today_files = file_groups
         .iter()
-        .map(|group| paths::filter_codex_usage_files(&group.dir, &group.files, &shared))
+        .map(|group| paths::filter_codex_usage_files(group.source.dir(), &group.files, &shared))
         .collect::<Vec<_>>();
     let today = load_groups_from_file_selection(
         &file_groups,

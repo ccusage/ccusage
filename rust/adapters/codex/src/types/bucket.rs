@@ -43,31 +43,6 @@ impl CodexUsageBucket {
             },
         }
     }
-
-    pub(crate) fn saturating_sub(self, other: Self) -> Self {
-        Self {
-            input_tokens: self.input_tokens.saturating_sub(other.input_tokens),
-            cached_input_tokens: self
-                .cached_input_tokens
-                .saturating_sub(other.cached_input_tokens),
-            cache_creation_tokens: self
-                .cache_creation_tokens
-                .saturating_sub(other.cache_creation_tokens),
-            output_tokens: self.output_tokens.saturating_sub(other.output_tokens),
-            long_context_input_tokens: self
-                .long_context_input_tokens
-                .saturating_sub(other.long_context_input_tokens),
-            long_context_cached_input_tokens: self
-                .long_context_cached_input_tokens
-                .saturating_sub(other.long_context_cached_input_tokens),
-            long_context_cache_creation_tokens: self
-                .long_context_cache_creation_tokens
-                .saturating_sub(other.long_context_cache_creation_tokens),
-            long_context_output_tokens: self
-                .long_context_output_tokens
-                .saturating_sub(other.long_context_output_tokens),
-        }
-    }
 }
 
 impl AddAssign for CodexUsageBucket {
@@ -141,6 +116,7 @@ impl AddAssign for TierBuckets {
 }
 
 impl TierBuckets {
+    #[cfg(test)]
     pub(crate) fn total(self) -> CodexUsageBucket {
         self.0
             .into_iter()

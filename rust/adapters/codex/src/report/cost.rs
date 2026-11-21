@@ -7,13 +7,9 @@ pub(super) fn calculate_codex_usage_cost(
 ) -> f64 {
     let CodexTimestampedUsage {
         usage: total_usage,
-        recorded_usage,
+        tier_usage,
     } = usage;
-    let recorded_flex_usage = recorded_usage[CodexServiceTier::Flex];
-    let recorded_fast_usage = recorded_usage[CodexServiceTier::Fast];
-    let recorded_ultrafast_usage = recorded_usage[CodexServiceTier::Ultrafast];
     let standard_cost = calculate_codex_bucket_cost(&total_usage, pricing);
-    let unclassified_usage = total_usage.saturating_sub(recorded_usage.total());
     let empty = CodexUsageBucket::default();
     let (flex_usage, fast_usage, ultrafast_usage) = match speed {
         CodexSpeedPolicy::Forced(CodexServiceTier::Standard) => {
@@ -22,25 +18,10 @@ pub(super) fn calculate_codex_usage_cost(
         CodexSpeedPolicy::Forced(CodexServiceTier::Flex) => (total_usage, empty, empty),
         CodexSpeedPolicy::Forced(CodexServiceTier::Fast) => (empty, total_usage, empty),
         CodexSpeedPolicy::Forced(CodexServiceTier::Ultrafast) => (empty, empty, total_usage),
-        CodexSpeedPolicy::Auto(CodexServiceTier::Standard) => (
-            recorded_flex_usage,
-            recorded_fast_usage,
-            recorded_ultrafast_usage,
-        ),
-        CodexSpeedPolicy::Auto(CodexServiceTier::Flex) => (
-            recorded_flex_usage + unclassified_usage,
-            recorded_fast_usage,
-            recorded_ultrafast_usage,
-        ),
-        CodexSpeedPolicy::Auto(CodexServiceTier::Fast) => (
-            recorded_flex_usage,
-            recorded_fast_usage + unclassified_usage,
-            recorded_ultrafast_usage,
-        ),
-        CodexSpeedPolicy::Auto(CodexServiceTier::Ultrafast) => (
-            recorded_flex_usage,
-            recorded_fast_usage,
-            recorded_ultrafast_usage + unclassified_usage,
+        CodexSpeedPolicy::Auto => (
+            tier_usage[CodexServiceTier::Flex],
+            tier_usage[CodexServiceTier::Fast],
+            tier_usage[CodexServiceTier::Ultrafast],
         ),
     };
     standard_cost

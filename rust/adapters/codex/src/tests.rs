@@ -630,12 +630,8 @@ fn prices_mixed_speed_and_long_context_buckets_independently() {
         )
     };
 
-    let cost = calculate_codex_model_cost(
-        "gpt-long",
-        &usage,
-        Some(&pricing),
-        CodexSpeedPolicy::Auto(CodexServiceTier::Standard),
-    );
+    let cost =
+        calculate_codex_model_cost("gpt-long", &usage, Some(&pricing), CodexSpeedPolicy::Auto);
 
     let standard_cost = 40_000.0 * 5e-6 + 10_000.0 * 0.5e-6 + 200.0 * 30e-6;
     let fast_base_cost = 260_000.0 * 10e-6 + 40_000.0 * 1e-6 + 800.0 * 45e-6;
@@ -841,12 +837,8 @@ fn uses_recorded_service_tiers_in_auto_mode() {
         )
     };
 
-    let auto = calculate_codex_model_cost(
-        "gpt-test",
-        &usage,
-        Some(&pricing),
-        CodexSpeedPolicy::Auto(CodexServiceTier::Standard),
-    );
+    let auto =
+        calculate_codex_model_cost("gpt-test", &usage, Some(&pricing), CodexSpeedPolicy::Auto);
     let forced_standard = calculate_codex_model_cost(
         "gpt-test",
         &usage,
@@ -896,12 +888,8 @@ fn prices_recorded_flex_usage_at_flex_rate() {
         )
     };
 
-    let cost = calculate_codex_model_cost(
-        "gpt-test",
-        &usage,
-        Some(&pricing),
-        CodexSpeedPolicy::Auto(CodexServiceTier::Standard),
-    );
+    let cost =
+        calculate_codex_model_cost("gpt-test", &usage, Some(&pricing), CodexSpeedPolicy::Auto);
 
     assert!((cost - 10e-6).abs() < f64::EPSILON);
 }
@@ -951,12 +939,8 @@ fn prices_recorded_ultrafast_usage_at_published_rates() {
         ("gpt-6-astra", 0.0762, 9.45),
     ] {
         for (usage, expected) in [(&short, short_cost), (&long, long_cost)] {
-            let cost = calculate_codex_model_cost(
-                model,
-                usage,
-                Some(&pricing),
-                CodexSpeedPolicy::Auto(CodexServiceTier::Standard),
-            );
+            let cost =
+                calculate_codex_model_cost(model, usage, Some(&pricing), CodexSpeedPolicy::Auto);
             assert!((cost - expected).abs() < 1e-12, "{model}: {cost}");
         }
     }
@@ -994,12 +978,8 @@ fn keeps_standard_pricing_for_ultrafast_without_a_published_rate() {
             Some(&pricing),
             CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
         );
-        let auto = calculate_codex_model_cost(
-            model,
-            &usage,
-            Some(&pricing),
-            CodexSpeedPolicy::Auto(CodexServiceTier::Standard),
-        );
+        let auto =
+            calculate_codex_model_cost(model, &usage, Some(&pricing), CodexSpeedPolicy::Auto);
 
         assert!(standard > 0.0, "{model} has pricing");
         assert!((auto - standard).abs() < f64::EPSILON, "{model}");
@@ -1061,10 +1041,7 @@ fn prices_ultrafast_from_the_same_entry_as_standard_rates() {
         calculate_codex_model_cost(model, &usage, Some(&pricing), speed)
     };
 
-    let private_sol = cost(
-        "private-sol",
-        CodexSpeedPolicy::Auto(CodexServiceTier::Standard),
-    );
+    let private_sol = cost("private-sol", CodexSpeedPolicy::Auto);
     let standard_sol = cost(
         "gpt-6.1-sol",
         CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
@@ -1075,10 +1052,7 @@ fn prices_ultrafast_from_the_same_entry_as_standard_rates() {
         "{private_sol}"
     );
 
-    let terra = cost(
-        "gpt-6.1-terra",
-        CodexSpeedPolicy::Auto(CodexServiceTier::Standard),
-    );
+    let terra = cost("gpt-6.1-terra", CodexSpeedPolicy::Auto);
     let standard_terra = cost(
         "gpt-6.1-terra",
         CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
@@ -1094,15 +1068,9 @@ fn prices_ultrafast_from_the_same_entry_as_standard_rates() {
 fn prices_rollout_service_tiers_across_loading_and_report_modes() {
     ccusage_test_support::install_pricing_snapshots();
     for (model, expected_costs) in [
-        ("gpt-test", [55e-6, 50e-6, 65e-6, 25e-6, 50e-6, 100e-6]),
-        (
-            "deepseek-v4-flash",
-            [12.1e-6, 11e-6, 14.3e-6, 5.5e-6, 11e-6, 22e-6],
-        ),
-        (
-            "gpt-6.1-sol",
-            [105e-6, 100e-6, 115e-6, 25e-6, 50e-6, 100e-6],
-        ),
+        ("gpt-test", [55e-6, 25e-6, 50e-6, 100e-6]),
+        ("deepseek-v4-flash", [12.1e-6, 5.5e-6, 11e-6, 22e-6]),
+        ("gpt-6.1-sol", [105e-6, 25e-6, 50e-6, 100e-6]),
     ] {
         let rollout = |second: u8, tier: &str| {
             let timestamp = format!("2026-08-16T17:00:{second:02}.000Z");
@@ -1170,29 +1138,18 @@ fn prices_rollout_service_tiers_across_loading_and_report_modes() {
                 let groups =
                     load_groups_from_directory(&fixture.path("sessions"), &shared, kind).unwrap();
                 for (speed, expected) in [
+                    (CodexSpeedPolicy::Auto, expected_costs[0]),
                     (
-                        CodexSpeedPolicy::Auto(CodexServiceTier::Standard),
-                        expected_costs[0],
-                    ),
-                    (
-                        CodexSpeedPolicy::Auto(CodexServiceTier::Flex),
+                        CodexSpeedPolicy::Forced(CodexServiceTier::Flex),
                         expected_costs[1],
                     ),
                     (
-                        CodexSpeedPolicy::Auto(CodexServiceTier::Fast),
+                        CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
                         expected_costs[2],
                     ),
                     (
-                        CodexSpeedPolicy::Forced(CodexServiceTier::Flex),
-                        expected_costs[3],
-                    ),
-                    (
-                        CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
-                        expected_costs[4],
-                    ),
-                    (
                         CodexSpeedPolicy::Forced(CodexServiceTier::Fast),
-                        expected_costs[5],
+                        expected_costs[3],
                     ),
                 ] {
                     let report = report_from_groups(
@@ -1215,7 +1172,7 @@ fn prices_rollout_service_tiers_across_loading_and_report_modes() {
 }
 
 #[test]
-fn config_fallback_applies_only_to_unclassified_usage() {
+fn usage_without_a_tier_costs_the_standard_rate() {
     ccusage_test_support::install_pricing_snapshots();
     let mut pricing = PricingMap::default();
     pricing.load_json(
@@ -1240,40 +1197,7 @@ fn config_fallback_applies_only_to_unclassified_usage() {
             recorded,
         )
     };
-    let speed = CodexSpeedPolicy::Auto(CodexServiceTier::Fast);
-
-    let cost = calculate_codex_model_cost("gpt-test", &usage, Some(&pricing), speed);
-
-    assert!((cost - 50e-6).abs() < f64::EPSILON);
-}
-
-#[test]
-fn standard_config_fallback_leaves_unclassified_usage_at_standard_rate() {
-    ccusage_test_support::install_pricing_snapshots();
-    let mut pricing = PricingMap::default();
-    pricing.load_json(
-        r#"{
-                "gpt-test": {
-                    "input_cost_per_token": 0.000001,
-                    "output_cost_per_token": 0.000002,
-                    "provider_specific_entry": { "fast": 2 }
-                }
-            }"#,
-    );
-    let mut recorded = TierBuckets::default();
-    recorded[CodexServiceTier::Standard].input_tokens = 10;
-    recorded[CodexServiceTier::Fast].input_tokens = 10;
-    let usage = CodexModelUsage {
-        total_tokens: 30,
-        ..CodexModelUsage::from_buckets(
-            CodexUsageBucket {
-                input_tokens: 30,
-                ..CodexUsageBucket::default()
-            },
-            recorded,
-        )
-    };
-    let speed = CodexSpeedPolicy::Auto(CodexServiceTier::Standard);
+    let speed = CodexSpeedPolicy::Auto;
 
     let cost = calculate_codex_model_cost("gpt-test", &usage, Some(&pricing), speed);
 

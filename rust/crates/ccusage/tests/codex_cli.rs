@@ -823,7 +823,7 @@ fn reports_issue_1970_subagent_usage_in_daily_and_session_commands() {
 }
 
 #[test]
-fn prices_issue_1987_recorded_ultrafast_requests_at_ultrafast_rates() {
+fn prices_recorded_and_configured_ultrafast_usage() {
     let settings = |timestamp: &str, tier: &str| {
         json!({
             "timestamp": timestamp,
@@ -866,13 +866,20 @@ fn prices_issue_1987_recorded_ultrafast_requests_at_ultrafast_rates() {
         request("2026-10-27T10:00:03Z"),
     ]
     .join("\n");
+    let configured_ultrafast = [
+        request("2026-10-27T10:00:01Z"),
+        settings("2026-10-27T10:00:02Z", "default"),
+        request("2026-10-27T10:00:03Z"),
+    ]
+    .join("\n");
 
-    for (rollout, total_tokens, expected_cost) in [
-        (ultrafast_only, 1250, 0.01512),
-        (switched_back, 2500, 0.01512 + 0.00252),
+    for (configured_tier, rollout, total_tokens, expected_cost) in [
+        ("default", ultrafast_only, 1250, 0.01512),
+        ("default", switched_back, 2500, 0.01512 + 0.00252),
+        ("ultrafast", configured_ultrafast, 2500, 0.01512 + 0.00252),
     ] {
         let fixture = fs_fixture!({
-            "codex/config.toml": r#"service_tier = "default""#,
+            "codex/config.toml": format!("service_tier = {configured_tier:?}"),
             "codex/sessions/2026/10/27/rollout.jsonl": rollout,
         });
 
@@ -884,7 +891,10 @@ fn prices_issue_1987_recorded_ultrafast_requests_at_ultrafast_rates() {
 
         assert_eq!(daily["totals"]["totalTokens"], total_tokens);
         let cost = daily["totals"]["costUSD"].as_f64().unwrap();
-        assert!((cost - expected_cost).abs() < 1e-12, "{cost}");
+        assert!(
+            (cost - expected_cost).abs() < 1e-12,
+            "config tier {configured_tier}: expected {expected_cost}, got {cost}"
+        );
         let summary: Value = serde_json::from_str(&run_cli(
             &fixture,
             &[
@@ -900,6 +910,97 @@ fn prices_issue_1987_recorded_ultrafast_requests_at_ultrafast_rates() {
         .unwrap();
         assert_eq!(summary["costUSD"], daily["totals"]["costUSD"]);
         assert_eq!(summary["totalTokens"], total_tokens);
+    }
+}
+
+#[test]
+fn prices_an_unsupported_ultrafast_home_at_standard_even_next_to_flex() {
+    assert_codex_home_costs(
+        ("ultrafast", "flex"),
+        [("gpt-5.6-sol", 0.004), ("gpt-5.6-sol", 0.002)],
+    );
+}
+
+#[test]
+fn prices_an_unsupported_fast_home_at_standard_even_next_to_flex() {
+    assert_codex_home_costs(
+        ("fast", "flex"),
+        [("gpt-5.5-pro", 0.030), ("gpt-5.5-pro", 0.015)],
+    );
+}
+
+#[test]
+fn prices_standard_and_fast_homes_independently() {
+    assert_codex_home_costs(
+        ("standard", "fast"),
+        [("gpt-5.6-sol", 0.004), ("gpt-5.6-sol", 0.008)],
+    );
+}
+
+#[test]
+fn prices_fast_and_ultrafast_homes_independently() {
+    assert_codex_home_costs(
+        ("fast", "ultrafast"),
+        [
+            ("gpt-5.6-sol", 0.008),
+            ("gpt-6.1-sol", 0.012),
+            ("gpt-6.1-sol", 0.004),
+            ("gpt-5.6-sol", 0.004),
+        ],
+    );
+}
+
+fn assert_codex_home_costs<const N: usize>(tiers: (&str, &str), requests: [(&str, f64); N]) {
+    let fixture = fs_fixture!({
+        "codex/config.toml": format!("service_tier = {:?}", tiers.0),
+        "other/config.toml": format!("service_tier = {:?}", tiers.1),
+    });
+    for (index, (model, _)) in requests.iter().enumerate() {
+        let sessions = ["codex/sessions", "other/archived_sessions"][index % 2];
+        fixture.write_file(
+            format!("{sessions}/request-{index}.jsonl"),
+            json!({
+                "timestamp": format!("2026-10-{:02}T10:00:00Z", 24 + index),
+                "type": "event_msg",
+                "payload": {
+                    "type": "token_count",
+                    "info": {
+                        "model": model,
+                        "last_token_usage": { "input_tokens": 1000, "total_tokens": 1000 },
+                    },
+                },
+            })
+            .to_string(),
+        );
+    }
+    let homes = format!(
+        "{},{}",
+        fixture.path("codex").display(),
+        fixture.path("other").display()
+    );
+    let run = |args: &[&str]| -> Value {
+        let output = codex_command(support::hermetic_command(fixture.root()), &fixture)
+            .env("CODEX_HOME", &homes)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        serde_json::from_slice(&output.stdout).unwrap()
+    };
+    let report = run(&["codex", "daily", "--json"]);
+    let days = report["daily"].as_array().unwrap();
+    assert_eq!(days.len(), N);
+    for (index, (day, (model, cost))) in days.iter().zip(requests).enumerate() {
+        assert_eq!(day["totalTokens"], 1000);
+        assert_eq!(day["costUSD"], cost, "{model} on {}", day["date"]);
+        let session = format!("request-{index}");
+        let statusline = run(&["codex", "statusline", "--id", &session, "--json"]);
+        assert_eq!(statusline["totalTokens"], 1000);
+        assert_eq!(statusline["costUSD"], cost, "{model} in {session}");
     }
 }
 
