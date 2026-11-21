@@ -78,6 +78,37 @@ Covered: `daily`, `weekly`, `monthly`, and `session` reports for every agent, in
 
 Update ccusage, or run without `--offline`, once the pricing source lists the model.
 
+## Estimated Prices
+
+Some vendors list a model at $0 for their own free tier. When that model runs through a paid host that publishes no price of its own, such as `kyma/glm-4.7-flash`, the vendor's free tier says nothing about what the host charges. ccusage prices that usage from the closest paid listing of the same model and marks the result as an estimate. If no paid listing exists, the model is reported as [unpriced](#unpriced-models) rather than free. A provider counts as a paid host only when ccusage's pricing data shows that it charges, such as OpenRouter, Novita, Kyma, or a cloud host like Bedrock. The vendor's free tier used directly, a host's own $0 listing, a local runtime such as Ollama, and a provider that the pricing data doesn't know all still bill $0 without an estimate.
+
+- `totals.estimatedModels` lists the estimated model names, sorted and deduplicated. The key is present only when at least one entry used an estimate, so `.totals.estimatedModels // []` is safe in `jq`.
+- Each estimated entry in a summary row's `modelBreakdowns` carries `"estimatedPricing": true`. Focused `codex` reports set it on the entry in each period's `models` map instead.
+- Table output prints an `INFO` note naming the estimated models on stderr.
+
+Like the unpriced fields, these describe how a price was found, so `--no-cost` keeps them, and they follow the [cost mode](/guide/cost-modes): `display` mode looks up no prices and reports no estimates.
+
+```bash
+ccusage daily --json | jq '.totals.estimatedModels // []'
+```
+
+In a generated `ccusage codex daily --mode calculate --json` fixture report, one million input and 100,000 output tokens of `kyma/glm-4.7-flash` bill at the paid $0.08 / $0.478 per million token listing. Its `models` entry:
+
+```json
+{
+	"cacheCreationTokens": 0,
+	"cacheReadTokens": 0,
+	"estimatedPricing": true,
+	"inputTokens": 1000000,
+	"isFallback": false,
+	"outputTokens": 100000,
+	"reasoningOutputTokens": 0,
+	"totalTokens": 1100000
+}
+```
+
+The report's `totals` include `"estimatedModels": ["kyma/glm-4.7-flash"]`.
+
 Unified reports also support JSON-oriented flags for dashboard-style consumers:
 
 ```bash
@@ -645,7 +676,7 @@ ccusage claude daily --project my-frontend-app --json
 - `totalTokens`: Sum of all token types
 - `totalCost`: Estimated cost in US dollars
 - `modelsUsed`: Names of the models used
-- `modelBreakdowns`: One entry per model with `modelName`, the four token counts, and `cost`, plus [`storedCost`](#stored-costs), [`cacheCreation1hTokens`](#cache-write-ttl-split), and [`missingPricing`](#unpriced-models) when they apply
+- `modelBreakdowns`: One entry per model with `modelName`, the four token counts, and `cost`, plus [`storedCost`](#stored-costs), [`cacheCreation1hTokens`](#cache-write-ttl-split), [`missingPricing`](#unpriced-models), and [`estimatedPricing`](#estimated-prices) when they apply
 
 ### Report-Specific Fields
 

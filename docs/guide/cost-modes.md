@@ -96,8 +96,12 @@ ccusage claude daily --mode calculate --json | jq '.totals.unpricedModels // []'
 
 To use available online prices, run with `--no-offline`. For private or proxied models, configure a pricing override.
 
+## Estimated Prices
+
+A vendor's free model used through a paid host with no price of its own is priced from the closest paid listing of the same model, not at $0. Local runtimes such as Ollama, and providers that ccusage's pricing data doesn't know, keep the free price. JSON marks those model breakdowns with `estimatedPricing: true` and lists the names in `totals.estimatedModels`, and table output prints an `INFO` note. When no paid listing exists, the model is reported as missing instead. See [Estimated Prices](/guide/json-output#estimated-prices).
+
 ## Related Guides
 
-- [JSON Output](/guide/json-output) - Stored costs, cache-write splits, and unpriced models
+- [JSON Output](/guide/json-output) - Stored costs, cache-write splits, and unpriced or estimated models
 - [Configuration Files](/guide/config-files) - Persistent mode and pricing settings
 - [Claude Code](/guide/claude/) - Data paths and source-specific options
