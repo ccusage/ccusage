@@ -768,7 +768,11 @@ fn tiered_test_pricing() -> PricingMap {
                 cache_read: Some(0.1e-6),
                 ..Default::default()
             }
-            .marginal(),
+            .marginal()
+            .map(|tier| crate::pricing::LongContext {
+                threshold: 32_000,
+                ..tier
+            }),
             ..Pricing::empty()
         },
     );
@@ -799,9 +803,10 @@ fn an_override_tier_holds_only_the_above_threshold_rates_it_spells_out() {
     });
     pricing.apply_overrides(overrides.iter());
 
-    let rates = pricing.find("tiered").unwrap().long_context.unwrap().rates;
+    let tier = pricing.find("tiered").unwrap().long_context.unwrap();
+    assert_eq!(tier.threshold, 32_000);
     assert_eq!(
-        (rates.input, rates.output, rates.cache_read),
+        (tier.rates.input, tier.rates.output, tier.rates.cache_read),
         (Some(80e-6), None, None)
     );
 }
@@ -852,4 +857,22 @@ fn a_bare_override_covers_host_qualified_labels_with_their_own_catalogue_rate() 
         let rate = pricing.find(label).unwrap();
         assert_eq!((rate.input, rate.output), (50e-6, 50e-6), "{label}");
     }
+}
+
+#[test]
+fn a_full_label_override_wins_over_the_bare_key() {
+    crate::test_support::install_pricing_snapshots();
+    let embedded = PricingMap::load_embedded();
+    let at = |rate| ccusage_cli::PricingOverride {
+        input_cost_per_token: Some(rate),
+        output_cost_per_token: Some(rate),
+        ..Default::default()
+    };
+    let (bare, full) = ("gpt-5.5".to_owned(), "azure/gpt-5.5".to_owned());
+    let (bare_rate, full_rate) = (at(50e-6), at(7e-6));
+    let pricing = embedded.with_user_overrides([(&bare, &bare_rate), (&full, &full_rate)]);
+    let host = pricing.find("azure/gpt-5.5").unwrap();
+    assert_eq!((host.input, host.output), (7e-6, 7e-6));
+    let direct = pricing.find("gpt-5.5").unwrap();
+    assert_eq!((direct.input, direct.output), (50e-6, 50e-6));
 }
