@@ -286,23 +286,16 @@ impl Pricing {
 
     pub(crate) fn at_speed(mut self, fast: bool) -> Self {
         if fast && self.flat_long_context_in_fast_mode {
-            self.long_context = None;
+            self.long_context = self.explicit_long_context();
         }
         self
     }
 
-    pub(super) fn explicit_long_rate_fields(&self) -> u16 {
-        self.explicit_fields & OverrideFields::LONG_RATES
-    }
-
-    pub(super) fn replace_tier_with_explicit_rates(&mut self) {
+    fn explicit_long_context(&self) -> Option<LongContext> {
         let explicit = self.explicit_fields;
-        if explicit & OverrideFields::RATES == 0 {
-            return;
-        }
         let kept = |bit: u16, rate: Option<f64>| rate.filter(|_| explicit & bit != 0);
         let one_hour = self.one_hour_cache_creation_rate();
-        self.long_context = self.long_context.and_then(|context| {
+        self.long_context.and_then(|context| {
             LongContextRates {
                 input: kept(OverrideFields::LONG_INPUT, context.rates.input),
                 output: kept(OverrideFields::LONG_OUTPUT, context.rates.output),
@@ -321,7 +314,18 @@ impl Pricing {
                 },
                 ..context
             })
-        });
+        })
+    }
+
+    pub(super) fn explicit_long_rate_fields(&self) -> u16 {
+        self.explicit_fields & OverrideFields::LONG_RATES
+    }
+
+    pub(super) fn replace_tier_with_explicit_rates(&mut self) {
+        if self.explicit_fields & OverrideFields::RATES == 0 {
+            return;
+        }
+        self.long_context = self.explicit_long_context();
     }
 
     pub(super) fn apply_override(&mut self, value: &PricingOverride) {
