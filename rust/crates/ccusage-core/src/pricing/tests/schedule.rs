@@ -870,3 +870,26 @@ fn user_overrides_take_precedence_over_the_route_schedule() {
     assert_eq!(foreign.input * 1e6, 9.0);
     assert!((foreign.output * 1e6 - 0.28).abs() < 1e-12);
 }
+
+#[test]
+fn google_spellings_follow_the_announced_gemini_price_changes() {
+    crate::test_support::install_pricing_snapshots();
+    let pricing = PricingMap::load_embedded();
+    for (model, instant, input, output) in [
+        ("gemini-4-argon", "2026-11-30T23:59:59Z", 2.0, 10.0),
+        ("gemini-4-argon", "2026-12-01T00:00:00Z", 4.0, 20.0),
+        ("google/gemini-4-argon", "2026-11-30T23:59:59Z", 2.0, 10.0),
+        ("google/gemini-4-argon", "2026-12-01T00:00:00Z", 4.0, 20.0),
+        ("google/gemini-4-carbon", "2026-12-01T00:00:00Z", 4.0, 20.0),
+        ("gemini-3.8-flash", "2026-12-31T23:59:59Z", 0.75, 3.75),
+        ("google/gemini-3.8-flash", "2027-01-01T00:00:00Z", 1.5, 7.5),
+        ("gemini-3.6-flash", "2027-01-01T00:00:00Z", 1.5, 7.5),
+    ] {
+        let rates = pricing.find_at(model, timestamp(instant)).unwrap();
+        assert_eq!(
+            (rates.input * 1e6, rates.output * 1e6),
+            (input, output),
+            "{model} at {instant}"
+        );
+    }
+}

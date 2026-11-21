@@ -342,10 +342,64 @@ const DEEPSEEK_FLASH: PricingSchedule = PricingSchedule {
     successor: None,
 };
 
+const fn date_step(
+    cutoff_ms: i64,
+    before: ScheduledRates,
+    after: ScheduledRates,
+) -> PricingSchedule {
+    PricingSchedule {
+        cutoff_ms,
+        peak_weekdays: 1..=0,
+        peak_hours: &[],
+        before,
+        off_peak: after,
+        peak: after,
+        successor: None,
+    }
+}
+
+// NOTE(2026-11-21, #2226): https://ai.google.dev/gemini-api/docs/pricing lists Gemini 4 Argon and Carbon at $2.00 input, $10.00 output and $0.10 cached through November 30, 2026, and $4.00, $20.00 and $0.20 from December 1, 2026. Google names the date but not the time, so the change starts at 00:00 UTC, which bills the higher rate no later than Google does. Implicit caching has no write charge, so writes keep the input rate as the GEMINI cache defaults do.
+const GEMINI_4_PRO_TIER: PricingSchedule = date_step(
+    1_796_083_200_000,
+    ScheduledRates {
+        input: 2.0e-6,
+        output: 10.0e-6,
+        cache_create: 2.0e-6,
+        cache_read: 0.1e-6,
+    },
+    ScheduledRates {
+        input: 4.0e-6,
+        output: 20.0e-6,
+        cache_create: 4.0e-6,
+        cache_read: 0.2e-6,
+    },
+);
+
+// NOTE(2026-11-21, #2226): https://ai.google.dev/gemini-api/docs/pricing lists Gemini 3.8 Flash and 3.6 Flash at $0.75 input, $3.75 output and $0.075 cached through December 31, 2026, and $1.50, $7.50 and $0.15 from January 1, 2027. The change starts at 00:00 UTC for the same reason as Gemini 4.
+const GEMINI_FLASH_2027: PricingSchedule = date_step(
+    1_798_761_600_000,
+    ScheduledRates {
+        input: 0.75e-6,
+        output: 3.75e-6,
+        cache_create: 0.75e-6,
+        cache_read: 0.075e-6,
+    },
+    ScheduledRates {
+        input: 1.5e-6,
+        output: 7.5e-6,
+        cache_create: 1.5e-6,
+        cache_read: 0.15e-6,
+    },
+);
+
 pub(super) static SCHEDULES: &[(&str, PricingSchedule)] = &[
     ("deepseek-flash", DEEPSEEK_FLASH),
     ("deepseek-v4-flash", DEEPSEEK_V4_FLASH),
     // NOTE(2026-11-20, #2401): DeepSeek's August 21, 2026 V4 Flash Vision Exp release prices only image tokens at V4-Flash rates: https://api-docs.deepseek.com/news/news260821/. The alias therefore shares the V4 Flash schedule, including the September 10, 2026 handoff.
     ("deepseek-v4-flash-vision-exp", DEEPSEEK_V4_FLASH),
     ("deepseek-v4-pro", DEEPSEEK_V4_PRO),
+    ("gemini-4-argon", GEMINI_4_PRO_TIER),
+    ("gemini-4-carbon", GEMINI_4_PRO_TIER),
+    ("gemini-3-8-flash", GEMINI_FLASH_2027),
+    ("gemini-3-6-flash", GEMINI_FLASH_2027),
 ];
