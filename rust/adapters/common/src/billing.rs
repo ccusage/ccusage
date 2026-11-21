@@ -3,8 +3,15 @@ use ccusage_core::{
     pricing::BillingRoute,
 };
 
-// NOTE(2026-11-20, #2332): Only DeepSeek publishes a time-of-day schedule, so only the provider IDs that bill through DeepSeek itself keep that schedule (https://docs.litellm.ai/docs/providers/deepseek). DeepSeek Harness records its own routes as `deepseek-official` and `deepseek-account`. Every other provider ID bills at a flat rate and must not inherit the schedule, whichever row the lookup reaches.
-const DIRECT_PROVIDERS: &[&str] = &["deepseek", "deepseek-official", "deepseek-account"];
+// NOTE(2026-11-20, #2332): Only the provider IDs that bill through the scheduled vendor itself keep its schedule (https://docs.litellm.ai/docs/providers/deepseek). DeepSeek Harness records its own routes as `deepseek-official` and `deepseek-account`. Every other provider ID bills at a flat rate and must not inherit the schedule, whichever row the lookup reaches.
+// NOTE(2026-11-21, #2226): Google's Gemini Developer API is recorded as `google` (models.dev, https://models.dev/providers/google) or `gemini` (https://docs.litellm.ai/docs/providers/gemini), and it bills its dated price changes itself. Vertex AI stays a separate host.
+const DIRECT_PROVIDERS: &[&str] = &[
+    "deepseek",
+    "deepseek-official",
+    "deepseek-account",
+    "google",
+    "gemini",
+];
 
 const UNKNOWN_PROVIDERS: &[&str] = &["", "unknown"];
 
@@ -51,6 +58,8 @@ mod tests {
             "DeepSeek",
             "deepseek-official",
             "deepseek_account",
+            "google",
+            "gemini",
         ] {
             assert_eq!(
                 billing_route(Some(provider)),
@@ -70,7 +79,7 @@ mod tests {
             "alibaba",
             "anthropic",
             "openai",
-            "google",
+            "google-vertex",
         ] {
             assert_eq!(
                 billing_route(Some(provider)),

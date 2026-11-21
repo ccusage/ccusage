@@ -893,3 +893,33 @@ fn google_spellings_follow_the_announced_gemini_price_changes() {
         );
     }
 }
+
+#[test]
+fn usage_billed_by_google_follows_the_gemini_price_change_and_foreign_hosts_stay_flat() {
+    crate::test_support::install_pricing_snapshots();
+    let pricing = PricingMap::load_embedded();
+    let after = Some(timestamp("2026-12-02T00:00:00Z"));
+    for (candidates, route, input) in [
+        (
+            [
+                ("google/gemini-4-argon", MatchKind::Exact),
+                ("gemini-4-argon", MatchKind::Fuzzy),
+            ],
+            BillingRoute::Direct,
+            4.0,
+        ),
+        (
+            [
+                ("openrouter/gemini-4-argon", MatchKind::Exact),
+                ("gemini-4-argon", MatchKind::Fuzzy),
+            ],
+            BillingRoute::Foreign,
+            2.0,
+        ),
+    ] {
+        let (_, rates) = pricing
+            .resolve_on_route_at(Some("gemini-4-argon"), &candidates, route, after)
+            .unwrap();
+        assert_eq!(rates.input * 1e6, input, "{route:?}");
+    }
+}
