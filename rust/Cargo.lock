@@ -262,6 +262,7 @@ dependencies = [
  "ccusage-core",
  "ccusage-test-support",
  "ccusage-zstd",
+ "memchr",
  "serde",
  "serde_json",
  "simdutf8",

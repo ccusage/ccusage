@@ -11,6 +11,7 @@ sqlite = ["dep:sqlite"]
 [dependencies]
 ccusage-core.workspace = true
 ccusage-zstd.workspace = true
+memchr.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 simdutf8.workspace = true

@@ -2,6 +2,10 @@ use std::cell::OnceCell;
 
 use serde::{Deserialize, de::DeserializeOwned};
 
+mod pick;
+
+pub use pick::{Fields, Member, Picked};
+
 /// JSON bytes parsed through `serde_json`'s string reader, so each record type is compiled once.
 ///
 /// Parsing equals `serde_json::from_slice` for targets that read strings as `str` or `String`.
@@ -64,6 +68,13 @@ impl<'a> JsonText<'a> {
             Some(error) => Err(error),
             None => parse(self.replaced_text()),
         }
+    }
+
+    /// Keeps only `fields` of a valid UTF-8 line; see [`Picked::new`]. `None` means the line
+    /// needs [`JsonText::parse`].
+    #[inline]
+    pub fn pick(&self, fields: Fields) -> Option<Picked<'a>> {
+        Picked::new(simdutf8::basic::from_utf8(self.bytes).ok()?, fields)
     }
 
     #[cold]
