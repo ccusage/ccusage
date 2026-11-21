@@ -56,6 +56,14 @@ mod tests {
     #[test]
     fn a_vendors_own_provider_id_names_that_vendor() {
         assert_eq!(
+            billing_route(Some("anthropic")),
+            Some(BillingRoute::Direct("anthropic"))
+        );
+        assert_eq!(
+            billing_route(Some("Anthropic")),
+            Some(BillingRoute::Direct("anthropic"))
+        );
+        assert_eq!(
             billing_route(Some("xai")),
             Some(BillingRoute::Direct("xai"))
         );
@@ -73,7 +81,6 @@ mod tests {
             "github-copilot",
             "fireworks_ai",
             "alibaba",
-            "anthropic",
             "openai",
             "google",
         ] {
