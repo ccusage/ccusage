@@ -1,6 +1,6 @@
 use super::model::{
-    API_PROVIDER_GOOGLE_GEMINI, model_candidates, model_from_id, normalize_antigravity_model,
-    price_antigravity,
+    API_PROVIDER_GOOGLE_GEMINI, API_PROVIDER_GOOGLE_VERTEX, model_candidates, model_from_id,
+    normalize_antigravity_model, price_antigravity,
 };
 use super::proto::{
     ProtoField, ProtoValue, field_bytes, field_bytes_all, field_text, field_varint,
@@ -207,6 +207,13 @@ fn only_google_providers_receive_google_model_candidates() {
             "gemini/gemini-unpriced".to_string(),
             "vertex_ai/gemini-unpriced".to_string(),
             "openrouter/google/gemini-unpriced".to_string(),
+        ]
+    );
+    assert_eq!(
+        model_candidates("gemini-unpriced", Some(API_PROVIDER_GOOGLE_VERTEX)),
+        vec![
+            "vertex_ai/gemini-unpriced".to_string(),
+            "gemini-unpriced".to_string(),
         ]
     );
 }

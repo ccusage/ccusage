@@ -9,7 +9,7 @@ use crate::{TimestampMs, TokenUsageRaw};
 use super::DEFAULT_MODEL;
 
 const PROVIDER_PREFIXES: [&str; 4] = ["google", "gemini", "vertex_ai", "openrouter/google"];
-const API_PROVIDER_GOOGLE_VERTEX: u64 = 3;
+pub(super) const API_PROVIDER_GOOGLE_VERTEX: u64 = 3;
 pub(super) const API_PROVIDER_GOOGLE_GEMINI: u64 = 24;
 const API_PROVIDER_GOOGLE_EVERGREEN: u64 = 30;
 
@@ -230,22 +230,22 @@ pub(super) fn model_candidates(model: &str, provider: Option<u64>) -> Vec<String
     let mut models = vec![model];
     models.extend(gemini_flash_pricing_alias(model));
 
-    let use_google_prefixes = matches!(
-        provider,
-        Some(
-            API_PROVIDER_GOOGLE_VERTEX | API_PROVIDER_GOOGLE_GEMINI | API_PROVIDER_GOOGLE_EVERGREEN
-        )
-    );
+    // NOTE(2026-11-21, #2226): Vertex AI is a separate host with its own listing, so a Vertex request tries `vertex_ai/<model>` before the bare id, whose Gemini API row would bill Google's own rates and dated changes. Gemini API and Evergreen requests keep the Google spellings.
+    let (host, google): (&[&str], &[&str]) = match provider {
+        Some(API_PROVIDER_GOOGLE_VERTEX) => (&["vertex_ai"], &[]),
+        Some(API_PROVIDER_GOOGLE_GEMINI | API_PROVIDER_GOOGLE_EVERGREEN) => {
+            (&[], &PROVIDER_PREFIXES)
+        }
+        _ => (&[], &[]),
+    };
     let mut candidates = models
         .into_iter()
         .flat_map(|model| {
-            std::iter::once(model.to_string()).chain(
-                use_google_prefixes
-                    .then_some(PROVIDER_PREFIXES)
-                    .into_iter()
-                    .flatten()
-                    .map(move |prefix| format!("{prefix}/{model}")),
-            )
+            let prefixed = move |prefix: &&str| format!("{prefix}/{model}");
+            host.iter()
+                .map(prefixed)
+                .chain(std::iter::once(model.to_string()))
+                .chain(google.iter().map(prefixed))
         })
         .collect::<Vec<_>>();
     let mut seen = std::collections::HashSet::new();

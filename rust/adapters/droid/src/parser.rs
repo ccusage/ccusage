@@ -211,6 +211,7 @@ fn provider_prefixes(provider: &str) -> (Vec<String>, Option<String>) {
         "anthropic" => (&["anthropic/"], "openrouter/anthropic/"),
         "openai" => (&["openai/"], "openrouter/openai/"),
         "google" => (&["google/", "vertex_ai/"], "openrouter/google/"),
+        "vertex_ai" => (&["vertex_ai/"], "openrouter/google/"),
         "xai" => (&["xai/"], "openrouter/x-ai/"),
         "unknown" => return (Vec::new(), None),
         provider => {
@@ -277,7 +278,8 @@ fn normalize_droid_provider(value: Option<&str>) -> String {
         "" => "unknown".to_string(),
         "claude" | "anthropic" => "anthropic".to_string(),
         "openai" => "openai".to_string(),
-        "google" | "google_ai" | "gemini" | "vertex" | "vertex_ai" => "google".to_string(),
+        "google" | "google_ai" | "gemini" => "google".to_string(),
+        "vertex" | "vertex_ai" => "vertex_ai".to_string(),
         "xai" | "x_ai" | "grok" => "xai".to_string(),
         value => value.to_string(),
     }
@@ -309,7 +311,7 @@ fn default_model_from_provider(provider: &str) -> &'static str {
     match provider {
         "anthropic" => "claude-unknown",
         "openai" => "gpt-unknown",
-        "google" => "gemini-unknown",
+        "google" | "vertex_ai" => "gemini-unknown",
         "xai" => "grok-unknown",
         "unknown" => "unknown",
         _ => "unknown",
@@ -680,5 +682,20 @@ mod pricing_identity_tests {
             );
             assert_eq!(missing, None);
         }
+    }
+
+    #[test]
+    fn a_vertex_provider_lock_keeps_the_vertex_host() {
+        for logged in ["vertex", "vertex_ai", "Vertex-AI"] {
+            let provider = super::normalize_droid_provider(Some(logged));
+            assert_eq!(provider, "vertex_ai", "{logged}");
+            let (direct, _) = super::provider_prefixes(&provider);
+            assert_eq!(direct, ["vertex_ai/"], "{logged}");
+            assert_eq!(
+                super::default_model_from_provider(&provider),
+                "gemini-unknown"
+            );
+        }
+        assert_eq!(super::normalize_droid_provider(Some("gemini")), "google");
     }
 }

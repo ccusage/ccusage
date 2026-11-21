@@ -649,7 +649,7 @@ const GROK_CODE_FAST_1: PricingSchedule = PricingSchedule {
 };
 
 // NOTE(2026-11-21, #2455): A schedule is a vendor's own price list, so on a recorded billing route it applies only to usage that vendor billed itself. These provider IDs name a vendor's own API: DeepSeek's and xAI's LiteLLM provider IDs (https://docs.litellm.ai/docs/providers/deepseek, https://docs.litellm.ai/docs/providers/xai) and DeepSeek Harness's `deepseek-official` and `deepseek-account` routes. Any other provider ID bills at its own flat rate.
-// NOTE(2026-11-21, #2226): Google's Gemini Developer API is recorded as `google` (models.dev, https://models.dev/providers/google) or `gemini` (https://docs.litellm.ai/docs/providers/gemini), and Google bills its dated price changes itself. Hermes and Droid also fold their `vertex` and `vertex_ai` provider IDs into `google`, so those records keep Google's schedules; https://cloud.google.com/vertex-ai/generative-ai/pricing lists the same Gemini 3.x Flash step. Other Vertex spellings, such as `google-vertex`, stay foreign.
+// NOTE(2026-11-21, #2226): Google's Gemini Developer API is recorded as `google` (models.dev, https://models.dev/providers/google) or `gemini` (https://docs.litellm.ai/docs/providers/gemini), and Google bills its dated price changes itself. Vertex AI is a separate host with its own listing, so a `vertex_ai` or `google-vertex` provider bills at that listing on a foreign route.
 pub(super) static DIRECT_BILLING_PROVIDERS: &[(&str, &str)] = &[
     ("deepseek", "deepseek"),
     ("deepseek-official", "deepseek"),
