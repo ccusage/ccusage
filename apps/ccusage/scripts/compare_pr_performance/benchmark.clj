@@ -9,8 +9,9 @@
 (defn command-argv [bin command] (vec (concat [bin] (command-args command) ["--offline" "--json"])))
 
 ;; NOTE(2026-11-21, #2449): Under hyperfine 2.0, ccusage's parallel OpenCode reads spent 1.6x the wall time and 1.6-3x the kernel time they do under /usr/bin/time, with or without hardware counters. Time each run with the shell's own `time`, and use hyperfine only for instruction counts.
+;; NOTE(2026-11-21, #2449): bash 5.3 rounds a three-digit `time` fraction without carrying, so 0.9998 s prints as `0.:00`. Six digits are the exact microseconds and never round.
 (def timing-script
-  "TIMEFORMAT='%3R %3U %3S'; times=$1 errors=$2; shift 2; { time \"$@\" >/dev/null 2>\"$errors\"; } 2>\"$times\"")
+  "TIMEFORMAT='%6R %6U %6S'; times=$1 errors=$2; shift 2; { time \"$@\" >/dev/null 2>\"$errors\"; } 2>\"$times\"")
 
 (defn parse-timing [times rss-kib]
   (let [[wall user system] (map #(Double/parseDouble %) (str/split (str/trim times) #"\s+"))]
