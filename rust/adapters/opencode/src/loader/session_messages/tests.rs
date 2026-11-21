@@ -16,6 +16,8 @@ use super::{
 };
 use crate::cli::{CostMode, SharedArgs};
 
+const SQLITE_BUSY: isize = 5;
+
 type Loaded = (
     Option<(u32, u32)>,
     Vec<(Option<String>, String, i64, u64)>,
@@ -80,9 +82,9 @@ fn load(
             &mut collector,
         ),
     };
-    connection
-        .execute("BEGIN; ROLLBACK")
-        .expect("the read transaction has ended");
+    sqlite::open(path)
+        .and_then(|writer| writer.execute("BEGIN EXCLUSIVE; COMMIT"))
+        .expect("the loader released its read locks");
     let entries = collector
         .messages
         .iter()
@@ -108,8 +110,12 @@ fn open_after_a_write_at_the_first_worker(
     let path = path.to_path_buf();
     move || {
         if opened.fetch_add(1, Ordering::Relaxed) == 2 {
-            let committed = sqlite::open(&path).and_then(|db| db.execute(sql)).is_ok();
-            assert_eq!(committed, commits, "{sql}");
+            let written = sqlite::open(&path).unwrap().execute(sql);
+            if commits {
+                written.unwrap();
+            } else {
+                assert_eq!(written.unwrap_err().code, Some(SQLITE_BUSY), "{sql}");
+            }
         }
         open_read_only(&path)
     }
