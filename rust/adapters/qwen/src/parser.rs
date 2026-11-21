@@ -292,7 +292,7 @@ mod tests {
             }"#,
         );
 
-        let (cost, _) = price_qwen(
+        let (cost, _, _) = price_qwen(
             "free-model",
             TokenUsageRaw {
                 input_tokens: 100,

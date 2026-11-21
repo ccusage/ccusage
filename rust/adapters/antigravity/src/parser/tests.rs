@@ -466,7 +466,7 @@ fn a_gpt_thinking_id_prices_at_the_stripped_base_rate() {
         }"#,
     );
 
-    let (cost, missing) = price_antigravity(
+    let (cost, missing, _) = price_antigravity(
         "gpt-oss-120b-thinking",
         None,
         None,

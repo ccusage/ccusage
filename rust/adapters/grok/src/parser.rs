@@ -558,7 +558,7 @@ mod tests {
                     CostMode::Calculate,
                     PriceTable::Calculate(&pricing)
                 ),
-                (0.0, Some(model.to_string()))
+                (0.0, Some(model.to_string()), false)
             );
             assert_eq!(
                 price_grok_usage(
@@ -569,7 +569,7 @@ mod tests {
                     CostMode::Auto,
                     PriceTable::Auto(&pricing)
                 ),
-                (0.0, Some(model.to_string()))
+                (0.0, Some(model.to_string()), false)
             );
             assert_eq!(
                 price_grok_usage(
@@ -580,7 +580,7 @@ mod tests {
                     CostMode::Auto,
                     PriceTable::Auto(&pricing)
                 ),
-                (1.0, None)
+                (1.0, None, false)
             );
             assert_eq!(
                 price_grok_usage(
@@ -591,7 +591,7 @@ mod tests {
                     CostMode::Display,
                     PriceTable::Display
                 ),
-                (0.0, None)
+                (0.0, None, false)
             );
             assert_eq!(
                 price_grok_usage(
@@ -602,7 +602,7 @@ mod tests {
                     CostMode::Calculate,
                     PriceTable::Calculate(&pricing)
                 ),
-                (0.0, None)
+                (0.0, None, false)
             );
         }
     }

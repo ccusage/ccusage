@@ -246,7 +246,7 @@ mod tests {
         pricing.load_json(r#"{"zai/sample":{"litellm_provider":"zai","input_cost_per_token":0,"output_cost_per_token":0},"sample":{"input_cost_per_token":1,"output_cost_per_token":1}}"#);
         assert_eq!(
             price_hermes(&entry, PriceTable::Calculate(&pricing)),
-            (0.0, None)
+            (0.0, None, false)
         );
     }
 
@@ -685,7 +685,7 @@ mod pricing_identity_tests {
                 cost_usd: None,
             };
 
-            let (cost, missing) = price_hermes(&entry, PriceTable::Calculate(&pricing));
+            let (cost, missing, _) = price_hermes(&entry, PriceTable::Calculate(&pricing));
             assert!((cost - expected).abs() < 1e-12, "{provider}: {cost}");
             assert_eq!(missing, None, "{provider}");
         }
@@ -708,7 +708,7 @@ mod pricing_identity_tests {
                 message_count: 1,
                 cost_usd: None,
             };
-            let (cost, missing) = price_hermes(&entry, PriceTable::Calculate(&pricing));
+            let (cost, missing, _) = price_hermes(&entry, PriceTable::Calculate(&pricing));
             assert!((cost - 4.0).abs() < 1e-9, "{logged}: {cost}");
             assert_eq!(missing, None, "{logged}");
         }
@@ -744,7 +744,7 @@ mod pricing_identity_tests {
                 message_count: 1,
                 cost_usd: None,
             };
-            let (cost, missing) = price_hermes(&entry, PriceTable::Calculate(&pricing));
+            let (cost, missing, _) = price_hermes(&entry, PriceTable::Calculate(&pricing));
             assert!((cost - expected).abs() < 1e-9, "{logged}: {cost}");
             assert_eq!(missing, None, "{logged}");
         }
@@ -771,7 +771,7 @@ mod pricing_identity_tests {
                 message_count: 1,
                 cost_usd: None,
             };
-            let (cost, missing) = price_hermes(&entry, PriceTable::Calculate(&pricing));
+            let (cost, missing, _) = price_hermes(&entry, PriceTable::Calculate(&pricing));
             assert!((cost - expected).abs() < 1e-12, "{instant}: {cost}");
             assert_eq!(missing, None, "{instant}");
         }
@@ -815,7 +815,7 @@ mod pricing_identity_tests {
             };
             assert_eq!(
                 price_hermes(&entry, PriceTable::Auto(&pricing)),
-                (0.1, None)
+                (0.1, None, false)
             );
         }
     }
@@ -847,7 +847,7 @@ mod pricing_identity_tests {
             message_count: 1,
             cost_usd: None,
         };
-        let (cost, missing) = price_hermes(&entry, PriceTable::Calculate(&pricing));
+        let (cost, missing, _) = price_hermes(&entry, PriceTable::Calculate(&pricing));
         assert!((cost - 0.016).abs() < 1e-12, "{cost}");
         assert_eq!(missing, None);
     }
@@ -883,7 +883,7 @@ mod pricing_identity_tests {
             message_count: 1,
             cost_usd: None,
         };
-        let (cost, missing) = price_hermes(&entry, PriceTable::Calculate(&pricing));
+        let (cost, missing, _) = price_hermes(&entry, PriceTable::Calculate(&pricing));
         assert!((cost - 0.003).abs() < 1e-12, "{cost}");
         assert_eq!(missing, None);
     }
@@ -912,7 +912,7 @@ mod pricing_identity_tests {
             message_count: 1,
             cost_usd: None,
         };
-        let (cost, missing) = price_hermes(&entry, PriceTable::Calculate(&pricing));
+        let (cost, missing, _) = price_hermes(&entry, PriceTable::Calculate(&pricing));
         assert!((cost - 15.0).abs() < 1e-9, "{cost}");
         assert_eq!(missing, None);
     }
@@ -997,11 +997,11 @@ mod pricing_identity_tests {
                 0.00066125,
             ),
             (
-                "54_free_identity",
+                "54_free_identity_estimated_through_router",
                 "glm-4.7-flash",
                 "openrouter",
                 &pricing,
-                0.0,
+                0.000558,
             ),
         ] {
             let entry = HermesEntry {
@@ -1018,7 +1018,7 @@ mod pricing_identity_tests {
                 message_count: 1,
                 cost_usd: None,
             };
-            let (cost, missing) = price_hermes(&entry, PriceTable::Calculate(map));
+            let (cost, missing, _) = price_hermes(&entry, PriceTable::Calculate(map));
             assert!((cost - expected).abs() < 1e-12, "{case}: {cost}");
             assert_eq!(missing, None, "{case}");
         }

@@ -495,7 +495,7 @@ mod pricing_identity_tests {
                 dedup_key: String::new(),
             };
 
-            let (cost, missing) = price_codebuff(&entry, PriceTable::Calculate(&pricing));
+            let (cost, missing, _) = price_codebuff(&entry, PriceTable::Calculate(&pricing));
             assert!((cost - expected).abs() < 1e-12, "{provider}: {cost}");
             assert_eq!(missing, None, "{provider}");
         }
