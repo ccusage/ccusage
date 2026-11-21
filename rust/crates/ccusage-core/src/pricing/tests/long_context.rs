@@ -635,3 +635,37 @@ fn a_long_rate_only_override_keeps_the_scheduled_one_hour_write_rate() {
         assert_eq!(context.rates.cache_create_1h, one_hour, "{model}");
     }
 }
+
+#[test]
+fn fast_mode_keeps_an_overrides_explicit_long_rates_before_ga() {
+    crate::test_support::install_pricing_snapshots();
+    let model = "claude-opus-4-6";
+    let key = model.to_string();
+    let override_value = ccusage_cli::PricingOverride {
+        input_cost_per_token_above_200k_tokens: Some(8e-6),
+        ..Default::default()
+    };
+    let pricing = PricingMap::load_embedded().with_user_overrides([(&key, &override_value)]);
+    let candidates = [(model, MatchKind::Fuzzy)];
+    let cost = crate::cost::price_entry(
+        crate::cost::EntryPricing {
+            granularity: crate::cost::UsageGranularity::Request,
+            usage: crate::TokenUsageRaw {
+                input_tokens: 300_000,
+                output_tokens: 1_000,
+                speed: Some(crate::Speed::Fast),
+                ..Default::default()
+            },
+            reasoning_tokens: 0,
+            residual_tokens: 0,
+            reported_model: Some(model),
+            candidates: &candidates,
+            stored_cost: None,
+            timestamp: Some(super::timestamp("2026-03-12T12:00:00Z")),
+        },
+        crate::cost::PriceTable::Calculate(&pricing),
+    )
+    .cost;
+    let expected = (300_000.0 * 8e-6 + 1_000.0 * 25e-6) * 6.0;
+    assert!((cost - expected).abs() < 1e-9, "{cost} != {expected}");
+}

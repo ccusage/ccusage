@@ -285,7 +285,21 @@ impl Pricing {
 
     pub(crate) fn at_speed(mut self, fast: bool) -> Self {
         if fast && self.flat_long_context_in_fast_mode {
-            self.long_context = None;
+            let explicit = self.explicit_fields;
+            let kept = |bit: u16, rate: Option<f64>| rate.filter(|_| explicit & bit != 0);
+            self.long_context = self.long_context.and_then(|context| {
+                let rates = LongContextRates {
+                    input: kept(OverrideFields::LONG_INPUT, context.rates.input),
+                    output: kept(OverrideFields::LONG_OUTPUT, context.rates.output),
+                    cache_create: kept(
+                        OverrideFields::LONG_CACHE_CREATE,
+                        context.rates.cache_create,
+                    ),
+                    cache_create_1h: None,
+                    cache_read: kept(OverrideFields::LONG_CACHE_READ, context.rates.cache_read),
+                };
+                rates.marginal().map(|_| LongContext { rates, ..context })
+            });
         }
         self
     }
