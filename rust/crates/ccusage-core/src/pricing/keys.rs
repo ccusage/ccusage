@@ -56,7 +56,7 @@ fn names_same_model((model, raw_model): (&str, &str), (key, raw_key): (&str, &st
 }
 
 fn contains_pricing_key((value, raw_value): (&str, &str), (key, raw_key): (&str, &str)) -> bool {
-    value.match_indices(key).any(|(index, _)| {
+    memchr::memmem::find_iter(value.as_bytes(), key.as_bytes()).any(|index| {
         let before = index
             .checked_sub(1)
             .and_then(|before| raw_value.as_bytes().get(before))
@@ -177,7 +177,17 @@ pub(super) fn dash_pricing_key_separators(chars: impl Iterator<Item = char>) -> 
 
 pub(super) fn normalized_pricing_key(value: &str) -> Cow<'_, str> {
     if value.bytes().any(is_pricing_key_separator) {
-        Cow::Owned(dash_pricing_key_separators(value.chars()))
+        let dashed = value
+            .bytes()
+            .map(|byte| {
+                if is_pricing_key_separator(byte) {
+                    b'-'
+                } else {
+                    byte
+                }
+            })
+            .collect();
+        Cow::Owned(String::from_utf8(dashed).expect("replacing ASCII bytes keeps UTF-8"))
     } else {
         Cow::Borrowed(value)
     }
