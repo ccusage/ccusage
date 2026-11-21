@@ -653,6 +653,11 @@ fn fast_mode_keeps_an_overrides_explicit_long_rates_before_ga() {
             usage: crate::TokenUsageRaw {
                 input_tokens: 300_000,
                 output_tokens: 1_000,
+                cache_creation_input_tokens: 10_000,
+                cache_creation: Some(crate::CacheCreationRaw {
+                    ephemeral_5m_input_tokens: 0,
+                    ephemeral_1h_input_tokens: 10_000,
+                }),
                 speed: Some(crate::Speed::Fast),
                 ..Default::default()
             },
@@ -666,6 +671,14 @@ fn fast_mode_keeps_an_overrides_explicit_long_rates_before_ga() {
         crate::cost::PriceTable::Calculate(&pricing),
     )
     .cost;
-    let expected = (300_000.0 * 8e-6 + 1_000.0 * 25e-6) * 6.0;
+    let fast_rates = pricing
+        .find_at(model, super::timestamp("2026-03-12T12:00:00Z"))
+        .unwrap()
+        .at_speed(true);
+    assert_eq!(
+        fast_rates.one_hour_cache_creation_rate_above_200k(),
+        Some(10e-6)
+    );
+    let expected = (300_000.0 * 8e-6 + 1_000.0 * 25e-6 + 10_000.0 * 10e-6) * 6.0;
     assert!((cost - expected).abs() < 1e-9, "{cost} != {expected}");
 }
