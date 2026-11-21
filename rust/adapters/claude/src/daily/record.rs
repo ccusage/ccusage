@@ -1,6 +1,6 @@
 use std::{borrow::Cow, sync::Arc};
 
-use ccusage_adapter_common::json::JsonText;
+use ccusage_adapter_common::json::{Fields, JsonText, Member};
 use serde::Deserialize;
 
 use crate::{
@@ -165,10 +165,61 @@ impl RawUsageMessage {
     }
 }
 
+const USAGE_MESSAGE: Fields = &[
+    ("usage", Member::Value),
+    ("model", Member::Value),
+    ("id", Member::Value),
+];
+
+// NOTE: Lists every member `RawUsageRecord` and `AgentProgressEntry` read, nested ones included, so the long message content is skipped unparsed. Reduce only members those types read as derived structs.
+const USAGE_LINE: Fields = &[
+    ("timestamp", Member::Value),
+    ("message", Member::Object(USAGE_MESSAGE)),
+    ("version", Member::Value),
+    ("sessionId", Member::Value),
+    ("costUSD", Member::Value),
+    ("requestId", Member::Value),
+    ("isSidechain", Member::Value),
+    ("isApiErrorMessage", Member::Value),
+    (
+        "data",
+        Member::Object(&[(
+            "message",
+            Member::Object(&[
+                ("isApiErrorMessage", Member::Value),
+                ("timestamp", Member::Value),
+                ("message", Member::Object(USAGE_MESSAGE)),
+                ("costUSD", Member::Value),
+                ("requestId", Member::Value),
+                ("isSidechain", Member::Value),
+            ]),
+        )]),
+    ),
+];
+
 pub(crate) fn parse_usage_line<'a>(
     line: &'a JsonText<'a>,
 ) -> std::result::Result<(ClaudeUsageRecord<'a>, AdvisorLookup), Rejection> {
-    match deserialize_borrowed_usage_line::<RawUsageRecord<'a>>(line) {
+    match line.pick(USAGE_LINE) {
+        Some(picked) => decode_usage_line(|| picked.parse(), || picked.parse()),
+        None => parse_full_usage_line(line),
+    }
+}
+
+fn parse_full_usage_line<'a>(
+    line: &'a JsonText<'a>,
+) -> std::result::Result<(ClaudeUsageRecord<'a>, AdvisorLookup), Rejection> {
+    decode_usage_line(
+        || deserialize_borrowed_usage_line(line),
+        || deserialize_borrowed_usage_line(line),
+    )
+}
+
+fn decode_usage_line<'a, E>(
+    direct: impl FnOnce() -> std::result::Result<RawUsageRecord<'a>, E>,
+    progress: impl FnOnce() -> std::result::Result<AgentProgressEntry<'a>, E>,
+) -> std::result::Result<(ClaudeUsageRecord<'a>, AdvisorLookup), Rejection> {
+    match direct() {
         Ok(raw) => {
             let entry = raw.decode()?;
             let lookup = if entry.message.usage.has_advisor_iteration {
@@ -178,7 +229,8 @@ pub(crate) fn parse_usage_line<'a>(
             };
             Ok((entry, lookup))
         }
-        Err(_) => deserialize_borrowed_usage_line::<AgentProgressEntry<'a>>(line)
+        Err(_) => progress()
+            .map_err(|_| Rejection::Malformed)
             .and_then(AgentProgressEntry::decode)
             .map(|entry| {
                 let lookup = if entry.message.usage.has_advisor_iteration {
@@ -301,3 +353,6 @@ fn consume_ascii_digits(bytes: &[u8], index: &mut usize) -> bool {
     }
     *index > start
 }
+
+#[cfg(test)]
+mod tests;
