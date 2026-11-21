@@ -8,8 +8,7 @@ let
 in
 {
   inherit shipped;
-  # Same derivation and cargo artifacts as the shipped binary. Only the final `ccusage` link keeps
-  # its symbol table, so the dependency fingerprints still match and nothing else rebuilds.
+  # NOTE(2026-11-21): The strip override is scoped to the `ccusage` package. A profile-wide one changes every dependency fingerprint and rebuilds the cached cargo artifacts.
   symbols = shipped.overrideAttrs (old: {
     pname = "${old.pname}-symbols";
     dontStrip = true;

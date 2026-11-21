@@ -1,8 +1,6 @@
 use ../profile-instructions/core.nu [split-list]
 
-# The artifacts `release.yaml` ships from Nix, on the runners and sticky disks it builds them with.
-# Windows builds with cargo outside Nix, and the Intel macOS binary is a cross-build of the same
-# source as arm64 on the same scarce runners, so both are left out to keep a run to minutes.
+# NOTE(2026-11-21): These mirror the Nix-built targets of `release.yaml`, with its runners and sticky-disk scopes. Windows builds with cargo outside Nix and the Intel macOS binary is a cross-build on the same scarce runners, so both are left out to keep a run to minutes.
 export const targets = [
     {
         target: linux-x64
@@ -23,7 +21,7 @@ export const targets = [
         os: blacksmith-12vcpu-macos-26
         package: ccusage-release-darwin-arm64
         cache_scope: build-mac-arm64
-        # Mach-O symbol tables carry no sizes, so `nm --size-sort` has nothing to rank.
+        # NOTE(2026-11-21): `llvm-nm --print-size` reports zero for every Mach-O symbol. A symbol twin there would rank nothing.
         symbols: false
     }
 ]
@@ -135,7 +133,7 @@ def target-report [
     count: int
 ]: nothing -> record {
 
-    # `each` drops null results, so a missing build stays paired with its ref instead.
+    # NOTE(2026-11-21): `each` drops null results. Pairing each ref with its build keeps a failed build from shifting the rows.
     let found = $refs | each {|ref|
         {ref: $ref build: ($builds | where ref == $ref.ref and target == $target.target | get --optional 0)}
     }
