@@ -246,6 +246,12 @@ pub(super) static FAMILY_PRICE_NEUTRAL_SUFFIX_WORDS: &[(&str, &[&str])] = &[
     ("qwen3-32b", &["thinking"]),
 ];
 
+// NOTE(2026-11-21, #2226): Google publishes its Gemini Developer API models as `google/<id>` on models.dev and to agents, while LiteLLM keys the same rows `gemini/<id>`. Both name Google's own listing, so `google/` reads as the vendor row rather than a reseller.
+pub(super) static VENDOR_SPELLINGS: &[(&str, &str)] = &[("google", "gemini")];
+
+// NOTE(2026-11-21, #2226): Google bills every token of a prompt longer than 200K at the higher tier ("prompts > 200k tokens") at https://ai.google.dev/gemini-api/docs/pricing, so its LiteLLM `*_above_200k_tokens` rates select the tier for the whole request instead of only the tokens above it.
+pub(super) static WHOLE_REQUEST_TIER_PROVIDERS: &[&str] = &["gemini"];
+
 pub(super) static ALIASES: &[(&str, &str)] = &[
     ("gpt-reserve", "gpt-5.6-luna"),
     ("gpt-5.6", "gpt-5.6-sol"),

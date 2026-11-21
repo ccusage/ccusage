@@ -7,7 +7,8 @@
 		"zai",
 		"moonshot",
 		"xai",
-		"dashscope"
+		"dashscope",
+		"gemini"
 	],
 	"embedded": [
 		{
@@ -63,6 +64,9 @@
 		},
 		{
 			"provider": "deepseek"
+		},
+		{
+			"provider": "gemini"
 		}
 	]
 }

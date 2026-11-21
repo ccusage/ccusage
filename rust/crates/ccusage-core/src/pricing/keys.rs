@@ -206,6 +206,15 @@ pub(super) fn model_without_date_suffix(model: &str) -> &str {
     model
 }
 
+pub(super) fn vendor_spelling(model: &str) -> Option<Box<str>> {
+    data::VENDOR_SPELLINGS
+        .iter()
+        .find_map(|(spelling, vendor)| {
+            let id = model.strip_prefix(spelling)?.strip_prefix('/')?;
+            Some(format!("{vendor}/{id}").into_boxed_str())
+        })
+}
+
 pub(super) fn pricing_alias(model: &str) -> Option<&'static str> {
     let fold = |byte| {
         if is_pricing_key_separator(byte) {

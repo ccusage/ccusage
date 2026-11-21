@@ -16,6 +16,7 @@ const LOADED_FIELDS: [&str; 12] = [
 ];
 
 // NOTE(2026-11-19, #2187): Provider IDs for author-operated APIs are published by LiteLLM at https://docs.litellm.ai/docs/providers/anthropic, https://docs.litellm.ai/docs/providers/openai, https://docs.litellm.ai/docs/providers/openai_text, https://docs.litellm.ai/docs/providers/deepseek, https://docs.litellm.ai/docs/providers/zai, https://docs.litellm.ai/docs/providers/moonshot, https://docs.litellm.ai/docs/providers/xai and https://docs.litellm.ai/docs/providers/dashscope. Use those IDs for direct-provider pricing.
+// NOTE(2026-11-21, #2226): LiteLLM's `gemini` provider is Google's own Gemini Developer API (https://docs.litellm.ai/docs/providers/gemini), priced at https://ai.google.dev/gemini-api/docs/pricing. Its rows are Google's list price, so every Google-owned spelling such as `google/<id>` bills at them rather than at a models.dev reseller rate.
 const SOURCES: &str = include_str!("litellm-sources.json");
 
 pub(crate) fn filter_pricing_json(json: &str) -> Option<String> {

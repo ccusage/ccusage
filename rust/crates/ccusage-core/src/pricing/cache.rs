@@ -7,7 +7,10 @@ use rustc_hash::{FxHashMap, FxHasher};
 
 #[cfg(feature = "resolver-trace")]
 use super::ResolutionStep;
-use super::{Lookup, MatchKind, Row, RowMatch, Source, normalized_pricing_key, pricing_alias};
+use super::{
+    Lookup, MatchKind, Row, RowMatch, Source, normalized_pricing_key, pricing_alias,
+    vendor_spelling,
+};
 
 pub(super) enum HitKind {
     ReportedOverride,
@@ -210,6 +213,7 @@ impl<T: AsRef<str>> Alias<T> {
 #[derive(Debug)]
 struct NameForms {
     normalized: Option<Box<str>>,
+    vendor: Option<Alias<Box<str>>>,
     builtin: Option<Alias<&'static str>>,
     configured: Option<Alias<Box<str>>>,
     configured_builtin: Option<Alias<&'static str>>,
@@ -250,10 +254,11 @@ impl NameSlot {
 impl NameForms {
     fn new(text: &str) -> Option<Arc<Self>> {
         let normalized = normalized(text);
+        let vendor = vendor_spelling(text).map(Alias::new);
         let builtin = pricing_alias(text).map(Alias::new);
         let alias = crate::model_aliases::resolve_model_name(text);
         let configured = (alias != text).then(|| Alias::new(alias.into_owned().into_boxed_str()));
-        if normalized.is_none() && builtin.is_none() && configured.is_none() {
+        if normalized.is_none() && vendor.is_none() && builtin.is_none() && configured.is_none() {
             return None;
         }
         let configured_builtin = configured
@@ -262,6 +267,7 @@ impl NameForms {
             .map(Alias::new);
         Some(Arc::new(Self {
             normalized,
+            vendor,
             builtin,
             configured,
             configured_builtin,
@@ -304,6 +310,7 @@ impl Candidate<'_> {
         select(self.name(text)).or_else(|| {
             let forms = self.forms(text)?;
             [
+                forms.vendor.as_ref().map(Alias::name),
                 forms.builtin.as_ref().map(Alias::name),
                 forms.configured.as_ref().map(Alias::name),
                 forms.configured_builtin.as_ref().map(Alias::name),
