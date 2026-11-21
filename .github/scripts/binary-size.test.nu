@@ -35,12 +35,15 @@ def build [
     bytes: int
     text: int
     symbols
+    --attribute: string = ''
 ]: nothing -> record {
+    let package = $"ccusage-release-($target)"
     {
         ref: $ref
         sha: $"($ref)0000000000000000"
         target: $target
-        package: $"ccusage-release-($target)"
+        package: $package
+        attribute: (if $attribute == '' { $package } else { $attribute })
         bytes: $bytes
         sections: {text: $text, rodata: 100, eh_frame: 10}
         section_table: []
@@ -83,6 +86,26 @@ def main []: nothing -> nothing {
         symbols: false
         sha: feat/x0000000000000000
     }
+    assert equal ($matrix | get 0 | get fallback) ccusage-static
+    assert equal ($matrix | get 1 | get fallback) ccusage
+    assert equal ($matrix | get 2 | get fallback) ccusage-static
+
+    assert equal (
+        core resolve-attribute ccusage-release-linux-x64 ccusage-static [
+            ccusage-release-linux-x64
+            ccusage-static
+        ]
+    ) ccusage-release-linux-x64
+    assert equal (
+        core resolve-attribute ccusage-release-linux-x64 ccusage-static [ccusage-static ccusage]
+    ) ccusage-static
+    let missing = try {
+        core resolve-attribute ccusage-release-linux-x64 ccusage-static [ccusage] | ignore
+        ''
+    } catch {|err|
+        $err.msg
+    }
+    assert equal $missing 'Neither ccusage-release-linux-x64 nor ccusage-static is a package in this commit; has ccusage'
 
     assert equal (core key-sections (core parse-sections $elf_size)) {text: 3100000 rodata: 530000 eh_frame: 40000}
     let macho = core parse-sections $macho_size
@@ -171,6 +194,7 @@ def main []: nothing -> nothing {
     ) []
 
     let markdown = core report-md $report
+    assert str contains $markdown 'Deltas are against `main`.'
     assert str contains $markdown '| `feat/x` | `feat/x0000` | 1,100 | +100 | +10.00% | 790 (-10) | 100 | 10 | ❌ |'
     assert str contains $markdown '| `main` | `main000000` | 1,000 | base |  | 800 | 100 | 10 | ✅ |'
     assert str contains $markdown '| `feat/x` | `feat/x0000` | build failed | | | | | | |'
@@ -178,5 +202,46 @@ def main []: nothing -> nothing {
     assert str contains $markdown '**Top 1 growths**'
     assert str contains $markdown '**No shrinks**'
     assert str contains $markdown 'Limit: 1,050 bytes per binary.'
+
+    let late_refs = [
+        {ref: old, sha: old0000000000000000, slug: old}
+        {ref: main, sha: main0000000000000000, slug: main}
+        {ref: feat/x, sha: feat/x0000000000000000, slug: feat-x}
+    ]
+    let late_report = core report $late_refs (core select-targets 'linux-x64 darwin-arm64') [
+        (build main linux-x64 1000 800 [
+            {name: 'f|g', size: 10}
+        ])
+        (build feat/x linux-x64 1100 790 [
+            {name: 'f|g', size: 30}
+        ] --attribute ccusage-static)
+    ] null
+    let late_target = $late_report.targets | get 0
+    assert equal $late_report.requested_base old
+    assert equal $late_target.base main
+    assert equal ($late_target.rows | get built) [false true true]
+    assert equal ($late_target.rows.0.delta?) null
+    assert equal $late_target.rows.1.delta 0
+    assert equal $late_target.rows.2.delta 100
+    assert equal ($late_target.rows.2.section_deltas) {text: -10 rodata: 0 eh_frame: 0}
+    assert equal ($late_target.symbols | select base head) [
+        {base: main, head: feat/x}
+    ]
+    let late_markdown = core report-md $late_report
+    assert str contains $late_markdown 'Deltas are against `main`; the requested base `old` did not build.'
+    assert str contains $late_markdown '`ccusage-release-linux-x64` is missing in `feat/x`; measured `ccusage-static` instead.'
+    assert str contains $late_markdown '| `main` | `main000000` | 1,000 | base |  | 800 | 100 | 10 |'
+    assert str contains $late_markdown '| +20 | 10 | 30 | `f\|g` |'
+    assert equal ($late_report.targets | get 1 | get base) null
+    assert str contains $late_markdown 'No ref built for this target.'
+
+    let fallback_base = core report $late_refs (core select-targets 'linux-x64') [
+        (build main linux-x64 1000 800 [] --attribute ccusage-static)
+    ] null
+    let fallback_base_markdown = core report-md $fallback_base
+    assert equal ($fallback_base.targets | get 0 | get base) main
+    assert str contains $fallback_base_markdown '`ccusage-release-linux-x64` is missing in `main`; measured `ccusage-static` instead.'
+    assert str contains $fallback_base_markdown '| `main` | `main000000` | 1,000 | base |'
+
     print 'binary-size tests passed'
 }

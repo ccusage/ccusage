@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { describe, it } from 'node:test';
 import { zstdDecompressSync } from 'node:zlib';
 
@@ -186,6 +187,37 @@ void describe('generate-large-fixture', () => {
 		);
 	});
 
+	void it('ends some parent transcripts with an undated tail beside several subagent transcripts', async (t) => {
+		const root = await mkdtemp(path.join(tmpdir(), 'ccusage-fixture-test-'));
+		t.after(async () => rm(root, { recursive: true, force: true }));
+
+		const result = spawnSync(
+			process.execPath,
+			[generator, '--output-dir', root, '--claude-shape', 'many-small-files', '--size-mib', '8'],
+			{ encoding: 'utf8' },
+		);
+		assert.equal(result.status, 0, result.stderr);
+
+		const files = await readJsonlFiles(root);
+		const subagents = new Map<string, number>();
+		for (const file of files) {
+			const parts = path.relative(root, file.path).split(path.sep);
+			if (parts.at(-2) === 'subagents') {
+				const session = parts.slice(0, -2).join(path.sep);
+				subagents.set(session, (subagents.get(session) ?? 0) + 1);
+			}
+		}
+		const undatedTails = files.filter((file) => {
+			const tail = file.rows.slice(-1);
+			return (
+				tail.every((row) => row.timestamp === undefined) &&
+				Buffer.byteLength(JSON.stringify(tail)) > 16 * 1024 &&
+				(subagents.get(path.relative(root, file.path).replace(/\.jsonl$/u, '')) ?? 0) >= 3
+			);
+		});
+		assert.ok(undatedTails.length > 0, 'a parent with several subagents ends in an undated tail');
+	});
+
 	void it('writes requestless proxy transcripts whose lines chain through parentUuid', async (t) => {
 		const root = await mkdtemp(path.join(tmpdir(), 'ccusage-fixture-test-'));
 		t.after(async () => rm(root, { recursive: true, force: true }));
@@ -232,6 +264,61 @@ void describe('generate-large-fixture', () => {
 		);
 		assert.ok(files.length >= 500, `Files: ${files.length}`);
 		assert.ok(projects.size >= 400, `Projects: ${projects.size}`);
+	});
+
+	void it('writes an OpenCode WAL database whose v2 payloads put long content before the tokens', async (t) => {
+		const root = await mkdtemp(path.join(tmpdir(), 'ccusage-fixture-test-'));
+		t.after(async () => rm(root, { recursive: true, force: true }));
+		const opencodeDir = path.join(root, 'opencode');
+
+		const result = spawnSync(
+			process.execPath,
+			[
+				generator,
+				'--output-dir',
+				path.join(root, 'claude'),
+				'--size-mib',
+				'1',
+				'--opencode-output-dir',
+				opencodeDir,
+				'--opencode-size-mib',
+				'8',
+			],
+			{ encoding: 'utf8' },
+		);
+		assert.equal(result.status, 0, result.stderr);
+
+		const dbPath = path.join(opencodeDir, 'opencode.db');
+		const db = new DatabaseSync(dbPath, { readOnly: true });
+		t.after(() => db.close());
+		assert.equal(db.prepare('PRAGMA journal_mode').get()?.journal_mode, 'wal');
+		assert.ok(
+			db
+				.prepare("SELECT 1 FROM sqlite_master WHERE name = 'session_message_time_created_idx'")
+				.get(),
+		);
+		const rows = db
+			.prepare('SELECT type, time_created, data FROM session_message ORDER BY rowid')
+			.all();
+		const assistants = rows.filter((row) => row.type === 'assistant');
+		assert.ok(rows.some((row) => row.type === 'user'));
+		assert.ok(assistants.length >= 200, `Assistant rows: ${assistants.length}`);
+
+		let largest = 0;
+		for (const row of assistants) {
+			assert.equal(typeof row.data, 'string');
+			const data = String(row.data);
+			largest = Math.max(largest, data.length);
+			const payload: unknown = JSON.parse(data);
+			assert.ok(isRow(payload) && isRow(payload.time));
+			assert.equal(payload.time.created, row.time_created);
+			const keys = Object.keys(payload);
+			assert.ok(keys.indexOf('content') < keys.indexOf('tokens'), keys.join(','));
+			assert.ok(data.indexOf('"tokens"') > data.length / 2, 'tokens sit after the content');
+		}
+		assert.ok(largest > 32_000 && largest <= 49_152, `Largest payload: ${largest}`);
+		const { size } = await stat(dbPath);
+		assert.ok(size > 7 * 1024 * 1024 && size < 10 * 1024 * 1024, `Database size: ${size}`);
 	});
 
 	void it('refuses a non-empty Codex directory before writing the Claude fixture', async () => {

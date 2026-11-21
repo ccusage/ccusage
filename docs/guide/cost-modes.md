@@ -6,12 +6,12 @@ The entry rules below describe Claude Code. Auto's stored-cost preference depend
 
 | Source                                                                           | Auto                                                                          | Calculate | Display                                         |
 | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | --------- | ----------------------------------------------- |
-| Claude Code, Amp, Cline, Kilo, OpenClaw                                          | Recorded cost when present, including zero; otherwise tokens                  | Tokens    | Recorded cost only                              |
+| Claude Code, Amp, Cline, OpenClaw                                                | Recorded cost when present, including zero; otherwise tokens                  | Tokens    | Recorded cost only                              |
 | Codex, Goose, Droid, Codebuff, Antigravity, Gemini, Grok, Kimi, Qwen, ZCode, dsh | Tokens                                                                        | Tokens    | $0; these logs contain no recorded USD cost     |
 | pi-agent                                                                         | Recorded cost when valid, unless a pricing override applies; otherwise tokens | Tokens    | Recorded cost only                              |
 | GitHub Copilot CLI                                                               | Recorded AI credits at $0.01 each when present; otherwise tokens              | Tokens    | Recorded credits converted to USD; otherwise $0 |
 | Hermes                                                                           | Positive recorded actual/estimated cost; otherwise tokens                     | Tokens    | Recorded actual/estimated cost only             |
-| OpenCode                                                                         | Positive recorded cost; otherwise tokens                                      | Tokens    | Recorded cost only                              |
+| Kilo, OpenCode                                                                   | Positive recorded cost; otherwise tokens                                      | Tokens    | Recorded cost only                              |
 
 Tokens remain in Display reports even when their cost is zero. Focused and unified Display reports load no pricing table and emit neither `missingPricing` nor `unpricedModels`.
 

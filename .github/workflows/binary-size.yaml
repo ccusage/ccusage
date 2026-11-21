@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       refs:
-        description: Git refs to compare, separated by spaces or commas. Branches, tags, and commit SHAs (full or abbreviated) are accepted. The first ref is the base every other ref is compared against.
+        description: Git refs to compare, separated by spaces or commas. Branches, tags, and commit SHAs (full or abbreviated) are accepted. The first ref is the base every other ref is compared against; when a target cannot build it, the first ref that did becomes that target's base.
         type: string
         default: main
       targets:
@@ -77,6 +77,7 @@ jobs:
           SHA: ${{ matrix.build.sha }}
           TARGET: ${{ matrix.build.target }}
           PACKAGE: ${{ matrix.build.package }}
+          FALLBACK: ${{ matrix.build.fallback }}
           SYMBOLS: ${{ matrix.build.symbols }}
         run: |
           symbols=()
@@ -89,6 +90,7 @@ jobs:
             --sha "$SHA" \
             --target "$TARGET" \
             --package "$PACKAGE" \
+            --fallback "$FALLBACK" \
             "${symbols[@]}" \
             --out "$RUNNER_TEMP/binary-size"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

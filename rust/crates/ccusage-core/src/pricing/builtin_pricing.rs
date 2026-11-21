@@ -81,20 +81,7 @@ pub(super) const BUILTIN_PRICING: &[Supplement] = &[
     Supplement {
         provider: "anthropic",
         model: "claude-sonnet-4",
-        pricing: Pricing {
-            long_context: Some(LongContext {
-                threshold: 200_000,
-                mode: LongContextMode::Marginal,
-                rates: LongContextRates {
-                    input: Some(6e-6),
-                    output: Some(22.5e-6),
-                    cache_create: Some(7.5e-6),
-                    cache_read: Some(0.6e-6),
-                    cache_create_1h: None,
-                },
-            }),
-            ..rates(3e-6, 15e-6, 3.75e-6, 0.3e-6)
-        },
+        pricing: rates(3e-6, 15e-6, 3.75e-6, 0.3e-6),
         context_limit: Some(200000),
     },
     Supplement {
@@ -360,6 +347,36 @@ pub(super) const BUILTIN_PRICING: &[Supplement] = &[
         provider: "dashscope",
         model: "qwen3-8b-thinking",
         pricing: rates(0.18e-6, 2.1e-6, 0.225e-6, 0.018e-6),
+        context_limit: None,
+    },
+];
+
+pub(super) const CURATED_LIST_PRICES: &[Supplement] = &[
+    // NOTE(2026-11-21, #2231): Moonshot listed kimi-k2-thinking at $0.60 input (cache miss), $0.15 cache hit and $2.50 output per 1M, and kimi-k2-turbo-preview at $1.15 / $0.15 / $8.00, in the USD price data of https://web.archive.org/web/20260125004043/https://platform.moonshot.ai/docs/pricing/chat. K2 caching is automatic and bills no write charge, so a write costs the cache-miss rate unless the loaded row publishes its own write rate, an explicit 0 included. Moonshot retired the K2 series in May 2026 (https://platform.kimi.ai/docs/llms-full.txt changelog).
+    Supplement {
+        provider: "moonshot",
+        model: "moonshot/kimi-k2-thinking",
+        pricing: rates(0.6e-6, 2.5e-6, 0.6e-6, 0.15e-6),
+        context_limit: Some(262144),
+    },
+    Supplement {
+        provider: "moonshot",
+        model: "moonshot/kimi-k2-turbo-preview",
+        pricing: rates(1.15e-6, 8e-6, 1.15e-6, 0.15e-6),
+        context_limit: Some(262144),
+    },
+    // NOTE(2026-11-21, #2231): DeepSeek listed DeepSeek-V3.2 at $0.28 input (cache miss), $0.028 cache hit and $0.42 output per 1M at https://web.archive.org/web/20260101121941/https://api-docs.deepseek.com/quick_start/pricing until V4 replaced it in May 2026. DeepSeek bills no cache writes, so the write rate stays whatever the row publishes, an explicit 0 included, and otherwise the DeepSeek default.
+    Supplement {
+        provider: "deepseek",
+        model: "deepseek/deepseek-v3.2",
+        pricing: default_write_rates(0.28e-6, 0.42e-6, 0.028e-6, &WRITES_AT_INPUT_RATE),
+        context_limit: None,
+    },
+    // NOTE(2026-11-21, #2231): Google listed gemini-2.0-flash at $0.10 text, image and video input, $0.40 output and $0.025 context-cache reads per 1M on the paid tier at https://web.archive.org/web/20260101134813/https://ai.google.dev/gemini-api/docs/pricing, and shut it down on June 1, 2026. Vertex AI's $0.15 / $0.60 is a host listing, not Google's API list price.
+    Supplement {
+        provider: "gemini",
+        model: "gemini-2.0-flash",
+        pricing: default_write_rates(0.1e-6, 0.4e-6, 0.025e-6, &WRITES_AT_INPUT_RATE),
         context_limit: None,
     },
 ];

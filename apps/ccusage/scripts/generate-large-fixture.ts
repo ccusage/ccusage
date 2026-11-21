@@ -2,8 +2,9 @@
 /*
 #! nix shell --inputs-from ../../.. nixpkgs#nodejs -c node
 */
-import { mkdir, readdir, utimes, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, stat, utimes, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { zstdCompressSync } from 'node:zlib';
 
 const MIB = 1024 * 1024;
@@ -12,7 +13,9 @@ const FIXTURE_START_MS = Date.UTC(2026, 5, 1);
 const FIXTURE_DAYS = 120;
 const CLAUDE_PROJECT_COUNT = 48;
 const CLAUDE_MANY_SMALL_FILES_PROJECT_COUNT = 1600;
-const SUBAGENT_FILE_EVERY = 4;
+const SUBAGENT_BURST_EVERY = 16;
+const SUBAGENT_BURST_FILES = 4;
+const FILE_HISTORY_TRACKED_FILES = 160;
 const LEGACY_PROGRESS_FILE_EVERY = 6;
 const LEGACY_PROGRESS_USAGE_CHANCE = 0.08;
 const METADATA_FIRST_ASSISTANT_CHANCE = 0.01;
@@ -21,6 +24,9 @@ const CODEX_ARCHIVED_FILE_EVERY = 4;
 const CODEX_COMPACTION_CHANCE = 1 / 30;
 const CODEX_FORK_FILE_EVERY = 8;
 const CODEX_FORK_HISTORY_LINES = 120;
+const OPENCODE_DEFAULT_SIZE_MIB = 1024;
+const OPENCODE_SESSION_ROWS = 400;
+const OPENCODE_MAX_PAYLOAD_BYTES = 48 * 1024;
 type Format = 'claude' | 'codex' | 'grok';
 type ClaudeShape = 'default' | 'many-small-files' | 'requestless-proxy';
 const CLAUDE_SHAPES = [
@@ -170,9 +176,11 @@ type Options = {
 	outputDir: string;
 	codexOutputDir?: string;
 	grokOutputDir?: string;
+	opencodeOutputDir?: string;
 	sizeMib: number;
 	codexSizeMib: number;
 	grokSizeMib: number;
+	opencodeSizeMib: number;
 	codexLayout: CodexLayout;
 	claudeShape: ClaudeShape;
 };
@@ -216,6 +224,8 @@ function parseArguments(args: readonly string[]): Options {
 				'--size-mib',
 				'--codex-size-mib',
 				'--grok-size-mib',
+				'--opencode-output-dir',
+				'--opencode-size-mib',
 				'--codex-layout',
 				'--claude-shape',
 			].includes(flag)
@@ -254,6 +264,11 @@ function parseArguments(args: readonly string[]): Options {
 			SIZE_PROFILES.codex,
 		),
 		grokSizeMib: parseSizeMib(values.get('--grok-size-mib'), '--grok-size-mib', SIZE_PROFILES.grok),
+		opencodeOutputDir: values.get('--opencode-output-dir'),
+		opencodeSizeMib: parsePositiveInteger(
+			values.get('--opencode-size-mib') ?? String(OPENCODE_DEFAULT_SIZE_MIB),
+			'--opencode-size-mib',
+		),
 		codexLayout,
 		claudeShape,
 	};
@@ -1191,6 +1206,7 @@ type PlannedFile = {
 	compressed?: boolean;
 	sidecar?: { path: string; value: Line };
 	keepLines?: number;
+	trailer?: Line;
 };
 
 function claudeProxy(random: Random): ClaudeSession['proxy'] {
@@ -1216,7 +1232,8 @@ function planClaudeFile(
 	const random = new Random(1000 + fileIndex);
 	const day = fileIndex % FIXTURE_DAYS;
 	const startMs = FIXTURE_START_MS + day * DAY_MS + random.int(DAY_MS / 2);
-	if (previous && fileIndex % SUBAGENT_FILE_EVERY === SUBAGENT_FILE_EVERY - 1) {
+	const burstSlot = fileIndex % SUBAGENT_BURST_EVERY;
+	if (previous && burstSlot >= SUBAGENT_BURST_EVERY - SUBAGENT_BURST_FILES) {
 		const agentId = random.hex(17);
 		const session: ClaudeSession = {
 			...previous,
@@ -1262,8 +1279,36 @@ function planClaudeFile(
 			path: join(directory, 'projects', projectDir, `${session.sessionId}.jsonl`),
 			startMs,
 			lines: claudeSessionLines(session),
+			trailer:
+				burstSlot === SUBAGENT_BURST_EVERY - SUBAGENT_BURST_FILES - 1
+					? claudeFileHistoryUpdate(session, startMs, new Random(2_000_000 + fileIndex))
+					: undefined,
 		},
 		session,
+	};
+}
+
+// NOTE(2026-11-21, #2431): A file-history update repeats an earlier snapshot's time only inside `snapshot`, so a transcript ending in a large one has no record timestamp in its last 16 KiB. Its session's subagent transcripts make `--since` pay for any rule that revives them.
+function claudeFileHistoryUpdate(session: ClaudeSession, startMs: number, random: Random): Line {
+	const trackedFileBackups = Object.fromEntries(
+		Array.from({ length: FILE_HISTORY_TRACKED_FILES }, (_, index) => [
+			`${session.cwd}/src/${random.hex(6)}/${random.hex(8)}.ts`,
+			{
+				backupFileName: `${random.hex(16)}@v${(index % 5) + 1}`,
+				version: (index % 5) + 1,
+				backupTime: new Date(startMs + index * 1000).toISOString(),
+			},
+		]),
+	);
+	return {
+		type: 'file-history-snapshot',
+		messageId: random.uuid(),
+		snapshot: {
+			messageId: random.uuid(),
+			trackedFileBackups,
+			timestamp: new Date(startMs).toISOString(),
+		},
+		isSnapshotUpdate: true,
 	};
 }
 
@@ -1381,6 +1426,12 @@ async function writePlannedFile(
 			kept.push(next.value);
 		}
 	}
+	if (file.trailer !== undefined) {
+		const line = `${JSON.stringify(file.trailer)}\n`;
+		chunks.push(line);
+		bytes += Buffer.byteLength(line);
+		lines += 1;
+	}
 	const content = Buffer.from(chunks.join(''));
 	const data = file.compressed ? zstdCompressSync(content) : content;
 	// NOTE(2026-11-20, #2340): Bounded Claude reports skip files by mtime. Date each file at its last record so `--since` prunes what real logs would.
@@ -1440,6 +1491,106 @@ async function generateFixture(
 	return { fileCount: fileSizeTargets.length, lineCount, totalBytes, diskBytes };
 }
 
+const OPENCODE_MODELS = [
+	{ id: 'claude-sonnet-4-5', providerID: 'anthropic' },
+	{ id: 'claude-sonnet-4-5', providerID: 'anthropic' },
+	{ id: 'claude-haiku-4-5', providerID: 'anthropic' },
+	{ id: 'gpt-5.2', providerID: 'openai' },
+] as const;
+
+function openCodeContent(random: Random, bytes: number): Line[] {
+	const parts: Line[] = [];
+	for (let remaining = bytes; remaining > 0;) {
+		const length = Math.min(remaining, around(random, 6000));
+		parts.push(
+			random.chance(0.5)
+				? { type: 'text', text: text(random, length) }
+				: {
+						type: 'tool',
+						tool: random.pick(['bash', 'read', 'edit', 'grep']),
+						callID: `call_${random.hex(24)}`,
+						state: { status: 'completed', output: text(random, length) },
+					},
+		);
+		remaining -= length;
+	}
+	return parts;
+}
+
+function openCodeAssistant(random: Random, createdMs: number, contentBytes: number): Line {
+	const input = random.between(1, 4000);
+	const output = random.between(1, 4000);
+	const reasoning = random.between(0, 2000);
+	const cache = { read: random.between(0, 150_000), write: random.between(0, 20_000) };
+	// NOTE(2026-11-21, #2407): OpenCode writes the message content before its token counts. Keep that order so reports scan the whole payload, as they do on real databases.
+	return {
+		role: 'assistant',
+		content: openCodeContent(random, contentBytes),
+		model: random.pick(OPENCODE_MODELS),
+		time: { created: createdMs, completed: createdMs + random.between(500, 60_000) },
+		tokens: { input, output, reasoning, cache, total: input + output + reasoning + cache.read },
+		cost: random.between(1, 50_000) / 1_000_000,
+		finish: 'stop',
+	};
+}
+
+async function generateOpenCodeFixture(outputDir: string, sizeMib: number): Promise<FixtureResult> {
+	const targetBytes = sizeMib * MIB;
+	const random = new Random(23);
+	const dbPath = join(outputDir, 'opencode.db');
+	const db = new DatabaseSync(dbPath);
+	db.exec(`PRAGMA journal_mode = WAL;
+		PRAGMA synchronous = OFF;
+		CREATE TABLE session_message (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, type TEXT NOT NULL,
+			seq INTEGER NOT NULL DEFAULT 0, time_created INTEGER NOT NULL, data TEXT NOT NULL);
+		BEGIN;`);
+	const insert = db.prepare(
+		'INSERT INTO session_message (id, session_id, type, seq, time_created, data) VALUES (?, ?, ?, ?, ?, ?)',
+	);
+	let totalBytes = 0;
+	let lineCount = 0;
+	let sessionId = '';
+	for (let row = 0; totalBytes < targetBytes; row += 1) {
+		const seq = row % OPENCODE_SESSION_ROWS;
+		if (seq === 0) {
+			sessionId = `ses_${random.hex(26)}`;
+		}
+		const progress = totalBytes / targetBytes;
+		const createdMs = Math.round(FIXTURE_START_MS + progress * FIXTURE_DAYS * DAY_MS);
+		const assistant = row % 2 === 1;
+		let contentBytes = assistant
+			? around(random, 2000 + 45_000 * progress ** 2)
+			: around(random, 800);
+		let data = '';
+		do {
+			data = JSON.stringify(
+				assistant
+					? openCodeAssistant(random, createdMs, contentBytes)
+					: {
+							role: 'user',
+							content: openCodeContent(random, contentBytes),
+							time: { created: createdMs },
+						},
+			);
+			contentBytes = Math.floor(contentBytes * 0.9);
+		} while (Buffer.byteLength(data) > OPENCODE_MAX_PAYLOAD_BYTES);
+		insert.run(
+			`msg_${random.hex(26)}`,
+			sessionId,
+			assistant ? 'assistant' : 'user',
+			seq,
+			createdMs,
+			data,
+		);
+		totalBytes += Buffer.byteLength(data);
+		lineCount += 1;
+	}
+	db.exec(`COMMIT;
+		CREATE INDEX session_message_time_created_idx ON session_message (time_created);`);
+	db.close();
+	return { fileCount: 1, lineCount, totalBytes, diskBytes: (await stat(dbPath)).size };
+}
+
 function printResult(name: string, outputDir: string, result: FixtureResult): void {
 	console.log(`Generated ${name} fixture ${outputDir}`);
 	console.log(`Files: ${result.fileCount}`);
@@ -1463,6 +1614,11 @@ async function main(): Promise<void> {
 	if (grokOutputDir !== undefined) {
 		await createEmptyDirectory(grokOutputDir, '--grok-output-dir');
 	}
+	const opencodeOutputDir =
+		options.opencodeOutputDir === undefined ? undefined : resolve(options.opencodeOutputDir);
+	if (opencodeOutputDir !== undefined) {
+		await createEmptyDirectory(opencodeOutputDir, '--opencode-output-dir');
+	}
 
 	const claudeResult = await generateFixture(outputDir, options.sizeMib, 'claude', options);
 	printResult('Claude', outputDir, claudeResult);
@@ -1480,6 +1636,14 @@ async function main(): Promise<void> {
 	if (grokOutputDir !== undefined) {
 		const grokResult = await generateFixture(grokOutputDir, options.grokSizeMib, 'grok');
 		printResult('Grok', grokOutputDir, grokResult);
+	}
+
+	if (opencodeOutputDir !== undefined) {
+		const opencodeResult = await generateOpenCodeFixture(
+			opencodeOutputDir,
+			options.opencodeSizeMib,
+		);
+		printResult('OpenCode', opencodeOutputDir, opencodeResult);
 	}
 }
 
