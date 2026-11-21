@@ -420,7 +420,7 @@ pub struct Line<'a> {
 pub struct Ending<'a>(Option<&'a Opened<'a>>);
 
 impl Ending<'_> {
-    pub const COMPLETE: Ending<'static> = Ending(None);
+    const COMPLETE: Ending<'static> = Ending(None);
 }
 
 impl<'a> Line<'a> {
@@ -556,27 +556,38 @@ pub fn record_decode_error(
     diagnostics: &Diagnostics,
     is_usage: Option<impl Fn(&serde_json::Value) -> bool>,
 ) {
+    if error.classify() == serde_json::error::Category::Eof
+        && let Some(opened) = ending.0
+    {
+        match opened.completion() {
+            Completion::Changing => diagnostics.debug_note(
+                unit,
+                format!(
+                    "{}: {}:{number}: last line is incomplete, read as still being written",
+                    diagnostics.source(),
+                    unit.display()
+                ),
+            ),
+            Completion::Unknown => diagnostics.record(Skip::record(
+                unit,
+                number,
+                SkipKind::InvalidData,
+                format!("last line is truncated at column {}", error.column()),
+            )),
+        }
+        return;
+    }
+    let (kind, detail) = classify_decode_error(record, &error, is_usage);
+    diagnostics.record(Skip::record(unit, number, kind, detail));
+}
+
+pub fn classify_decode_error(
+    record: &[u8],
+    error: &serde_json::Error,
+    is_usage: Option<impl Fn(&serde_json::Value) -> bool>,
+) -> (SkipKind, String) {
     use serde_json::error::Category;
     let (kind, category) = match error.classify() {
-        Category::Eof if let Some(opened) = ending.0 => {
-            match opened.completion() {
-                Completion::Changing => diagnostics.debug_note(
-                    unit,
-                    format!(
-                        "{}: {}:{number}: last line is incomplete, read as still being written",
-                        diagnostics.source(),
-                        unit.display()
-                    ),
-                ),
-                Completion::Unknown => diagnostics.record(Skip::record(
-                    unit,
-                    number,
-                    SkipKind::InvalidData,
-                    format!("last line is truncated at column {}", error.column()),
-                )),
-            }
-            return;
-        }
         Category::Io => (SkipKind::Unreadable, "I/O"),
         Category::Syntax => (SkipKind::InvalidData, "syntax"),
         Category::Eof => (SkipKind::InvalidData, "EOF"),
@@ -594,12 +605,10 @@ pub fn record_decode_error(
             )
         }
     };
-    diagnostics.record(Skip::record(
-        unit,
-        number,
+    (
         kind,
         format!("JSON {category} error at column {}", error.column()),
-    ));
+    )
 }
 
 #[cfg(test)]

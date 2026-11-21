@@ -240,21 +240,28 @@ fn scan_rows<T>(
             }
             Ok(sqlite::State::Done) => break,
             Err(error) => {
-                UnitError::sqlite(SqliteStage::Rows, error.code)
-                    .record(context.db_path, context.diagnostics);
-                debug_log(
-                    context.shared,
-                    format!(
-                        "Failed to query OpenCode {} table: {}",
-                        table.name(),
-                        context.db_path.display()
-                    ),
-                );
+                record_rows_failure(sqlite_rows_failure(error), context, table);
                 break;
             }
         }
     }
     row
+}
+
+fn sqlite_rows_failure(error: sqlite::Error) -> UnitError {
+    UnitError::sqlite(SqliteStage::Rows, error.code)
+}
+
+fn record_rows_failure(error: UnitError, context: &DatabaseLoadContext<'_>, table: Table) {
+    error.record(context.db_path, context.diagnostics);
+    debug_log(
+        context.shared,
+        format!(
+            "Failed to query OpenCode {} table: {}",
+            table.name(),
+            context.db_path.display()
+        ),
+    );
 }
 
 const COLUMN_READ_FAILED: &str = "database column read failed";

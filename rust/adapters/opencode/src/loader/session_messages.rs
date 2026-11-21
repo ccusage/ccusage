@@ -1,20 +1,15 @@
 use ccusage_adapter_common::{
-    jsonl,
+    jsonl, map_parallel_with_state,
     sqlite::{open_read_only, read_i64},
     units::UnitError,
-    worker_count,
 };
-use ccusage_core::{Diagnostics, Skip, SkipKind, parallel::spawn_scoped_worker};
-use std::{
-    collections::HashMap,
-    sync::atomic::{AtomicUsize, Ordering},
-    thread,
-};
+use ccusage_core::{Diagnostics, Skip, SkipKind};
+use std::collections::HashMap;
 
 use super::{
     COLUMN_READ_FAILED, DatabaseLoadContext, EntryCollector, LinkedEntry, TableSchema,
-    UnreadableRow, bind_window, pushdown_condition, record_missing_timestamp, row_diagnostics,
-    scan_rows, sqlite_setup_failure,
+    UnreadableRow, bind_window, pushdown_condition, record_missing_timestamp, record_rows_failure,
+    row_diagnostics, scan_rows, sqlite_rows_failure, sqlite_setup_failure,
 };
 use crate::{
     debug_log,
@@ -24,16 +19,16 @@ use crate::{
     },
 };
 
-struct SessionMessageRecord {
+#[derive(Clone)]
+struct SessionMessageMeta {
     id: String,
     session_id: String,
     kind: SessionMessageKind,
-    data: String,
     created: Option<i64>,
     seq: Option<i64>,
 }
 
-impl SessionMessageRecord {
+impl SessionMessageMeta {
     fn read(statement: &sqlite::Statement<'_>) -> std::result::Result<Option<Self>, UnreadableRow> {
         let id = statement.read(0)?;
         let session_id = statement.read(1)?;
@@ -45,42 +40,23 @@ impl SessionMessageRecord {
             id,
             session_id,
             kind,
-            data: statement.read(3)?,
             created: read_i64(statement, 4),
             seq: statement.read::<Option<i64>, _>(5).ok().flatten(),
         }))
     }
+
+    // NOTE(2026-09-25, OpenCode 2.0.16, #1782): OpenCode starts fork session counters at zero, with only fork-local usage. Copied rows must leave the aggregate fallback available.
+    fn is_fork_copy(&self, fork_copies: &HashMap<String, i64>) -> bool {
+        fork_copies
+            .get(&self.session_id)
+            .is_some_and(|cutoff| self.seq.is_some_and(|seq| seq <= *cutoff))
+    }
 }
 
-/// A usage row found by the metadata pass, whose `data` a worker reads later by `rowid`.
 struct PendingRow {
     row: u32,
     rowid: i64,
-    id: String,
-    session_id: String,
-    kind: SessionMessageKind,
-    created: Option<i64>,
-    seq: Option<i64>,
-}
-
-impl PendingRow {
-    fn read(statement: &sqlite::Statement<'_>) -> std::result::Result<Option<Self>, UnreadableRow> {
-        let id = statement.read(0)?;
-        let session_id = statement.read(1)?;
-        let row_type: String = statement.read(2)?;
-        let Some(kind) = SessionMessageKind::from_row_type(&row_type) else {
-            return Ok(None);
-        };
-        Ok(Some(Self {
-            row: 0,
-            rowid: statement.read(3)?,
-            id,
-            session_id,
-            kind,
-            created: read_i64(statement, 4),
-            seq: statement.read::<Option<i64>, _>(5).ok().flatten(),
-        }))
-    }
+    meta: SessionMessageMeta,
 }
 
 enum RowOutcome {
@@ -88,7 +64,7 @@ enum RowOutcome {
     Skipped,
     Unreadable,
     MissingTimestamp,
-    Decode(serde_json::Error, String),
+    Decode(SkipKind, String),
 }
 
 pub(super) fn load_session_message_rows(
@@ -138,19 +114,15 @@ fn load_rows_in_order(
         context,
         schema.table,
         COLUMN_READ_FAILED,
-        SessionMessageRecord::read,
-        |row, record, statement| {
-            if is_fork_copy(fork_copies, &record.session_id, record.seq) {
+        SessionMessageMeta::read,
+        |row, meta, statement| {
+            if meta.is_fork_copy(fork_copies) {
                 return;
             }
-            let outcome = parse_row(
-                record.kind,
-                record.data,
-                record.id,
-                record.session_id,
-                record.created,
-                context,
-            );
+            let outcome = match statement.read::<String, _>(3) {
+                Ok(data) => parse_row(meta, data, context),
+                Err(_) => RowOutcome::Unreadable,
+            };
             apply_outcome(
                 outcome,
                 row,
@@ -172,7 +144,7 @@ fn load_rows_in_parallel(
     context: &DatabaseLoadContext<'_>,
     collector: &mut EntryCollector,
 ) -> Option<(u32, u32)> {
-    // A WITHOUT ROWID table cannot prepare this query, so the ordered scan reads it instead.
+    // NOTE(2026-11-21): A WITHOUT ROWID table cannot prepare this query. The ordered scan prepares its own query and records any other setup error.
     let statement = prepare_session_message_query(connection, schema, context, "rowid").ok()?;
     let mut pending = Vec::new();
     let rows = scan_rows(
@@ -180,31 +152,51 @@ fn load_rows_in_parallel(
         context,
         schema.table,
         COLUMN_READ_FAILED,
-        PendingRow::read,
-        |row, mut record, _| {
-            if !is_fork_copy(fork_copies, &record.session_id, record.seq) {
-                record.row = row;
-                pending.push(record);
+        |statement| {
+            let Some(meta) = SessionMessageMeta::read(statement)? else {
+                return Ok(None);
+            };
+            Ok(Some((statement.read::<i64, _>(3)?, meta)))
+        },
+        |row, (rowid, meta), _| {
+            if !meta.is_fork_copy(fork_copies) {
+                pending.push(PendingRow { row, rowid, meta });
             }
         },
     );
     let batches = pending.chunks(PENDING_BATCH_ROWS).collect::<Vec<_>>();
-    let results = read_batches_in_parallel(&batches, context);
+    let results = if batches.len() <= 1 {
+        batches
+            .iter()
+            .map(|batch| read_pending_rows(connection, batch, context))
+            .collect()
+    } else {
+        map_parallel_with_state(
+            &batches,
+            context.shared.single_thread,
+            || open_read_only(context.db_path),
+            |own, batch| {
+                own.as_ref()
+                    .map_err(Clone::clone)
+                    .and_then(|own| read_pending_rows(own, batch, context))
+            },
+        )
+    };
     let diagnostics = context.diagnostics.for_table(schema.table.name());
     let mut entries = 0;
-    for (chunk, outcomes) in batches.into_iter().zip(results) {
-        let outcomes = match outcomes.or_else(|_| read_pending_rows(connection, chunk, context)) {
+    for (batch, outcomes) in batches.into_iter().zip(results) {
+        let outcomes = match outcomes.or_else(|_| read_pending_rows(connection, batch, context)) {
             Ok(outcomes) => outcomes,
             Err(error) => {
-                error.record(context.db_path, context.diagnostics);
-                continue;
+                record_rows_failure(error, context, schema.table);
+                break;
             }
         };
-        for (pending, outcome) in chunk.iter().zip(outcomes) {
+        for (pending, outcome) in batch.iter().zip(outcomes) {
             apply_outcome(
                 outcome,
                 pending.row,
-                || diagnostics.for_row(Some(&pending.id)),
+                || diagnostics.for_row(Some(&pending.meta.id)),
                 context,
                 collector,
                 &mut entries,
@@ -214,108 +206,53 @@ fn load_rows_in_parallel(
     Some((rows, entries))
 }
 
-// Newer rows carry far larger payloads, so workers pull small batches instead of fixed ranges.
+// NOTE(2026-11-21): Newer OpenCode rows carry far larger payloads than older ones. Workers pull small batches so one worker does not end up with all the large rows.
 const PENDING_BATCH_ROWS: usize = 256;
-
-type BatchOutcomes = std::result::Result<Vec<RowOutcome>, UnitError>;
-
-fn read_batches_in_parallel(
-    batches: &[&[PendingRow]],
-    context: &DatabaseLoadContext<'_>,
-) -> Vec<BatchOutcomes> {
-    let next = AtomicUsize::new(0);
-    let mut results = thread::scope(|scope| {
-        (0..worker_count(false, batches.len()))
-            .map(|_| {
-                spawn_scoped_worker(scope, || {
-                    let own = open_read_only(context.db_path);
-                    let mut done = Vec::new();
-                    loop {
-                        let index = next.fetch_add(1, Ordering::Relaxed);
-                        let Some(batch) = batches.get(index) else {
-                            break done;
-                        };
-                        let outcomes = own
-                            .as_ref()
-                            .map_err(Clone::clone)
-                            .and_then(|own| read_pending_rows(own, batch, context));
-                        done.push((index, outcomes));
-                    }
-                })
-            })
-            .collect::<Vec<_>>()
-            .into_iter()
-            .flat_map(|worker| {
-                worker
-                    .join()
-                    .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
-            })
-            .collect::<Vec<_>>()
-    });
-    results.sort_unstable_by_key(|(index, _)| *index);
-    results.into_iter().map(|(_, outcomes)| outcomes).collect()
-}
 
 fn read_pending_rows(
     connection: &sqlite::Connection,
     rows: &[PendingRow],
     context: &DatabaseLoadContext<'_>,
 ) -> std::result::Result<Vec<RowOutcome>, UnitError> {
+    // NOTE(2026-11-21): The metadata pass and this read run in separate snapshots, and OpenCode's text-keyed table reuses or renumbers rowids after deletes or VACUUM. Matching the id as well keeps a reused rowid from attaching another message's payload.
     let mut statement = connection
-        .prepare("SELECT data FROM session_message WHERE rowid = ?1")
+        .prepare("SELECT data FROM session_message WHERE rowid = ?1 AND id = ?2")
         .map_err(sqlite_setup_failure)?;
-    Ok(rows
-        .iter()
+    rows.iter()
         .map(|pending| {
-            let found = statement
+            statement
                 .reset()
                 .and_then(|()| statement.bind((1, pending.rowid)))
-                .and_then(|()| statement.next());
-            match found {
-                Ok(sqlite::State::Row) => match statement.read::<String, _>(0) {
-                    Ok(data) => parse_row(
-                        pending.kind,
-                        data,
-                        pending.id.clone(),
-                        pending.session_id.clone(),
-                        pending.created,
-                        context,
-                    ),
-                    Err(_) => RowOutcome::Unreadable,
-                },
-                // OpenCode deleted the row after the metadata pass listed it.
-                Ok(sqlite::State::Done) => RowOutcome::Skipped,
-                Err(_) => RowOutcome::Unreadable,
-            }
+                .and_then(|()| statement.bind((2, pending.meta.id.as_str())))
+                .and_then(|()| statement.next())
+                .map_err(sqlite_rows_failure)
+                .map(|state| match state {
+                    sqlite::State::Row => match statement.read::<String, _>(0) {
+                        Ok(data) => parse_row(pending.meta.clone(), data, context),
+                        Err(_) => RowOutcome::Unreadable,
+                    },
+                    sqlite::State::Done => RowOutcome::Skipped,
+                })
         })
-        .collect())
-}
-
-// NOTE(2026-09-25, OpenCode 2.0.16, #1782): OpenCode starts fork session counters at zero, with only fork-local usage. Copied rows must leave the aggregate fallback available.
-fn is_fork_copy(fork_copies: &HashMap<String, i64>, session_id: &str, seq: Option<i64>) -> bool {
-    fork_copies
-        .get(session_id)
-        .is_some_and(|cutoff| seq.is_some_and(|seq| seq <= *cutoff))
+        .collect()
 }
 
 fn parse_row(
-    kind: SessionMessageKind,
+    meta: SessionMessageMeta,
     data: String,
-    id: String,
-    session_id: String,
-    created: Option<i64>,
     context: &DatabaseLoadContext<'_>,
 ) -> RowOutcome {
     if !context.window.admits_payload(data.as_bytes()) {
         return RowOutcome::Skipped;
     }
+    let kind = meta.kind;
     match session_message_value_to_entry_checked(
         SessionMessageRow {
             kind,
             data: &data,
-            id,
-            session_id,
-            created,
+            id: meta.id,
+            session_id: meta.session_id,
+            created: meta.created,
         },
         context.tz,
         context.mode,
@@ -324,7 +261,14 @@ fn parse_row(
         Ok(Some(linked)) => RowOutcome::Entry(kind, Box::new(linked)),
         Ok(None) => RowOutcome::Skipped,
         Err(SessionMessageError::MissingTimestamp) => RowOutcome::MissingTimestamp,
-        Err(SessionMessageError::Decode(error)) => RowOutcome::Decode(error, data),
+        Err(SessionMessageError::Decode(error)) => {
+            let (kind, detail) = jsonl::classify_decode_error(
+                data.as_bytes(),
+                &error,
+                Some(|_: &serde_json::Value| true),
+            );
+            RowOutcome::Decode(kind, detail)
+        }
     }
 }
 
@@ -336,7 +280,7 @@ fn apply_outcome(
     collector: &mut EntryCollector,
     entries: &mut u32,
 ) {
-    match outcome {
+    let skip = match outcome {
         RowOutcome::Entry(kind, linked) => {
             *entries += 1;
             if kind == SessionMessageKind::Compaction {
@@ -344,27 +288,21 @@ fn apply_outcome(
             } else {
                 collector.push_message(*linked);
             }
+            return;
         }
-        RowOutcome::Skipped => {}
-        RowOutcome::Unreadable => row_diagnostics().record(Skip::record(
+        RowOutcome::Skipped => return,
+        RowOutcome::MissingTimestamp => {
+            return record_missing_timestamp(&row_diagnostics(), context.db_path, row);
+        }
+        RowOutcome::Unreadable => Skip::record(
             context.db_path,
             row,
             SkipKind::InvalidData,
             COLUMN_READ_FAILED,
-        )),
-        RowOutcome::MissingTimestamp => {
-            record_missing_timestamp(&row_diagnostics(), context.db_path, row);
-        }
-        RowOutcome::Decode(error, data) => jsonl::record_decode_error(
-            data.as_bytes(),
-            error,
-            context.db_path,
-            row,
-            jsonl::Ending::COMPLETE,
-            &row_diagnostics(),
-            Some(|_: &serde_json::Value| true),
         ),
-    }
+        RowOutcome::Decode(kind, detail) => Skip::record(context.db_path, row, kind, detail),
+    };
+    row_diagnostics().record(skip);
 }
 
 fn prepare_session_message_query<'a>(
@@ -389,4 +327,62 @@ fn prepare_session_message_query<'a>(
     let mut statement = connection.prepare(sql).map_err(sqlite_setup_failure)?;
     bind_window(&mut statement, window)?;
     Ok(statement)
+}
+
+#[cfg(test)]
+mod tests {
+    use ccusage_core::{Diagnostics, cost::PriceTable};
+
+    use super::{
+        super::{DatabaseLoadContext, DateWindow},
+        PendingRow, RowOutcome, SessionMessageKind, SessionMessageMeta, read_pending_rows,
+    };
+    use crate::cli::{CostMode, SharedArgs};
+
+    #[test]
+    fn a_reused_rowid_does_not_attach_another_message_payload() {
+        let fixture = ccusage_test_support::Fixture::new();
+        let path = fixture.path("opencode.db");
+        let connection = sqlite::open(&path).unwrap();
+        connection
+            .execute(
+                "CREATE TABLE session_message (id TEXT PRIMARY KEY, session_id TEXT, type TEXT, data TEXT); \
+                 INSERT INTO session_message (rowid, id, session_id, type, data) VALUES \
+                 (1, 'replacement', 'session', 'assistant', \
+                  '{\"time\":{\"created\":1767312000000},\"model\":{\"id\":\"gpt-test\",\"providerID\":\"openai\"},\"tokens\":{\"input\":3,\"output\":1}}')",
+            )
+            .unwrap();
+        let shared = SharedArgs::default();
+        let diagnostics = Diagnostics::new("opencode");
+        let context = DatabaseLoadContext {
+            tz: &jiff::tz::TimeZone::UTC,
+            mode: CostMode::Display,
+            pricing: PriceTable::Display,
+            window: DateWindow::UNBOUNDED,
+            shared: &shared,
+            db_path: &path,
+            diagnostics: &diagnostics,
+        };
+        let pending = |id: &str| PendingRow {
+            row: 1,
+            rowid: 1,
+            meta: SessionMessageMeta {
+                id: id.to_string(),
+                session_id: "session".to_string(),
+                kind: SessionMessageKind::Assistant,
+                created: Some(1_767_312_000_000),
+                seq: None,
+            },
+        };
+
+        let outcomes = read_pending_rows(
+            &connection,
+            &[pending("deleted"), pending("replacement")],
+            &context,
+        )
+        .unwrap();
+
+        assert!(matches!(outcomes[0], RowOutcome::Skipped));
+        assert!(matches!(outcomes[1], RowOutcome::Entry(..)));
+    }
 }
