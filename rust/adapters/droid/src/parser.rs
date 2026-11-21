@@ -46,7 +46,7 @@ pub(super) fn load_settings_file(
     let Some(settings) = value.as_object() else {
         return Ok(None);
     };
-    let Some(usage) = parse_token_usage(settings.get("tokenUsage")) else {
+    let Some(usage) = parse_token_usage(settings.get("tokenUsage"))? else {
         return Ok(None);
     };
     let provider = normalize_droid_provider(string_field(settings, "providerLock").as_deref());
@@ -103,8 +103,12 @@ pub(super) fn load_settings_file(
     }))
 }
 
-pub(super) fn parse_token_usage(value: Option<&Value>) -> Option<DroidTokenUsage> {
-    let usage = value?.as_object()?;
+pub(super) fn parse_token_usage(
+    value: Option<&Value>,
+) -> std::result::Result<Option<DroidTokenUsage>, UnitError> {
+    let Some(usage) = value.and_then(Value::as_object) else {
+        return Ok(None);
+    };
     let raw_usage = TokenUsageRaw {
         input_tokens: json_value_u64(usage.get("inputTokens")),
         output_tokens: json_value_u64(usage.get("outputTokens")),
@@ -124,13 +128,14 @@ pub(super) fn parse_token_usage(value: Option<&Value>) -> Option<DroidTokenUsage
         cache_read_tokens: raw_usage.cache_read_input_tokens,
         thinking_tokens,
     };
-    (tokens.input_tokens
-        + tokens.output_tokens
-        + tokens.cache_creation_tokens
-        + tokens.cache_read_tokens
-        + tokens.thinking_tokens
-        > 0)
-    .then_some(tokens)
+    let Some(counted_tokens) = ccusage_core::checked_total_usage_tokens(raw_usage, thinking_tokens)
+    else {
+        return Err(UnitError::new(
+            ccusage_core::SkipKind::InvalidData,
+            "Droid token counts exceed the u64 range",
+        ));
+    };
+    Ok((counted_tokens > 0).then_some(tokens))
 }
 
 fn settings_timestamp(
