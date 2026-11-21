@@ -503,11 +503,13 @@ mod pricing_identity_tests {
             ccusage_core::PricingMap::load_embedded().with_user_overrides([(&model, &rates)]);
         let fixture = ccusage_test_support::fs_fixture!({
             "input.settings.json": r#"{"model":"glm-4.7","providerLock":"zai","providerLockTimestamp":"2026-11-17T10:00:00Z","tokenUsage":{"inputTokens":1000}}"#,
-            "output.settings.json": r#"{"model":"glm-4.7","providerLock":"zai","providerLockTimestamp":"2026-11-17T10:00:00Z","tokenUsage":{"outputTokens":1000}}"#
+            "output.settings.json": r#"{"model":"glm-4.7","providerLock":"zai","providerLockTimestamp":"2026-11-17T10:00:00Z","tokenUsage":{"outputTokens":1000}}"#,
+            "context.settings.json": r#"{"model":"glm-4.7","providerLock":"zai","providerLockTimestamp":"2026-11-17T10:00:00Z","tokenUsage":{"inputTokens":150000,"outputTokens":150000}}"#
         });
         for (name, expected) in [
             ("input.settings.json", 0.05),
             ("output.settings.json", 0.05),
+            ("context.settings.json", 15.0),
         ] {
             let entry = load_settings_file(&fixture.path(name)).unwrap().unwrap();
             let (cost, missing) = price_droid(&entry, PriceTable::Calculate(&pricing));
