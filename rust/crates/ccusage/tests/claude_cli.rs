@@ -128,6 +128,52 @@ fn session_counts_usage_written_with_json_whitespace() {
     assert_eq!(json["totals"]["totalTokens"], 102);
 }
 
+#[test]
+fn session_id_keeps_tied_timestamps_in_input_order_for_both_orders() {
+    let fixture = Fixture::new();
+    let lines = [
+        ("2026-09-15T12:01:00.000Z", 1),
+        ("2026-09-15T12:00:00.000Z", 2),
+        ("2026-09-15T12:01:00.000Z", 3),
+        ("2026-09-15T12:00:00.000Z", 4),
+        ("2026-09-15T12:02:00.000Z", 5),
+        ("2026-09-15T12:01:00.000Z", 6),
+    ]
+    .map(|(timestamp, input)| {
+        format!(
+            r#"{{"timestamp":"{timestamp}","sessionId":"session-a","requestId":"request-{input}","costUSD":0.5,"message":{{"id":"message-{input}","model":"claude-sonnet-4-20250514","usage":{{"input_tokens":{input},"output_tokens":1}}}}}}"#
+        )
+    });
+    fixture.write_file("projects/project-a/session-a/chat.jsonl", lines.join("\n"));
+
+    let entry_inputs = |order: &str| {
+        let json: serde_json::Value = serde_json::from_str(&run_ccusage(
+            &fixture,
+            &[
+                "claude",
+                "session",
+                "--id",
+                "session-a",
+                "--json",
+                "--offline",
+                "--order",
+                order,
+            ],
+            None,
+        ))
+        .unwrap();
+        json["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|entry| entry["inputTokens"].as_u64().unwrap())
+            .collect::<Vec<_>>()
+    };
+
+    assert_eq!(entry_inputs("asc"), [2, 4, 1, 3, 6, 5]);
+    assert_eq!(entry_inputs("desc"), [5, 1, 3, 6, 2, 4]);
+}
+
 fn write_two_model_session(fixture: &Fixture) {
     let messages = [
         r#"{"timestamp":"2026-09-15T12:00:00.000Z","sessionId":"session-a","requestId":"request-a","costUSD":0.25,"message":{"id":"message-a","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":2}}}"#,
