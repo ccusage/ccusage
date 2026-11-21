@@ -60,7 +60,9 @@ DeepSeek Harness does not log usage for the requests that generate session title
 
 DeepSeek Harness does not record costs, so ccusage calculates them from token counts and known model pricing. `auto` and `calculate` produce the same result, and `display` shows `$0.00`. Requests through DeepSeek's own API-key and account providers use DeepSeek pricing, including DeepSeek's peak and off-peak rates. Requests that name another provider look up pricing for that provider's model first, then for the bare model ID, and keep that flat rate even when the bare DeepSeek model ID resolves to DeepSeek's own row. A model without known pricing remains visible with a missing-pricing warning.
 
-For `deepseek-flash`, each request's timestamp selects the peak or off-peak token rates, including cache reads. Peak windows are Monday through Friday, 01:00–04:00 and 06:00–10:00 UTC; all other hours, including weekends, use half those rates. The report timezone does not change the rate. DeepSeek retired V4 Flash but still accepts `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp`, so those legacy IDs keep the V4 Flash rates until 04:00 UTC on September 10, 2026 and then bill at the `deepseek-flash` rates above. Chinese public-holiday exceptions in [DeepSeek's pricing](https://api-docs.deepseek.com/quick_start/pricing/) are not yet modeled.
+For `deepseek-flash`, each request's timestamp selects the peak or off-peak token rates, including cache reads. Peak windows are Monday through Friday, 01:00–04:00 and 06:00–10:00 UTC. All other hours, including weekends, use half the peak rates. The report timezone does not change the rate. DeepSeek retired V4 Flash but still accepts `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp`, so those IDs use V4 Flash rates until 04:00 UTC on September 10, 2026 and then use `deepseek-flash` rates. `deepseek-v4-pro` keeps its existing rates across that cutoff.
+
+ccusage applies peak rates during those windows even on Chinese public holidays. Cost estimates for those hours can therefore exceed the vendor's charges. [DeepSeek pricing](https://api-docs.deepseek.com/quick_start/pricing/)
 
 ## Environment Variables
 
