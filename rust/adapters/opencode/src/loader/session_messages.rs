@@ -12,7 +12,7 @@ use std::{
 };
 
 use super::{
-    COLUMN_READ_FAILED, DatabaseLoadContext, EntryCollector, LinkedEntry, TableSchema,
+    COLUMN_READ_FAILED, DatabaseLoadContext, DateWindow, EntryCollector, LinkedEntry, TableSchema,
     UnreadableRow, bind_window, pushdown_condition, record_missing_timestamp, record_rows_failure,
     row_diagnostics, scan_rows, sqlite_rows_failure, sqlite_setup_failure,
 };
@@ -95,17 +95,28 @@ pub(super) fn load_session_message_rows(
     context: &DatabaseLoadContext<'_>,
     collector: &mut EntryCollector,
 ) {
+    if !schema.has_all(&["id", "session_id", "type", "data"]) {
+        UnitError::unsupported_schema().record(context.db_path, context.diagnostics);
+        return;
+    }
+    let window = schema.pushdown(context);
     let workers = parallel_workers(context);
     let parallel = (workers > 1)
         .then(|| {
-            load_rows_in_parallel(schema, fork_copies, context, collector, workers, &|| {
-                open_read_only(context.db_path)
-            })
+            load_rows_in_parallel(
+                schema,
+                window,
+                fork_copies,
+                context,
+                collector,
+                workers,
+                &|| open_read_only(context.db_path),
+            )
         })
         .flatten();
-    let Some((rows, entries)) = parallel
-        .or_else(|| load_rows_in_order(connection, schema, fork_copies, context, collector))
-    else {
+    let Some((rows, entries)) = parallel.or_else(|| {
+        load_rows_in_order(connection, schema, window, fork_copies, context, collector)
+    }) else {
         return;
     };
     if rows > 0 && entries == 0 {
@@ -135,11 +146,12 @@ fn parallel_workers(context: &DatabaseLoadContext<'_>) -> usize {
 fn load_rows_in_order(
     connection: &sqlite::Connection,
     schema: &TableSchema,
+    window: DateWindow,
     fork_copies: &HashMap<String, i64>,
     context: &DatabaseLoadContext<'_>,
     collector: &mut EntryCollector,
 ) -> Option<(u32, u32)> {
-    let statement = match prepare_session_message_query(connection, schema, context, "data") {
+    let statement = match prepare_session_message_query(connection, schema, window, "data") {
         Ok(statement) => statement,
         Err(error) => {
             error.record(context.db_path, context.diagnostics);
@@ -178,6 +190,7 @@ fn load_rows_in_order(
 // NOTE(2026-11-21): A 3.4 GB OpenCode database spends most of its load reading `data` overflow pages in one thread. The ordered metadata pass keeps row numbers and push order unchanged, and rounds keep only a few batches of payloads in memory.
 fn load_rows_in_parallel(
     schema: &TableSchema,
+    window: DateWindow,
     fork_copies: &HashMap<String, i64>,
     context: &DatabaseLoadContext<'_>,
     collector: &mut EntryCollector,
@@ -189,7 +202,7 @@ fn load_rows_in_parallel(
         return None;
     }
     let (scan, lanes) = pin_snapshots(context.db_path, workers, open)?;
-    let mut statement = prepare_session_message_query(&scan, schema, context, "rowid").ok()?;
+    let mut statement = prepare_session_message_query(&scan, schema, window, "rowid").ok()?;
     let diagnostics = context.diagnostics.for_table(schema.table.name());
     let round_rows = lanes.len() * PENDING_BATCH_ROWS;
     let mut round = Vec::with_capacity(round_rows);
@@ -435,13 +448,9 @@ fn apply_outcome(
 fn prepare_session_message_query<'a>(
     connection: &'a sqlite::Connection,
     schema: &TableSchema,
-    context: &DatabaseLoadContext<'_>,
+    window: DateWindow,
     payload: &str,
 ) -> std::result::Result<sqlite::Statement<'a>, UnitError> {
-    if !schema.has_all(&["id", "session_id", "type", "data"]) {
-        return Err(UnitError::unsupported_schema());
-    }
-    let window = schema.pushdown(context);
     let select = format!(
         "SELECT id, session_id, type, {payload}, {}, {} FROM session_message",
         schema.column_or("time_created", "NULL"),

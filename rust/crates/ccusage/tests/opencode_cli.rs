@@ -153,3 +153,29 @@ fn opencode_compaction_report_tables_snapshot() {
         );
     }
 }
+
+#[test]
+fn opencode_logs_an_unindexed_date_window_once_when_the_parallel_read_falls_back() {
+    let fixture = Fixture::new();
+    fixture.create_dir_all("opencode");
+    sqlite::open(fixture.path("opencode/opencode.db"))
+        .expect("open the OpenCode fixture database")
+        .execute(
+            "CREATE TABLE session_message (id TEXT PRIMARY KEY, session_id TEXT, type TEXT, \
+             seq INTEGER NOT NULL DEFAULT 0, time_created INTEGER, data TEXT) WITHOUT ROWID;
+             CREATE TABLE padding (bytes BLOB);
+             INSERT INTO padding VALUES (zeroblob(70000000));",
+        )
+        .expect("create a WITHOUT ROWID table past the parallel size");
+
+    let output = support::hermetic_command(fixture.root())
+        .env("OPENCODE_DATA_DIR", fixture.path("opencode"))
+        .args(["opencode", "daily", "--since", "20260101", "--debug"])
+        .args(["--json", "--offline", "--timezone", "UTC"])
+        .output()
+        .expect("ccusage CLI should run");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "ccusage CLI failed: {stderr}");
+    assert_eq!(stderr.matches("scanning unfiltered").count(), 1, "{stderr}");
+}

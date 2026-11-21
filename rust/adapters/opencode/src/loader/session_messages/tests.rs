@@ -62,10 +62,23 @@ fn load(
     let mut collector = EntryCollector::default();
     let fork_copies = HashMap::new();
     let rows = match parallel {
-        Some(open) => {
-            load_rows_in_parallel(&schema, &fork_copies, &context, &mut collector, 4, open)
-        }
-        None => load_rows_in_order(&connection, &schema, &fork_copies, &context, &mut collector),
+        Some(open) => load_rows_in_parallel(
+            &schema,
+            DateWindow::UNBOUNDED,
+            &fork_copies,
+            &context,
+            &mut collector,
+            4,
+            open,
+        ),
+        None => load_rows_in_order(
+            &connection,
+            &schema,
+            DateWindow::UNBOUNDED,
+            &fork_copies,
+            &context,
+            &mut collector,
+        ),
     };
     connection
         .execute("BEGIN; ROLLBACK")
