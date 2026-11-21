@@ -65,7 +65,9 @@ impl CachedHit {
     }
 
     pub(super) fn same_row(self, other: Self) -> bool {
-        self.id() == other.id() && self.overridden() == other.overridden()
+        self.id() == other.id()
+            && self.overridden() == other.overridden()
+            && self.is_models_dev() == other.is_models_dev()
     }
 
     pub(super) fn id(self) -> usize {

@@ -296,3 +296,30 @@ fn an_alias_target_priced_only_by_models_dev_beats_the_logged_id() {
         .unwrap();
     assert_eq!((found.input, found.output), (7e-6, 9e-6));
 }
+
+#[test]
+fn a_models_dev_row_and_an_authoritative_row_at_the_same_index_are_different_rows() {
+    crate::test_support::install_pricing_snapshots();
+    let _aliases = crate::model_aliases::set_model_aliases_for_tests([
+        ("index-logged", "index-target"),
+        ("index-target", "index-next"),
+    ]);
+    let mut primary = PricingMap::default();
+    primary.load_json(
+        r#"{"index-next": {"input_cost_per_token": 3e-6, "output_cost_per_token": 3e-6}}"#,
+    );
+    let mut models_dev = PricingMap::default();
+    models_dev
+        .load_models_dev_json_for_tests(r#"{"index-target": {"cost": {"input": 7, "output": 9}}}"#);
+    let pricing = super::layered(&primary, Some(&models_dev));
+
+    let identity = pricing.pricing_identity("index-logged");
+    let charged = identity
+        .handle
+        .unwrap()
+        .with_rates_at(None, |rates| (rates.input, rates.output));
+    assert_eq!(charged, (7e-6, 9e-6));
+    let target = pricing.find("index-target").unwrap();
+    assert_eq!((target.input, target.output), (3e-6, 3e-6));
+    assert_eq!(identity.name, "index-logged");
+}
