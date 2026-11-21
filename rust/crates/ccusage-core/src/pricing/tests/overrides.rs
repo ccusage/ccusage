@@ -817,3 +817,26 @@ fn an_override_without_token_rates_keeps_the_published_tier() {
     let rates = pricing.find("tiered").unwrap().long_context.unwrap().rates;
     assert_eq!((rates.input, rates.output), (Some(0.5e-6), Some(1e-6)));
 }
+
+#[test]
+fn a_bare_override_covers_host_qualified_labels_with_their_own_catalogue_rate() {
+    crate::test_support::install_pricing_snapshots();
+    let embedded = PricingMap::load_embedded();
+    let rates = ccusage_cli::PricingOverride {
+        input_cost_per_token: Some(50e-6),
+        output_cost_per_token: Some(50e-6),
+        ..Default::default()
+    };
+    for (key, label) in [("gpt-5.5", "azure/gpt-5.5"), ("glm-4.7", "zai/glm-4.7")] {
+        let published = embedded.find(label).unwrap();
+        assert_ne!(
+            (published.input, published.output),
+            (50e-6, 50e-6),
+            "{label}"
+        );
+        let id = key.to_owned();
+        let pricing = embedded.with_user_overrides([(&id, &rates)]);
+        let rate = pricing.find(label).unwrap();
+        assert_eq!((rate.input, rate.output), (50e-6, 50e-6), "{label}");
+    }
+}
