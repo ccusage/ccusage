@@ -117,6 +117,7 @@ pub(crate) fn usage_file_order(left: &Path, right: &Path) -> std::cmp::Ordering 
 
 const MTIME_PRUNE_MARGIN_MS: i64 = MILLIS_PER_DAY;
 const TAIL_PROBE_BYTES: u64 = 16 * 1024;
+const PROBE_READ_LIMIT: u64 = 1024 * 1024;
 
 pub(super) struct SinceFiles<T> {
     pub(super) kept: Vec<(PathBuf, T)>,
@@ -315,7 +316,7 @@ impl StaleProbe {
         (live, Some(recorded_session))
     }
 
-    // NOTE(2026-11-21, #2431): A tail without record timestamps proves nothing, and treating it as live revives the file's whole session group. Read further back until a record timestamp turns up; a file without any holds no dated usage.
+    // NOTE(2026-11-21, #2431): A tail without record timestamps proves nothing, and treating it as live revives the file's whole session group. Read further back until a record timestamp turns up; a file without any holds no dated usage. Reads stop growing at `PROBE_READ_LIMIT` so a large undated file doesn't pin its size in memory, and a line longer than that keeps the file unjudged.
     fn tail_reaches(&mut self, file: &File, len: u64) -> Option<bool> {
         let mut end = len;
         let mut window = TAIL_PROBE_BYTES + 1;
@@ -337,11 +338,14 @@ impl StaleProbe {
                 Records::Absent if start == 0 => return Some(false),
                 Records::Absent => {}
             }
+            if partial_end as u64 > PROBE_READ_LIMIT {
+                return None;
+            }
             self.partial_line.clear();
             self.partial_line
                 .extend_from_slice(&self.tail[..partial_end]);
             end = start;
-            window = window.saturating_mul(2);
+            window = window.saturating_mul(2).min(PROBE_READ_LIMIT);
         }
     }
 

@@ -498,6 +498,15 @@ fn reads_the_latest_record_after_a_tail_that_starts_mid_line() {
     assert_eq!(split.kept, [restored]);
 }
 
+fn records_then_undated(last_record: &str, undated_bytes: usize) -> String {
+    let undated = format!(r#"{{"type":"progress","text":"{}"}}"#, "x".repeat(1000));
+    std::iter::repeat_n(record_at("2026-09-01T12:00:00Z"), 200 * 1024 / 60)
+        .chain([record_at(last_record)])
+        .chain(std::iter::repeat_n(undated, undated_bytes / 1024 + 1))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 fn nested_time_line(timestamp: &str) -> String {
     format!(
         r#"{{"type":"file-history-snapshot","snapshot":{{"timestamp":"{timestamp}","text":"{}"}}}}"#,
@@ -592,6 +601,35 @@ fn judges_a_stale_transcript_by_its_latest_record_before_a_tail_without_timestam
             true,
         ),
         (
+            "in-window record three reads back",
+            records_then_undated("2026-09-21T12:00:00Z", 64 * 1024),
+            true,
+        ),
+        (
+            "older record three reads back",
+            records_then_undated("2026-09-01T12:00:00Z", 64 * 1024),
+            false,
+        ),
+        (
+            "in-window record behind more than the read limit of undated lines",
+            records_then_undated("2026-09-21T12:00:00Z", 3 * 1024 * 1024),
+            true,
+        ),
+        (
+            "older record behind more than the read limit of undated lines",
+            records_then_undated("2026-09-01T12:00:00Z", 3 * 1024 * 1024),
+            false,
+        ),
+        (
+            "undated last line longer than the read limit",
+            format!(
+                "{}\n{{\"text\":\"{}\"}}",
+                record_at("2026-09-01T12:00:00Z"),
+                "x".repeat(2 * 1024 * 1024)
+            ),
+            true,
+        ),
+        (
             "no record timestamps",
             r#"{"type":"summary"}"#.to_string(),
             false,
@@ -606,6 +644,26 @@ fn judges_a_stale_transcript_by_its_latest_record_before_a_tail_without_timestam
 
         assert_eq!(split.kept.is_empty(), !kept, "{name}");
     }
+}
+
+#[test]
+fn keeps_the_probe_buffer_bounded_on_a_large_undated_file() {
+    let fixture = fs_fixture!({
+        "projects/p/undated.jsonl": records_then_undated("2026-09-01T12:00:00Z", 8 * 1024 * 1024),
+    });
+    let undated = fixture.path("projects/p/undated.jsonl");
+    set_modified(&undated, instant("2026-09-01T12:00:00Z"));
+    let mut probe = super::StaleProbe::new(instant("2026-09-19T00:00:00Z").millis());
+
+    let (live, _) = probe.file(&undated);
+
+    assert!(!live);
+    let limit = usize::try_from(super::PROBE_READ_LIMIT).unwrap();
+    assert!(
+        probe.tail.capacity() < 3 * limit,
+        "{}",
+        probe.tail.capacity()
+    );
 }
 
 #[test]
