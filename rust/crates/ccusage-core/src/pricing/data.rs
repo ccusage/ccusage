@@ -511,12 +511,14 @@ const GROK_CODE_FAST_1: PricingSchedule = PricingSchedule {
 };
 
 // NOTE(2026-11-21, #2455): A schedule is a vendor's own price list, so on a recorded billing route it applies only to usage that vendor billed itself. These provider IDs name a vendor's own API: DeepSeek's, xAI's and Anthropic's LiteLLM provider IDs (https://docs.litellm.ai/docs/providers/deepseek, https://docs.litellm.ai/docs/providers/xai, https://docs.litellm.ai/docs/providers/anthropic) and DeepSeek Harness's `deepseek-official` and `deepseek-account` routes. Any other provider ID bills at its own flat rate.
+// NOTE(2026-11-21, #2228): `zai-coding-plan` is models.dev's ID for Z.ai's own GLM Coding Plan (https://models.dev/providers/zai-coding-plan, https://docs.z.ai/devpack/overview). It names Z.ai itself, not a host in front of it.
 pub(super) static DIRECT_BILLING_PROVIDERS: &[(&str, &str)] = &[
     ("deepseek", "deepseek"),
     ("deepseek-official", "deepseek"),
     ("deepseek-account", "deepseek"),
     ("xai", "xai"),
     ("anthropic", "anthropic"),
+    ("zai-coding-plan", "zai"),
 ];
 
 pub(super) static SCHEDULES: &[(&str, PricingSchedule)] = &[

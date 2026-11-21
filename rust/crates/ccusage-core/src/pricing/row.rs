@@ -129,6 +129,7 @@ impl RowPricing {
             }),
         };
         Pricing {
+            estimated: false,
             input: self.input,
             output: self.output,
             cache_create: self.cache_create,

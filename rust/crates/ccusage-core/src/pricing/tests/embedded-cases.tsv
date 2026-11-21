@@ -118,7 +118,7 @@
 096-claude|z-ai/glm-4.7-flash|F:z-ai/glm-4.7-flash|0.13225/0.529|S4|z-ai/glm-4.7-flash|
 097-claude|@cf/zai-org/glm-4.7-flash|F:@cf/zai-org/glm-4.7-flash|0.0605/0.4|S4|@cf/zai-org/glm-4.7-flash|
 098-claude|openrouter/z-ai/glm-4.7-flash|F:openrouter/z-ai/glm-4.7-flash|0.13225/0.529|S4|z-ai/glm-4.7-flash|
-099-claude|kyma/glm-4.7-flash|F:kyma/glm-4.7-flash|0/0|S3|zai/glm-4.7-flash|
+099-claude|kyma/glm-4.7-flash|F:kyma/glm-4.7-flash|0.08/0.478|S4|glm-4.7-flash|
 100-claude|glm-4.7-flash|F:glm-4.7-flash|0/0|S2|zai/glm-4.7-flash|
 100-claude|glm-4-7-flash|F:glm-4-7-flash|0/0|S2|zai/glm-4.7-flash|
 100-claude|zai/glm-4.7-flash|F:zai/glm-4.7-flash|0/0|S2|zai/glm-4.7-flash|

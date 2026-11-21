@@ -238,9 +238,7 @@ fn live_direct_provider_row_answers_the_unqualified_model_id() {
 fn free_vendor_row_behind_a_path_yields_to_the_ids_own_listing() {
     crate::test_support::install_pricing_snapshots();
     let pricing = PricingMap::load_embedded();
-    use super::super::ResolutionStep::{
-        AuthoritativeIdentity, AuthoritativeSuffix, ModelsDevIdentity,
-    };
+    use super::super::ResolutionStep::{AuthoritativeIdentity, ModelsDevIdentity};
     let model = "novita/glm-4.7-flash";
     let candidates = [
         ("openrouter/novita/glm-4.7-flash", MatchKind::Exact),
@@ -283,10 +281,10 @@ fn free_vendor_row_behind_a_path_yields_to_the_ids_own_listing() {
         ),
         (
             "kyma/glm-4.7-flash",
-            0.0,
-            0.0,
-            AuthoritativeSuffix,
-            "zai/glm-4.7-flash",
+            0.08e-6,
+            0.478e-6,
+            ModelsDevIdentity,
+            "glm-4.7-flash",
         ),
         (
             "glm-4.7-flash",
@@ -563,16 +561,15 @@ fn resolver_table_vendor_free_rows_only_answer_their_identity_or_segment() {
         }"#);
     for (case, name, expected) in [
         ("54_bare_free", "plan-2.5-flash", (0.0, 0.0)),
-        (
-            "55_foreign_prefix_free",
-            "foreign/plan-2-5-flash",
-            (0.0, 0.0),
-        ),
         ("53_qualified_free", "zai/plan-2-5-flash", (0.0, 0.0)),
     ] {
         let rates = map.find(name).expect(case);
         assert_eq!((rates.input, rates.output), expected, "{case}");
     }
+    assert!(
+        map.find("foreign/plan-2-5-flash").is_none(),
+        "55_foreign_prefix_free_without_a_paid_listing"
+    );
     assert!(
         map.find("plan-2.5-flash-20260101").is_none(),
         "free_tier_does_not_win_fuzzy"
@@ -717,13 +714,6 @@ fn resolver_table() {
             (5.0, 6.0),
         ),
         (
-            "R6_55_free_final_segment",
-            "foreign/free-niche-model",
-            &[("foreign/free-niche-model", fuzzy)][..],
-            AuthoritativeSuffix,
-            (0.0, 0.0),
-        ),
-        (
             "R7_34_vendor_schedule",
             "deepseek-v4-flash",
             &[("deepseek-v4-flash", fuzzy)][..],
@@ -755,6 +745,16 @@ fn resolver_table() {
             (11.0, 0.0),
         ),
     ];
+    assert!(
+        pricing
+            .resolve_at(
+                Some("foreign/free-niche-model"),
+                &[("foreign/free-niche-model", fuzzy)],
+                None
+            )
+            .is_none(),
+        "R6_55_free_final_segment_without_a_paid_listing"
+    );
     let instant = timestamp("2026-11-17T10:00:00Z");
     for (case, label, candidates, step, expected) in cases {
         let (_, rates) = pricing
@@ -832,4 +832,90 @@ fn a_router_path_reaches_the_models_dev_row_of_the_vendor_id_behind_it() {
         );
         assert_eq!(pricing.find(model), pricing.find(row), "{model}");
     }
+}
+
+#[test]
+fn a_vendors_free_row_through_a_paid_host_bills_a_marked_estimate_of_the_paid_listing() {
+    crate::test_support::install_pricing_snapshots();
+    let pricing = PricingMap::load_embedded();
+    let resolve = |label, candidates: &[(&str, MatchKind)]| {
+        pricing
+            .resolve_at(Some(label), candidates, None)
+            .map(|(_, rates)| (rates.input * 1e6, rates.output * 1e6, rates.estimated))
+    };
+    for (label, candidates, expected) in [
+        (
+            "kyma/glm-4.7-flash",
+            &[("kyma/glm-4.7-flash", MatchKind::Fuzzy)][..],
+            (0.08, 0.478, true),
+        ),
+        (
+            "novita/zai-org/glm-4.7-flash",
+            &[("novita/zai-org/glm-4.7-flash", MatchKind::Fuzzy)][..],
+            (0.08, 0.478, true),
+        ),
+        (
+            "glm-4.7-flash",
+            &[
+                ("glm-4.7-flash", MatchKind::Fuzzy),
+                ("openrouter/glm-4.7-flash", MatchKind::Exact),
+            ][..],
+            (0.08, 0.478, true),
+        ),
+        (
+            "glm-4.7-flash",
+            &[("glm-4.7-flash", MatchKind::Fuzzy)][..],
+            (0.0, 0.0, false),
+        ),
+        (
+            "glm-4.5-flash",
+            &[
+                ("glm-4.5-flash", MatchKind::Fuzzy),
+                ("zai_coding_plan/glm-4.5-flash", MatchKind::Exact),
+            ][..],
+            (0.0, 0.0, false),
+        ),
+        (
+            "glm-4-7-flash",
+            &[
+                ("glm-4-7-flash", MatchKind::Fuzzy),
+                ("openrouter/zai/glm-4-7-flash", MatchKind::Fuzzy),
+            ][..],
+            (0.0, 0.0, false),
+        ),
+    ] {
+        let (input, output, estimated) = resolve(label, candidates).unwrap();
+        assert!(
+            (input - expected.0).abs() < 1e-9 && (output - expected.1).abs() < 1e-9,
+            "{label} {candidates:?}: {input}/{output}"
+        );
+        assert_eq!(estimated, expected.2, "{label} {candidates:?}");
+    }
+}
+
+#[test]
+fn a_vendors_free_row_through_a_paid_host_reports_missing_pricing_without_a_paid_listing() {
+    crate::test_support::install_pricing_snapshots();
+    let mut pricing = PricingMap::default();
+    pricing.load_json(
+        r#"{"zai/glm-unlisted-flash": {"litellm_provider": "zai", "input_cost_per_token": 0, "output_cost_per_token": 0}}"#,
+    );
+
+    assert!(
+        pricing
+            .resolve_at(
+                Some("kyma/glm-unlisted-flash"),
+                &[("kyma/glm-unlisted-flash", MatchKind::Fuzzy)],
+                None
+            )
+            .is_none()
+    );
+    let (_, own) = pricing
+        .resolve_at(
+            Some("glm-unlisted-flash"),
+            &[("glm-unlisted-flash", MatchKind::Fuzzy)],
+            None,
+        )
+        .unwrap();
+    assert_eq!((own.input, own.output, own.estimated), (0.0, 0.0, false));
 }

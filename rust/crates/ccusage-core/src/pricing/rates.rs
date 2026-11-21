@@ -120,6 +120,7 @@ impl Pricing {
 
     pub(super) const fn empty() -> Self {
         Self {
+            estimated: false,
             input: 0.0,
             output: 0.0,
             cache_create: None,

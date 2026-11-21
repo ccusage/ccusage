@@ -100,14 +100,23 @@ pub struct PricingHandle {
 impl PricingHandle {
     fn new(row: &Row, hit: CachedHit) -> Self {
         Self {
-            rates: row.rates(),
+            rates: Pricing {
+                estimated: hit.estimated(),
+                ..row.rates()
+            },
             schedule: row
                 .schedule
                 .filter(|schedule| schedule.follows_row || hit.scheduled()),
         }
     }
 
-    fn on_route(row: &Row, route: BillingRoute, reported: &str, matched: &str) -> Self {
+    fn on_route(
+        row: &Row,
+        hit: CachedHit,
+        route: BillingRoute,
+        reported: &str,
+        matched: &str,
+    ) -> Self {
         let schedule = match route {
             BillingRoute::Direct(vendor) => [reported, matched]
                 .into_iter()
@@ -122,7 +131,10 @@ impl PricingHandle {
             BillingRoute::Foreign => None,
         };
         Self {
-            rates: row.rates(),
+            rates: Pricing {
+                estimated: hit.estimated(),
+                ..row.rates()
+            },
             schedule,
         }
     }
@@ -145,13 +157,16 @@ impl PricingHandle {
 
 impl PricingMap {
     pub fn find(&self, model: &str) -> Option<Pricing> {
-        let (_, found, _) = self.resolve_row_with(
+        let (_, found, hit) = self.resolve_row_with(
             Some(model),
             &[(model, MatchKind::Fuzzy)],
             Lookup::Pricing,
             models_dev_pricing,
         )?;
-        Some(found.row.rates())
+        Some(Pricing {
+            estimated: hit.estimated(),
+            ..found.row.rates()
+        })
     }
 
     #[cfg(feature = "resolver-trace")]
@@ -197,14 +212,19 @@ impl PricingMap {
         route: BillingRoute,
         timestamp: Option<TimestampMs>,
     ) -> Option<(&'a str, Pricing)> {
-        let (model, found, _) = self.resolve_row_with(
+        let (model, found, hit) = self.resolve_row_with(
             reported_model,
             candidates,
             Lookup::Pricing,
             models_dev_pricing,
         )?;
-        let handle =
-            PricingHandle::on_route(found.row, route, reported_model.unwrap_or(model), model);
+        let handle = PricingHandle::on_route(
+            found.row,
+            hit,
+            route,
+            reported_model.unwrap_or(model),
+            model,
+        );
         Some((model, handle.with_rates_at(timestamp, |rates| *rates)))
     }
 
@@ -304,22 +324,42 @@ impl PricingMap {
     ) -> Option<(&'a str, RowMatch<'_>, CachedHit)> {
         let search = || {
             let live = std::cell::Cell::new(Some(live));
-            self.search_request(reported, candidates, lookup, &|| {
-                live.take().and_then(|load| load())
-            })
+            let models_dev = &|| live.take().and_then(|load| load());
+            let hit = self.search_request(reported, candidates, lookup, models_dev)?;
+            if matches!(lookup, Lookup::Pricing)
+                && self.is_free_vendor_row(hit.row)
+                && names_foreign_host(reported, candidates)
+            {
+                return self
+                    .search_request(reported, candidates, Lookup::Paid, models_dev)
+                    .map(|paid| RequestHit {
+                        row: paid.row.as_estimate(),
+                        ..paid
+                    });
+            }
+            Some(hit)
         };
         let hit = match lookup {
             Lookup::Pricing => self
                 .requests
                 .get_or_init(RequestCache::default)
                 .get_or_init(reported, candidates, search),
-            Lookup::Context => search(),
+            Lookup::Context | Lookup::Paid => search(),
         }?;
         let model = match hit.candidate {
             Some(index) => candidates.get(index)?.0,
             None => reported?,
         };
         self.cached_row(model, hit.row)
+    }
+
+    fn is_free_vendor_row(&self, hit: CachedHit) -> bool {
+        !hit.overridden()
+            && !hit.is_models_dev()
+            && self
+                .rows
+                .at(hit.id())
+                .is_some_and(|found| found.row.scope == Scope::Direct && found.row.is_free())
     }
 
     #[inline(never)]
@@ -653,4 +693,17 @@ fn configured_alias(label: &str) -> Option<std::borrow::Cow<'_, str>> {
         .into_iter()
         .map(|model| (model, crate::model_aliases::resolve_model_name(model)))
         .find_map(|(model, alias)| (alias != model).then_some(alias))
+}
+
+// NOTE(2026-11-21, #2228): The owner decided that a vendor's free listing reached through a paid host with no listing of its own bills an estimate from the closest paid listing of the same model, because under-reporting is worse than an estimate. A host counts only when the agent logged it (the logged id itself, or an Exact or StrictExact provider candidate), and a direct vendor, a model owner or a vendor's own plan in front of the id names no host.
+fn names_foreign_host(reported: Option<&str>, candidates: &[(&str, MatchKind)]) -> bool {
+    candidates
+        .iter()
+        .filter(|&&(name, kind)| {
+            Some(name) == reported || matches!(kind, MatchKind::Exact | MatchKind::StrictExact)
+        })
+        .map(|&(name, _)| name)
+        .chain(reported)
+        .filter_map(|name| name.split_once('/').map(|(segment, _)| segment))
+        .any(|segment| !super::models_dev::is_vendor_segment(segment))
 }
