@@ -224,3 +224,30 @@ fn a_configured_alias_prices_a_model_that_has_its_own_rate() {
         );
     }
 }
+
+#[test]
+fn an_alias_target_without_an_identity_price_falls_back_to_the_logged_id() {
+    crate::test_support::install_pricing_snapshots();
+    let _aliases = crate::model_aliases::set_model_aliases_for_tests([(
+        "alias-logged-model",
+        "claude-alias-family-9-thinking",
+    )]);
+    let mut pricing = PricingMap::default();
+    assert_eq!(
+        pricing.load_json(
+            r#"{
+                "alias-logged-model": {"input_cost_per_token": 1e-6, "output_cost_per_token": 2e-6},
+                "claude-alias-family-9": {"input_cost_per_token": 7e-6, "output_cost_per_token": 9e-6}
+            }"#,
+        ),
+        2
+    );
+    assert_eq!(
+        pricing
+            .find_entry("claude-alias-family-9-thinking", MatchKind::Fuzzy)
+            .map(|rates| rates.input),
+        Some(7e-6)
+    );
+    let found = pricing.find("alias-logged-model").unwrap();
+    assert_eq!((found.input, found.output), (1e-6, 2e-6));
+}

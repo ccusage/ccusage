@@ -66,6 +66,12 @@ impl Overrides {
                 name.suffixes()
                     .find_map(|suffix| self.id_identity(suffix.identity()))
             })
+            .or_else(|| {
+                let model = super::unlabeled_model(label);
+                (model != label)
+                    .then(|| self.label_id(model, &Candidate::default()))
+                    .flatten()
+            })
     }
 
     pub(super) fn shadow(&self, found: RowMatch<'_>) -> Option<usize> {

@@ -289,20 +289,26 @@ impl PricingMap {
                 self.search_pass(name, slot, lookup, pass, &models_dev)
             })
         };
-        if !self.overrides.is_empty()
-            && let Some(model) = reported
-            && let Some(row) = matching(model, Pass::Label)
-        {
-            return Some(RequestHit {
-                candidate: None,
-                row,
-            });
+        if !self.overrides.is_empty() {
+            let reported = reported.map(|model| (None, model));
+            let requested = candidates
+                .iter()
+                .enumerate()
+                .filter(|(_, (_, kind))| *kind != MatchKind::Fallback)
+                .map(|(index, &(model, _))| (Some(index), model));
+            if let Some(hit) =
+                reported
+                    .into_iter()
+                    .chain(requested)
+                    .find_map(|(candidate, model)| {
+                        matching(model, Pass::Label).map(|row| RequestHit { candidate, row })
+                    })
+            {
+                return Some(hit);
+            }
         }
         if let Some(alias) = reported.and_then(configured_alias)
-            && let Some(row) = Pass::CANDIDATE
-                .into_iter()
-                .filter(|pass| pass.searches(lookup))
-                .find_map(|pass| matching(alias.as_ref(), pass))
+            && let Some(row) = matching(alias.as_ref(), Pass::S2)
         {
             return Some(RequestHit {
                 candidate: None,
