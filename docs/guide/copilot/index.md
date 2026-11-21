@@ -62,6 +62,7 @@ ${COPILOT_HOME:-~/.copilot}/
 | Focused view              | Description                        | See also                                |
 | ------------------------- | ---------------------------------- | --------------------------------------- |
 | `ccusage copilot daily`   | Aggregate usage by date            | [Daily Usage](/guide/daily-reports)     |
+| `ccusage copilot weekly`  | Aggregate usage by week            | [Weekly Usage](/guide/weekly-reports)   |
 | `ccusage copilot monthly` | Aggregate usage by month           | [Monthly Usage](/guide/monthly-reports) |
 | `ccusage copilot session` | Group usage by Copilot session IDs | [Session Usage](/guide/session-reports) |
 

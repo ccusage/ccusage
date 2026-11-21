@@ -1,6 +1,7 @@
 {
 	"combinedOptions": {
 		"agent_period_options": ["agent_options", "last_options"],
+		"agent_weekly_options": ["agent_options", "all_weekly_options", "last_options"],
 		"all_agent_period_options": ["all_agent_options", "last_options"],
 		"all_agent_session_options": ["all_agent_options", "session_options"],
 		"all_agent_weekly_options": ["all_agent_options", "all_weekly_options", "last_options"],
@@ -595,6 +596,10 @@
 					"description": "Show GitHub Copilot CLI usage grouped by date"
 				},
 				{
+					"name": "weekly",
+					"description": "Show GitHub Copilot CLI usage grouped by week"
+				},
+				{
 					"name": "monthly",
 					"description": "Show GitHub Copilot CLI usage grouped by month"
 				},
@@ -609,6 +614,12 @@
 			"description": "Show GitHub Copilot CLI usage grouped by date",
 			"usage": "ccusage copilot daily <OPTIONS>",
 			"options": "agent_period_options"
+		},
+		{
+			"path": ["copilot", "weekly"],
+			"description": "Show GitHub Copilot CLI usage grouped by week",
+			"usage": "ccusage copilot weekly <OPTIONS>",
+			"options": "agent_weekly_options"
 		},
 		{
 			"path": ["copilot", "monthly"],
@@ -669,6 +680,10 @@
 					"description": "Show Antigravity usage grouped by date"
 				},
 				{
+					"name": "weekly",
+					"description": "Show Antigravity usage grouped by week"
+				},
+				{
 					"name": "monthly",
 					"description": "Show Antigravity usage grouped by month"
 				},
@@ -683,6 +698,12 @@
 			"description": "Show Antigravity usage grouped by date",
 			"usage": "ccusage antigravity daily <OPTIONS>",
 			"options": "agent_period_options"
+		},
+		{
+			"path": ["antigravity", "weekly"],
+			"description": "Show Antigravity usage grouped by week",
+			"usage": "ccusage antigravity weekly <OPTIONS>",
+			"options": "agent_weekly_options"
 		},
 		{
 			"path": ["antigravity", "monthly"],
@@ -706,6 +727,10 @@
 					"description": "Show Kimi usage grouped by date"
 				},
 				{
+					"name": "weekly",
+					"description": "Show Kimi usage grouped by week"
+				},
+				{
 					"name": "monthly",
 					"description": "Show Kimi usage grouped by month"
 				},
@@ -720,6 +745,12 @@
 			"description": "Show Kimi usage grouped by date",
 			"usage": "ccusage kimi daily <OPTIONS>",
 			"options": "agent_period_options"
+		},
+		{
+			"path": ["kimi", "weekly"],
+			"description": "Show Kimi usage grouped by week",
+			"usage": "ccusage kimi weekly <OPTIONS>",
+			"options": "agent_weekly_options"
 		},
 		{
 			"path": ["kimi", "monthly"],
@@ -854,6 +885,10 @@
 					"description": "Show ZCode usage grouped by date"
 				},
 				{
+					"name": "weekly",
+					"description": "Show ZCode usage grouped by week"
+				},
+				{
 					"name": "monthly",
 					"description": "Show ZCode usage grouped by month"
 				},
@@ -868,6 +903,12 @@
 			"description": "Show ZCode usage grouped by date",
 			"usage": "ccusage zcode daily <OPTIONS>",
 			"options": "agent_period_options"
+		},
+		{
+			"path": ["zcode", "weekly"],
+			"description": "Show ZCode usage grouped by week",
+			"usage": "ccusage zcode weekly <OPTIONS>",
+			"options": "agent_weekly_options"
 		},
 		{
 			"path": ["zcode", "monthly"],
