@@ -79,7 +79,7 @@ impl DailyAccumulator {
             let breakdown = &mut self.breakdowns[index];
             breakdown.add_usage(&entry.usage);
             breakdown.cost += entry.cost;
-            if entry.missing_pricing_model.is_some() {
+            if entry.missing_pricing {
                 breakdown.missing_pricing = true;
             }
             breakdown.add_stored_cost(entry.recorded_cost.billed());
