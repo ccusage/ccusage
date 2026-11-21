@@ -969,3 +969,70 @@ fn a_vendors_own_provider_route_applies_only_that_vendors_schedule() {
         }
     }
 }
+
+fn grok_with_override(
+    override_value: &ccusage_cli::PricingOverride,
+) -> (PricingMap, [(&'static str, MatchKind); 1]) {
+    crate::test_support::install_pricing_snapshots();
+    let key = "grok-code-fast-1".to_string();
+    (
+        PricingMap::load_embedded().with_user_overrides([(&key, override_value)]),
+        [("grok-code-fast-1", MatchKind::Fuzzy)],
+    )
+}
+
+#[test]
+fn an_explicit_base_rate_override_wins_over_a_scheduled_tier_at_every_size() {
+    let (pricing, candidates) = grok_with_override(&ccusage_cli::PricingOverride {
+        input_cost_per_token: Some(0.5e-6),
+        ..Default::default()
+    });
+    for (instant, expected) in [
+        (
+            "2026-05-15T14:59:11Z",
+            250_000.0 * 0.5e-6 + 1_000.0 * 1.5e-6,
+        ),
+        ("2026-05-15T14:59:12Z", 250_000.0 * 0.5e-6 + 1_000.0 * 2e-6),
+    ] {
+        let cost = crate::cost::price_entry(
+            crate::cost::EntryPricing {
+                granularity: crate::cost::UsageGranularity::Request,
+                usage: crate::TokenUsageRaw {
+                    input_tokens: 250_000,
+                    output_tokens: 1_000,
+                    ..Default::default()
+                },
+                reasoning_tokens: 0,
+                residual_tokens: 0,
+                reported_model: Some("grok-code-fast-1"),
+                candidates: &candidates,
+                stored_cost: None,
+                timestamp: Some(timestamp(instant)),
+            },
+            crate::cost::PriceTable::Calculate(&pricing),
+        )
+        .cost;
+        assert!(
+            (cost - expected).abs() < 1e-9,
+            "{instant}: {cost} != {expected}"
+        );
+    }
+}
+
+#[test]
+fn a_multiplier_only_override_keeps_the_scheduled_tier() {
+    let (pricing, candidates) = grok_with_override(&ccusage_cli::PricingOverride {
+        fast_multiplier: Some(2.0),
+        ..Default::default()
+    });
+    let plain = PricingMap::load_embedded();
+    let instant = Some(timestamp("2026-05-16T00:00:00Z"));
+    let (_, overridden) = pricing
+        .resolve_at(Some("grok-code-fast-1"), &candidates, instant)
+        .unwrap();
+    let (_, scheduled) = plain
+        .resolve_at(Some("grok-code-fast-1"), &candidates, instant)
+        .unwrap();
+    assert_eq!(overridden.long_context, scheduled.long_context);
+    assert_eq!(overridden.fast_multiplier, 2.0);
+}
