@@ -1484,7 +1484,7 @@ function openCodeAssistant(random: Random, createdMs: number, contentBytes: numb
 	const output = random.between(1, 4000);
 	const reasoning = random.between(0, 2000);
 	const cache = { read: random.between(0, 150_000), write: random.between(0, 20_000) };
-	// NOTE(2026-11-21, #2407): OpenCode writes the message content before its token counts, so a reader has to scan the whole payload to reach them.
+	// NOTE(2026-11-21, #2407): OpenCode writes the message content before its token counts. Keep that order so reports scan the whole payload, as they do on real databases.
 	return {
 		role: 'assistant',
 		content: openCodeContent(random, contentBytes),
