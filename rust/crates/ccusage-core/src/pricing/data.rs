@@ -483,7 +483,7 @@ const DEEPSEEK_V4_FLASH: PricingSchedule = PricingSchedule {
     flat_in_fast_mode: false,
     vendor: "deepseek",
 };
-// NOTE(2026-11-21, #2167): DeepSeek confirmed in https://api-docs.deepseek.com/updates/ that V4 Pro kept its billing after the V4.1 Flash launch. Its peak and off-peak rates still match https://api-docs.deepseek.com/quick_start/pricing/.
+// NOTE(2026-11-21, #2167): The September 14 switch to V4.1 Flash rates announced at https://api-docs.deepseek.com/news/news260910/ is outdated, as https://api-docs.deepseek.com/updates/ confirms V4 Pro billing stayed unchanged. A Flash successor would misprice Pro requests.
 const DEEPSEEK_V4_PRO: PricingSchedule = PricingSchedule {
     cutoff_ms: 1_786_896_000_000,
     peak_weekdays: 1..=5,
