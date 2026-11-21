@@ -352,11 +352,10 @@ impl PricingMap {
             .chain((base != resolved).then_some(base))
             .find_map(|key| {
                 self.rows
-                    .entries
                     .get(key)
                     .or_else(|| {
                         let exact_only = self.rows.exact_only_id(key)?;
-                        self.rows.entries.get(exact_only)
+                        self.rows.get(exact_only)
                     })
                     .map(|row| row.pricing.long_context.as_deref().copied())
             })

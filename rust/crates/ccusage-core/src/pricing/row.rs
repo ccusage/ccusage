@@ -360,9 +360,12 @@ impl Entries {
     }
 
     pub(super) fn append(&mut self, key: String, mut row: Row) -> &mut Row {
-        let id = self.rows.len();
         row.key = Arc::from(key);
-        self.literal.insert(Arc::clone(&row.key), id);
+        self.append_row(row)
+    }
+
+    pub(super) fn append_row(&mut self, row: Row) -> &mut Row {
+        self.literal.insert(Arc::clone(&row.key), self.rows.len());
         self.rows.push_mut(row)
     }
 

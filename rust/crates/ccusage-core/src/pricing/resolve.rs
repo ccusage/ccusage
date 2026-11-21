@@ -833,31 +833,34 @@ impl PricingMap {
         models_dev: &impl Fn() -> Option<&'a PricingRows>,
     ) -> Option<CachedHit> {
         let normalized = name.identity();
-        let base = self.rows.normalized_matches();
+        let matches = |key, identity| pricing_key_matches(key, identity, name.raw(), normalized);
+        let base = self
+            .rows
+            .keys()
+            .filter(|&(_, key, identity)| matches(key, identity));
+        let resolve = |(id, key, identity)| Some((key, identity, self.rows.at(id)?));
         let primary = if self.overrides.is_empty() {
-            Self::fuzzy(
-                base.map(|(found, identity)| (found.key, identity, found)),
-                name.raw(),
-                normalized,
-                lookup,
-            )
+            Self::fuzzy(base.filter_map(resolve), name.raw(), normalized, lookup)
         } else {
             let shadowed = self.override_shadows.get_or_init(|| {
                 self.rows
-                    .matches()
-                    .filter_map(|found| self.overrides.shadow(found))
+                    .keys()
+                    .filter_map(|(id, _, identity)| {
+                        self.overrides
+                            .shadow_identity(identity, || self.rows.vendor_id(id).map(str::len))
+                    })
                     .collect()
             });
-            let matches =
-                |key, identity| pricing_key_matches(key, identity, name.raw(), normalized);
-            let resolve = |id| self.resolve_override(id, models_dev, true);
-            let base = base.filter_map(|(raw, identity)| {
-                let found = match self.overrides.shadow(raw) {
-                    Some(id) if matches(raw.key, identity) => resolve(id)?,
-                    Some(_) => return None,
+            let resolve_override = |id| self.resolve_override(id, models_dev, true);
+            let base = base.filter_map(resolve).filter_map(|(key, identity, raw)| {
+                let found = match self
+                    .overrides
+                    .shadow_identity(identity, || raw.row.vendor_id().map(str::len))
+                {
+                    Some(id) => resolve_override(id)?,
                     None => raw,
                 };
-                Some((raw.key, identity, found))
+                Some((key, identity, found))
             });
             let overrides =
                 self.overrides
@@ -867,17 +870,19 @@ impl PricingMap {
                         if shadowed.contains(&id) || !matches(key, identity) {
                             return None;
                         }
-                        Some((key, identity, resolve(id)?))
+                        Some((key, identity, resolve_override(id)?))
                     });
             Self::fuzzy(base.chain(overrides), name.raw(), normalized, lookup)
         };
         primary
             .map(|found| CachedHit::new(found, HitKind::AuthoritativeFuzzy))
             .or_else(|| {
+                let secondary = secondary?;
                 Self::fuzzy(
-                    secondary?
-                        .normalized_matches()
-                        .map(|(found, identity)| (found.key, identity, found)),
+                    secondary
+                        .keys()
+                        .filter(|&(_, key, identity)| matches(key, identity))
+                        .filter_map(|(id, key, identity)| Some((key, identity, secondary.at(id)?))),
                     name.raw(),
                     normalized,
                     lookup,
@@ -912,11 +917,7 @@ impl PricingMap {
             lookup.includes(found.row)
                 && (!found.row.is_free()
                     || (matches!(lookup, Lookup::Context) && found.row.scope == Scope::Direct))
-                && if found.row.exact_only {
-                    names_pricing_key(key, identity, name, normalized)
-                } else {
-                    pricing_key_matches(key, identity, name, normalized)
-                }
+                && (!found.row.exact_only || names_pricing_key(key, identity, name, normalized))
         });
         let mut best = None;
         let mut best_not_longer = None;

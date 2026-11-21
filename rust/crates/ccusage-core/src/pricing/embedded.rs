@@ -49,8 +49,11 @@ pub(super) fn build_time_models_dev_json() -> &'static str {
 }
 
 pub(super) fn embedded_pricing_table() -> &'static PricingTable {
+    static BYTES: OnceLock<Vec<u8>> = OnceLock::new();
     static TABLE: OnceLock<PricingTable> = OnceLock::new();
-    TABLE.get_or_init(|| decode_pricing_table(&inflate(embedded_snapshots().pricing_table)))
+    TABLE.get_or_init(|| {
+        decode_pricing_table(BYTES.get_or_init(|| inflate(embedded_snapshots().pricing_table)))
+    })
 }
 
 pub(super) fn models_dev_catalog_rules_json() -> &'static str {

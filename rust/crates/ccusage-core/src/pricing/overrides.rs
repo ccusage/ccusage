@@ -38,13 +38,6 @@ impl Overrides {
         self.rows.is_empty()
     }
 
-    fn id(&self, name: &str) -> Option<usize> {
-        if self.is_empty() {
-            return None;
-        }
-        self.id_identity(normalized_pricing_key(name).as_ref())
-    }
-
     pub(super) fn id_identity(&self, identity: &str) -> Option<usize> {
         self.by_identity.get(identity).copied()
     }
@@ -78,8 +71,23 @@ impl Overrides {
     }
 
     pub(super) fn shadow(&self, found: RowMatch<'_>) -> Option<usize> {
-        self.id(found.key)
-            .or_else(|| self.id(found.row.vendor_id()?))
+        if self.is_empty() {
+            return None;
+        }
+        self.shadow_identity(&normalized_pricing_key(found.key), || {
+            found.row.vendor_id().map(str::len)
+        })
+    }
+
+    pub(super) fn shadow_identity(
+        &self,
+        identity: &str,
+        vendor_len: impl FnOnce() -> Option<usize>,
+    ) -> Option<usize> {
+        self.id_identity(identity).or_else(|| {
+            // NOTE(2026-11-21, #2465): A vendor ID is a key suffix, and normalization preserves byte offsets.
+            self.id_identity(&identity[identity.len() - vendor_len()?..])
+        })
     }
 
     pub(super) fn names(&self) -> impl Iterator<Item = (&str, &str)> {

@@ -2,14 +2,14 @@ use super::{
     MatchKind, PricingMap, build_time_models_dev_json, build_time_pricing_json,
     embedded_models_dev_pricing, layered,
 };
-use crate::pricing::{PricingRows, rows::FoldedIndexes};
+use crate::pricing::{Lookup, Name, PricingRows};
+use std::sync::OnceLock;
 
 fn sorted_rows(rows: &PricingRows) -> Vec<String> {
     let mut rows: Vec<_> = rows
-        .entries
-        .rows
-        .iter()
-        .map(|row| {
+        .matches()
+        .map(|found| {
+            let row = found.row;
             format!(
                 "{} {:?} {:?} {:?} {:?} {} {} {:?} {:?} {:?}",
                 row.key,
@@ -30,6 +30,40 @@ fn sorted_rows(rows: &PricingRows) -> Vec<String> {
 }
 
 #[test]
+fn lookup_decodes_only_matching_embedded_rows() {
+    use crate::pricing::table::decode_pricing_table;
+
+    crate::test_support::install_pricing_snapshots();
+    static BYTES: OnceLock<Vec<u8>> = OnceLock::new();
+    let bytes = BYTES.get_or_init(|| {
+        miniz_oxide::inflate::decompress_to_vec(ccusage_pricing_snapshots::PRICING_TABLE).unwrap()
+    });
+    let table = decode_pricing_table(bytes);
+    let rows = &table.rows.rows;
+    assert_eq!(rows.decoded_row_count(), 0);
+    assert_eq!(table.models_dev.rows.decoded_row_count(), 0);
+
+    std::thread::scope(|scope| {
+        for _ in 0..4 {
+            scope.spawn(|| {
+                let identity = OnceLock::new();
+                let name = Name::new("gpt-5.5", &identity);
+                let row = rows.exact(name, Lookup::Pricing, false).unwrap();
+                assert_eq!(row.row.rates().input, 5e-6);
+            });
+        }
+    });
+    assert_eq!(rows.decoded_row_count(), 1);
+    assert!(
+        table
+            .rows
+            .find("no-such-model-for-lazy-pricing-test")
+            .is_none()
+    );
+    assert_eq!(rows.decoded_row_count(), 1);
+}
+
+#[test]
 fn embedded_table_matches_the_rows_loaded_from_its_snapshots() {
     crate::test_support::install_pricing_snapshots();
     let mut models_dev = PricingMap::default();
@@ -47,20 +81,20 @@ fn embedded_table_matches_the_rows_loaded_from_its_snapshots() {
         sorted_rows(&embedded_models_dev_pricing().rows),
         sorted_rows(&models_dev.rows)
     );
-    for rows in [&embedded.rows, &embedded_models_dev_pricing().rows] {
-        let stored = rows.folded_indexes.get().unwrap();
-        assert_eq!(stored.0, FoldedIndexes::build(rows.matches()).0);
-    }
-}
-
-#[test]
-fn embedded_pricing_reserves_the_encoded_row_count() {
-    crate::test_support::install_pricing_snapshots();
-    let primary = PricingMap::load_embedded();
-    for table in [&primary, embedded_models_dev_pricing()] {
-        let rows = &table.rows.entries.rows;
-        assert!(!rows.is_empty());
-        assert_eq!(rows.capacity(), rows.len());
+    for (embedded, loaded) in [
+        (&embedded.rows, &litellm.rows),
+        (&embedded_models_dev_pricing().rows, &models_dev.rows),
+    ] {
+        for (_, key, identity) in loaded.keys() {
+            let query = identity.to_ascii_lowercase();
+            let cached = OnceLock::new();
+            let name = Name::new(&query, &cached);
+            let find = |rows: &PricingRows| {
+                rows.exact(name, Lookup::Pricing, true)
+                    .map(|found| found.key.to_owned())
+            };
+            assert_eq!(find(embedded), find(loaded), "{key}");
+        }
     }
 }
 
@@ -293,13 +327,11 @@ fn embedded_pricing_preserves_gpt_5_6_generated_sources() {
             pricing.context_limit(model),
             litellm_snapshot
                 .rows
-                .entries
                 .get(model)
                 .and_then(|row| row.context_limit.as_ref())
                 .copied()
                 .or_else(|| models_dev_snapshot
                     .rows
-                    .entries
                     .get(model)
                     .and_then(|row| row.context_limit.as_ref())
                     .copied())
@@ -454,7 +486,6 @@ fn embedded_gpt_5_6_exact_entry_wins_over_the_sol_alias() {
         pricing.context_limit("gpt-5.6"),
         pricing
             .rows
-            .entries
             .get("gpt-5.6")
             .and_then(|row| row.context_limit.as_ref())
             .copied()

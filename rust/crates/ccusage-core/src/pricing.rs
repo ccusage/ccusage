@@ -94,11 +94,15 @@ impl PricingMap {
 
     fn rows_mut(&mut self) -> &mut PricingRows {
         let rows = Arc::make_mut(&mut self.rows);
-        rows.indexes.take();
-        rows.folded_indexes.take();
-        rows.normalized_keys.take();
-        rows.exact_only_by_identity.take();
+        rows.make_mutable();
         rows
+    }
+
+    fn from_embedded_rows(rows: table::EmbeddedRows) -> Self {
+        Self {
+            rows: Arc::new(PricingRows::from_embedded(rows)),
+            ..Self::default()
+        }
     }
 
     fn build_embedded() -> Self {
