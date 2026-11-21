@@ -65,7 +65,7 @@ exit: 0
         {
           "cacheCreationTokens": 240,
           "cacheReadTokens": 4000,
-          "cost": 0.017130000000000003,
+          "cost": 0.01065,
           "inputTokens": 1200,
           "modelName": "anthropic/claude-sonnet-4.5",
           "outputTokens": 762
@@ -104,7 +104,7 @@ exit: 0
       ],
       "month": "2026-01",
       "outputTokens": 1972,
-      "totalCost": 0.025384499999999997,
+      "totalCost": 0.018904499999999998,
       "totalTokens": 32852
     }
   ],
@@ -113,7 +113,7 @@ exit: 0
     "cacheReadTokens": 39000,
     "inputTokens": 30820,
     "outputTokens": 3856,
-    "totalCost": 0.030131659999999998,
+    "totalCost": 0.023651659999999998,
     "totalTokens": 75666,
     "unpricedModels": [
       "dsh-mystery-1",

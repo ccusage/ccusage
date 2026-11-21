@@ -15,7 +15,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 5000,
-          "cost": 0.008825,
+          "cost": 0.005375,
           "inputTokens": 1400,
           "modelName": "gpt-5",
           "outputTokens": 645
@@ -36,7 +36,7 @@ exit: 0
       ],
       "outputTokens": 715,
       "sessionId": "T-aaaaaaaa-0000-4000-8000-000000000001",
-      "totalCost": 0.008825,
+      "totalCost": 0.005375,
       "totalTokens": 7415
     },
     {
@@ -78,7 +78,7 @@ exit: 0
     "credits": 3.7,
     "inputTokens": 3200,
     "outputTokens": 1215,
-    "totalCost": 0.016875,
+    "totalCost": 0.013425,
     "totalTokens": 19615,
     "unpricedModels": [
       "amp-mystery-1"

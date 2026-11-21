@@ -43,7 +43,7 @@ exit: 0
         {
           "cacheCreationTokens": 100,
           "cacheReadTokens": 200,
-          "cost": 0.01944,
+          "cost": 0.01101,
           "inputTokens": 1900,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 867
@@ -74,7 +74,7 @@ exit: 0
       "outputTokens": 967,
       "projectPath": "GitHub Copilot CLI",
       "sessionId": "conv-vscode",
-      "totalCost": 0.01994,
+      "totalCost": 0.011510000000000001,
       "totalTokens": 4087
     },
     {
@@ -377,7 +377,7 @@ exit: 0
     "cacheReadTokens": 3800,
     "inputTokens": 11090,
     "outputTokens": 2878,
-    "totalCost": 1.4074025000000003,
+    "totalCost": 1.3989725000000002,
     "totalTokens": 18388,
     "unpricedModels": [
       "copilot-mystery-1",

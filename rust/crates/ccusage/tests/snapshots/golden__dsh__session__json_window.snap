@@ -12,20 +12,20 @@ exit: 0
       "inputTokens": 20340,
       "modelBreakdowns": [
         {
-          "cacheCreationTokens": 240,
-          "cacheReadTokens": 0,
-          "cost": 0.010530000000000003,
-          "inputTokens": 400,
-          "modelName": "anthropic/claude-sonnet-4.5",
-          "outputTokens": 562
-        },
-        {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.006659999999999999,
           "inputTokens": 19000,
           "modelName": "deepseek-flash",
           "outputTokens": 800
+        },
+        {
+          "cacheCreationTokens": 240,
+          "cacheReadTokens": 0,
+          "cost": 0.004050000000000001,
+          "inputTokens": 400,
+          "modelName": "anthropic/claude-sonnet-4.5",
+          "outputTokens": 562
         },
         {
           "cacheCreationTokens": 1200,
@@ -53,7 +53,7 @@ exit: 0
       ],
       "outputTokens": 1615,
       "sessionId": "sess-alpha",
-      "totalCost": 0.018358410000000002,
+      "totalCost": 0.01187841,
       "totalTokens": 41645
     },
     {
@@ -107,7 +107,7 @@ exit: 0
     "cacheReadTokens": 24000,
     "inputTokens": 25340,
     "outputTokens": 2815,
-    "totalCost": 0.019685160000000004,
+    "totalCost": 0.01320516,
     "totalTokens": 53845,
     "unpricedModels": [
       "dsh-mystery-1",

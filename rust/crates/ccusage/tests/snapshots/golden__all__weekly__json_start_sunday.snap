@@ -10,7 +10,7 @@ exit: 0
     "cacheReadTokens": 1308300,
     "inputTokens": 1262107,
     "outputTokens": 60566,
-    "totalCost": 28.074755625,
+    "totalCost": 27.990890625000002,
     "totalTokens": 2652038,
     "unpricedModels": [
       "GLM-5.3",
@@ -30,7 +30,6 @@ exit: 0
       "dsh-mystery-1",
       "gemini-mystery-1",
       "goose-mystery-1",
-      "gpt-unknown",
       "grok-mystery-1",
       "grok-unknown",
       "hermes-mystery-1",
@@ -135,7 +134,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.02885,
+          "cost": 0.0284,
           "inputTokens": 1000,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 500,
@@ -237,7 +236,7 @@ exit: 0
       ],
       "outputTokens": 1760,
       "period": "2025-12-21",
-      "totalCost": 3.8313875000000004,
+      "totalCost": 3.8309375000000006,
       "totalTokens": 12630
     },
     {
@@ -273,7 +272,7 @@ exit: 0
         {
           "cacheCreationTokens": 1670,
           "cacheReadTokens": 58950,
-          "cost": 4.0414805000000005,
+          "cost": 4.0412305,
           "inputTokens": 11943,
           "modelName": "claude-haiku-4-5-20251001",
           "outputTokens": 4455,
@@ -292,7 +291,7 @@ exit: 0
           "cacheCreation1hTokens": 1000,
           "cacheCreationTokens": 6440,
           "cacheReadTokens": 106720,
-          "cost": 3.6495550000000003,
+          "cost": 3.6274750000000004,
           "inputTokens": 30748,
           "missingPricing": true,
           "modelName": "claude-sonnet-4-20250514",
@@ -303,7 +302,7 @@ exit: 0
           "cacheCreation1hTokens": 400,
           "cacheCreationTokens": 1400,
           "cacheReadTokens": 38050,
-          "cost": 2.0944724999999997,
+          "cost": 2.0704724999999997,
           "inputTokens": 15944,
           "modelName": "claude-opus-4-20250514",
           "outputTokens": 4169,
@@ -347,7 +346,7 @@ exit: 0
         {
           "cacheCreationTokens": 300,
           "cacheReadTokens": 33435,
-          "cost": 0.940385625,
+          "cost": 0.9208356249999999,
           "inputTokens": 36606,
           "modelName": "gpt-5",
           "outputTokens": 7069,
@@ -393,7 +392,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 6000,
-          "cost": 0.5050675,
+          "cost": 0.5000675,
           "inputTokens": 830,
           "modelName": "[pi] gpt-5",
           "outputTokens": 803,
@@ -402,7 +401,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 102800,
-          "cost": 0.23991099999999999,
+          "cost": 0.23961099999999996,
           "inputTokens": 202731,
           "modelName": "qwen3-coder-plus",
           "outputTokens": 3014
@@ -448,7 +447,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 6500,
-          "cost": 0.06681875,
+          "cost": 0.06336875,
           "inputTokens": 1913,
           "modelName": "[openclaw] gpt-5",
           "outputTokens": 899,
@@ -463,14 +462,6 @@ exit: 0
           "modelName": "copilot-mystery-1",
           "outputTokens": 130,
           "storedCost": 0.05
-        },
-        {
-          "cacheCreationTokens": 240,
-          "cacheReadTokens": 4000,
-          "cost": 0.018570000000000003,
-          "inputTokens": 1380,
-          "modelName": "anthropic/claude-sonnet-4.5",
-          "outputTokens": 822
         },
         {
           "cacheCreationTokens": 0,
@@ -489,6 +480,14 @@ exit: 0
           "outputTokens": 1007
         },
         {
+          "cacheCreationTokens": 240,
+          "cacheReadTokens": 4000,
+          "cost": 0.01209,
+          "inputTokens": 1380,
+          "modelName": "anthropic/claude-sonnet-4.5",
+          "outputTokens": 822
+        },
+        {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 50,
           "cost": 0.00969,
@@ -497,20 +496,20 @@ exit: 0
           "outputTokens": 57
         },
         {
-          "cacheCreationTokens": 900,
-          "cacheReadTokens": 17000,
-          "cost": 0.009374100000000002,
-          "inputTokens": 4511,
-          "modelName": "kimi-k2-thinking",
-          "outputTokens": 1431
-        },
-        {
           "cacheCreationTokens": 70,
           "cacheReadTokens": 23000,
           "cost": 0.0089675,
           "inputTokens": 5650,
           "modelName": "kimi-for-coding",
           "outputTokens": 1075
+        },
+        {
+          "cacheCreationTokens": 900,
+          "cacheReadTokens": 17000,
+          "cost": 0.0082941,
+          "inputTokens": 4511,
+          "modelName": "kimi-k2-thinking",
+          "outputTokens": 1431
         },
         {
           "cacheCreationTokens": 50,
@@ -601,14 +600,6 @@ exit: 0
           "inputTokens": 400,
           "modelName": "gemini-2-5-pro",
           "outputTokens": 90
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0013250000000000002,
-          "inputTokens": 100,
-          "modelName": "claude-haiku-4.5",
-          "outputTokens": 245
         },
         {
           "cacheCreationTokens": 0,
@@ -717,6 +708,14 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
+          "cost": 0.00009999999999999999,
+          "inputTokens": 100,
+          "modelName": "claude-haiku-4.5",
+          "outputTokens": 245
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
           "cost": 0.00006969999999999999,
           "inputTokens": 310,
           "modelName": "qwen-3-30b",
@@ -815,7 +814,6 @@ exit: 0
           "cacheReadTokens": 0,
           "cost": 0.0,
           "inputTokens": 0,
-          "missingPricing": true,
           "modelName": "gpt-unknown",
           "outputTokens": 345
         },
@@ -1017,7 +1015,7 @@ exit: 0
       ],
       "outputTokens": 58299,
       "period": "2025-12-28",
-      "totalCost": 24.240014375,
+      "totalCost": 24.156599375000003,
       "totalTokens": 2635890
     },
     {

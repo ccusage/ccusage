@@ -14,14 +14,6 @@ exit: 0
       "lastActivity": "2026-01-02T10:00:00.000Z",
       "modelBreakdowns": [
         {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 50,
-          "cost": 0.012825,
-          "inputTokens": 250,
-          "modelName": "claude-opus-4-20250514",
-          "outputTokens": 120
-        },
-        {
           "cacheCreationTokens": 100,
           "cacheReadTokens": 300,
           "cost": 0.005265000000000001,
@@ -29,6 +21,14 @@ exit: 0
           "missingPricing": true,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 250
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 50,
+          "cost": 0.0038250000000000003,
+          "inputTokens": 250,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 120
         },
         {
           "cacheCreationTokens": 0,
@@ -41,7 +41,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.003,
+          "cost": 0.0015,
           "inputTokens": 400,
           "modelName": "gpt-5",
           "outputTokens": 100
@@ -75,7 +75,7 @@ exit: 0
       "outputTokens": 920,
       "projectPath": "/work/project-alpha",
       "sessionId": "s-alpha",
-      "totalCost": 0.025241,
+      "totalCost": 0.014741,
       "totalTokens": 5870
     },
     {
@@ -85,14 +85,6 @@ exit: 0
       "inputTokens": 2811,
       "lastActivity": "2026-01-02T13:00:00.000Z",
       "modelBreakdowns": [
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0035337500000000004,
-          "inputTokens": 11,
-          "modelName": "gpt-5",
-          "outputTokens": 352
-        },
         {
           "cacheCreationTokens": 400,
           "cacheReadTokens": 600,
@@ -117,6 +109,14 @@ exit: 0
           "inputTokens": 1600,
           "modelName": "GLM-5.3-Flash",
           "outputTokens": 800
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00008375,
+          "inputTokens": 11,
+          "modelName": "gpt-5",
+          "outputTokens": 352
         }
       ],
       "modelsUsed": [
@@ -128,7 +128,7 @@ exit: 0
       "outputTokens": 1502,
       "projectPath": "/work/project-beta",
       "sessionId": "s-beta",
-      "totalCost": 0.00826375,
+      "totalCost": 0.0048137499999999995,
       "totalTokens": 5713
     },
     {
@@ -255,7 +255,7 @@ exit: 0
     "cacheReadTokens": 2360,
     "inputTokens": 8831,
     "outputTokens": 2877,
-    "totalCost": 0.04467025,
+    "totalCost": 0.030720249999999994,
     "totalTokens": 15038,
     "unpricedModels": [
       "GLM-5.3",

@@ -55,19 +55,19 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.0034500000000000004,
-          "inputTokens": 0,
-          "modelName": "gpt-5",
-          "outputTokens": 345
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
           "cost": 0.0,
           "inputTokens": 300,
           "missingPricing": true,
           "modelName": "amp-mystery-1",
           "outputTokens": 70
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 0,
+          "modelName": "gpt-5",
+          "outputTokens": 345
         }
       ],
       "modelsUsed": [
@@ -77,7 +77,7 @@ exit: 0
       ],
       "month": "2026-01",
       "outputTokens": 515,
-      "totalCost": 0.0076500000000000005,
+      "totalCost": 0.0042,
       "totalTokens": 4415
     }
   ],
@@ -87,7 +87,7 @@ exit: 0
     "credits": 3.7,
     "inputTokens": 3200,
     "outputTokens": 1215,
-    "totalCost": 0.016875,
+    "totalCost": 0.013425,
     "totalTokens": 19615,
     "unpricedModels": [
       "amp-mystery-1"

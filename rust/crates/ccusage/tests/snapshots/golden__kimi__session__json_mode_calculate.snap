@@ -86,7 +86,7 @@ exit: 0
         {
           "cacheCreationTokens": 600,
           "cacheReadTokens": 13000,
-          "cost": 0.0074941,
+          "cost": 0.0064141,
           "inputTokens": 3511,
           "modelName": "kimi-k2-thinking",
           "outputTokens": 1231
@@ -97,7 +97,7 @@ exit: 0
       ],
       "outputTokens": 1231,
       "sessionId": "session-old-1",
-      "totalCost": 0.0074941,
+      "totalCost": 0.0064141,
       "totalTokens": 18592
     },
     {
@@ -172,7 +172,7 @@ exit: 0
     "cacheReadTokens": 63000,
     "inputTokens": 14761,
     "outputTokens": 4426,
-    "totalCost": 0.0580716,
+    "totalCost": 0.056991599999999996,
     "totalTokens": 84007,
     "unpricedModels": [
       "kimi-mystery-1"

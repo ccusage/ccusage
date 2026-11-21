@@ -83,19 +83,19 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 2500,
-          "cost": 0.007412500000000001,
-          "inputTokens": 840,
-          "modelName": "gpt-5",
-          "outputTokens": 525
-        },
-        {
-          "cacheCreationTokens": 0,
           "cacheReadTokens": 3000,
           "cost": 0.0042,
           "inputTokens": 600,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 100
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 2500,
+          "cost": 0.0031624999999999995,
+          "inputTokens": 840,
+          "modelName": "gpt-5",
+          "outputTokens": 525
         },
         {
           "cacheCreationTokens": 0,
@@ -116,7 +116,7 @@ exit: 0
       ],
       "month": "2026-01",
       "outputTokens": 1502,
-      "totalCost": 3.4646125000000003,
+      "totalCost": 3.4603625000000005,
       "totalTokens": 24302
     }
   ],
@@ -125,7 +125,7 @@ exit: 0
     "cacheReadTokens": 22500,
     "inputTokens": 5363,
     "outputTokens": 1819,
-    "totalCost": 4.005110500000001,
+    "totalCost": 4.000860500000001,
     "totalTokens": 30362,
     "unpricedModels": [
       "kilo-mystery-1"

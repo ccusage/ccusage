@@ -469,7 +469,7 @@ fn primary_rates_outrank_models_dev_for_qualified_candidates() {
 }
 
 #[test]
-fn preserves_existing_reasoning_and_residual_billing() {
+fn bills_reasoning_and_preserves_unbilled_residual_in_total() {
     ccusage_test_support::install_pricing_snapshots();
     let mut pricing = ccusage_core::PricingMap::default();
     pricing
@@ -490,7 +490,7 @@ fn preserves_existing_reasoning_and_residual_billing() {
     .unwrap();
     assert_eq!(entry.usage.output_tokens, 4);
     assert_eq!(entry.extra_total_tokens, 8);
-    assert_eq!(entry.cost, 4.0);
+    assert_eq!(entry.cost, 2.5);
 }
 
 #[test]

@@ -22,7 +22,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.0015,
+          "cost": 0.0010500000000000002,
           "inputTokens": 100,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 50
@@ -34,7 +34,7 @@ exit: 0
       ],
       "month": "2025-12",
       "outputTokens": 250,
-      "totalCost": 0.004750000000000001,
+      "totalCost": 0.0043,
       "totalTokens": 1380
     },
     {
@@ -45,7 +45,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.0675,
+          "cost": 0.052500000000000005,
           "inputTokens": 2000,
           "modelName": "claude-opus-4-20250514",
           "outputTokens": 300
@@ -61,18 +61,10 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.00605,
+          "cost": 0.0058,
           "inputTokens": 1800,
           "modelName": "claude-haiku-4-5-20251001",
           "outputTokens": 800
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0034500000000000004,
-          "inputTokens": 0,
-          "modelName": "gpt-5",
-          "outputTokens": 0
         },
         {
           "cacheCreationTokens": 0,
@@ -90,6 +82,14 @@ exit: 0
           "missingPricing": true,
           "modelName": "goose-mystery-1",
           "outputTokens": 70
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 0,
+          "modelName": "gpt-5",
+          "outputTokens": 0
         }
       ],
       "modelsUsed": [
@@ -102,7 +102,7 @@ exit: 0
       ],
       "month": "2026-01",
       "outputTokens": 1570,
-      "totalCost": 0.08415,
+      "totalCost": 0.06545000000000001,
       "totalTokens": 7565
     }
   ],
@@ -111,7 +111,7 @@ exit: 0
     "cacheReadTokens": 0,
     "inputTokens": 6500,
     "outputTokens": 1820,
-    "totalCost": 0.0889,
+    "totalCost": 0.06975,
     "totalTokens": 8945,
     "unpricedModels": [
       "goose-mystery-1"
