@@ -173,6 +173,19 @@
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"2 results named base"
                             (benchmark/read-hyperfine-instructions output ["base"]))))))
 
+(deftest instruction-pass-tolerates-missing-counters
+  (let [argv (atom nil)]
+    (with-redefs [system/run-checked (fn [a _ _]
+                                       (reset! argv a)
+                                       (spit (second (drop-while #(not= "--export-json" %) a))
+                                             (hyperfine-export [{:name "base" :command "x" :measurements [{:exit_code 0}]}
+                                                                {:name "PR" :command "x" :measurements [{:exit_code 0}]}]))
+                                       {:exit 0})]
+      (is (= {"base" nil "PR" nil}
+             (benchmark/instruction-counts [{:label "base" :bin "/b"} {:label "PR" :bin "/p"}] "daily" {:vars {}} "t")))
+      (testing "hyperfine is asked for every metric, so it skips counters the runner lacks instead of failing"
+        (is (= "all" (second (drop-while #(not= "--metrics" %) @argv))))))))
+
 (deftest timed-runs
   (testing "wall, CPU, and peak RSS come from the process itself, not from hyperfine"
     (let [{:keys [wall cpu rss]} (benchmark/timed-run ["sleep" "0.2"] "sleep")]

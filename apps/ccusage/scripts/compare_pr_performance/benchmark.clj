@@ -57,7 +57,7 @@
 
 (defn instruction-counts [variants command env label]
   (let [dir (system/temp-dir "ccusage-hyperfine.") export (system/path dir "hyperfine.json")
-        argv (vec (concat ["hyperfine" "--shell" "none" "--runs" "1" "--metrics" "instructions" "--export-json" export
+        argv (vec (concat ["hyperfine" "--shell" "none" "--runs" "1" "--metrics" "all" "--export-json" export
                            "--style" "none" "--output" "pipe"]
                           (mapcat #(vector "--command-name" (:label %)) variants)
                           (map #(data/benchmark-command-text env (command-argv (:bin %) command)) variants)))]
