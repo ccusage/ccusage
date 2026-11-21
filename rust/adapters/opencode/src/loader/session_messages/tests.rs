@@ -343,3 +343,24 @@ fn a_covering_index_keeps_the_metadata_scan_in_table_order() {
     assert_eq!(ordered.0, Some((700, 544)));
     assert_eq!(parallel, ordered);
 }
+
+#[test]
+fn a_full_round_of_metadata_skips_waits_for_the_payloads_before_it() {
+    let fixture = ccusage_test_support::Fixture::new();
+    let unreadable = (0..1500)
+        .map(|index| {
+            format!(
+                "INSERT INTO session_message (id, session_id, type, seq, data) \
+                 VALUES ('null{index}', NULL, 'assistant', {}, '{{}}');",
+                1000 + index
+            )
+        })
+        .collect::<String>();
+    let path = corrupt_overflow_database(&fixture, 650, &unreadable);
+
+    let ordered = load(&path, None);
+    let parallel = load(&path, Some(&|| open_read_only(&path)));
+
+    assert_eq!(ordered.0, Some((649, 649)));
+    assert_eq!(parallel, ordered);
+}
