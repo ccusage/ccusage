@@ -19,8 +19,7 @@ exit: 0
           "inputTokens": 100,
           "missingPricing": true,
           "modelName": "kilo-mystery-9",
-          "outputTokens": 50,
-          "storedCost": 0.0
+          "outputTokens": 50
         }
       ],
       "modelsUsed": [
