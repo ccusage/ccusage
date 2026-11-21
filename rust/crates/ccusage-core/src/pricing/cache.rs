@@ -28,8 +28,9 @@ impl CachedHit {
     const PRESENT: usize = 2;
     const STEP_SHIFT: usize = 2;
     const ALIASED: usize = 1 << 5;
-    const FOLDED: usize = 1 << 6;
-    const ROW_SHIFT: usize = 7;
+    const ESTIMATED: usize = 1 << 6;
+    const FOLDED: usize = 1 << 7;
+    const ROW_SHIFT: usize = 8;
     const STEP_MASK: usize = 7;
     #[cfg(feature = "resolver-trace")]
     const STEPS: [ResolutionStep; 6] = [
@@ -65,6 +66,14 @@ impl CachedHit {
 
     pub(super) fn aliased(self) -> bool {
         self.0 & Self::ALIASED != 0
+    }
+
+    pub(super) fn as_estimate(self) -> Self {
+        Self(self.0 | Self::ESTIMATED)
+    }
+
+    pub(super) fn estimated(self) -> bool {
+        self.0 & Self::ESTIMATED != 0
     }
 
     pub(super) fn through_case_fallback(self) -> Self {
@@ -109,7 +118,8 @@ impl CachedHit {
 }
 
 const _: () = assert!(size_of::<CachedHit>() <= 8);
-const _: () = assert!(size_of::<Row>() >= 1 << CachedHit::ROW_SHIFT);
+// NOTE(2026-11-21, #2228): Every flag bit below `ROW_SHIFT` halves the row index range. The packed index must still cover every row a `Vec<Row>` can hold.
+const _: () = assert!(isize::MAX as usize / size_of::<Row>() <= usize::MAX >> CachedHit::ROW_SHIFT);
 
 #[derive(Clone, Copy, Debug, Default)]
 struct ResultCell(usize);
@@ -149,7 +159,7 @@ impl Pass {
     pub(super) const IDENTITY: [Self; 3] = [Self::S2, Self::S34, Self::S3f];
 
     pub(super) fn searches(self, lookup: Lookup) -> bool {
-        !matches!((lookup, self), (Lookup::Context, Self::S3f))
+        !matches!((lookup, self), (Lookup::Context | Lookup::Paid, Self::S3f))
     }
 
     pub(super) fn allows(self, model: &str, kind: MatchKind, reported: Option<&str>) -> bool {
@@ -263,6 +273,7 @@ struct NameSlot {
     prices: [ResultCell; 6],
     direct_prices: Option<Box<[ResultCell; 6]>>,
     limits: Option<Box<[ResultCell; 6]>>,
+    paid: Option<Box<[ResultCell; 6]>>,
 }
 
 const _: () = assert!(size_of::<NameSlot>() <= 96);
@@ -273,6 +284,7 @@ impl NameSlot {
             Lookup::Pricing => &self.prices,
             Lookup::DirectPricing => self.direct_prices.as_deref()?,
             Lookup::Context => self.limits.as_deref()?,
+            Lookup::Paid => self.paid.as_deref()?,
         };
         slots[pass as usize].get()
     }
@@ -287,6 +299,7 @@ impl NameSlot {
             Lookup::Pricing => &mut self.prices,
             Lookup::DirectPricing => self.direct_prices.get_or_insert_with(Box::default),
             Lookup::Context => self.limits.get_or_insert_with(Box::default),
+            Lookup::Paid => self.paid.get_or_insert_with(Box::default),
         };
         slots[pass as usize].insert(result)
     }

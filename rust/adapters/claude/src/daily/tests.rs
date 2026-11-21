@@ -1153,6 +1153,7 @@ fn daily_loaded_entry(fixture: DailyEntryFixture) -> ClaudeEntry {
         cost: 0.0,
         model: Some(Arc::from("claude-sonnet-4-20250514")),
         missing_pricing: false,
+        estimated_pricing: false,
         recorded_cost: super::RecordedCost::Absent,
     }
 }

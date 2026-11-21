@@ -64,7 +64,7 @@
 050-kilo/zai|glm-4.7-flash|S:zai/glm-4.7-flash,F:glm-4.7-flash|0/0|S2|zai/glm-4.7-flash|
 050-dsh/zai|glm-4.7-flash|E:zai/glm-4.7-flash,F:glm-4.7-flash|0/0|S2|zai/glm-4.7-flash|
 051-claude|glm-4.7-flash|F:glm-4.7-flash|0/0|S2|zai/glm-4.7-flash|
-052-dsh/openrouter|glm-4.7-flash|E:openrouter/glm-4.7-flash,F:glm-4.7-flash|0/0|S2|zai/glm-4.7-flash|
+052-dsh/openrouter|glm-4.7-flash|E:openrouter/glm-4.7-flash,F:glm-4.7-flash|0.08/0.478|S4|glm-4.7-flash|
 053-hermes/zai|glm-4.5-flash|E:zai/glm-4.5-flash,F:glm-4.5-flash|0/0|S2|zai/glm-4.5-flash|
 054-droid|glm-4-5-flash|F:glm-4-5-flash|0/0|S2|zai/glm-4.5-flash|
 054-dsh/deepseek-official|glm-4.5-flash|F:glm-4.5-flash,F:deepseek/glm-4.5-flash|0/0|S2|zai/glm-4.5-flash|
@@ -100,7 +100,7 @@
 080-hermes/alibaba|kimi-k2.5|E:alibaba/kimi-k2.5,F:kimi-k2.5|0.6/3|S2|moonshot/kimi-k2.5|
 081-dsh/openrouter|deepseek/deepseek-v4-flash|E:openrouter/deepseek/deepseek-v4-flash,F:deepseek/deepseek-v4-flash|50/50|S1|deepseek-v4-flash|deepseek-v4-flash:50/50
 082-hermes/deepseek|deepseek-v4-flash|E:deepseek/deepseek-v4-flash,F:deepseek-v4-flash|50/50|S1|deepseek-v4-flash|deepseek-v4-flash:50/50
-083-dsh/openrouter|glm-4.7-flash|E:openrouter/glm-4.7-flash,F:glm-4.7-flash|0/0|S2|zai/glm-4.7-flash|glm-4.7:50/50
+083-dsh/openrouter|glm-4.7-flash|E:openrouter/glm-4.7-flash,F:glm-4.7-flash|0.08/0.478|S4|glm-4.7-flash|glm-4.7:50/50
 084-claude|gemini-2.5-pro|F:gemini-2.5-pro|L:15.05|S1|gemini-2.5-pro|gemini-2.5-pro:50/50
 085-claude|gpt-5.6|F:gpt-5.6|4/20|S2|gpt-5.6|
 085-claude|o3|F:o3|2/8|S2|o3|
@@ -118,7 +118,7 @@
 096-claude|z-ai/glm-4.7-flash|F:z-ai/glm-4.7-flash|0.13225/0.529|S4|z-ai/glm-4.7-flash|
 097-claude|@cf/zai-org/glm-4.7-flash|F:@cf/zai-org/glm-4.7-flash|0.0605/0.4|S4|@cf/zai-org/glm-4.7-flash|
 098-claude|openrouter/z-ai/glm-4.7-flash|F:openrouter/z-ai/glm-4.7-flash|0.13225/0.529|S4|z-ai/glm-4.7-flash|
-099-claude|kyma/glm-4.7-flash|F:kyma/glm-4.7-flash|0/0|S3|zai/glm-4.7-flash|
+099-claude|kyma/glm-4.7-flash|F:kyma/glm-4.7-flash|0.08/0.478|S4|glm-4.7-flash|
 100-claude|glm-4.7-flash|F:glm-4.7-flash|0/0|S2|zai/glm-4.7-flash|
 100-claude|glm-4-7-flash|F:glm-4-7-flash|0/0|S2|zai/glm-4.7-flash|
 100-claude|zai/glm-4.7-flash|F:zai/glm-4.7-flash|0/0|S2|zai/glm-4.7-flash|

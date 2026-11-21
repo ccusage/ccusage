@@ -275,7 +275,7 @@ pub(super) fn parse_session_files_with_diagnostics(
 
                 let display_model = raw_model.clone();
                 let cost_usd = cost_usd_from_ticks(model_usage.cost_usd_ticks);
-                let (cost, missing_pricing_model) = price_grok_usage(
+                let (cost, missing_pricing_model, estimated_pricing) = price_grok_usage(
                     &raw_model,
                     usage_raw,
                     cost_usd,
@@ -302,6 +302,7 @@ pub(super) fn parse_session_files_with_diagnostics(
                         message_count: None,
                         usage_limit_reset_time: None,
                         missing_pricing_model,
+                        estimated_pricing,
                         // NOTE(2026-08-10, Grok CLI 1.0.0, #1593): Grok's recorded total equals input plus output, with reasoning already included in output. Adding reasoning again would inflate the total.
                         extra_total_tokens: 0,
                         stored_cost: stored_cost_for_mode(cost_usd, mode),
@@ -499,7 +500,7 @@ fn price_grok_usage(
     timestamp: Option<TimestampMs>,
     mode: CostMode,
     pricing: PriceTable<'_>,
-) -> (f64, Option<String>) {
+) -> (f64, Option<String>, bool) {
     let names = pricing_candidates(raw_model);
     let candidates: Vec<_> = names
         .iter()
@@ -525,6 +526,7 @@ fn price_grok_usage(
             && total_usage_tokens(usage) != 0
             && priced.matched.is_none())
         .then(|| crate::model_aliases::resolve_model_name(raw_model).into_owned()),
+        priced.estimated,
     )
 }
 
@@ -556,7 +558,7 @@ mod tests {
                     CostMode::Calculate,
                     PriceTable::Calculate(&pricing)
                 ),
-                (0.0, Some(model.to_string()))
+                (0.0, Some(model.to_string()), false)
             );
             assert_eq!(
                 price_grok_usage(
@@ -567,7 +569,7 @@ mod tests {
                     CostMode::Auto,
                     PriceTable::Auto(&pricing)
                 ),
-                (0.0, Some(model.to_string()))
+                (0.0, Some(model.to_string()), false)
             );
             assert_eq!(
                 price_grok_usage(
@@ -578,7 +580,7 @@ mod tests {
                     CostMode::Auto,
                     PriceTable::Auto(&pricing)
                 ),
-                (1.0, None)
+                (1.0, None, false)
             );
             assert_eq!(
                 price_grok_usage(
@@ -589,7 +591,7 @@ mod tests {
                     CostMode::Display,
                     PriceTable::Display
                 ),
-                (0.0, None)
+                (0.0, None, false)
             );
             assert_eq!(
                 price_grok_usage(
@@ -600,7 +602,7 @@ mod tests {
                     CostMode::Calculate,
                     PriceTable::Calculate(&pricing)
                 ),
-                (0.0, None)
+                (0.0, None, false)
             );
         }
     }

@@ -6,6 +6,7 @@ use super::data;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Pricing {
+    pub(crate) estimated: bool,
     pub input: f64,
     pub output: f64,
     pub(super) cache_create: Option<f64>,
@@ -119,6 +120,7 @@ impl Pricing {
 
     pub(super) const fn empty() -> Self {
         Self {
+            estimated: false,
             input: 0.0,
             output: 0.0,
             cache_create: None,

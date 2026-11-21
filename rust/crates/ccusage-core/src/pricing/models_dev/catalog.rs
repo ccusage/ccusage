@@ -37,6 +37,10 @@ impl ModelsDevCatalogRules {
         MODELS_DEV_TRUST_RESELLER
     }
 
+    pub(in crate::pricing) fn is_owner(&self, provider_id: &str) -> bool {
+        self.owners.contains(provider_id)
+    }
+
     pub(super) fn is_exact_only(&self, source_model_id: &str, pricing_key: &str) -> bool {
         self.is_tier_variant_of_authored_model(source_model_id)
             || is_unversioned_models_dev_model_id(pricing_key)

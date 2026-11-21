@@ -6,7 +6,7 @@ use super::{
     CachedHit, Candidate, HitKind, Lookup, Name, NameCache, Pass, Pricing, PricingMap, PricingRows,
     PricingSchedule, RequestCache, RequestHit, Row, RowMatch, Scope, host_listing,
     host_of_model_id, is_host_segment, last_segment, models_dev_pricing, names_pricing_key,
-    pricing_key_matches, schedule_for,
+    pricing_key_matches, same_host_spelling, schedule_for, unlabeled_model,
 };
 
 #[derive(Clone, Copy)]
@@ -130,7 +130,10 @@ pub struct PricingHandle {
 impl PricingHandle {
     fn new(row: &Row, hit: CachedHit) -> Self {
         Self {
-            rates: row.rates(),
+            rates: Pricing {
+                estimated: hit.estimated(),
+                ..row.rates()
+            },
             schedule: row
                 .schedule
                 .filter(|schedule| schedule.follows_row || hit.scheduled()),
@@ -165,13 +168,20 @@ impl PricingHandle {
             None => None,
         };
         Self {
-            rates: row.rates(),
+            rates: Pricing {
+                estimated: hit.estimated(),
+                ..row.rates()
+            },
             schedule,
         }
     }
 
     pub fn is_time_dependent(&self) -> bool {
         self.schedule.is_some()
+    }
+
+    pub fn is_estimate(&self) -> bool {
+        self.rates.estimated
     }
 
     pub fn with_rates_at<T>(
@@ -188,13 +198,16 @@ impl PricingHandle {
 
 impl PricingMap {
     pub fn find(&self, model: &str) -> Option<Pricing> {
-        let (_, found, _) = self.resolve_row_with(
+        let (_, found, hit) = self.resolve_row_with(
             Some(model),
             &[(model, MatchKind::Fuzzy)],
             Lookup::Pricing,
             models_dev_pricing,
         )?;
-        Some(found.row.rates())
+        Some(Pricing {
+            estimated: hit.estimated(),
+            ..found.row.rates()
+        })
     }
 
     #[cfg(feature = "resolver-trace")]
@@ -354,9 +367,20 @@ impl PricingMap {
     ) -> Option<(&'a str, RowMatch<'_>, CachedHit)> {
         let search = || {
             let live = std::cell::Cell::new(Some(live));
-            self.search_request(reported, candidates, lookup, &|| {
-                live.take().and_then(|load| load())
-            })
+            let models_dev = &|| live.take().and_then(|load| load());
+            let hit = self.search_request(reported, candidates, lookup, models_dev)?;
+            if matches!(lookup, Lookup::Pricing)
+                && self.is_free_vendor_row(hit.row)
+                && names_foreign_host(reported, candidates)
+            {
+                return self
+                    .search_request(reported, candidates, Lookup::Paid, models_dev)
+                    .map(|paid| RequestHit {
+                        row: paid.row.as_estimate(),
+                        ..paid
+                    });
+            }
+            Some(hit)
         };
         let hit = match lookup {
             Lookup::Pricing | Lookup::DirectPricing => self
@@ -368,13 +392,22 @@ impl PricingMap {
                     matches!(lookup, Lookup::DirectPricing),
                     search,
                 ),
-            Lookup::Context => search(),
+            Lookup::Context | Lookup::Paid => search(),
         }?;
         let model = match hit.candidate {
             Some(index) => candidates.get(index)?.0,
             None => reported?,
         };
         self.cached_row(model, hit.row)
+    }
+
+    fn is_free_vendor_row(&self, hit: CachedHit) -> bool {
+        !hit.overridden()
+            && !hit.is_models_dev()
+            && self
+                .rows
+                .at(hit.id())
+                .is_some_and(|found| found.row.scope == Scope::Direct && found.row.is_free())
     }
 
     #[inline(never)]
@@ -942,4 +975,32 @@ fn configured_alias(label: &str) -> Option<std::borrow::Cow<'_, str>> {
         .into_iter()
         .map(|model| (model, crate::model_aliases::resolve_model_name(model)))
         .find_map(|(model, alias)| (alias != model).then_some(alias))
+}
+
+// NOTE(2026-11-21, #2228): The owner decided that a vendor's free listing reached through a paid host with no listing of its own bills an estimate from the closest paid listing of the same model, because under-reporting is worse than an estimate. A host counts only when the agent logged it (the logged id itself, or an Exact or StrictExact provider candidate), and only a host known to charge counts: a shared host listing or a LiteLLM provider with a paid row. An agent's `[name] ` display label, a direct vendor, a model owner, a vendor's own plan, and a local or unknown provider such as `ollama` or `vllm` name no paid host, so their free usage stays free.
+fn names_foreign_host(reported: Option<&str>, candidates: &[(&str, MatchKind)]) -> bool {
+    candidates
+        .iter()
+        .filter(|&&(name, kind)| {
+            Some(name) == reported || matches!(kind, MatchKind::Exact | MatchKind::StrictExact)
+        })
+        .map(|&(name, _)| name)
+        .chain(reported)
+        .filter_map(|name| {
+            unlabeled_model(name)
+                .split_once('/')
+                .map(|(segment, _)| segment)
+        })
+        .any(is_paid_host)
+}
+
+fn is_paid_host(segment: &str) -> bool {
+    !super::models_dev::is_vendor_segment(segment)
+        && (host_listing(segment).is_some()
+            || super::embedded::litellm_sources().is_some_and(|sources| {
+                sources
+                    .paid_host_providers
+                    .iter()
+                    .any(|provider| same_host_spelling(provider, segment))
+            }))
 }

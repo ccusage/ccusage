@@ -34,6 +34,7 @@ impl Totals {
             value["credits"] = json!(credits);
         }
         attach_unpriced_models(&mut value, self.unpriced_models.clone());
+        attach_estimated_models(&mut value, self.estimated_models.clone());
         value
     }
 }
@@ -48,6 +49,24 @@ pub(crate) fn unpriced_models<'a>(
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect()
+}
+
+pub(crate) fn estimated_models<'a>(
+    breakdowns: impl IntoIterator<Item = &'a ModelBreakdown>,
+) -> Vec<String> {
+    breakdowns
+        .into_iter()
+        .filter(|breakdown| breakdown.estimated_pricing)
+        .map(|breakdown| breakdown.model_name.clone())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+pub fn attach_estimated_models(totals: &mut Value, models: Vec<String>) {
+    if !models.is_empty() {
+        totals["estimatedModels"] = json!(models);
+    }
 }
 
 /// Adds `unpricedModels` to JSON totals when any model lacked pricing.

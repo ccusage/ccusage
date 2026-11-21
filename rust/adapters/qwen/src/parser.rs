@@ -166,7 +166,8 @@ fn parse_line(
         cache_creation: None,
         ..display_usage
     };
-    let (cost, missing_pricing_model) = price_qwen(&model, billable_usage, timestamp, pricing);
+    let (cost, missing_pricing_model, estimated_pricing) =
+        price_qwen(&model, billable_usage, timestamp, pricing);
     Ok(Some(QwenEntry {
         source_timestamp: timestamp_text.clone(),
         entry: LoadedEntry {
@@ -185,6 +186,7 @@ fn parse_line(
             message_count: None,
             usage_limit_reset_time: None,
             missing_pricing_model,
+            estimated_pricing,
             extra_total_tokens,
             stored_cost: None,
         },
@@ -196,7 +198,7 @@ fn price_qwen(
     usage: TokenUsageRaw,
     timestamp: TimestampMs,
     pricing: PriceTable<'_>,
-) -> (f64, Option<String>) {
+) -> (f64, Option<String>, bool) {
     let candidates = qwen_model_candidates(model);
     let candidates: Vec<_> = candidates
         .iter()
@@ -220,6 +222,7 @@ fn price_qwen(
         priced
             .missing_pricing
             .then(|| ccusage_core::model_aliases::resolve_model_name(model).into_owned()),
+        priced.estimated,
     )
 }
 
@@ -289,7 +292,7 @@ mod tests {
             }"#,
         );
 
-        let (cost, _) = price_qwen(
+        let (cost, _, _) = price_qwen(
             "free-model",
             TokenUsageRaw {
                 input_tokens: 100,
@@ -500,6 +503,7 @@ mod tests {
                 usage_limit_reset_time: None,
                 missing_pricing_model: None,
                 stored_cost: None,
+                estimated_pricing: false,
             },
         };
 

@@ -424,6 +424,7 @@ pub(super) fn read_usage_file_with_diagnostics(
                     credits: None,
                     message_count: None,
                     missing_pricing_model: parsed.missing_pricing_model,
+                    estimated_pricing: parsed.estimated_pricing,
                     stored_cost: parsed.stored_cost,
                 },
             }

@@ -153,7 +153,7 @@ pub(super) fn price_antigravity(
     usage: TokenUsageRaw,
     timestamp: TimestampMs,
     pricing: PriceTable<'_>,
-) -> (f64, Option<String>) {
+) -> (f64, Option<String>, bool) {
     let exact = gemini_flash_pricing_alias(model).is_some();
     let kind = if exact {
         MatchKind::Exact
@@ -199,6 +199,7 @@ pub(super) fn price_antigravity(
         priced
             .missing_pricing
             .then(|| ccusage_core::model_aliases::resolve_model_name(model).into_owned()),
+        priced.estimated,
     )
 }
 

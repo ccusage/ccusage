@@ -33,6 +33,7 @@ mod tests {
             extra_total_tokens: 30,
             message_count: None,
             stored_cost: None,
+            estimated_pricing: false,
         };
         let rows = ccusage_adapter_common::source::EntrySource::summarize(
             &crate::SOURCE,

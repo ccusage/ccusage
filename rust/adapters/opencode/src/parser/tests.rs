@@ -1031,3 +1031,30 @@ fn reports_claude_agent_model_aliases_as_missing_pricing_instead_of_regional_rat
         );
     }
 }
+
+#[test]
+fn a_hyphenated_paid_host_marks_a_free_vendor_model_as_an_estimate() {
+    ccusage_test_support::install_pricing_snapshots();
+    let pricing = PricingMap::load_embedded();
+    for (provider, estimated) in [("novita-ai", true), ("ollama", false)] {
+        let entry = message_value_to_entry(
+            message(json!({
+                "id": "message-a",
+                "sessionID": "session-a",
+                "providerID": provider,
+                "modelID": "zai-org/glm-4.7-flash",
+                "time": {"created": 1767312000000i64},
+                "tokens": {"input": 1000000, "output": 100000}
+            })),
+            None,
+            None,
+            &jiff::tz::TimeZone::UTC,
+            CostMode::Calculate,
+            ccusage_core::cost::PriceTable::Calculate(&pricing),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(entry.estimated_pricing, estimated, "{provider}");
+        assert_eq!(entry.cost > 0.0, estimated, "{provider}: {}", entry.cost);
+    }
+}

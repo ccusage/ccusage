@@ -11,6 +11,7 @@ pub(super) enum Lookup {
     Pricing,
     DirectPricing,
     Context,
+    Paid,
 }
 
 impl Lookup {
@@ -19,6 +20,7 @@ impl Lookup {
             Self::Pricing => true,
             Self::DirectPricing => !row.is_bedrock(),
             Self::Context => row.context_limit.is_some(),
+            Self::Paid => !row.is_free(),
         }
     }
 }

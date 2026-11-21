@@ -151,7 +151,10 @@ fn settings_timestamp(
     Some((timestamp, None))
 }
 
-pub(super) fn price_droid(entry: &DroidEntry, pricing: PriceTable<'_>) -> (f64, Option<String>) {
+pub(super) fn price_droid(
+    entry: &DroidEntry,
+    pricing: PriceTable<'_>,
+) -> (f64, Option<String>, bool) {
     let (direct, reseller) = provider_prefixes(&entry.provider);
     let logged = entry.logged_model.as_deref().unwrap_or(&entry.model);
     let locked: Vec<_> = direct
@@ -203,6 +206,7 @@ pub(super) fn price_droid(entry: &DroidEntry, pricing: PriceTable<'_>) -> (f64, 
         priced
             .missing_pricing
             .then(|| ccusage_core::model_aliases::resolve_model_name(&entry.model).into_owned()),
+        priced.estimated,
     )
 }
 
@@ -385,7 +389,7 @@ mod tests {
         pricing.load_json(r#"{"sample":{"litellm_provider": "openai", "input_cost_per_token":0,"output_cost_per_token":0},"vendor/sample":{"input_cost_per_token":1,"output_cost_per_token":1}}"#);
         assert_eq!(
             price_droid(&entry, PriceTable::Calculate(&pricing)),
-            (0.0, None)
+            (0.0, None, false)
         );
     }
 
@@ -516,7 +520,7 @@ mod pricing_identity_tests {
             ("context.settings.json", 15.0),
         ] {
             let entry = load_settings_file(&fixture.path(name)).unwrap().unwrap();
-            let (cost, missing) = price_droid(&entry, PriceTable::Calculate(&pricing));
+            let (cost, missing, _) = price_droid(&entry, PriceTable::Calculate(&pricing));
             assert!((cost - expected).abs() < 1e-12, "{name}: {cost}");
             assert_eq!(missing, None);
         }
@@ -547,7 +551,7 @@ mod pricing_identity_tests {
         });
         for label in ["unlocked.settings.json", "locked.settings.json"] {
             let entry = load_settings_file(&fixture.path(label)).unwrap().unwrap();
-            let (cost, missing) = price_droid(&entry, PriceTable::Calculate(&pricing));
+            let (cost, missing, _) = price_droid(&entry, PriceTable::Calculate(&pricing));
             assert!((cost - 1.53).abs() < 1e-12, "{label}: {cost}");
             assert_eq!(missing, None);
         }
@@ -595,7 +599,7 @@ mod pricing_identity_tests {
             let entry = load_settings_file(&fixture.path("s.settings.json"))
                 .unwrap()
                 .unwrap();
-            let (cost, missing) = price_droid(&entry, PriceTable::Calculate(&pricing));
+            let (cost, missing, _) = price_droid(&entry, PriceTable::Calculate(&pricing));
             assert!((cost - expected).abs() < 1e-12, "{case}: {cost}");
             assert_eq!(missing, None, "{case}");
         }
@@ -622,7 +626,7 @@ mod pricing_identity_tests {
         )]));
         assert_eq!(
             price_droid(&entry, PriceTable::Calculate(&prices)),
-            (500.0, None)
+            (500.0, None, false)
         );
     }
 
@@ -639,7 +643,7 @@ mod pricing_identity_tests {
             ("deepseek.settings.json", 0.00075),
         ] {
             let entry = load_settings_file(&fixture.path(name)).unwrap().unwrap();
-            let (cost, missing) = price_droid(&entry, PriceTable::Calculate(&pricing));
+            let (cost, missing, _) = price_droid(&entry, PriceTable::Calculate(&pricing));
             assert!((cost - expected).abs() < 1e-12, "{name}: {cost}");
             assert_eq!(missing, None, "{name}");
         }
@@ -677,7 +681,7 @@ mod pricing_identity_tests {
                 .unwrap()
                 .unwrap();
             assert_eq!(entry.model, normalized);
-            let (cost, missing) = price_droid(&entry, PriceTable::Calculate(&pricing));
+            let (cost, missing, _) = price_droid(&entry, PriceTable::Calculate(&pricing));
             assert!(
                 (cost - (input + output) / 1000.0).abs() < 1e-12,
                 "{raw}: {cost}"

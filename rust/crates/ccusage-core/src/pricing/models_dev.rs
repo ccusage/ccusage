@@ -17,6 +17,21 @@ use catalog::{
     normalized_models_dev_model_id,
 };
 
+pub(super) fn is_vendor_segment(segment: &str) -> bool {
+    let dashed = segment.to_ascii_lowercase().replace('_', "-");
+    let direct = super::embedded::litellm_sources().is_some_and(|sources| {
+        sources
+            .direct_providers
+            .iter()
+            .any(|id| super::same_host_spelling(id, segment))
+    });
+    let rules = models_dev_catalog_rules();
+    direct
+        || super::direct_billing_vendor(&dashed).is_some()
+        || rules.is_owner(&dashed)
+        || rules.is_owner(segment)
+}
+
 #[derive(Debug, Deserialize)]
 struct ModelsDevProvider {
     id: Option<String>,

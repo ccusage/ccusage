@@ -343,6 +343,7 @@ mod tests {
                     cost: 0.15,
                     missing_pricing: false,
                     stored_cost: None,
+                    estimated_pricing: false,
                 },
                 ModelBreakdown {
                     model_name: "model-b".to_string(),
@@ -355,6 +356,7 @@ mod tests {
                     cost: 0.10,
                     missing_pricing: false,
                     stored_cost: None,
+                    estimated_pricing: false,
                 },
             ],
             project: None,

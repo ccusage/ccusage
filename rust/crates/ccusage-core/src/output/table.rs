@@ -2,7 +2,7 @@ use jiff::tz::TimeZone as JiffTimeZone;
 
 use super::{
     format_currency, format_models_multiline, format_number,
-    print_missing_pricing_warnings_for_models,
+    print_estimated_pricing_notes_for_models, print_missing_pricing_warnings_for_models,
 };
 use crate::{
     Color, ColumnKind, Result, SimpleTable, Totals, USAGE_COMPACT_WIDTH_THRESHOLD, UsageSummary,
@@ -182,6 +182,7 @@ pub fn print_usage_table_with_options(
     }
     table.push(total_row);
     table.print()?;
+    print_estimated_pricing_notes_for_models(totals.estimated_models.iter().map(String::as_str));
     print_missing_pricing_warnings_for_models(
         totals.unpriced_models.iter().map(String::as_str),
         shared.offline,

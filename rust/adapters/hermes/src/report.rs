@@ -34,6 +34,7 @@ mod tests {
             usage_limit_reset_time: None,
             missing_pricing_model: None,
             stored_cost: None,
+            estimated_pricing: false,
         };
         let rows = ccusage_adapter_common::source::EntrySource::summarize(
             &crate::SOURCE,

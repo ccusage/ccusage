@@ -33,7 +33,7 @@ pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<Load
 }
 
 fn to_loaded_entry(entry: DroidEntry, tz: &JiffTimeZone, pricing: PriceTable<'_>) -> LoadedEntry {
-    let (cost, missing_pricing_model) = price_droid(&entry, pricing);
+    let (cost, missing_pricing_model, estimated_pricing) = price_droid(&entry, pricing);
     LoadedEntry {
         date: date_at(entry.timestamp, tz),
         timestamp: entry.timestamp,
@@ -46,6 +46,7 @@ fn to_loaded_entry(entry: DroidEntry, tz: &JiffTimeZone, pricing: PriceTable<'_>
         model: Some(entry.model),
         usage_limit_reset_time: None,
         missing_pricing_model,
+        estimated_pricing,
         message_count: None,
         usage: entry.usage,
         message_id: Some(format!("droid:{}", entry.session_id)),
@@ -374,6 +375,7 @@ mod tests {
             missing_pricing_model: None,
             message_count: None,
             stored_cost: None,
+            estimated_pricing: false,
         };
         let rows = ccusage_adapter_common::source::EntrySource::summarize(
             &crate::SOURCE,

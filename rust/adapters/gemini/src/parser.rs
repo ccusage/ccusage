@@ -649,6 +649,7 @@ pub(super) fn event_to_loaded(
         pricing,
     );
     let cost = priced.cost;
+    let estimated_pricing = priced.estimated;
     let missing_pricing_model = priced
         .missing_pricing
         .then(|| crate::model_aliases::resolve_model_name(&event.model).into_owned());
@@ -665,6 +666,7 @@ pub(super) fn event_to_loaded(
         model: Some(event.model),
         usage_limit_reset_time: None,
         missing_pricing_model,
+        estimated_pricing,
         usage,
         message_id: event.message_id,
         version: None,

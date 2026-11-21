@@ -82,6 +82,7 @@ pub(crate) fn entry(session: &str, timestamp: &str, input_tokens: u64) -> Loaded
         model: Some("model".to_string()),
         usage_limit_reset_time: None,
         missing_pricing_model: None,
+        estimated_pricing: false,
         stored_cost: None,
     }
 }

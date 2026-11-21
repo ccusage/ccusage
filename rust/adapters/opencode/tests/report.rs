@@ -34,6 +34,7 @@ fn builds_opencode_daily_json_report() {
         usage_limit_reset_time: None,
         missing_pricing_model: None,
         stored_cost: None,
+        estimated_pricing: false,
     };
 
     let report = ccusage_adapter_opencode::report_json(

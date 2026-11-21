@@ -385,7 +385,7 @@ fn infer_provider(model: &str) -> &'static str {
 pub(super) fn price_codebuff(
     entry: &CodebuffEntry,
     pricing: PriceTable<'_>,
-) -> (f64, Option<String>) {
+) -> (f64, Option<String>, bool) {
     let candidates = codebuff_model_candidates(entry);
     let candidates: Vec<_> = candidates
         .iter()
@@ -408,6 +408,7 @@ pub(super) fn price_codebuff(
         priced
             .missing_pricing
             .then(|| ccusage_core::model_aliases::resolve_model_name(&entry.model).into_owned()),
+        priced.estimated,
     )
 }
 
@@ -494,7 +495,7 @@ mod pricing_identity_tests {
                 dedup_key: String::new(),
             };
 
-            let (cost, missing) = price_codebuff(&entry, PriceTable::Calculate(&pricing));
+            let (cost, missing, _) = price_codebuff(&entry, PriceTable::Calculate(&pricing));
             assert!((cost - expected).abs() < 1e-12, "{provider}: {cost}");
             assert_eq!(missing, None, "{provider}");
         }

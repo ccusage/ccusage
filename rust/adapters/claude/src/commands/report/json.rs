@@ -132,6 +132,7 @@ mod tests {
                     cost: 0.3,
                     missing_pricing: false,
                     stored_cost: None,
+                    estimated_pricing: false,
                 },
                 ModelBreakdown {
                     model_name: "claude-sonnet-4-20250514".to_string(),
@@ -144,6 +145,7 @@ mod tests {
                     cost: 0.12,
                     missing_pricing: false,
                     stored_cost: None,
+                    estimated_pricing: false,
                 },
             ],
             project: project.map(str::to_string),

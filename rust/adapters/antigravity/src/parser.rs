@@ -338,7 +338,7 @@ pub(super) fn event_to_loaded(
     let extra_total_tokens = event
         .total_output_tokens
         .saturating_sub(event.output_tokens);
-    let (cost, missing_pricing_model) = price_antigravity(
+    let (cost, missing_pricing_model, estimated_pricing) = price_antigravity(
         &event.model,
         event.logged_model.as_deref(),
         event.provider,
@@ -359,6 +359,7 @@ pub(super) fn event_to_loaded(
         model: Some(event.model),
         usage_limit_reset_time: None,
         missing_pricing_model,
+        estimated_pricing,
         usage,
         message_id: event.message_id,
         version: None,
@@ -383,7 +384,7 @@ mod pricing_identity_tests {
         let model = normalize_antigravity_model("gemini-3.6-flash-high").unwrap();
         let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(r#"{"gemini-3.6-flash":{"input_cost_per_token":0.00000075,"output_cost_per_token":0.00000375},"gemini/gemini-3.6-flash-lite":{"input_cost_per_token":0.0000001,"output_cost_per_token":0.0000004}}"#);
-        let (cost, missing) = price_antigravity(
+        let (cost, missing, _) = price_antigravity(
             &model,
             None,
             None,

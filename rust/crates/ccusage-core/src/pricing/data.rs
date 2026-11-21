@@ -784,6 +784,7 @@ const GROK_CODE_FAST_1: PricingSchedule = PricingSchedule {
 // NOTE(2026-11-21, #2226): Vertex AI lists the same dated Gemini price changes as Google's own API at https://cloud.google.com/vertex-ai/generative-ai/pricing. Vertex usage bills Vertex's own listing when the catalogue has one; when it falls back to Google's row, Google's schedule applies so the estimate never bills below Google's rate at the time.
 pub(super) static HOSTS_FOLLOWING_VENDOR_PRICES: &[(&str, &str)] = &[("vertex-ai", "google")];
 
+// NOTE(2026-11-21, #2228): `zai-coding-plan` is models.dev's ID for Z.ai's own GLM Coding Plan (https://models.dev/providers/zai-coding-plan, https://docs.z.ai/devpack/overview). It names Z.ai itself, not a host in front of it.
 pub(super) static DIRECT_BILLING_PROVIDERS: &[(&str, &str)] = &[
     ("deepseek", "deepseek"),
     ("deepseek-official", "deepseek"),
@@ -792,6 +793,7 @@ pub(super) static DIRECT_BILLING_PROVIDERS: &[(&str, &str)] = &[
     ("anthropic", "anthropic"),
     ("google", "google"),
     ("gemini", "google"),
+    ("zai-coding-plan", "zai"),
 ];
 
 pub(super) static SCHEDULES: &[(&str, PricingSchedule)] = &[

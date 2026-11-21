@@ -225,6 +225,7 @@ fn loaded_entry(
     };
     let priced = price_entry_for_provider(entry_pricing, provider.as_deref(), pricing);
     let cost = priced.cost;
+    let estimated_pricing = priced.estimated;
     let missing_pricing_model = priced
         .missing_pricing
         .then(|| ccusage_core::model_aliases::resolve_model_name(&model).into_owned());
@@ -239,6 +240,7 @@ fn loaded_entry(
         model: Some(model),
         usage_limit_reset_time: None,
         missing_pricing_model,
+        estimated_pricing,
         extra_total_tokens: 0,
         message_count: None,
         usage,
@@ -1029,6 +1031,47 @@ mod tests {
 #[cfg(test)]
 mod pricing_identity_tests {
     use super::*;
+
+    #[test]
+    fn marks_a_free_vendor_model_through_its_logged_router_as_an_estimate() {
+        ccusage_test_support::install_pricing_snapshots();
+        let pricing = ccusage_core::PricingMap::load_embedded();
+        for (provider, cost, estimated) in [
+            (Some("openrouter"), 0.000558, true),
+            (Some("ollama"), 0.0, false),
+            (None, 0.0, false),
+        ] {
+            let entry = loaded_entry(
+                &SourceFile {
+                    path: std::path::PathBuf::from("fixture.json"),
+                    kind: SourceKind::Extension,
+                    session_id: "task-a".to_string(),
+                },
+                EntryInput {
+                    timestamp: crate::parse_ts_timestamp("2026-11-17T10:00:00Z").unwrap(),
+                    model: "glm-4.7-flash".to_string(),
+                    provider: provider.map(str::to_string),
+                    usage: TokenUsageRaw {
+                        input_tokens: 1_000,
+                        output_tokens: 1_000,
+                        ..TokenUsageRaw::default()
+                    },
+                    reported_cost: None,
+                    request_id: None,
+                },
+                CostMode::Calculate,
+                PriceTable::Calculate(&pricing),
+                &jiff::tz::TimeZone::UTC,
+            );
+
+            assert!(
+                (entry.cost - cost).abs() < 1e-12,
+                "{provider:?}: {}",
+                entry.cost
+            );
+            assert_eq!(entry.estimated_pricing, estimated, "{provider:?}");
+        }
+    }
 
     #[test]
     fn prices_a_foreign_router_without_the_deepseek_schedule() {

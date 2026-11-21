@@ -122,6 +122,7 @@ pub(super) fn row_to_entry(
     };
     let priced = price_entry_for_provider(entry_pricing, row.provider_id.as_deref(), pricing);
     let cost = priced.cost;
+    let estimated_pricing = priced.estimated;
     let missing_pricing_model = (mode != CostMode::Display
         && priced.matched.is_none()
         && total_usage_tokens(usage).saturating_add(extra_total_tokens) > 0)
@@ -146,6 +147,7 @@ pub(super) fn row_to_entry(
             model: Some(raw_model),
             usage_limit_reset_time: None,
             missing_pricing_model,
+            estimated_pricing,
             stored_cost: None,
         },
     )))

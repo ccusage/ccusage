@@ -151,6 +151,7 @@ pub(super) fn message_value_to_entry(
     let priced = price_entry_for_provider(entry_pricing, value.provider_id.as_deref(), pricing);
     let stored_cost = stored_cost_for_mode(recorded, mode);
     let cost = priced.cost;
+    let estimated_pricing = priced.estimated;
     let missing_pricing_model = priced
         .missing_pricing
         .then(|| ccusage_core::model_aliases::resolve_model_name(&model).into_owned());
@@ -168,6 +169,7 @@ pub(super) fn message_value_to_entry(
             model: Some(model),
             usage_limit_reset_time: None,
             missing_pricing_model,
+            estimated_pricing,
             stored_cost,
             message_count: None,
             usage,
@@ -437,6 +439,38 @@ mod cost_mode_warnings {
                 }
             );
             assert_eq!(entry.missing_pricing_model.as_deref(), expected, "{mode:?}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod paid_host_estimates {
+    use super::*;
+
+    #[test]
+    fn a_hyphenated_paid_host_marks_a_free_vendor_model_as_an_estimate() {
+        ccusage_test_support::install_pricing_snapshots();
+        let pricing = ccusage_core::PricingMap::load_embedded();
+        for (provider, estimated) in [("novita-ai", true), ("ollama", false)] {
+            let value: KiloMessage = serde_json::from_value(serde_json::json!({
+                "role": "assistant", "modelID": "zai-org/glm-4.7-flash", "providerID": provider,
+                "time": {"created": 1_767_312_000_000_i64},
+                "tokens": {"input": 1_000_000, "output": 100_000}
+            }))
+            .unwrap();
+            let (_, entry) = message_value_to_entry(
+                &value,
+                "r",
+                "s",
+                Path::new("kilo.db"),
+                &JiffTimeZone::UTC,
+                CostMode::Calculate,
+                PriceTable::Calculate(&pricing),
+            )
+            .unwrap()
+            .unwrap();
+            assert_eq!(entry.estimated_pricing, estimated, "{provider}");
+            assert_eq!(entry.cost > 0.0, estimated, "{provider}: {}", entry.cost);
         }
     }
 }

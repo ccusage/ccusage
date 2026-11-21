@@ -50,6 +50,7 @@ fn all_report_totals_list_unpriced_models_only_when_present() {
                     cost: 0.0,
                     missing_pricing: true,
                     stored_cost: None,
+                    estimated_pricing: false,
                 },
                 ModelBreakdown {
                     model_name: "gpt-5".to_string(),
@@ -62,6 +63,7 @@ fn all_report_totals_list_unpriced_models_only_when_present() {
                     cost: 0.01,
                     missing_pricing: false,
                     stored_cost: None,
+                    estimated_pricing: false,
                 },
             ],
         },
@@ -471,4 +473,64 @@ fn multi_section_claude_fixture_matches_standalone_sections_for_daily_and_sessio
 
         assert_daily_family_and_session_sections_match_standalone(&shared);
     })
+}
+
+#[test]
+fn all_report_totals_list_estimated_models_only_when_present() {
+    let breakdown = |model: &str, estimated_pricing| ModelBreakdown {
+        model_name: model.to_string(),
+        input_tokens: 50,
+        output_tokens: 10,
+        cache_creation_tokens: 0,
+        cache_read_tokens: 0,
+        cache_creation_1h_tokens: None,
+        extra_total_tokens: 0,
+        cost: 0.01,
+        missing_pricing: false,
+        stored_cost: None,
+        estimated_pricing,
+    };
+    let row = |breakdowns| {
+        ReportRow::Period(PeriodRow {
+            usage: RowUsage {
+                period: "2026-01-02".to_string(),
+                models_used: vec!["kyma/glm-4.7-flash".to_string(), "gpt-5".to_string()],
+                input_tokens: 100,
+                output_tokens: 20,
+                cache_creation_tokens: 0,
+                cache_read_tokens: 0,
+                total_tokens: 120,
+                total_cost: 0.02,
+                model_breakdowns: breakdowns,
+            },
+            agents: vec!["opencode", "codex"],
+            agent_breakdowns: Vec::new(),
+        })
+    };
+
+    let estimated = row(vec![
+        breakdown("kyma/glm-4.7-flash", true),
+        breakdown("gpt-5", false),
+    ]);
+    let report = report_json_with_agents(
+        std::slice::from_ref(&estimated),
+        AgentReportKind::Daily,
+        false,
+    );
+    assert_eq!(
+        report["totals"]["estimatedModels"],
+        json!(["kyma/glm-4.7-flash"])
+    );
+    assert_eq!(
+        report["daily"][0]["modelBreakdowns"][0]["estimatedPricing"],
+        true
+    );
+
+    let priced = row(vec![
+        breakdown("kyma/glm-4.7-flash", false),
+        breakdown("gpt-5", false),
+    ]);
+    let report =
+        report_json_with_agents(std::slice::from_ref(&priced), AgentReportKind::Daily, false);
+    assert!(report["totals"].get("estimatedModels").is_none());
 }

@@ -397,6 +397,7 @@ fn loaded_entry(fixture: LoadedEntryFixture) -> LoadedEntry {
         usage_limit_reset_time: None,
         missing_pricing_model: fixture.missing_pricing_model.map(str::to_string),
         stored_cost: None,
+        estimated_pricing: false,
     }
 }
 
@@ -436,6 +437,7 @@ fn summary_row(fixture: SummaryFixture) -> UsageSummary {
             cost: fixture.cost,
             missing_pricing: false,
             stored_cost: None,
+            estimated_pricing: false,
         }],
         project: None,
         versions: None,
