@@ -249,6 +249,11 @@ pub(super) static FAMILY_PRICE_NEUTRAL_SUFFIX_WORDS: &[(&str, &[&str])] = &[
     ("qwen3-32b", &["thinking"]),
 ];
 
+// NOTE(2026-11-21, #2227): xAI lists separate "(≥ 200k prompt tokens)" rows and bills every token of such a request at them at https://docs.x.ai/developers/pricing. LiteLLM's above-200k fields on xAI's own rows describe that tier, not a marginal one. A request is long when its context exceeds the threshold, so 199,999 makes a 200,000-token prompt long.
+const XAI_LONG_CONTEXT_THRESHOLD: u64 = 199_999;
+pub(super) static WHOLE_REQUEST_LONG_CONTEXT_PROVIDERS: &[(&str, u64)] =
+    &[("xai", XAI_LONG_CONTEXT_THRESHOLD)];
+
 pub(super) struct CuratedLongContext {
     pub(super) input: f64,
     pub(super) output: f64,
@@ -322,24 +327,29 @@ const DEEPSEEK_V4_FLASH: PricingSchedule = PricingSchedule {
         output: 0.28e-6,
         cache_create: 0.14e-6,
         cache_read: 0.0028e-6,
+        long_context: None,
     },
     off_peak: ScheduledRates {
         input: 0.22e-6,
         output: 0.66e-6,
         cache_create: 0.22e-6,
         cache_read: 0.007e-6,
+        long_context: None,
     },
     peak: ScheduledRates {
         input: 0.44e-6,
         output: 1.32e-6,
         cache_create: 0.44e-6,
         cache_read: 0.014e-6,
+        long_context: None,
     },
     // NOTE(2026-11-20, #2401): DeepSeek retired V4 Flash but still accepts `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp` at https://api-docs.deepseek.com/quick_start/pricing/. Both ids follow this handoff instead of the V4 Flash rates above.
     successor: Some(Successor {
         from_ms: DEEPSEEK_V4_1_FLASH_MS,
         schedule: &DEEPSEEK_FLASH,
     }),
+    follows_row: false,
+    vendor: "deepseek",
 };
 // NOTE(2026-11-20, #2401): DeepSeek planned to route `deepseek-v4-pro` to V4.1 Flash on September 14, 2026 but kept serving it with unchanged billing instead, and the pricing page still lists its own rates at https://api-docs.deepseek.com/quick_start/pricing/. Give it no successor so it keeps the V4 Pro schedule.
 const DEEPSEEK_V4_PRO: PricingSchedule = PricingSchedule {
@@ -351,20 +361,25 @@ const DEEPSEEK_V4_PRO: PricingSchedule = PricingSchedule {
         output: 0.87e-6,
         cache_create: 0.435e-6,
         cache_read: 0.003625e-6,
+        long_context: None,
     },
     off_peak: ScheduledRates {
         input: 0.66e-6,
         output: 1.98e-6,
         cache_create: 0.66e-6,
         cache_read: 0.022e-6,
+        long_context: None,
     },
     peak: ScheduledRates {
         input: 1.32e-6,
         output: 3.96e-6,
         cache_create: 1.32e-6,
         cache_read: 0.044e-6,
+        long_context: None,
     },
     successor: None,
+    follows_row: false,
+    vendor: "deepseek",
 };
 
 // NOTE(2026-11-20, #2268): DeepSeek launched deepseek-flash with V4.1 rates at 04:00 UTC on September 10, 2026: https://api-docs.deepseek.com/news/news260910/. Its rates differ from the retired V4 Flash schedule.
@@ -377,21 +392,70 @@ const DEEPSEEK_FLASH: PricingSchedule = PricingSchedule {
         output: 1.2e-6,
         cache_create: 0.3e-6,
         cache_read: 0.006e-6,
+        long_context: None,
     },
     off_peak: ScheduledRates {
         input: 0.15e-6,
         output: 0.6e-6,
         cache_create: 0.15e-6,
         cache_read: 0.003e-6,
+        long_context: None,
     },
     peak: ScheduledRates {
         input: 0.3e-6,
         output: 1.2e-6,
         cache_create: 0.3e-6,
         cache_read: 0.006e-6,
+        long_context: None,
     },
     successor: None,
+    follows_row: false,
+    vendor: "deepseek",
 };
+
+// NOTE(2026-11-21, #2227): xAI listed grok-code-fast-1 as its own model at $0.20 input, $0.02 cached and $1.50 output per 1M with no long-context rate in its console price data, last at https://web.archive.org/web/20260515145912/https://docs.x.ai/developers/pricing, and as an alias of grok-build-0.1 at $1.00 / $0.20 / $2.00, and $2.00 / $0.40 / $4.00 at 200K and above, from https://web.archive.org/web/20260521081415/https://docs.x.ai/developers/pricing on. xAI publishes no switch date, so the new rates start at the last capture that still shows the old ones (the earliest instant they can apply), which bills the few days in between at the higher rate. xAI bills no cache writes, so a write costs the input rate.
+const GROK_CODE_FAST_1_AS_GROK_BUILD: ScheduledRates = ScheduledRates {
+    input: 1e-6,
+    output: 2e-6,
+    cache_create: 1e-6,
+    cache_read: 0.2e-6,
+    long_context: Some(LongContext {
+        threshold: XAI_LONG_CONTEXT_THRESHOLD,
+        mode: LongContextMode::WholeRequest,
+        rates: LongContextRates {
+            input: Some(2e-6),
+            output: Some(4e-6),
+            cache_create: Some(2e-6),
+            cache_create_1h: None,
+            cache_read: Some(0.4e-6),
+        },
+    }),
+};
+const GROK_CODE_FAST_1: PricingSchedule = PricingSchedule {
+    cutoff_ms: 1_778_857_152_000,
+    peak_weekdays: 1..=5,
+    peak_hours: &[],
+    before: ScheduledRates {
+        input: 0.2e-6,
+        output: 1.5e-6,
+        cache_create: 0.2e-6,
+        cache_read: 0.02e-6,
+        long_context: None,
+    },
+    off_peak: GROK_CODE_FAST_1_AS_GROK_BUILD,
+    peak: GROK_CODE_FAST_1_AS_GROK_BUILD,
+    successor: None,
+    follows_row: false,
+    vendor: "xai",
+};
+
+// NOTE(2026-11-21, #2455): A schedule is a vendor's own price list, so on a recorded billing route it applies only to usage that vendor billed itself. These provider IDs name a vendor's own API: DeepSeek's and xAI's LiteLLM provider IDs (https://docs.litellm.ai/docs/providers/deepseek, https://docs.litellm.ai/docs/providers/xai) and DeepSeek Harness's `deepseek-official` and `deepseek-account` routes. Any other provider ID bills at its own flat rate.
+pub(super) static DIRECT_BILLING_PROVIDERS: &[(&str, &str)] = &[
+    ("deepseek", "deepseek"),
+    ("deepseek-official", "deepseek"),
+    ("deepseek-account", "deepseek"),
+    ("xai", "xai"),
+];
 
 pub(super) static SCHEDULES: &[(&str, PricingSchedule)] = &[
     ("deepseek-flash", DEEPSEEK_FLASH),
@@ -399,4 +463,7 @@ pub(super) static SCHEDULES: &[(&str, PricingSchedule)] = &[
     // NOTE(2026-11-20, #2401): DeepSeek's August 21, 2026 V4 Flash Vision Exp release prices only image tokens at V4-Flash rates: https://api-docs.deepseek.com/news/news260821/. The alias therefore shares the V4 Flash schedule, including the September 10, 2026 handoff.
     ("deepseek-v4-flash-vision-exp", DEEPSEEK_V4_FLASH),
     ("deepseek-v4-pro", DEEPSEEK_V4_PRO),
+    ("grok-code-fast-1", GROK_CODE_FAST_1),
+    ("grok-code-fast", GROK_CODE_FAST_1),
+    ("grok-code-fast-1-0825", GROK_CODE_FAST_1),
 ];
