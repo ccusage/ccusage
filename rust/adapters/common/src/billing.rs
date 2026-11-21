@@ -63,6 +63,14 @@ mod tests {
             billing_route(Some("Anthropic")),
             Some(BillingRoute::Direct("anthropic"))
         );
+        assert_eq!(
+            billing_route(Some("xai")),
+            Some(BillingRoute::Direct("xai"))
+        );
+        assert_eq!(
+            billing_route(Some("XAI")),
+            Some(BillingRoute::Direct("xai"))
+        );
     }
 
     #[test]
