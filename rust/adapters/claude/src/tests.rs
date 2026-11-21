@@ -1569,8 +1569,8 @@ fn loaded_usage_entry(fixture: UsageEntryFixture) -> ClaudeEntry {
         source_timestamp: "2026-03-29T07:00:00.000Z".to_string(),
         recorded_session_id: Some(Arc::from("session-a")),
         original_model: Some("claude-sonnet-4-20250514".to_string()),
-        request: crate::dedupe::Request::Id(fixture.request_id.to_string()),
-        is_sidechain: Some(fixture.is_sidechain),
+        request: crate::dedupe::Request::Id(fixture.request_id.into()),
+        is_sidechain: fixture.is_sidechain,
         entry: LoadedEntry {
             usage: TokenUsageRaw {
                 input_tokens: 0,

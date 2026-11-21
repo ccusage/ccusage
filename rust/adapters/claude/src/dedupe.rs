@@ -197,15 +197,15 @@ pub(super) fn dedupe_files<E: DedupEntry>(
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum Request {
-    Id(String),
+    Id(Box<str>),
     Missing(Option<NonZeroU64>),
 }
 
-const _: () = assert!(size_of::<Request>() == size_of::<Option<String>>());
+const _: () = assert!(size_of::<Request>() == size_of::<Option<Box<str>>>());
 
 impl Request {
     pub(super) fn new(request_id: Option<String>, response: Option<NonZeroU64>) -> Self {
-        request_id.map_or(Self::Missing(response), Self::Id)
+        request_id.map_or(Self::Missing(response), |id| Self::Id(id.into_boxed_str()))
     }
 
     pub(super) fn id(&self) -> Option<&str> {
@@ -227,9 +227,8 @@ impl Request {
 pub(super) struct DedupKey {
     pub(super) timestamp: TimestampMs,
     pub(super) session_id: Arc<str>,
-    pub(super) message_id: Option<String>,
+    pub(super) message_id: Option<Box<str>>,
     pub(super) request: Request,
-    pub(super) is_sidechain: Option<bool>,
 }
 
 pub(super) trait DedupEntry {

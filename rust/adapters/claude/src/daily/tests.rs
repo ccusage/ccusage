@@ -1096,10 +1096,10 @@ fn daily_loaded_entry(fixture: DailyEntryFixture) -> ClaudeEntry {
         key: super::DedupKey {
             timestamp: TimestampMs::from_millis(1_774_000_000_000),
             session_id: Arc::from("session-a"),
-            message_id: Some(fixture.message_id.to_string()),
-            request: crate::dedupe::Request::Id(fixture.request_id.to_string()),
-            is_sidechain: Some(fixture.is_sidechain),
+            message_id: Some(fixture.message_id.into()),
+            request: crate::dedupe::Request::Id(fixture.request_id.into()),
         },
+        is_sidechain: fixture.is_sidechain,
         date: ccusage_core::cli::IsoDate::parse("2026-03-29").unwrap(),
         project: Arc::from("project-a"),
         usage: TokenUsageRaw {
@@ -1111,8 +1111,8 @@ fn daily_loaded_entry(fixture: DailyEntryFixture) -> ClaudeEntry {
             cache_creation: None,
         },
         cost: 0.0,
-        model: Some("claude-sonnet-4-20250514".to_string()),
-        missing_pricing_model: None,
+        model: Some(Arc::from("claude-sonnet-4-20250514")),
+        missing_pricing: false,
         recorded_cost: super::RecordedCost::Absent,
     }
 }
