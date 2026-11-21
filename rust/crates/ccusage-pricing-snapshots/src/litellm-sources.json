@@ -71,6 +71,22 @@
 		},
 		{
 			"provider": "gemini"
+		},
+		{
+			"provider": "bedrock_converse",
+			"unqualified": true,
+			"modes": ["chat"]
+		},
+		{
+			"provider": "bedrock",
+			"unqualified": true,
+			"modes": ["chat"]
+		},
+		{
+			"provider": "bedrock",
+			"keyPrefix": "bedrock/",
+			"unqualified": true,
+			"modes": ["chat"]
 		}
 	]
 }

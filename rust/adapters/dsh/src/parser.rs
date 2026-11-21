@@ -464,7 +464,14 @@ pub(super) fn dsh_entry_to_loaded(
     let candidates = model_candidates(entry.provider.as_deref(), &entry.model);
     let candidates: Vec<_> = candidates
         .iter()
-        .map(|name| (name.as_str(), MatchKind::Fuzzy))
+        .map(|name| {
+            let kind = if *name == entry.model {
+                MatchKind::Fuzzy
+            } else {
+                MatchKind::Exact
+            };
+            (name.as_str(), kind)
+        })
         .collect();
     let entry_pricing = EntryPricing {
         granularity: UsageGranularity::Request,

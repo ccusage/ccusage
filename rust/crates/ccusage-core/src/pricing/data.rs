@@ -249,6 +249,72 @@ pub(super) static FAMILY_PRICE_NEUTRAL_SUFFIX_WORDS: &[(&str, &[&str])] = &[
     ("qwen3-32b", &["thinking"]),
 ];
 
+pub(super) struct HostListing {
+    pub(super) spellings: &'static [&'static str],
+    pub(super) prefixes: &'static [&'static str],
+    pub(super) bare_providers: &'static [&'static str],
+    pub(super) model_id_words: &'static [&'static str],
+}
+
+pub(super) const BEDROCK_HOST: u8 = 0;
+
+// NOTE(2026-11-21, #2229): Agents log a cloud host under models.dev's IDs (`amazon-bedrock` at https://models.dev/providers/amazon-bedrock, `azure`, `google-vertex`) while LiteLLM keys the same listings `bedrock/…`, `azure/…` and `vertex_ai/…`, and keeps Bedrock's default-region rows bare under `bedrock_converse` (https://docs.litellm.ai/docs/providers/bedrock). Each entry lists the logged spellings of one host and where LiteLLM keeps its listing, so every adapter reaches the same host row.
+pub(super) static HOSTS: &[HostListing] = &[
+    HostListing {
+        spellings: &[
+            "bedrock",
+            "amazon_bedrock",
+            "aws_bedrock",
+            "bedrock_converse",
+        ],
+        prefixes: &["bedrock", "bedrock_converse"],
+        bare_providers: &["bedrock_converse", "bedrock"],
+        // NOTE(2026-11-21, #2229): Bedrock model IDs start with the model provider or a cross-region inference geography followed by `.`, as in `moonshotai.kimi-k2-thinking` or `us.anthropic.…` (https://docs.aws.amazon.com/bedrock/latest/userguide/models-supported.html, https://docs.aws.amazon.com/bedrock/latest/userguide/inference-profiles-support.html). A model with this spelling can use Bedrock pricing when the logged provider does not establish a direct route.
+        model_id_words: &[
+            "ai21",
+            "amazon",
+            "anthropic",
+            "apac",
+            "au",
+            "ca",
+            "cohere",
+            "deepseek",
+            "eu",
+            "global",
+            "google",
+            "in",
+            "jp",
+            "meta",
+            "minimax",
+            "mistral",
+            "moonshot",
+            "moonshotai",
+            "nvidia",
+            "openai",
+            "qwen",
+            "stability",
+            "twelvelabs",
+            "us",
+            "us-gov",
+            "writer",
+            "xai",
+            "zai",
+        ],
+    },
+    HostListing {
+        spellings: &["azure", "azure_openai"],
+        prefixes: &["azure"],
+        bare_providers: &[],
+        model_id_words: &[],
+    },
+    HostListing {
+        spellings: &["vertex_ai", "google_vertex"],
+        prefixes: &["vertex_ai"],
+        bare_providers: &[],
+        model_id_words: &[],
+    },
+];
+
 // NOTE(2026-11-21, #2226): Google publishes its Gemini Developer API models as `google/<id>` on models.dev and to agents, while LiteLLM keys the same rows `gemini/<id>`. Both name Google's own listing, so `google/` reads as the vendor row rather than a reseller.
 pub(super) static VENDOR_SPELLINGS: &[(&str, &str)] = &[("google", "gemini")];
 

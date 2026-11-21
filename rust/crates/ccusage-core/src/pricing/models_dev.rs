@@ -278,6 +278,7 @@ impl PricingMap {
                     source: Source::ModelsDev,
                     scope: Scope::Direct,
                     vendor_start: None,
+                    host: None,
                     schedule: None,
                 },
             );

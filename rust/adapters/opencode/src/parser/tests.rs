@@ -199,13 +199,43 @@ fn resolves_a_provider_identity_before_fuzzy_matches_for_both_token_sides() {
 }
 
 #[test]
+fn a_logged_bedrock_provider_bills_the_bedrock_listing_ahead_of_the_vendor_price() {
+    ccusage_test_support::install_pricing_snapshots();
+    let mut pricing = ccusage_core::PricingMap::default();
+    pricing.load_json(
+        r#"{
+            "deepseek/deepseek-v3.2": {"litellm_provider": "deepseek", "input_cost_per_token": 0.00000028, "output_cost_per_token": 0.0000004},
+            "deepseek.v3.2": {"litellm_provider": "bedrock_converse", "input_cost_per_token": 0.00000062, "output_cost_per_token": 0.00000185}
+        }"#,
+    );
+    let entry = message_value_to_entry(
+        message(json!({
+            "id": "message-a",
+            "sessionID": "session-a",
+            "providerID": "amazon-bedrock",
+            "modelID": "deepseek.v3.2",
+            "time": {"created": 1767312000000i64},
+            "tokens": {"input": 1000000}
+        })),
+        None,
+        None,
+        &jiff::tz::TimeZone::UTC,
+        CostMode::Calculate,
+        ccusage_core::cost::PriceTable::Calculate(&pricing),
+    )
+    .unwrap()
+    .unwrap();
+    assert!((entry.cost - 0.62).abs() < 1e-9, "{}", entry.cost);
+}
+
+#[test]
 fn keeps_the_same_model_when_its_output_rate_is_zero() {
     ccusage_test_support::install_pricing_snapshots();
     let mut pricing = ccusage_core::PricingMap::default();
     pricing.load_json(
         r#"{
-            "small": {"input_cost_per_token": 0.025, "output_cost_per_token": 0},
-            "ambient/small": {"input_cost_per_token": 0.001, "output_cost_per_token": 0.001}
+            "small": {"input_cost_per_token": 0.001, "output_cost_per_token": 0.001},
+            "ambient/small": {"input_cost_per_token": 0.025, "output_cost_per_token": 0}
         }"#,
     );
     let entry = message_value_to_entry(
@@ -375,6 +405,38 @@ fn prices_the_logged_id_before_its_opencode_alias() {
     .unwrap()
     .unwrap();
     assert_eq!(entry.cost, 100.0);
+}
+
+#[test]
+fn prices_a_derived_model_at_the_vendor_rate_until_the_host_id_is_logged() {
+    ccusage_test_support::install_pricing_snapshots();
+    let mut pricing = PricingMap::default();
+    pricing.load_json(
+        r#"{
+            "gemini-3-pro-preview":{"input_cost_per_token":1,"output_cost_per_token":1},
+            "vertex_ai/gemini-3-pro-preview":{"input_cost_per_token":2,"output_cost_per_token":2}
+        }"#,
+    );
+    for (model, expected) in [
+        ("gemini-3-pro-high", 100.0),
+        ("gemini-3-pro-preview", 200.0),
+    ] {
+        let entry = message_value_to_entry(
+            message(json!({
+                "providerID": "google-vertex", "modelID": model,
+                "time": { "created": 1767312000000i64 },
+                "tokens": { "input": 100 }
+            })),
+            None,
+            None,
+            &jiff::tz::TimeZone::UTC,
+            CostMode::Calculate,
+            ccusage_core::cost::PriceTable::Calculate(&pricing),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(entry.cost, expected, "{model}");
+    }
 }
 
 #[test]

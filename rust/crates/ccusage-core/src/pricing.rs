@@ -42,8 +42,8 @@ pub use resolve::{Explanation, ResolutionStep};
 mod row;
 pub use row::Source;
 use row::{
-    Entries, Row, RowPricing, Scope, provider_cache_defaults, row_scope, schedule_for, vendor_id,
-    vendor_start,
+    Entries, Row, RowPricing, Scope, bare_host, host_listing, host_of_model_id, is_host_segment,
+    provider_cache_defaults, row_scope, schedule_for, vendor_id, vendor_start,
 };
 mod rows;
 use rows::{Lookup, PricingRows, RowMatch};

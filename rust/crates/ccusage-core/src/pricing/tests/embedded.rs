@@ -11,7 +11,7 @@ fn sorted_rows(rows: &PricingRows) -> Vec<String> {
         .iter()
         .map(|row| {
             format!(
-                "{} {:?} {:?} {:?} {:?} {} {} {:?} {:?}",
+                "{} {:?} {:?} {:?} {:?} {} {} {:?} {:?} {:?}",
                 row.key,
                 row.rates(),
                 row.source,
@@ -20,7 +20,8 @@ fn sorted_rows(rows: &PricingRows) -> Vec<String> {
                 row.exact_only,
                 row.whole_request_tiers,
                 row.scope,
-                row.vendor_start
+                row.vendor_start,
+                row.host,
             )
         })
         .collect();
@@ -49,6 +50,17 @@ fn embedded_table_matches_the_rows_loaded_from_its_snapshots() {
     for rows in [&embedded.rows, &embedded_models_dev_pricing().rows] {
         let stored = rows.folded_indexes.get().unwrap();
         assert_eq!(stored.0, FoldedIndexes::build(rows.matches()).0);
+    }
+}
+
+#[test]
+fn embedded_pricing_reserves_the_encoded_row_count() {
+    crate::test_support::install_pricing_snapshots();
+    let primary = PricingMap::load_embedded();
+    for table in [&primary, embedded_models_dev_pricing()] {
+        let rows = &table.rows.entries.rows;
+        assert!(!rows.is_empty());
+        assert_eq!(rows.capacity(), rows.len());
     }
 }
 

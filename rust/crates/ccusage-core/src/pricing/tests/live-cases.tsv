@@ -1,7 +1,7 @@
 # Case | reported label | candidate kinds and names | rate or cost | step | row key | overrides
 026-claude|bedrock/us-east-1/deepseek.v3.2|F:bedrock/us-east-1/deepseek.v3.2|0.62/1.85|S2|bedrock/us-east-1/deepseek.v3.2|
-073-opencode/ambient|small|F:small,F:ambient/small|1000/1000|S2|ambient/small|
-074-opencode/ambient|small|F:small,F:ambient/small|o:1|S2|ambient/small|
+073-opencode/ambient|small|F:small,E:ambient/small|1000/1000|S2|ambient/small|
+074-opencode/ambient|small|F:small,E:ambient/small|o:1|S2|ambient/small|
 090-droid|gemini-2-5-flash|F:gemini-2-5-flash,F:google/gemini-2-5-flash,F:vertex_ai/gemini-2-5-flash,F:openrouter/google/gemini-2-5-flash|0.3/2.5/0.03|S2|gemini-2.5-flash|
 090-hermes|gemini-2.5-flash|E:google/gemini-2.5-flash,F:gemini-2.5-flash|0.3/2.5/0.03|S2|gemini-2.5-flash|
 091-claude|deepseek-v3-2-251201|F:deepseek-v3-2-251201|0.28985507/0.43478261|S6|deepseek/deepseek-v3.2-251201|
@@ -22,3 +22,9 @@
 111-claude|ollama/gpt-oss:20b-cloud|F:ollama/gpt-oss:20b-cloud|0/0|S2|ollama/gpt-oss:20b-cloud|
 092-droid/google|gemini-2-0-flash|S:google/gemini-2-0-flash,S:vertex_ai/gemini-2-0-flash,F:gemini-2-0-flash,F:google/gemini-2-0-flash,F:vertex_ai/gemini-2-0-flash,F:openrouter/google/gemini-2-0-flash|0.15/0.6|S2|vertex_ai/gemini-2.0-flash|
 092-droid|gemini-2-0-flash|F:gemini-2-0-flash,F:google/gemini-2-0-flash,F:vertex_ai/gemini-2-0-flash,F:openrouter/google/gemini-2-0-flash|0.1/0.4/0.025|S2|gemini-2.0-flash|
+118-hermes/bedrock|deepseek.v3.2|E:bedrock/deepseek.v3.2,F:deepseek.v3.2|0.62/1.85|S2|deepseek.v3.2|
+118-opencode/amazon-bedrock|deepseek.v3.2|F:deepseek.v3.2,E:amazon_bedrock/deepseek.v3.2|0.62/1.85|S2|deepseek.v3.2|
+118-kilo/amazon-bedrock|deepseek.v3.2|S:amazon_bedrock/deepseek.v3.2,F:deepseek.v3.2|0.62/1.85|S2|deepseek.v3.2|
+119-opencode/openrouter|deepseek/deepseek-v4-flash|F:deepseek/deepseek-v4-flash,E:openrouter/deepseek/deepseek-v4-flash|0.09/0.18|S2|openrouter/deepseek/deepseek-v4-flash|
+120-opencode/google-vertex|gemini-2.5-flash|F:gemini-2.5-flash,E:google_vertex/gemini-2.5-flash|0.35/2.6|S2|vertex_ai/gemini-2.5-flash|
+122-claude|moonshotai.kimi-k2-thinking|F:moonshotai.kimi-k2-thinking|0.6/2.5|S2|bedrock/moonshotai.kimi-k2-thinking|

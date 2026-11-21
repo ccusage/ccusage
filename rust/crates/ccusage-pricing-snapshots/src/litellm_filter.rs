@@ -32,9 +32,10 @@ pub(crate) fn filter_pricing_json(json: &str) -> Option<String> {
             continue;
         };
         let provider = pricing.get("litellm_provider").and_then(Value::as_str);
+        let mode = pricing.get("mode").and_then(Value::as_str);
         if !admissions
             .iter()
-            .any(|rule| is_admitted(rule, &model, provider))
+            .any(|rule| is_admitted(rule, &model, provider, mode))
         {
             continue;
         }
@@ -66,14 +67,19 @@ pub(crate) fn filter_pricing_json(json: &str) -> Option<String> {
     serde_json::to_string(&Value::Object(filtered)).ok()
 }
 
-fn is_admitted(rule: &Value, key: &str, provider: Option<&str>) -> bool {
-    rule.get("key").and_then(Value::as_str) == Some(key)
-        || rule
-            .get("keyPrefix")
-            .and_then(Value::as_str)
-            .is_some_and(|prefix| key.starts_with(prefix))
-        || provider
-            .is_some_and(|provider| rule.get("provider").and_then(Value::as_str) == Some(provider))
+// NOTE(2026-11-21, #2229): A rule admits a row only when every constraint it names holds. `unqualified` admits only a key with no `/` after its `keyPrefix`, so a host's default-region listing is embedded without its regional and gateway paths, and `modes` limits a rule to token-priced listings.
+fn is_admitted(rule: &Value, key: &str, provider: Option<&str>, mode: Option<&str>) -> bool {
+    let field = |name| rule.get(name).and_then(Value::as_str);
+    let prefix = field("keyPrefix").unwrap_or("");
+    field("key").is_none_or(|expected| expected == key)
+        && key.starts_with(prefix)
+        && field("provider").is_none_or(|expected| provider == Some(expected))
+        && (rule.get("unqualified").and_then(Value::as_bool) != Some(true)
+            || !key[prefix.len()..].contains('/'))
+        && rule
+            .get("modes")
+            .and_then(Value::as_array)
+            .is_none_or(|modes| modes.iter().any(|allowed| allowed.as_str() == mode))
 }
 
 #[cfg(test)]
