@@ -205,7 +205,9 @@ pub(super) fn reconcile_session_state_entries(
             }
         }
     }
-    interval_indices.sort_by_key(|entry| (entry.timestamp, entry.dedup_key.clone()));
+    interval_indices.sort_by(|left, right| {
+        (left.timestamp, left.dedup_key.as_str()).cmp(&(right.timestamp, right.dedup_key.as_str()))
+    });
     SessionStateReconciliation {
         entries: interval_indices,
         otel_after,
