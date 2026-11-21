@@ -730,6 +730,32 @@ mod pricing_identity_tests {
     }
 
     #[test]
+    fn a_configured_alias_prices_a_provider_request_at_the_alias_target() {
+        ccusage_test_support::install_pricing_snapshots();
+        let _aliases = ccusage_core::model_aliases::set_model_aliases_for_tests([(
+            "gpt-5.5",
+            "claude-opus-4-8",
+        )]);
+        let pricing = ccusage_core::PricingMap::load_embedded();
+        let entry = HermesEntry {
+            timestamp: ccusage_core::parse_ts_timestamp("2026-11-17T10:00:00Z").unwrap(),
+            session_id: "s".into(),
+            model: "gpt-5.5".into(),
+            provider: "openai".into(),
+            usage: TokenUsageRaw {
+                input_tokens: 1_000_000,
+                output_tokens: 1_000_000,
+                ..Default::default()
+            },
+            message_count: 1,
+            cost_usd: None,
+        };
+        let (cost, missing) = price_hermes(&entry, PriceTable::Calculate(&pricing));
+        assert!((cost - 30.0).abs() < 1e-9, "{cost}");
+        assert_eq!(missing, None);
+    }
+
+    #[test]
     fn adapter_pricing_identity() {
         ccusage_test_support::install_pricing_snapshots();
         let pricing = ccusage_core::PricingMap::load_embedded();

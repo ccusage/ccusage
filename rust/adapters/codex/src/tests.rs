@@ -1056,10 +1056,10 @@ fn prices_ultrafast_from_the_same_entry_as_standard_rates() {
         CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
     );
     assert!(
-        (standard_terra - standard_sol / 2.0).abs() < 1e-12,
+        (standard_terra - standard_sol).abs() < f64::EPSILON,
         "{standard_terra}"
     );
-    assert!((terra - standard_terra).abs() < f64::EPSILON, "{terra}");
+    assert!((terra - private_sol).abs() < f64::EPSILON, "{terra}");
 }
 
 #[test]

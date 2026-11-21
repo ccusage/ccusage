@@ -185,3 +185,32 @@ fn model_suffix_matches_only_at_the_last_occurrence() {
 fn builtin_price_aliases_require_an_explicit_table_entry() {
     assert_eq!(super::super::data::ALIASES.len(), 3);
 }
+
+#[test]
+fn a_configured_alias_prices_a_model_that_has_its_own_rate() {
+    crate::test_support::install_pricing_snapshots();
+    let unaliased = PricingMap::load_embedded();
+    let target = unaliased.find("claude-opus-4-8").unwrap();
+    let own = unaliased.find("gpt-5.5").unwrap();
+    assert_ne!((own.input, own.output), (target.input, target.output));
+    let _aliases =
+        crate::model_aliases::set_model_aliases_for_tests([("gpt-5.5", "claude-opus-4-8")]);
+    let pricing = PricingMap::load_embedded();
+
+    let found = pricing.find("gpt-5.5").unwrap();
+    assert_eq!((found.input, found.output), (target.input, target.output));
+    let (_, provider) = pricing
+        .resolve_at(
+            Some("gpt-5.5"),
+            &[
+                ("openai/gpt-5.5", MatchKind::StrictExact),
+                ("gpt-5.5", MatchKind::Fuzzy),
+            ],
+            None,
+        )
+        .unwrap();
+    assert_eq!(
+        (provider.input, provider.output),
+        (target.input, target.output)
+    );
+}

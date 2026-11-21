@@ -115,6 +115,12 @@ pub(super) enum Pass {
 }
 
 impl Pass {
+    pub(super) const CANDIDATE: [Self; 4] = [Self::S2, Self::S34, Self::S3f, Self::S56];
+
+    pub(super) fn searches(self, lookup: Lookup) -> bool {
+        !matches!((lookup, self), (Lookup::Context, Self::S3f))
+    }
+
     pub(super) fn allows(self, kind: MatchKind) -> bool {
         match self {
             Self::S2 => true,

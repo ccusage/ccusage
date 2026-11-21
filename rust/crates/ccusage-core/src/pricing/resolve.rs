@@ -284,7 +284,7 @@ impl PricingMap {
     ) -> Option<RequestHit> {
         let models_dev = || self.select_models_dev(live);
         let cache = self.find_cache.get_or_init(NameCache::default);
-        let matching = |name, pass| {
+        let matching = |name: &str, pass| {
             cache.get_or_init(name, lookup, pass, |slot| {
                 self.search_pass(name, slot, lookup, pass, &models_dev)
             })
@@ -298,6 +298,20 @@ impl PricingMap {
                 row,
             });
         }
+        if let Some(model) = reported {
+            let alias = crate::model_aliases::resolve_model_name(model);
+            if alias != model
+                && let Some(row) = Pass::CANDIDATE
+                    .into_iter()
+                    .filter(|pass| pass.searches(lookup))
+                    .find_map(|pass| matching(alias.as_ref(), pass))
+            {
+                return Some(RequestHit {
+                    candidate: None,
+                    row,
+                });
+            }
+        }
         let has_fallback = candidates
             .iter()
             .any(|&(_, kind)| kind == MatchKind::Fallback);
@@ -305,8 +319,8 @@ impl PricingMap {
             if fallback && !has_fallback {
                 break;
             }
-            for pass in [Pass::S2, Pass::S34, Pass::S3f, Pass::S56] {
-                if matches!((lookup, pass), (Lookup::Context, Pass::S3f)) {
+            for pass in Pass::CANDIDATE {
+                if !pass.searches(lookup) {
                     continue;
                 }
                 for (index, &(model, kind)) in candidates.iter().enumerate() {
