@@ -105,8 +105,7 @@ fn read_discovered_in_parallel(
     let (workers, capacity) = match workload {
         ReadWorkload::PlainPaths => (parallelism, PLAIN_PATH_BACKLOG),
         ReadWorkload::GroupedFiles => {
-            let reserved = (parallelism / 3).max(1);
-            let workers = parallelism.saturating_sub(reserved).max(1);
+            let workers = grouped_workers(parallelism);
             (workers, workers)
         }
     };
@@ -131,6 +130,15 @@ fn read_discovered_in_parallel(
             queue.push(file);
         });
     });
+}
+
+const GROUPED_EVERY_CORE_UP_TO: usize = 16;
+
+// NOTE(2026-11-21, #2476): Codex parsing gets faster with every core on 2-, 4- and 12-core machines, but on a 32-vCPU box it stops at about 22 parsers, and 32 parsers only add 23-29% CPU. Above 16 cores use 16 parsers, or two thirds of the cores once that is more (25 cores and up), until the contention past that point is understood.
+fn grouped_workers(parallelism: usize) -> usize {
+    parallelism
+        .min(GROUPED_EVERY_CORE_UP_TO)
+        .max(parallelism - parallelism / 3)
 }
 
 struct WorkQueue {
