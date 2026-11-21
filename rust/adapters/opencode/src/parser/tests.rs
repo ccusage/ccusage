@@ -938,9 +938,15 @@ fn reports_claude_agent_model_aliases_as_missing_pricing_instead_of_regional_rat
             "us-gov.anthropic.claude-fable-5-1": {"litellm_provider": "bedrock_converse", "input_cost_per_token": 1.2e-5, "output_cost_per_token": 6e-5}
         }"#,
     );
-    for alias in ["opus", "sonnet", "haiku", "fable"] {
+    for (model, expected) in [
+        ("claude-opus-5-5", (4.0, None)),
+        ("opus", (0.0, Some("opus"))),
+        ("sonnet", (0.0, Some("sonnet"))),
+        ("haiku", (0.0, Some("haiku"))),
+        ("fable", (0.0, Some("fable"))),
+    ] {
         let data = format!(
-            r#"{{"model":{{"id":"{alias}","providerID":"claude-agent"}},"tokens":{{"input":1000000}},"cost":0}}"#
+            r#"{{"model":{{"id":"{model}","providerID":"claude-agent"}},"tokens":{{"input":1000000}},"cost":0}}"#
         );
         let (entry, _) = session_message_value_to_entry_checked(
             SessionMessageRow {
@@ -958,8 +964,8 @@ fn reports_claude_agent_model_aliases_as_missing_pricing_instead_of_regional_rat
         .unwrap();
         assert_eq!(
             (entry.cost, entry.missing_pricing_model.as_deref()),
-            (0.0, Some(alias)),
-            "{alias}"
+            expected,
+            "{model}"
         );
     }
 }
