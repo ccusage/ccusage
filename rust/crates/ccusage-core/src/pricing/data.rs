@@ -266,12 +266,12 @@ const DEEPSEEK_V4_FLASH: PricingSchedule = PricingSchedule {
     cutoff_ms: 1_786_896_000_000,
     peak_weekdays: 1..=5,
     peak_hours: &[1..4, 6..10],
-    before: ScheduledRates {
+    before: Some(ScheduledRates {
         input: 0.14e-6,
         output: 0.28e-6,
         cache_create: 0.14e-6,
         cache_read: 0.0028e-6,
-    },
+    }),
     off_peak: ScheduledRates {
         input: 0.22e-6,
         output: 0.66e-6,
@@ -295,12 +295,12 @@ const DEEPSEEK_V4_PRO: PricingSchedule = PricingSchedule {
     cutoff_ms: 1_786_896_000_000,
     peak_weekdays: 1..=5,
     peak_hours: &[1..4, 6..10],
-    before: ScheduledRates {
+    before: Some(ScheduledRates {
         input: 0.435e-6,
         output: 0.87e-6,
         cache_create: 0.435e-6,
         cache_read: 0.003625e-6,
-    },
+    }),
     off_peak: ScheduledRates {
         input: 0.66e-6,
         output: 1.98e-6,
@@ -321,12 +321,12 @@ const DEEPSEEK_FLASH: PricingSchedule = PricingSchedule {
     cutoff_ms: DEEPSEEK_V4_1_FLASH_MS,
     peak_weekdays: 1..=5,
     peak_hours: &[1..4, 6..10],
-    before: ScheduledRates {
+    before: Some(ScheduledRates {
         input: 0.3e-6,
         output: 1.2e-6,
         cache_create: 0.3e-6,
         cache_read: 0.006e-6,
-    },
+    }),
     off_peak: ScheduledRates {
         input: 0.15e-6,
         output: 0.6e-6,
@@ -342,6 +342,9 @@ const DEEPSEEK_FLASH: PricingSchedule = PricingSchedule {
     successor: None,
 };
 
+const GEMINI_DECEMBER_2026_MS: i64 = 1_796_083_200_000;
+const GEMINI_JANUARY_2027_MS: i64 = 1_798_761_600_000;
+
 const fn date_step(
     cutoff_ms: i64,
     before: ScheduledRates,
@@ -351,7 +354,7 @@ const fn date_step(
         cutoff_ms,
         peak_weekdays: 0..=6,
         peak_hours: &[],
-        before,
+        before: Some(before),
         off_peak: after,
         peak: after,
         successor: None,
@@ -360,7 +363,7 @@ const fn date_step(
 
 // NOTE(2026-11-21, #2226): https://ai.google.dev/gemini-api/docs/pricing lists Gemini 4 Argon and Carbon at $2.00 input, $10.00 output and $0.10 cached through November 30, 2026, and $4.00, $20.00 and $0.20 from December 1, 2026. Google names the date but not the time, so the change starts at 00:00 UTC, which bills the higher rate no later than Google does. Implicit caching has no write charge, so writes keep the input rate as the GEMINI cache defaults do.
 const GEMINI_4_PRO_TIER: PricingSchedule = date_step(
-    1_796_083_200_000,
+    GEMINI_DECEMBER_2026_MS,
     ScheduledRates {
         input: 2.0e-6,
         output: 10.0e-6,
@@ -378,7 +381,7 @@ const GEMINI_4_PRO_TIER: PricingSchedule = date_step(
 // NOTE(2026-11-21, #2226): https://cloud.google.com/vertex-ai/generative-ai/pricing also places Gemini 3.7 Flash, which the Gemini API page does not list, on the same introductory rate and January 1, 2027 step as 3.8 Flash. LiteLLM's `gemini/gemini-3.7-flash` row carries the introductory rate, so 3.7 Flash shares this schedule.
 // NOTE(2026-11-21, #2226): https://ai.google.dev/gemini-api/docs/pricing lists Gemini 3.8 Flash and 3.6 Flash at $0.75 input, $3.75 output and $0.075 cached through December 31, 2026, and $1.50, $7.50 and $0.15 from January 1, 2027. The change starts at 00:00 UTC for the same reason as Gemini 4.
 const GEMINI_FLASH_2027: PricingSchedule = date_step(
-    1_798_761_600_000,
+    GEMINI_JANUARY_2027_MS,
     ScheduledRates {
         input: 0.75e-6,
         output: 3.75e-6,
@@ -393,6 +396,102 @@ const GEMINI_FLASH_2027: PricingSchedule = date_step(
     },
 );
 
+// NOTE(2026-11-21, #2226): https://ai.google.dev/gemini-api/docs/deprecations and the pricing page state that from December 1, 2026 every `gemini-2.5-pro` request routes to `gemini-3.8-flash` and is billed at Gemini 3.8 Flash rates. Until then the id keeps its own row, including its above-200K tier, and from then on it follows the 3.8 Flash schedule.
+const GEMINI_2_5_PRO: PricingSchedule = PricingSchedule {
+    cutoff_ms: GEMINI_DECEMBER_2026_MS,
+    peak_weekdays: 0..=6,
+    peak_hours: &[],
+    before: None,
+    off_peak: ScheduledRates {
+        input: 0.75e-6,
+        output: 3.75e-6,
+        cache_create: 0.75e-6,
+        cache_read: 0.075e-6,
+    },
+    peak: ScheduledRates {
+        input: 0.75e-6,
+        output: 3.75e-6,
+        cache_create: 0.75e-6,
+        cache_read: 0.075e-6,
+    },
+    successor: Some(Successor {
+        from_ms: GEMINI_JANUARY_2027_MS,
+        schedule: &GEMINI_FLASH_2027,
+    }),
+};
+
+// NOTE(2026-11-21, #2226): The same pages state that from December 1, 2026 every `gemini-2.5-flash` request routes to `gemini-3.5-flash-lite` and is billed at Gemini 3.5 Flash-Lite rates, listed as $0.30 input, $2.50 output and $0.03 cached. Until then the id keeps its own row.
+const GEMINI_2_5_FLASH: PricingSchedule = PricingSchedule {
+    cutoff_ms: GEMINI_DECEMBER_2026_MS,
+    peak_weekdays: 0..=6,
+    peak_hours: &[],
+    before: None,
+    off_peak: ScheduledRates {
+        input: 0.3e-6,
+        output: 2.5e-6,
+        cache_create: 0.3e-6,
+        cache_read: 0.03e-6,
+    },
+    peak: ScheduledRates {
+        input: 0.3e-6,
+        output: 2.5e-6,
+        cache_create: 0.3e-6,
+        cache_read: 0.03e-6,
+    },
+    successor: None,
+};
+
+// NOTE(2026-11-21, #2226): https://ai.google.dev/gemini-api/docs/pricing lists Gemini 3.8 Flash TTS at $0.50 text input and $9.00 audio output through December 31, 2026 and $1.00 and $18.00 from January 1, 2027. Speech generation lists no cache rate, so cache fields keep the input rate for writes and the Gemini 0.1x read default.
+const GEMINI_3_8_FLASH_TTS: PricingSchedule = date_step(
+    GEMINI_JANUARY_2027_MS,
+    ScheduledRates {
+        input: 0.5e-6,
+        output: 9.0e-6,
+        cache_create: 0.5e-6,
+        cache_read: 0.05e-6,
+    },
+    ScheduledRates {
+        input: 1.0e-6,
+        output: 18.0e-6,
+        cache_create: 1.0e-6,
+        cache_read: 0.1e-6,
+    },
+);
+
+// NOTE(2026-11-21, #2226): The same page lists Gemini 3.8 Flash-Lite TTS at $0.50 text input and $6.00 audio output through December 31, 2026 and $1.00 and $12.00 from January 1, 2027. Cache fields follow the Gemini 3.8 Flash TTS schedule.
+const GEMINI_3_8_FLASH_LITE_TTS: PricingSchedule = date_step(
+    GEMINI_JANUARY_2027_MS,
+    ScheduledRates {
+        input: 0.5e-6,
+        output: 6.0e-6,
+        cache_create: 0.5e-6,
+        cache_read: 0.05e-6,
+    },
+    ScheduledRates {
+        input: 1.0e-6,
+        output: 12.0e-6,
+        cache_create: 1.0e-6,
+        cache_read: 0.1e-6,
+    },
+);
+
+// NOTE(2026-11-21, #2226): The same page lists Gemini Robotics-ER 2 Preview and its streaming preview at $1.00 input, $5.00 output and $0.10 cached through December 31, 2026 and $2.00, $10.00 and $0.20 from January 1, 2027. The streaming preview lists no caching, so it shares the preview's rates.
+const GEMINI_ROBOTICS_ER_2: PricingSchedule = date_step(
+    GEMINI_JANUARY_2027_MS,
+    ScheduledRates {
+        input: 1.0e-6,
+        output: 5.0e-6,
+        cache_create: 1.0e-6,
+        cache_read: 0.1e-6,
+    },
+    ScheduledRates {
+        input: 2.0e-6,
+        output: 10.0e-6,
+        cache_create: 2.0e-6,
+        cache_read: 0.2e-6,
+    },
+);
+
 pub(super) static SCHEDULES: &[(&str, PricingSchedule)] = &[
     ("deepseek-flash", DEEPSEEK_FLASH),
     ("deepseek-v4-flash", DEEPSEEK_V4_FLASH),
@@ -404,4 +503,13 @@ pub(super) static SCHEDULES: &[(&str, PricingSchedule)] = &[
     ("gemini-3-8-flash", GEMINI_FLASH_2027),
     ("gemini-3-7-flash", GEMINI_FLASH_2027),
     ("gemini-3-6-flash", GEMINI_FLASH_2027),
+    ("gemini-2-5-pro", GEMINI_2_5_PRO),
+    ("gemini-2-5-flash", GEMINI_2_5_FLASH),
+    ("gemini-3-8-flash-tts", GEMINI_3_8_FLASH_TTS),
+    ("gemini-3-8-flash-lite-tts", GEMINI_3_8_FLASH_LITE_TTS),
+    ("gemini-robotics-er-2-preview", GEMINI_ROBOTICS_ER_2),
+    (
+        "gemini-robotics-er-2-streaming-preview",
+        GEMINI_ROBOTICS_ER_2,
+    ),
 ];

@@ -886,6 +886,36 @@ fn google_spellings_follow_the_announced_gemini_price_changes() {
         ("gemini-3.6-flash", "2027-01-01T00:00:00Z", 1.5, 7.5),
         ("gemini-3.7-flash", "2026-12-31T23:59:59Z", 0.75, 3.75),
         ("google/gemini-3.7-flash", "2027-01-01T00:00:00Z", 1.5, 7.5),
+        ("gemini-2.5-pro", "2026-11-30T23:59:59Z", 1.25, 10.0),
+        ("gemini-2.5-pro", "2026-12-02T00:00:00Z", 0.75, 3.75),
+        ("google/gemini-2.5-pro", "2027-01-02T00:00:00Z", 1.5, 7.5),
+        ("gemini-2.5-flash", "2026-12-02T00:00:00Z", 0.3, 2.5),
+        ("gemini-3.8-flash-tts", "2026-12-31T23:59:59Z", 0.5, 9.0),
+        ("gemini-3.8-flash-tts", "2027-01-01T00:00:00Z", 1.0, 18.0),
+        (
+            "gemini-3.8-flash-lite-tts",
+            "2027-01-01T00:00:00Z",
+            1.0,
+            12.0,
+        ),
+        (
+            "gemini-robotics-er-2-preview",
+            "2027-01-01T00:00:00Z",
+            2.0,
+            10.0,
+        ),
+        (
+            "gemini-robotics-er-2-streaming-preview",
+            "2026-12-31T23:59:59Z",
+            1.0,
+            5.0,
+        ),
+        (
+            "gemini-robotics-er-2-streaming-preview",
+            "2027-01-01T00:00:00Z",
+            2.0,
+            10.0,
+        ),
     ] {
         let rates = pricing.find_at(model, timestamp(instant)).unwrap();
         assert_eq!(
@@ -940,4 +970,21 @@ fn a_configured_alias_to_a_google_spelling_follows_the_gemini_schedule() {
         .unwrap();
 
     assert_eq!((rates.input * 1e6, rates.output * 1e6), (4.0, 20.0));
+}
+
+#[test]
+fn gemini_2_5_pro_keeps_its_long_context_tier_until_it_is_rebilled() {
+    crate::test_support::install_pricing_snapshots();
+    let pricing = PricingMap::load_embedded();
+    let tier = |instant| {
+        pricing
+            .find_at("gemini-2.5-pro", timestamp(instant))
+            .unwrap()
+            .long_context
+            .and_then(|context| context.rates.input)
+            .map(|rate| rate * 1e6)
+    };
+
+    assert_eq!(tier("2026-11-30T23:59:59Z"), Some(2.5));
+    assert_eq!(tier("2026-12-02T00:00:00Z"), Some(0.75));
 }

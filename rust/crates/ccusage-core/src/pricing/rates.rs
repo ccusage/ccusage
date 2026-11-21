@@ -146,7 +146,7 @@ pub(super) struct PricingSchedule {
     pub(super) cutoff_ms: i64,
     pub(super) peak_weekdays: std::ops::RangeInclusive<u32>,
     pub(super) peak_hours: &'static [std::ops::Range<i64>],
-    pub(super) before: ScheduledRates,
+    pub(super) before: Option<ScheduledRates>,
     pub(super) off_peak: ScheduledRates,
     pub(super) peak: ScheduledRates,
     pub(super) successor: Option<Successor>,
@@ -159,7 +159,7 @@ pub(super) struct Successor {
 }
 
 impl PricingSchedule {
-    fn rates_at(&self, timestamp: TimestampMs) -> ScheduledRates {
+    fn rates_at(&self, timestamp: TimestampMs) -> Option<ScheduledRates> {
         if let Some(successor) = &self.successor
             && timestamp.as_millis() >= successor.from_ms
         {
@@ -174,9 +174,9 @@ impl PricingSchedule {
         if self.peak_weekdays.contains(&weekday)
             && self.peak_hours.iter().any(|window| window.contains(&hour))
         {
-            self.peak
+            Some(self.peak)
         } else {
-            self.off_peak
+            Some(self.off_peak)
         }
     }
 }
@@ -200,7 +200,9 @@ impl OverrideFields {
 impl Pricing {
     pub(super) fn at(mut self, schedule: &PricingSchedule, timestamp: TimestampMs) -> Self {
         let explicit = (self.explicit_fields != 0).then_some(self);
-        let rates = schedule.rates_at(timestamp);
+        let Some(rates) = schedule.rates_at(timestamp) else {
+            return self;
+        };
         let mut long_context = self.long_context.unwrap_or(LongContext::empty_marginal());
         macro_rules! scheduled {
             ($field:ident, $rate:expr, $bit:expr) => {
