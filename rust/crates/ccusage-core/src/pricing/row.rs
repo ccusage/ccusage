@@ -18,6 +18,7 @@ pub(super) struct Row {
     pub(super) schedule: Option<&'static PricingSchedule>,
     pub(super) context_limit: Option<u64>,
     pub(super) exact_only: bool,
+    pub(super) whole_request_tiers: bool,
     pub(super) scope: Scope,
     pub(super) vendor_start: Option<NonZeroUsize>,
 }
@@ -31,6 +32,7 @@ impl Default for Row {
             schedule: None,
             context_limit: None,
             exact_only: false,
+            whole_request_tiers: false,
             scope: Scope::Hosted,
             vendor_start: None,
         }

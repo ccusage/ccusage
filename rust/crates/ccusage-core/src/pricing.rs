@@ -182,6 +182,7 @@ impl PricingMap {
                 pricing: pricing.into(),
                 context_limit,
                 source: Source::Curated,
+                whole_request_tiers: data::WHOLE_REQUEST_TIER_PROVIDERS.contains(&provider),
                 scope: Scope::Direct,
                 vendor_start: vendor_start(model, vendor_id(model, provider)),
                 schedule: schedule_for(vendor_id(model, provider)),

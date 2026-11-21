@@ -254,6 +254,27 @@ const XAI_LONG_CONTEXT_THRESHOLD: u64 = 199_999;
 pub(super) static WHOLE_REQUEST_LONG_CONTEXT_PROVIDERS: &[(&str, u64)] =
     &[("xai", XAI_LONG_CONTEXT_THRESHOLD)];
 
+pub(super) static WHOLE_REQUEST_TIER_PROVIDERS: &[&str] = &[
+    "anthropic",
+    "gemini",
+    "google",
+    "xai",
+    "openai",
+    "text-completion-openai",
+    "alibaba",
+    "dashscope",
+];
+
+pub(super) static WHOLE_REQUEST_TIER_MODEL_PREFIXES: &[&str] = &[
+    "claude-",
+    "anthropic-claude-",
+    "gemini-",
+    "grok-",
+    "gpt-",
+    "openai-gpt-",
+    "qwen",
+];
+
 pub(super) struct CuratedLongContext {
     pub(super) input: f64,
     pub(super) output: f64,

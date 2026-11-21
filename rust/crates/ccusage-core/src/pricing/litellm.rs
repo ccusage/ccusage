@@ -78,6 +78,8 @@ impl PricingMap {
             };
             row.source = Source::LiteLlm;
             row.scope = scope;
+            row.whole_request_tiers =
+                provider.is_some_and(|id| data::WHOLE_REQUEST_TIER_PROVIDERS.contains(&id));
             row.schedule = schedule;
             row.vendor_start = vendor_start;
             row.context_limit = pricing.max_input_tokens.or(row.context_limit);

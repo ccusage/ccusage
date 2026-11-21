@@ -7,7 +7,7 @@ use crate::fast::FxHashMap;
 
 use super::{
     LongContext, LongContextMode, LongContextRates, Pricing, PricingMap, Row, RowPricing, Scope,
-    Source, embedded::embedded_pricing_table, model_without_date_suffix, pricing_alias,
+    Source, data, embedded::embedded_pricing_table, model_without_date_suffix, pricing_alias,
     provider_cache_defaults, speed::PublishedSpeed,
 };
 
@@ -266,6 +266,7 @@ impl PricingMap {
                         provider_cache_defaults(None),
                     ),
                     exact_only,
+                    whole_request_tiers: data::WHOLE_REQUEST_TIER_PROVIDERS.contains(&provider_id),
                     context_limit,
                     key: Arc::default(),
                     source: Source::ModelsDev,
