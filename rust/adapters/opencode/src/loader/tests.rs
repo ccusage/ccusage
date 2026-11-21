@@ -451,6 +451,133 @@ fn specialized_diagnostics_distinguish_v2_usage_from_suppressed_rows() {
     );
 }
 
+fn fill_session_messages(path: &Path, rows: usize) {
+    let db = sqlite::open(path).unwrap();
+    db.execute("BEGIN").unwrap();
+    let mut statement = db
+        .prepare(
+            "INSERT INTO session_message (id, session_id, type, seq, time_created, data) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        )
+        .unwrap();
+    for index in 0..rows {
+        let created = 1_767_312_000_000_i64 + i64::try_from(index % 7).unwrap();
+        let (kind, data) = match index % 9 {
+            0 => ("assistant", "{broken".to_string()),
+            1 => (
+                "assistant",
+                r#"{"model":{"id":"gpt-test","providerID":"openai"},"tokens":{"input":3,"output":1}}"#
+                    .to_string(),
+            ),
+            2 => ("user", r#"{"text":"hi"}"#.to_string()),
+            3 => (
+                "compaction",
+                format!(
+                    r#"{{"status":"completed","model":{{"id":"gpt-test","providerID":"openai"}},"time":{{"created":{created}}},"tokens":{{"input":5,"output":2}}}}"#
+                ),
+            ),
+            _ => (
+                "assistant",
+                assistant_payload(u64::try_from(index).unwrap(), 1, 0.01)
+                    .replace("1767312000000", &created.to_string()),
+            ),
+        };
+        statement.reset().unwrap();
+        statement.bind((1, format!("m{index}").as_str())).unwrap();
+        statement
+            .bind((2, format!("s{}", index % 5).as_str()))
+            .unwrap();
+        statement.bind((3, kind)).unwrap();
+        statement.bind((4, i64::try_from(index).unwrap())).unwrap();
+        statement.bind((5, created)).unwrap();
+        statement.bind((6, data.as_str())).unwrap();
+        statement.next().unwrap();
+    }
+    drop(statement);
+    db.execute("COMMIT").unwrap();
+}
+
+#[test]
+fn session_message_rows_load_the_same_with_one_thread_or_many() {
+    let fixture = ccusage_test_support::Fixture::new();
+    let db = fixture.path("opencode.db");
+    create_db_session_message_table(&db, true);
+    fill_session_messages(&db, 700);
+    sqlite::open(&db)
+        .unwrap()
+        .execute("UPDATE session_message SET data = NULL WHERE id = 'm40'")
+        .unwrap();
+    let load = |single_thread| {
+        let shared = SharedArgs {
+            mode: CostMode::Display,
+            debug: true,
+            single_thread,
+            ..SharedArgs::default()
+        };
+        let diagnostics = Diagnostics::new("opencode");
+        let entries = load_directories(
+            &[fixture.root().to_path_buf()],
+            &shared,
+            AgentReportKind::Session,
+            &diagnostics,
+        )
+        .into_iter()
+        .map(|(entry, native)| {
+            (
+                entry.message_id,
+                entry.session_id.to_string(),
+                entry.timestamp.as_millis(),
+                entry.usage.input_tokens,
+                native,
+            )
+        })
+        .collect::<Vec<_>>();
+        (entries, diagnostics.warnings(&shared))
+    };
+
+    let (single_entries, single_warnings) = load(true);
+    let (multi_entries, multi_warnings) = load(false);
+
+    assert_eq!(single_entries.len(), 543);
+    assert_eq!(single_entries, multi_entries);
+    assert_eq!(
+        single_warnings[0],
+        "WARN  opencode: skipped 79 records in 1 input (invalid data)"
+    );
+    assert_eq!(single_warnings, multi_warnings);
+}
+
+#[test]
+fn reads_a_without_rowid_session_message_table() {
+    let fixture = ccusage_test_support::Fixture::new();
+    let db = fixture.path("opencode.db");
+    sqlite::open(&db)
+        .unwrap()
+        .execute(
+            "CREATE TABLE session_message (id TEXT PRIMARY KEY, session_id TEXT, type TEXT, \
+             seq INTEGER NOT NULL DEFAULT 0, time_created INTEGER, data TEXT) WITHOUT ROWID",
+        )
+        .unwrap();
+    insert_db_session_message(
+        &db,
+        "only",
+        "session",
+        "assistant",
+        1_767_312_000_000,
+        &assistant_payload(10, 1, 0.01),
+        true,
+    );
+    let shared = SharedArgs {
+        mode: CostMode::Display,
+        ..SharedArgs::default()
+    };
+
+    let entries = load_entries_from_directory(fixture.root(), &shared);
+
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].message_id.as_deref(), Some("only"));
+}
+
 fn create_db_message(path: &Path, id: &str, session_id: &str, data: &str) {
     let created = serde_json::from_str::<serde_json::Value>(data)
         .ok()
