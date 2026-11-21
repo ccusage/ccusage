@@ -16,9 +16,9 @@ description: Runs local changes on a Blacksmith testbox. Use for Linux builds, L
 
 ## Choosing where to run
 
-- `dev` job of `testbox.yaml`: Linux builds, `nix build .#ccusage-static` size
+- `testbox-dev.yaml`: Linux builds, `nix build .#ccusage-static` size
   checks, Linux-only tests.
-- `bench` job: CI-like timing and instruction counts. Generated fixtures are
+- `testbox-bench.yaml`: CI-like timing and instruction counts. Generated fixtures are
   under `$CCUSAGE_FIXTURES` on the box; start the remote command string with
   `source ~/ccusage-fixtures.env &&`, never source it locally.
 - The owner's MacBook: timing that should reflect the owner's machine.
@@ -28,16 +28,17 @@ description: Runs local changes on a Blacksmith testbox. Use for Linux builds, L
 ## Session
 
 - Run every `blacksmith` command from the repository root.
-- Start with `blacksmith testbox warmup testbox.yaml --job <dev|bench>`; wait
+- Start with `blacksmith testbox warmup testbox-<dev|bench>.yaml`; one workflow
+  per box, because every job in a dispatched workflow starts a runner. Wait
   with `blacksmith testbox status --id <id> --wait`, never a sleep loop.
 - Run commands as `blacksmith testbox run --id <id> 'nix develop --command <cmd>'`,
   single-quoted so `$CCUSAGE_FIXTURES` and other variables expand on the box,
   not locally; fetch results with `blacksmith testbox download`.
-- Keep `--idle-timeout` at or below 60 minutes. Both jobs stop at their
+- Keep `--idle-timeout` at or below 60 minutes. Both workflows stop at their
   240-minute cap, warmup included, so for longer work stop the box and warm up a
   new one.
 - Always `blacksmith testbox stop --id <id>` when done, including after failures.
-- Warmup works only once `testbox.yaml` is on the default branch; `--ref`
+- Warmup works only once the workflow is on the default branch; `--ref`
   selects the checkout the setup steps run on.
 
 ## Data

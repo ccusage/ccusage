@@ -1,0 +1,38 @@
+name: Testbox dev
+
+on:
+  workflow_dispatch:
+    inputs:
+      testbox_id:
+        description: Testbox session ID
+        type: string
+        required: true
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  dev:
+    runs-on: blacksmith-32vcpu-ubuntu-2404
+    timeout-minutes: 240
+    permissions:
+      contents: read
+    steps:
+      - uses: useblacksmith/begin-testbox@d5b883fecd6a7581c3f7467543b819abf8b80bbf # v2
+        with:
+          testbox_id: ${{ inputs.testbox_id }}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/setup-nix-cache
+        with:
+          disk-job: test
+          save: 'false'
+      - name: Warm the dev shell
+        run: nix develop --command cargo fetch --manifest-path rust/Cargo.toml --locked
+      - uses: useblacksmith/run-testbox@9b976c32aa3bcbffb348889673585a5deee1b2f3 # v2
+        if: always()
