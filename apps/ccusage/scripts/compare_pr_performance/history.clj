@@ -18,7 +18,7 @@
    :runs {:coerce :long :default 5 :ref "N" :desc "Interleaved measured rounds; at least 3"}
    :warmup {:coerce :long :default 1 :ref "N"}
    :threshold {:coerce :double :default 0.1 :ref "RATIO" :desc "CPU-time and RSS change that counts as a regression"}
-   :wall-threshold {:coerce :double :default 0.08 :ref "RATIO" :desc "Wall-time change that counts as a regression"}
+   :wall-threshold {:coerce :double :default 0.08 :ref "RATIO" :desc "Wall-time change that counts as a regression; 0.08 was measured at 11 rounds on the Linux CI runner, so raise it with fewer rounds or a busier machine"}
    :commands {:ref "LIST" :desc "Comma-separated report commands"}
    :cache-dir {:ref "DIR" :desc "Built binaries, shared cargo target, and generated fixtures (default: rust/target/bench-history)"}
    :output {:ref "FILE"}
