@@ -249,8 +249,12 @@ impl PricingMap {
             {
                 let model = unlabeled_model(&slot.key);
                 let catalog_row = base.or_else(|| {
-                    with_names(model, |name| self.rows.entries.get(name))
-                        .or_else(|| secondary_base(secondary, model))
+                    with_names(model, |name| {
+                        self.rows
+                            .authoritative(Name::new(name, &OnceLock::new()), true, Some)
+                            .map(|found| found.row)
+                    })
+                    .or_else(|| secondary_base(secondary, model))
                 });
                 let published_tier = inherited_tier.or_else(|| match slot.base {
                     Some(Base::Override(parent)) => {

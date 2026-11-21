@@ -579,6 +579,35 @@ fn an_override_tier_uses_its_catalogue_vendors_billing_mode_and_threshold() {
 }
 
 #[test]
+fn override_tier_metadata_follows_normalized_model_ids_and_uses_the_default_cutoff() {
+    crate::test_support::install_pricing_snapshots();
+    let mut pricing = PricingMap::default();
+    pricing.load_json(
+        r#"{"custom-gemini-v1": {"litellm_provider": "gemini",
+            "input_cost_per_token": 1e-6, "output_cost_per_token": 2e-6}}"#,
+    );
+    let override_value = ccusage_cli::PricingOverride {
+        input_cost_per_token: Some(1e-6),
+        output_cost_per_token: Some(2e-6),
+        input_cost_per_token_above_200k_tokens: Some(3e-6),
+        output_cost_per_token_above_200k_tokens: Some(5e-6),
+        ..Default::default()
+    };
+
+    for model in ["[agent] custom.gemini.v1", "xai/custom-untiered"] {
+        let key = model.to_owned();
+        let pricing = pricing.with_user_overrides([(&key, &override_value)]);
+        for (input_tokens, expected) in [(200_000, 0.202), (300_000, 0.905)] {
+            let cost = request_cost(&pricing, model, input_tokens, None, None);
+            assert!(
+                (cost - expected).abs() < 1e-9,
+                "{model}, {input_tokens} input tokens: {cost} != {expected}"
+            );
+        }
+    }
+}
+
+#[test]
 fn fast_opus_uses_whole_request_override_rates_after_the_1m_window_left_beta() {
     crate::test_support::install_pricing_snapshots();
     let model = "claude-opus-4-6".to_owned();
