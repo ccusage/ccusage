@@ -270,17 +270,23 @@ type OpenConnection<'a> =
     dyn Fn() -> std::result::Result<sqlite::Connection, UnitError> + Sync + 'a;
 type Lane = (usize, Mutex<sqlite::Connection>);
 
-// NOTE(2026-11-21): The metadata scan and each worker read through their own connection and snapshot. A read transaction holds each snapshot, and equal data_version reads on a probe connection before and after taking them prove no other connection committed in between, so all of them match. The same file identity before and after proves they all opened one file. Otherwise the ordered scan reads everything.
+// NOTE(2026-11-21): The metadata scan and each worker read through their own connection and snapshot. A read transaction holds each snapshot, and equal data_version reads on a probe connection before and after taking them prove no other connection committed in between, so all of them match. The same file identity right before and after every open shows they opened one file, short of the path changing twice within one open call, which needs the opened descriptor to rule out. Otherwise the ordered scan reads everything.
 fn pin_snapshots(
     path: &Path,
     workers: usize,
     open: &OpenConnection<'_>,
 ) -> Option<(sqlite::Connection, Vec<Lane>)> {
     let identity = file_identity(path)?;
-    let probe = open().ok()?;
+    let same_file = || file_identity(path).is_some_and(|current| current == identity);
+    let open_same = || {
+        same_file().then_some(())?;
+        let connection = open().ok()?;
+        same_file().then_some(connection)
+    };
+    let probe = open_same()?;
     let version = data_version(&probe)?;
     let pinned = || {
-        let connection = open().ok()?;
+        let connection = open_same()?;
         // NOTE(2026-11-21): Each overflow page is read once. A default-sized cache per connection would only hold memory.
         step(&connection, "PRAGMA cache_size = -64")?;
         step(&connection, "BEGIN")?;
@@ -292,7 +298,7 @@ fn pin_snapshots(
     for lane in 0..workers {
         lanes.push((lane, Mutex::new(pinned()?)));
     }
-    (data_version(&probe)? == version && file_identity(path)? == identity).then_some((scan, lanes))
+    (data_version(&probe)? == version).then_some((scan, lanes))
 }
 
 #[cfg(unix)]
