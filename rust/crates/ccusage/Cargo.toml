@@ -43,7 +43,7 @@ zstd.workspace = true
 mimalloc.workspace = true
 
 [target.'cfg(all(target_os = "linux", target_env = "musl"))'.dependencies]
-# Transparent huge pages inflate peak RSS in short-lived reports (https://github.com/ccusage/ccusage/issues/2480).
+# NOTE(2026-11-21): Huge-page hints inflate peak RSS. See https://github.com/ccusage/ccusage/issues/2480.
 mimalloc = { workspace = true, features = ["no_thp"] }
 
 [lints]
