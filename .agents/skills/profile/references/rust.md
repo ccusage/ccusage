@@ -42,8 +42,10 @@ affect rendering — before believing a speedup.
 report command over the generated realistic fixture in interleaved rounds, and
 judges each ref against the previous one the same way the CI comment judges a
 PR against its merge base. Run it on a `testbox-bench.yaml` box, or
-`testbox-bench-macos.yaml` for macOS timing. Add `--real`
-only for the final local real-log confirmation. Judge by the CPU-time and
+`testbox-bench-macos.yaml` for macOS timing. For the final local real-log
+confirmation, do not use `--real`: it also builds refs and runs the synthetic
+section. Run the two already-built binaries directly over APFS clones with
+`hyperfine` and report ratios only. Judge by the CPU-time and
 peak-RSS ratios, not wall time.
 
 When a regression slips past the comparison, fix the fixture generator

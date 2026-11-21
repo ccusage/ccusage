@@ -27,7 +27,7 @@ CI rather than a local build:
 gh workflow run binary-size.yaml --repo ccusage/ccusage -f refs='main <branch>'
 ```
 
-It builds every ref and target in parallel and reports bytes, sections and
+It builds pushed refs only (push the branch first) for every target in parallel and reports bytes, sections and
 symbol growth. A local `cargo build --release` is only for a
 quick check of one change.
 

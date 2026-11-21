@@ -13,7 +13,7 @@ output parity, and the CI measurements.
 In this order:
 
 1. CI: open a PR to get the `ccusage perf` comment (it runs only on pull
-   requests), and dispatch `binary-size.yaml` or `profile-instructions.yaml`
+   requests from this repository, not forks), and dispatch `binary-size.yaml` or `profile-instructions.yaml`
    with `gh workflow run ... -f refs="<base> <branch>"` for sizes and
    instruction counts on any pushed branch.
 2. A Blacksmith testbox (`blacksmith-testbox` skill): `testbox-bench.yaml`,
