@@ -88,6 +88,12 @@ impl TableSchema {
         columns.iter().all(|column| self.columns.contains(*column))
     }
 
+    pub(super) fn declares(&self, column: &str) -> bool {
+        self.columns
+            .iter()
+            .any(|declared| declared.eq_ignore_ascii_case(column))
+    }
+
     pub(super) fn column_or(&self, column: &'static str, fallback: &'static str) -> &'static str {
         if self.columns.contains(column) {
             column

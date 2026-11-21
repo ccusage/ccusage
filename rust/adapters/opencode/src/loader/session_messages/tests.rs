@@ -266,6 +266,21 @@ fn a_without_rowid_table_applies_no_rows() {
     assert_eq!(load(&path, None).0, Some((700, 544)));
 }
 
+#[test]
+fn a_declared_rowid_column_leaves_the_rows_to_the_ordered_scan() {
+    let fixture = database("WAL", "");
+    let path = fixture.path("opencode.db");
+    sqlite::open(&path)
+        .unwrap()
+        .execute("ALTER TABLE session_message ADD COLUMN RowId INTEGER NOT NULL DEFAULT 1")
+        .unwrap();
+
+    let parallel = load(&path, Some(&|| open_read_only(&path)));
+
+    assert_eq!(parallel, (None, Vec::new(), Vec::new()));
+    assert_eq!(load(&path, None).0, Some((700, 544)));
+}
+
 #[cfg(unix)]
 #[test]
 fn a_path_replaced_while_workers_take_snapshots_leaves_the_rows_to_the_ordered_scan() {

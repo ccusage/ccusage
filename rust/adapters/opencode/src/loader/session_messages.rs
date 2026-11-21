@@ -184,6 +184,10 @@ fn load_rows_in_parallel(
     workers: usize,
     open: &OpenConnection<'_>,
 ) -> Option<(u32, u32)> {
+    // NOTE(2026-11-21): SQLite resolves `rowid` to a declared column of that name. Such a column need not identify rows, so only the ordered scan reads those tables.
+    if schema.declares("rowid") {
+        return None;
+    }
     let (scan, lanes) = pin_snapshots(context.db_path, workers, open)?;
     let mut statement = prepare_session_message_query(&scan, schema, context, "rowid").ok()?;
     let diagnostics = context.diagnostics.for_table(schema.table.name());
