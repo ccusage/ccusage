@@ -40,6 +40,7 @@ impl<'a> RowMatch<'a> {
 pub(super) struct PricingRows {
     pub(super) entries: Entries,
     pub(super) indexes: OnceLock<RowIndexes>,
+    pub(super) folded_indexes: OnceLock<RowIndexes>,
     pub(super) exact_only_by_identity: OnceLock<FxHashMap<Box<str>, Option<usize>>>,
     pub(super) normalized_keys: OnceLock<Box<[Option<Box<str>>]>>,
 }
@@ -51,6 +52,38 @@ pub(super) struct RowIndexes {
     by_identity: IdentityIndex,
     by_vendor_id: IdentityIndex,
     bare_hosted: IdentityIndex,
+}
+
+impl RowIndexes {
+    fn insert(&mut self, found: RowMatch<'_>, identity: &str) {
+        let row = found.row;
+        let key = found.key;
+        let index = if row.is_bare_hosted(key) {
+            &mut self.bare_hosted
+        } else {
+            &mut self.by_identity
+        };
+        index.entry(identity.into()).or_default().push(found.id);
+        let vendor_id = if row.scope == Scope::Direct && row.is_free() {
+            Some(last_segment(key))
+        } else {
+            row.vendor_id()
+        };
+        if let Some(id) = vendor_id.filter(|id| *id != key) {
+            self.by_vendor_id
+                .entry(identity[identity.len() - id.len()..].into())
+                .or_default()
+                .push(found.id);
+        }
+    }
+}
+
+fn fold_case(identity: &str) -> Cow<'_, str> {
+    if identity.bytes().any(|byte| byte.is_ascii_uppercase()) {
+        Cow::Owned(identity.to_ascii_lowercase())
+    } else {
+        Cow::Borrowed(identity)
+    }
 }
 
 impl PricingRows {
@@ -86,42 +119,57 @@ impl PricingRows {
             .map(|(found, key)| (found, key.as_deref().unwrap_or(found.key)))
     }
 
-    fn indexed_row(&self, keys: &[usize], lookup: Lookup) -> Option<RowMatch<'_>> {
-        keys.iter()
+    fn indexed_rows<'a, const FOLD: bool>(
+        &'a self,
+        identity: &str,
+        select: impl Fn(&'a RowIndexes) -> &'a IdentityIndex,
+    ) -> impl Iterator<Item = RowMatch<'a>> {
+        let keys = select(self.indexes()).get(identity);
+        let folded = if FOLD {
+            select(self.folded_indexes()).get(identity)
+        } else {
+            None
+        };
+        keys.into_iter()
+            .chain(folded)
+            .flatten()
             .filter_map(|id| self.at(*id))
-            .filter(|found| lookup.includes(found.row))
-            .min_by_key(|found| found.key)
     }
 
-    pub(super) fn authoritative<'a>(
+    pub(super) fn authoritative<'a, const FOLD: bool>(
         &'a self,
         name: Name<'_>,
         hosted: bool,
         visible: impl Fn(RowMatch<'a>) -> Option<RowMatch<'a>>,
     ) -> Option<RowMatch<'a>> {
-        let literal = self.literal(name.raw(), Lookup::Pricing);
+        let literal = if FOLD {
+            None
+        } else {
+            self.literal(name.raw(), Lookup::Pricing)
+        };
         if let Some(found) = literal
             && !found.row.is_bare_hosted(found.key)
             && let Some(found) = visible(found)
         {
             return Some(found);
         }
-        let identity = name.identity();
-        let indexes = self.indexes();
-        let matches = |index: &'a IdentityIndex| {
-            index.get(identity).into_iter().flatten().filter_map(|key| {
-                let raw = self.at(*key)?;
-                Some((raw.key, visible(raw)?))
-            })
+        let identity = if FOLD {
+            fold_case(name.identity())
+        } else {
+            Cow::Borrowed(name.identity())
         };
-        let by_key = |index: &'a IdentityIndex| {
-            matches(index)
-                .min_by_key(|(key, _)| *key)
+        let matches = |select: fn(&RowIndexes) -> &IdentityIndex| {
+            self.indexed_rows::<FOLD>(&identity, select)
+                .filter_map(|raw| Some((raw.key, visible(raw)?)))
+        };
+        let by_key = |select| {
+            matches(select)
+                .min_by_key(|(key, _)| (FOLD && !key.eq_ignore_ascii_case(name.raw()), *key))
                 .map(|(_, found)| found)
         };
-        by_key(&indexes.by_identity)
+        by_key(|indexes| &indexes.by_identity)
             .or_else(|| {
-                let mut rows = matches(&indexes.by_vendor_id);
+                let mut rows = matches(|indexes| &indexes.by_vendor_id);
                 let (key, first) = rows.next()?;
                 let mut best = (key, first);
                 for (key, found) in rows {
@@ -139,18 +187,34 @@ impl PricingRows {
                     literal
                         .filter(|found| found.row.is_bare_hosted(found.key))
                         .and_then(&visible)
-                        .or_else(|| by_key(&indexes.bare_hosted))
+                        .or_else(|| by_key(|indexes| &indexes.bare_hosted))
                 } else {
                     None
                 }
             })
     }
 
-    pub(super) fn exact(&self, name: Name<'_>, lookup: Lookup) -> Option<RowMatch<'_>> {
-        self.literal(name.raw(), lookup).or_else(|| {
-            let indexes = self.indexes();
-            self.indexed_row(indexes.by_identity.get(name.identity())?, lookup)
-        })
+    pub(super) fn exact<const FOLD: bool>(
+        &self,
+        name: Name<'_>,
+        lookup: Lookup,
+    ) -> Option<RowMatch<'_>> {
+        if !FOLD && let Some(literal) = self.literal(name.raw(), lookup) {
+            return Some(literal);
+        }
+        let identity = if FOLD {
+            fold_case(name.identity())
+        } else {
+            Cow::Borrowed(name.identity())
+        };
+        self.indexed_rows::<FOLD>(&identity, |indexes| &indexes.by_identity)
+            .filter(|found| lookup.includes(found.row))
+            .min_by_key(|found| {
+                (
+                    FOLD && !found.key.eq_ignore_ascii_case(name.raw()),
+                    found.key,
+                )
+            })
     }
 
     fn indexes(&self) -> &RowIndexes {
@@ -158,25 +222,19 @@ impl PricingRows {
             let mut indexes = RowIndexes::default();
             // NOTE(2026-11-21): Normalizing swaps ASCII bytes one for one, so a vendor id, which is a suffix of its key, normalizes to the same suffix of the normalized key. Reusing the cached normalized keys keeps every key to a single normalization.
             for (found, identity) in self.normalized_matches() {
-                let row = found.row;
-                let key = found.key;
-                let index = if row.is_bare_hosted(key) {
-                    &mut indexes.bare_hosted
-                } else {
-                    &mut indexes.by_identity
-                };
-                index.entry(identity.into()).or_default().push(found.id);
-                let vendor_id = if row.scope == Scope::Direct && row.is_free() {
-                    Some(last_segment(key))
-                } else {
-                    row.vendor_id()
-                };
-                if let Some(id) = vendor_id.filter(|id| *id != key) {
-                    indexes
-                        .by_vendor_id
-                        .entry(identity[identity.len() - id.len()..].into())
-                        .or_default()
-                        .push(found.id);
+                indexes.insert(found, identity);
+            }
+            indexes
+        })
+    }
+
+    fn folded_indexes(&self) -> &RowIndexes {
+        self.folded_indexes.get_or_init(|| {
+            let mut indexes = RowIndexes::default();
+            // Lowercase identities are already present in the case-sensitive indexes.
+            for (found, identity) in self.normalized_matches() {
+                if let Cow::Owned(identity) = fold_case(identity) {
+                    indexes.insert(found, &identity);
                 }
             }
             indexes

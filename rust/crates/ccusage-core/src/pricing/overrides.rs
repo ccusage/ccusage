@@ -188,7 +188,7 @@ impl PricingMap {
                 return Some(Base::Override(dependency));
             }
             self.rows
-                .authoritative(Name::new(name, &OnceLock::new()), false, Some)
+                .authoritative::<false>(Name::new(name, &OnceLock::new()), false, Some)
                 .map(|found| Base::Authority(Box::new(found.row.clone())))
         })
     }
@@ -228,7 +228,7 @@ impl PricingMap {
                 None => {
                     let base = secondary.and_then(|rows| {
                         with_names(&slot.key, |name| {
-                            rows.exact(Name::new(name, &OnceLock::new()), Lookup::Pricing)
+                            rows.exact::<false>(Name::new(name, &OnceLock::new()), Lookup::Pricing)
                         })
                     });
                     match base {
