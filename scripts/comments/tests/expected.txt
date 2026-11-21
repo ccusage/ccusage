@@ -1,14 +1,14 @@
 .github/workflows/workflow.yaml:8: note-format: # A shell comment.
-.github/workflows/workflow.yaml:16: note-format: # ordinary trailing comment
-.github/workflows/workflow.yaml:16: trailing-comment: # ordinary trailing comment
-.github/workflows/workflow.yaml:17: note-format: # v1.2.3
-.github/workflows/workflow.yaml:17: trailing-comment: # v1.2.3
+.github/workflows/workflow.yaml:17: note-format: # ordinary trailing comment
+.github/workflows/workflow.yaml:17: trailing-comment: # ordinary trailing comment
 .github/workflows/workflow.yaml:18: note-format: # v1.2.3
 .github/workflows/workflow.yaml:18: trailing-comment: # v1.2.3
 .github/workflows/workflow.yaml:19: note-format: # v1.2.3
 .github/workflows/workflow.yaml:19: trailing-comment: # v1.2.3
-.github/workflows/workflow.yaml:21: note-format: # v1.2.3 update metadata
-.github/workflows/workflow.yaml:21: trailing-comment: # v1.2.3 update metadata
+.github/workflows/workflow.yaml:20: note-format: # v1.2.3
+.github/workflows/workflow.yaml:20: trailing-comment: # v1.2.3
+.github/workflows/workflow.yaml:22: note-format: # v1.2.3 update metadata
+.github/workflows/workflow.yaml:22: trailing-comment: # v1.2.3 update metadata
 config.jsonc:6: note-format: // XXX
 config.jsonc:6: trailing-comment: // XXX
 config.jsonc:6: work-marker: // XXX

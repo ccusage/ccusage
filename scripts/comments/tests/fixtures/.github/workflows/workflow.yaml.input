@@ -13,6 +13,7 @@ jobs:
       - uses: actions/checkout@0123456789abcdef0123456789abcdef01234567 # v1.2.3
       - uses: 'owner/repo/sub/action@0123456789abcdef0123456789abcdef01234567' # 1.2.3
       - uses: owner/repo@0123456789abcdef0123456789abcdef01234567 # v3.30
+      - uses: owner/repo@0123456789abcdef0123456789abcdef01234567 # v2
       - uses: actions/checkout@0123456789abcdef0123456789abcdef01234567 # ordinary trailing comment
       - uses: actions/checkout@main # v1.2.3
       - uses: actions/checkout@0123456 # v1.2.3
