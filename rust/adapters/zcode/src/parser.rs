@@ -9,7 +9,7 @@ use ccusage_adapter_common::billing::price_entry_for_provider;
 use jiff::tz::TimeZone as JiffTimeZone;
 
 use crate::{
-    LoadedEntry, TimestampMs, TokenUsageRaw, apply_total_token_fallback,
+    LoadedEntry, TimestampMs, TokenUsageRaw,
     cli::{CostMode, PricingOverride},
     date_at, total_usage_tokens,
 };
@@ -57,9 +57,9 @@ pub(super) fn row_to_entry(
         speed: None,
         cache_creation: None,
     };
-    let (usage, extra_total_tokens) =
-        apply_total_token_fallback(usage, 0, row.computed_total_tokens);
-    if total_usage_tokens(usage) == 0 && extra_total_tokens == 0 {
+    let additional =
+        ccusage_core::AdditionalTokens::from_total(usage, 0, row.computed_total_tokens);
+    if total_usage_tokens(usage) == 0 && additional.residual == 0 {
         return Ok(None);
     }
     let (Some(id), Some(session_id), Some(raw_model)) = (
@@ -90,14 +90,10 @@ pub(super) fn row_to_entry(
                 .input_tokens
                 .saturating_add(usage.cache_creation_input_tokens),
             cache_creation_input_tokens: 0,
-            output_tokens: usage.output_tokens.saturating_add(extra_total_tokens),
             ..usage
         }
     } else {
-        TokenUsageRaw {
-            output_tokens: usage.output_tokens.saturating_add(extra_total_tokens),
-            ..usage
-        }
+        usage
     };
     let candidates: Vec<_> = candidates
         .iter()
@@ -114,7 +110,7 @@ pub(super) fn row_to_entry(
         granularity: UsageGranularity::Request,
         usage: cost_usage,
         reasoning_tokens: 0,
-        residual_tokens: 0,
+        residual_tokens: additional.residual,
         reported_model: Some(&raw_model),
         candidates: &candidates,
         stored_cost: None,
@@ -123,10 +119,10 @@ pub(super) fn row_to_entry(
     let priced = price_entry_for_provider(entry_pricing, row.provider_id.as_deref(), pricing);
     let cost = priced.cost;
     let estimated_pricing = priced.estimated;
-    let missing_pricing_model = (mode != CostMode::Display
-        && priced.matched.is_none()
-        && total_usage_tokens(usage).saturating_add(extra_total_tokens) > 0)
-        .then(|| ccusage_core::model_aliases::resolve_model_name(&raw_model).into_owned());
+    let missing_pricing_model =
+        (mode != CostMode::Display && priced.matched.is_none() && total_usage_tokens(usage) > 0)
+            .then(|| ccusage_core::model_aliases::resolve_model_name(&raw_model).into_owned());
+    let (usage, extra_total_tokens) = additional.for_report(usage);
 
     Ok(Some((
         id.clone(),

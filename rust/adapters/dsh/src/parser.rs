@@ -14,8 +14,8 @@ use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
 
 use crate::{
-    Diagnostics, LoadedEntry, Skip, SkipKind, TimestampMs, TokenUsageRaw,
-    apply_total_token_fallback, date_at, fast::LinePrefilter,
+    Diagnostics, LoadedEntry, Skip, SkipKind, TimestampMs, TokenUsageRaw, date_at,
+    fast::LinePrefilter,
 };
 
 use super::paths::is_compressed;
@@ -152,7 +152,7 @@ pub(super) struct DshUsageEntry {
     provider: Option<String>,
     model: String,
     usage: TokenUsageRaw,
-    extra_total_tokens: u64,
+    residual_tokens: u64,
 }
 
 pub(super) fn read_session_file(
@@ -323,19 +323,17 @@ impl SessionFold {
         let Some((usage, provider, model)) = usage else {
             return;
         };
-        let (usage, extra_total_tokens) = apply_total_token_fallback(
-            TokenUsageRaw {
-                input_tokens: usage.input_tokens,
-                output_tokens: usage.output_tokens,
-                cache_creation_input_tokens: usage.cache_write_tokens,
-                cache_read_input_tokens: usage.cache_read_tokens,
-                speed: None,
-                cache_creation: None,
-            },
-            0,
-            usage.total_tokens,
-        );
-        if crate::total_usage_tokens(usage).saturating_add(extra_total_tokens) == 0 {
+        let raw_usage = TokenUsageRaw {
+            input_tokens: usage.input_tokens,
+            output_tokens: usage.output_tokens,
+            cache_creation_input_tokens: usage.cache_write_tokens,
+            cache_read_input_tokens: usage.cache_read_tokens,
+            speed: None,
+            cache_creation: None,
+        };
+        let residual_tokens =
+            ccusage_core::AdditionalTokens::from_total(raw_usage, 0, usage.total_tokens).residual;
+        if crate::total_usage_tokens(raw_usage).saturating_add(residual_tokens) == 0 {
             return;
         }
         let Some(timestamp) = event
@@ -354,8 +352,8 @@ impl SessionFold {
             seq: event.seq,
             provider,
             model: model.unwrap_or_else(|| UNKNOWN_MODEL.to_string()),
-            usage,
-            extra_total_tokens,
+            usage: raw_usage,
+            residual_tokens,
         });
     }
 
@@ -441,6 +439,7 @@ fn session_id_from_path(path: &Path) -> String {
 }
 
 pub(super) fn dsh_entry_key(entry: &DshUsageEntry) -> String {
+    let (usage, _) = entry.reported_usage();
     match entry.seq {
         Some(seq) => format!("{}:{seq}", entry.session_id),
         None => format!(
@@ -448,11 +447,21 @@ pub(super) fn dsh_entry_key(entry: &DshUsageEntry) -> String {
             entry.session_id,
             entry.timestamp.as_millis(),
             entry.model,
-            entry.usage.input_tokens,
-            entry.usage.output_tokens,
-            entry.usage.cache_creation_input_tokens,
-            entry.usage.cache_read_input_tokens,
+            usage.input_tokens,
+            usage.output_tokens,
+            usage.cache_creation_input_tokens,
+            usage.cache_read_input_tokens,
         ),
+    }
+}
+
+impl DshUsageEntry {
+    fn reported_usage(&self) -> (TokenUsageRaw, u64) {
+        ccusage_core::AdditionalTokens {
+            reasoning: 0,
+            residual: self.residual_tokens,
+        }
+        .for_report(self.usage)
     }
 }
 
@@ -477,7 +486,7 @@ pub(super) fn dsh_entry_to_loaded(
         granularity: UsageGranularity::Request,
         usage: entry.usage,
         reasoning_tokens: 0,
-        residual_tokens: 0,
+        residual_tokens: entry.residual_tokens,
         reported_model: Some(&entry.model),
         candidates: &candidates,
         stored_cost: None,
@@ -489,6 +498,7 @@ pub(super) fn dsh_entry_to_loaded(
     let missing_pricing_model = priced
         .missing_pricing
         .then(|| ccusage_core::model_aliases::resolve_model_name(&entry.model).into_owned());
+    let (usage, extra_total_tokens) = entry.reported_usage();
     LoadedEntry {
         date: date_at(entry.timestamp, tz),
         timestamp: entry.timestamp,
@@ -496,14 +506,14 @@ pub(super) fn dsh_entry_to_loaded(
         session_id: Arc::from(entry.session_id),
         project_path: entry.cwd.unwrap_or_else(|| Arc::from("DeepSeek Harness")),
         cost,
-        extra_total_tokens: entry.extra_total_tokens,
+        extra_total_tokens,
         credits: None,
         message_count: None,
         model: Some(entry.model),
         usage_limit_reset_time: None,
         missing_pricing_model,
         estimated_pricing,
-        usage: entry.usage,
+        usage,
         message_id: None,
         version: None,
         recorded_cost: None,
@@ -576,7 +586,7 @@ mod tests {
         assert_eq!(entries[0].usage.output_tokens, 300);
         assert_eq!(entries[0].usage.cache_read_input_tokens, 8000);
         assert_eq!(entries[0].usage.cache_creation_input_tokens, 0);
-        assert_eq!(entries[0].extra_total_tokens, 0);
+        assert_eq!(entries[0].residual_tokens, 0);
         assert_eq!(entries[1].provider.as_deref(), Some("openrouter"));
         assert_eq!(entries[1].model, "anthropic/claude-sonnet-4.5");
         assert_eq!(entries[1].usage.cache_creation_input_tokens, 20);
@@ -737,7 +747,7 @@ mod tests {
         assert_eq!(entries[0].session_id, "fallback");
         assert_eq!(entries[0].model, UNKNOWN_MODEL);
         assert_eq!(entries[0].timestamp.as_millis(), 1_700_000_000_000);
-        assert_eq!(entries[0].usage.output_tokens, 7);
+        assert_eq!(entries[0].reported_usage().0.output_tokens, 7);
     }
 
     #[test]
@@ -780,7 +790,7 @@ mod tests {
                     speed: None,
                     cache_creation: None,
                 },
-                extra_total_tokens: 0,
+                residual_tokens: 0,
             };
             let loaded = dsh_entry_to_loaded(entry, &JiffTimeZone::UTC, PriceTable::Auto(&pricing));
             assert!(loaded.cost > 0.0, "{model} should be priced");
@@ -811,7 +821,7 @@ mod tests {
                             cache_read_input_tokens: 1_000_000,
                             ..Default::default()
                         },
-                        extra_total_tokens: 0,
+                        residual_tokens: 0,
                     };
                     for mode in [PriceTable::Auto(&pricing), PriceTable::Calculate(&pricing)] {
                         let loaded = dsh_entry_to_loaded(entry.clone(), &timezone, mode);
@@ -847,7 +857,7 @@ mod tests {
                     speed: None,
                     cache_creation: None,
                 },
-                extra_total_tokens: 0,
+                residual_tokens: 0,
             };
             dsh_entry_to_loaded(entry, &JiffTimeZone::UTC, PriceTable::Auto(&pricing)).cost
         };
@@ -928,7 +938,7 @@ mod pricing_identity_tests {
                     output_tokens: 1_000,
                     ..Default::default()
                 },
-                extra_total_tokens: 0,
+                residual_tokens: 0,
             };
             let loaded = dsh_entry_to_loaded(entry, &JiffTimeZone::UTC, PriceTable::Calculate(map));
             assert!(

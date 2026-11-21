@@ -48,7 +48,7 @@ fn calculate_cost_for_usage(
 use super::*;
 
 #[test]
-fn candidate_entry_pricing_adds_only_the_supplied_extra_tokens() {
+fn candidate_entry_pricing_bills_reasoning_and_ignores_residual_tokens() {
     crate::test_support::install_pricing_snapshots();
     let mut map = PricingMap::default();
     map.load_json(
@@ -74,7 +74,7 @@ fn candidate_entry_pricing_adds_only_the_supplied_extra_tokens() {
         },
         PriceTable::Calculate(&map),
     );
-    assert_eq!(priced.cost, 40.0);
+    assert_eq!(priced.cost, 25.0);
     assert_eq!(priced.matched, Some("priced"));
     assert!(!priced.missing_pricing);
 }
@@ -123,7 +123,7 @@ fn candidate_entry_missing_pricing_requires_billable_usage_and_a_lookup() {
         (0, 0, 0, CostMode::Calculate, None, false),
         (1, 0, 0, CostMode::Calculate, None, true),
         (0, 1, 0, CostMode::Calculate, None, true),
-        (0, 0, 1, CostMode::Calculate, None, true),
+        (0, 0, 1, CostMode::Calculate, None, false),
         (1, 0, 0, CostMode::Display, None, false),
         (1, 0, 0, CostMode::Auto, Some(0.0), false),
     ] {

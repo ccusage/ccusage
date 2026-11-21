@@ -13,8 +13,8 @@ use ccusage_adapter_common::{jsonl, units::UnitError};
 
 use super::paths;
 use crate::{
-    Diagnostics, LoadedEntry, TimestampMs, TokenUsageRaw, apply_total_token_fallback, date_at,
-    fast::LinePrefilter, parse_ts_timestamp,
+    Diagnostics, LoadedEntry, TimestampMs, TokenUsageRaw, date_at, fast::LinePrefilter,
+    parse_ts_timestamp,
 };
 
 const DEFAULT_QWEN_MODEL: &str = "unknown";
@@ -40,6 +40,8 @@ struct QwenUsageMetadata {
     prompt_token_count: u64,
     #[serde(default, deserialize_with = "present_u64")]
     candidates_token_count: Option<u64>,
+    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
+    thoughts_token_count: u64,
     #[serde(default, deserialize_with = "jsonl::lenient_u64")]
     cached_content_token_count: u64,
     #[serde(default, deserialize_with = "jsonl::lenient_u64")]
@@ -123,7 +125,7 @@ fn parse_line(
     } else {
         candidates_tokens
     };
-    let display_usage = TokenUsageRaw {
+    let raw_usage = TokenUsageRaw {
         input_tokens: prompt_tokens - cache_read_tokens,
         output_tokens,
         cache_creation_input_tokens: 0,
@@ -131,11 +133,16 @@ fn parse_line(
         speed: None,
         cache_creation: None,
     };
+    let remainder = ccusage_core::AdditionalTokens::from_total(raw_usage, 0, total_tokens);
+    let reasoning = usage.thoughts_token_count.min(remainder.residual);
+    let additional = ccusage_core::AdditionalTokens {
+        reasoning,
+        residual: remainder.residual - reasoning,
+    };
     let (display_usage, extra_total_tokens) = if usage.candidates_token_count.is_some() {
-        let residual = total_tokens.saturating_sub(prompt_tokens.saturating_add(output_tokens));
-        (display_usage, residual)
+        (raw_usage, remainder.residual)
     } else {
-        apply_total_token_fallback(display_usage, 0, total_tokens)
+        remainder.for_report(raw_usage)
     };
     if display_usage.input_tokens == 0
         && display_usage.output_tokens == 0
@@ -159,15 +166,8 @@ fn parse_line(
         .model
         .clone()
         .unwrap_or_else(|| DEFAULT_QWEN_MODEL.to_string());
-    let billable_usage = TokenUsageRaw {
-        output_tokens: display_usage
-            .output_tokens
-            .saturating_add(extra_total_tokens),
-        cache_creation: None,
-        ..display_usage
-    };
     let (cost, missing_pricing_model, estimated_pricing) =
-        price_qwen(&model, billable_usage, timestamp, pricing);
+        price_qwen(&model, raw_usage, additional, timestamp, pricing);
     Ok(Some(QwenEntry {
         source_timestamp: timestamp_text.clone(),
         entry: LoadedEntry {
@@ -196,6 +196,7 @@ fn parse_line(
 fn price_qwen(
     model: &str,
     usage: TokenUsageRaw,
+    additional: ccusage_core::AdditionalTokens,
     timestamp: TimestampMs,
     pricing: PriceTable<'_>,
 ) -> (f64, Option<String>, bool) {
@@ -208,8 +209,8 @@ fn price_qwen(
         EntryPricing {
             granularity: UsageGranularity::Request,
             usage,
-            reasoning_tokens: 0,
-            residual_tokens: 0,
+            reasoning_tokens: additional.reasoning,
+            residual_tokens: additional.residual,
             reported_model: Some(model),
             candidates: &candidates,
             stored_cost: None,
@@ -302,6 +303,7 @@ mod tests {
                 speed: None,
                 cache_creation: None,
             },
+            ccusage_core::AdditionalTokens::default(),
             TimestampMs::UNIX_EPOCH,
             PriceTable::Calculate(&pricing),
         );

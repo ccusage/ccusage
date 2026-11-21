@@ -9,7 +9,8 @@ use ccusage_adapter_common::units::{UnitError, read_json};
 use ccusage_core::{Diagnostics, Skip, SkipKind};
 use serde_json::Value;
 
-use crate::{TokenUsageRaw, apply_total_token_fallback, format_rfc3339_millis, parse_ts_timestamp};
+use crate::{TokenUsageRaw, format_rfc3339_millis, parse_ts_timestamp};
+use ccusage_core::AdditionalTokens;
 
 const DEFAULT_CODEBUFF_MODEL: &str = "codebuff-unknown";
 
@@ -22,6 +23,7 @@ pub(super) struct AssistantUsage {
     cache_creation_input_tokens: u64,
     cache_read_input_tokens: u64,
     pub(super) extra_total_tokens: u64,
+    fallback_output_tokens: u64,
 }
 
 pub(super) struct CodebuffEntry {
@@ -33,6 +35,7 @@ pub(super) struct CodebuffEntry {
     pub(super) credits: f64,
     pub(super) usage: TokenUsageRaw,
     pub(super) extra_total_tokens: u64,
+    fallback_output_tokens: u64,
     pub(super) dedup_key: String,
 }
 
@@ -97,6 +100,7 @@ pub(super) fn load_chat_file(
                 cache_creation: None,
             },
             extra_total_tokens: usage.extra_total_tokens,
+            fallback_output_tokens: usage.fallback_output_tokens,
             dedup_key,
         });
     }
@@ -260,12 +264,10 @@ pub(super) fn parse_usage_object(value: Option<&Value>) -> AssistantUsage {
         speed: None,
         cache_creation: None,
     };
-    let (raw_usage, extra_total_tokens) =
-        apply_total_token_fallback(raw_usage, usage.extra_total_tokens, total_tokens);
-    usage.input_tokens = raw_usage.input_tokens;
-    usage.output_tokens = raw_usage.output_tokens;
-    usage.cache_creation_input_tokens = raw_usage.cache_creation_input_tokens;
-    usage.cache_read_input_tokens = raw_usage.cache_read_input_tokens;
+    let (report_usage, extra_total_tokens) =
+        AdditionalTokens::from_total(raw_usage, 0, total_tokens).for_report(raw_usage);
+    usage.fallback_output_tokens = report_usage.output_tokens - raw_usage.output_tokens;
+    usage.output_tokens = report_usage.output_tokens;
     usage.extra_total_tokens = extra_total_tokens;
     usage.credits = number_field(record, "credits");
     usage.model = string_field(record, "model");
@@ -278,6 +280,7 @@ fn merge_fallback(target: &mut AssistantUsage, fallback: AssistantUsage) {
     }
     if target.output_tokens == 0 {
         target.output_tokens = fallback.output_tokens;
+        target.fallback_output_tokens = fallback.fallback_output_tokens;
     }
     if target.cache_creation_input_tokens == 0 {
         target.cache_creation_input_tokens = fallback.cache_creation_input_tokens;
@@ -393,9 +396,14 @@ pub(super) fn price_codebuff(
         .collect();
     let entry_pricing = EntryPricing {
         granularity: UsageGranularity::Request,
-        usage: entry.usage,
+        usage: TokenUsageRaw {
+            output_tokens: entry.usage.output_tokens - entry.fallback_output_tokens,
+            ..entry.usage
+        },
         reasoning_tokens: 0,
-        residual_tokens: entry.extra_total_tokens,
+        residual_tokens: entry
+            .extra_total_tokens
+            .saturating_add(entry.fallback_output_tokens),
         reported_model: Some(&entry.model),
         candidates: &candidates,
         stored_cost: None,
@@ -466,6 +474,7 @@ mod pricing_identity_tests {
             credits: 0.0,
             usage: TokenUsageRaw::default(),
             extra_total_tokens: 0,
+            fallback_output_tokens: 0,
             dedup_key: String::new(),
         };
         assert_eq!(
@@ -492,6 +501,7 @@ mod pricing_identity_tests {
                     ..TokenUsageRaw::default()
                 },
                 extra_total_tokens: 0,
+                fallback_output_tokens: 0,
                 dedup_key: String::new(),
             };
 

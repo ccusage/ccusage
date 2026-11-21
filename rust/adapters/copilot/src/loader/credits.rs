@@ -185,6 +185,7 @@ fn credit_gap_entry(snapshot: &CopilotCreditSnapshot, nano_aiu: u64) -> CopilotU
         cache_read_tokens: 0,
         reasoning_output_tokens: 0,
         extra_total_tokens: 0,
+        fallback_output_tokens: 0,
         request_count: 0,
         nano_aiu: Some(nano_aiu),
         dedup_key: snapshot.dedup_key.clone(),

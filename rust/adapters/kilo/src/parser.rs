@@ -1,5 +1,6 @@
 use ccusage_core::cost::PriceTable;
 use ccusage_core::{
+    AdditionalTokens,
     cost::{EntryPricing, UsageGranularity},
     pricing::MatchKind,
 };
@@ -9,8 +10,7 @@ use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
 
 use crate::{
-    LoadedEntry, TimestampMs, TokenUsageRaw, apply_total_token_fallback, cli::CostMode, date_at,
-    stored_cost_for_mode,
+    LoadedEntry, TimestampMs, TokenUsageRaw, cli::CostMode, date_at, stored_cost_for_mode,
 };
 use ccusage_adapter_common::{
     billing::{host_provider, price_entry_for_provider},
@@ -101,15 +101,13 @@ pub(super) fn message_value_to_entry(
         speed: None,
         cache_creation: None,
     };
-    let reasoning_tokens = tokens.reasoning;
-    let total_tokens = tokens.total;
-    let (usage, extra_total_tokens) =
-        apply_total_token_fallback(usage, reasoning_tokens, total_tokens);
+    let additional = AdditionalTokens::from_total(usage, tokens.reasoning, tokens.total);
+    let (report_usage, extra_total_tokens) = additional.for_report(usage);
     if usage.input_tokens == 0
         && usage.output_tokens == 0
         && usage.cache_creation_input_tokens == 0
         && usage.cache_read_input_tokens == 0
-        && extra_total_tokens == 0
+        && additional.total() == 0
     {
         return Ok(None);
     }
@@ -141,8 +139,8 @@ pub(super) fn message_value_to_entry(
     let entry_pricing = EntryPricing {
         granularity: UsageGranularity::Request,
         usage,
-        reasoning_tokens: 0,
-        residual_tokens: extra_total_tokens,
+        reasoning_tokens: additional.reasoning,
+        residual_tokens: additional.residual,
         reported_model: Some(&model),
         candidates: &candidates,
         stored_cost: recorded,
@@ -172,7 +170,7 @@ pub(super) fn message_value_to_entry(
             estimated_pricing,
             stored_cost,
             message_count: None,
-            usage,
+            usage: report_usage,
             message_id: Some(message_id),
             version: None,
             recorded_cost: cost_usd,

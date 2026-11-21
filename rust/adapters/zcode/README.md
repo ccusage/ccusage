@@ -45,7 +45,8 @@ ZCode's `input_tokens` includes the cache-read and cache-creation slices. The
 adapter subtracts both from fresh input and reports each cache bucket
 separately. Negative counters are clamped to zero, and cache buckets are
 bounded by the inclusive input count. Any positive remainder in
-`computed_total_tokens` is preserved through the shared extra-token fallback.
+`computed_total_tokens` supplies any residual used in reports. Pricing uses the
+recorded component counts.
 
 ZCode records no per-request cost. `display` therefore reports zero cost;
 `calculate` and `auto` estimate from the shared pricing map. Raw model pricing

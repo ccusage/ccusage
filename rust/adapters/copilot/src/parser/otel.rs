@@ -7,8 +7,9 @@ use serde::Deserialize;
 use serde_json::{Map, Value};
 
 use super::{CallIds, CallKey, CopilotUsageEntry, copilot_model_names};
-use crate::{TimestampMs, TokenUsageRaw, apply_total_token_fallback, fast::LinePrefilter};
+use crate::{TimestampMs, TokenUsageRaw, fast::LinePrefilter};
 use ccusage_adapter_common::{jsonl, units::UnitError};
+use ccusage_core::AdditionalTokens;
 use ccusage_core::Diagnostics;
 
 // NOTE(2026-05-19, #1023): Copilot OpenTelemetry exporters write timestamps as scalars or `[seconds, nanos]` arrays. Keep both representations readable.
@@ -92,6 +93,7 @@ struct OtelCall {
     usage: TokenUsageRaw,
     reasoning_output_tokens: u64,
     extra_total_tokens: u64,
+    fallback_output_tokens: u64,
     call_key: Option<CallKey>,
     turn: Option<u64>,
     index: usize,
@@ -138,6 +140,7 @@ impl OtelCall {
             cache_read_tokens: self.usage.cache_read_input_tokens,
             reasoning_output_tokens: self.reasoning_output_tokens,
             extra_total_tokens: self.extra_total_tokens,
+            fallback_output_tokens: self.fallback_output_tokens,
             dedup_key,
             call_key: self.call_key,
         }
@@ -159,6 +162,7 @@ struct CopilotUsageCandidate {
     cache_read_tokens: u64,
     reasoning_output_tokens: u64,
     extra_total_tokens: u64,
+    fallback_output_tokens: u64,
     dedup_key: String,
     call_key: Option<CallKey>,
 }
@@ -269,6 +273,7 @@ pub(crate) fn reconcile_otel_calls(files: Vec<OtelFileCalls>) -> Vec<CopilotUsag
             cache_read_tokens: candidate.cache_read_tokens,
             reasoning_output_tokens: candidate.reasoning_output_tokens,
             extra_total_tokens: candidate.extra_total_tokens,
+            fallback_output_tokens: candidate.fallback_output_tokens,
             request_count: 1,
             nano_aiu: None,
             dedup_key: candidate.dedup_key,
@@ -373,8 +378,11 @@ fn to_call(
         speed: None,
         cache_creation: None,
     };
-    let (usage, extra_total_tokens) = apply_total_token_fallback(usage, 0, total);
-    let Some(counted_tokens) = ccusage_core::checked_total_usage_tokens(usage, extra_total_tokens)
+    let (report_usage, extra_total_tokens) =
+        AdditionalTokens::from_total(usage, 0, total).for_report(usage);
+    let fallback_output_tokens = report_usage.output_tokens - usage.output_tokens;
+    let Some(counted_tokens) =
+        ccusage_core::checked_total_usage_tokens(report_usage, extra_total_tokens)
     else {
         diagnostics.record(ccusage_core::Skip::record(
             path,
@@ -407,9 +415,10 @@ fn to_call(
         logged_model: first_non_empty_model_attr(attributes),
         session: best_session_attr(attributes).map(|(session_id, _)| session_id),
         timestamp,
-        usage,
+        usage: report_usage,
         reasoning_output_tokens: reasoning,
         extra_total_tokens,
+        fallback_output_tokens,
         turn,
         index,
     })
