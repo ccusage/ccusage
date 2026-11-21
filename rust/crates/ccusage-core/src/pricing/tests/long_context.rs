@@ -356,3 +356,32 @@ fn claude_long_context_tiers_bill_anthropics_published_rates_whichever_row_wins(
         );
     }
 }
+
+#[test]
+fn claude_4_6_and_later_bill_a_long_request_at_standard_rates_whichever_row_wins() {
+    crate::test_support::install_pricing_snapshots();
+    let offline = PricingMap::load_embedded();
+    let mut online = PricingMap::load_embedded();
+    online.refresh_litellm(|load| {
+        assert!(load(super::build_time_pricing_json()));
+        Ok(())
+    });
+    for (mode, pricing) in [("offline", &offline), ("online", &online)] {
+        for model in [
+            "claude-sonnet-4-6",
+            "claude-sonnet-4-6-thinking",
+            "anthropic-claude-4.6-sonnet",
+            "anthropic/claude-sonnet-4.6",
+            "claude-opus-4-6",
+            "anthropic-claude-opus-4.6",
+            "anthropic/claude-opus-4.6",
+            "anthropic/claude-opus-4.7",
+        ] {
+            let rates = pricing
+                .resolve_at(Some(model), &[(model, MatchKind::Fuzzy)], None)
+                .map(|(_, rates)| rates)
+                .unwrap();
+            assert_eq!(rates.long_context, None, "{mode} {model}");
+        }
+    }
+}

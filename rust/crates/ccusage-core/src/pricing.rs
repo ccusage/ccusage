@@ -238,7 +238,7 @@ impl PricingMap {
             if (row.pricing.input - curated.input).abs() < f64::EPSILON
                 && (row.pricing.output - curated.output).abs() < f64::EPSILON
             {
-                row.pricing.long_context = Some(Arc::new(curated.long_context));
+                row.pricing.long_context = curated.long_context.map(Arc::new);
             }
         }
         self.clear_find_cache();
