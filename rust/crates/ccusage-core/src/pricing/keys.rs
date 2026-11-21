@@ -5,18 +5,24 @@ use super::data;
 const MODEL_DATE_SUFFIX_DIGITS: usize = 8;
 
 pub(super) fn with_names<T>(model: &str, mut choose: impl FnMut(&str) -> Option<T>) -> Option<T> {
-    choose(model)
-        .or_else(|| vendor_spelling(model).and_then(|vendor| choose(&vendor)))
-        .or_else(|| pricing_alias(model).and_then(&mut choose))
-        .or_else(|| {
-            let alias = crate::model_aliases::resolve_model_name(model);
-            if alias == model {
-                return None;
-            }
-            choose(alias.as_ref())
-                .or_else(|| vendor_spelling(alias.as_ref()).and_then(|vendor| choose(&vendor)))
-                .or_else(|| pricing_alias(alias.as_ref()).and_then(choose))
-        })
+    let mut spelled = |name: &str| {
+        choose(name).or_else(|| alternate_spellings(name).find_map(|spelling| choose(&spelling)))
+    };
+    spelled(model).or_else(|| {
+        let alias = crate::model_aliases::resolve_model_name(model);
+        if alias == model {
+            return None;
+        }
+        spelled(alias.as_ref())
+    })
+}
+
+// NOTE(2026-11-21, #2226): Every lookup, for a logged name and for a configured alias's target alike, tries the same other spellings in the same order: the vendor's own spelling, then the built-in alias. Keeping them in one place stops the override-base and resolver paths from drifting apart.
+pub(super) fn alternate_spellings(model: &str) -> impl Iterator<Item = Cow<'static, str>> {
+    vendor_spelling(model)
+        .map(|vendor| Cow::Owned(vendor.into_string()))
+        .into_iter()
+        .chain(pricing_alias(model).map(Cow::Borrowed))
 }
 
 pub(super) fn last_segment(key: &str) -> &str {
@@ -242,7 +248,7 @@ pub(super) fn model_without_date_suffix(model: &str) -> &str {
     model
 }
 
-pub(super) fn vendor_spelling(model: &str) -> Option<Box<str>> {
+fn vendor_spelling(model: &str) -> Option<Box<str>> {
     data::VENDOR_SPELLINGS
         .iter()
         .find_map(|(spelling, vendor)| {

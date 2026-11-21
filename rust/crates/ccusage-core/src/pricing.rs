@@ -18,9 +18,9 @@ pub use fetch::{JsonFetcher, set_json_fetcher};
 use fetch::{fetch_pricing_json, models_dev_pricing};
 mod keys;
 use keys::{
-    dash_pricing_key_separators, is_pricing_key_separator, last_segment, matches_model_suffix,
-    model_without_date_suffix, names_pricing_key, normalized_pricing_key, pricing_alias,
-    pricing_key_matches, vendor_spelling, with_names,
+    alternate_spellings, dash_pricing_key_separators, is_pricing_key_separator, last_segment,
+    matches_model_suffix, model_without_date_suffix, names_pricing_key, normalized_pricing_key,
+    pricing_alias, pricing_key_matches, with_names,
 };
 mod litellm;
 mod models_dev;

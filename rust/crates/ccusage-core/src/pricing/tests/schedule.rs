@@ -957,22 +957,6 @@ fn usage_billed_by_google_follows_the_gemini_price_change_and_foreign_hosts_stay
 }
 
 #[test]
-fn a_configured_alias_to_a_google_spelling_follows_the_gemini_schedule() {
-    let _aliases = crate::model_aliases::set_model_aliases_for_tests([(
-        "private-gemini",
-        "google/gemini-4-argon",
-    )]);
-    crate::test_support::install_pricing_snapshots();
-    let pricing = PricingMap::load_embedded();
-
-    let rates = pricing
-        .find_at("private-gemini", timestamp("2026-12-02T00:00:00Z"))
-        .unwrap();
-
-    assert_eq!((rates.input * 1e6, rates.output * 1e6), (4.0, 20.0));
-}
-
-#[test]
 fn gemini_2_5_pro_keeps_its_long_context_tier_until_it_is_rebilled() {
     crate::test_support::install_pricing_snapshots();
     let pricing = PricingMap::load_embedded();

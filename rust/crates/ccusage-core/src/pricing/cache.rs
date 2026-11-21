@@ -8,8 +8,7 @@ use rustc_hash::{FxHashMap, FxHasher};
 #[cfg(feature = "resolver-trace")]
 use super::ResolutionStep;
 use super::{
-    Lookup, MatchKind, Row, RowMatch, Source, normalized_pricing_key, pricing_alias,
-    vendor_spelling,
+    Lookup, MatchKind, Row, RowMatch, Source, alternate_spellings, normalized_pricing_key,
 };
 
 pub(super) enum HitKind {
@@ -213,11 +212,9 @@ impl<T: AsRef<str>> Alias<T> {
 #[derive(Debug)]
 struct NameForms {
     normalized: Option<Box<str>>,
-    vendor: Option<Alias<Box<str>>>,
-    builtin: Option<Alias<&'static str>>,
+    spellings: Box<[Alias<Cow<'static, str>>]>,
     configured: Option<Alias<Box<str>>>,
-    configured_builtin: Option<Alias<&'static str>>,
-    configured_vendor: Option<Alias<Box<str>>>,
+    configured_spellings: Box<[Alias<Cow<'static, str>>]>,
 }
 
 #[derive(Debug, Default)]
@@ -255,28 +252,21 @@ impl NameSlot {
 impl NameForms {
     fn new(text: &str) -> Option<Arc<Self>> {
         let normalized = normalized(text);
-        let vendor = vendor_spelling(text).map(Alias::new);
-        let builtin = pricing_alias(text).map(Alias::new);
+        let spellings = |text: &str| alternate_spellings(text).map(Alias::new).collect();
+        let own: Box<[_]> = spellings(text);
         let alias = crate::model_aliases::resolve_model_name(text);
         let configured = (alias != text).then(|| Alias::new(alias.into_owned().into_boxed_str()));
-        if normalized.is_none() && vendor.is_none() && builtin.is_none() && configured.is_none() {
+        if normalized.is_none() && own.is_empty() && configured.is_none() {
             return None;
         }
-        let configured_builtin = configured
+        let configured_spellings = configured
             .as_ref()
-            .and_then(|alias| pricing_alias(&alias.text))
-            .map(Alias::new);
-        let configured_vendor = configured
-            .as_ref()
-            .and_then(|alias| vendor_spelling(&alias.text))
-            .map(Alias::new);
+            .map_or_else(Box::default, |alias| spellings(&alias.text));
         Some(Arc::new(Self {
             normalized,
-            vendor,
-            builtin,
+            spellings: own,
             configured,
-            configured_builtin,
-            configured_vendor,
+            configured_spellings,
         }))
     }
 }
@@ -315,16 +305,13 @@ impl Candidate<'_> {
     ) -> Option<T> {
         select(self.name(text)).or_else(|| {
             let forms = self.forms(text)?;
-            [
-                forms.vendor.as_ref().map(Alias::name),
-                forms.builtin.as_ref().map(Alias::name),
-                forms.configured.as_ref().map(Alias::name),
-                forms.configured_vendor.as_ref().map(Alias::name),
-                forms.configured_builtin.as_ref().map(Alias::name),
-            ]
-            .into_iter()
-            .flatten()
-            .find_map(select)
+            forms
+                .spellings
+                .iter()
+                .map(Alias::name)
+                .chain(forms.configured.iter().map(Alias::name))
+                .chain(forms.configured_spellings.iter().map(Alias::name))
+                .find_map(select)
         })
     }
 }

@@ -185,3 +185,33 @@ fn model_suffix_matches_only_at_the_last_occurrence() {
 fn builtin_price_aliases_require_an_explicit_table_entry() {
     assert_eq!(super::super::data::ALIASES.len(), 3);
 }
+
+#[test]
+fn an_alias_to_a_google_spelling_reaches_the_gemini_row_when_resolving_and_as_an_override_base() {
+    let _aliases = crate::model_aliases::set_model_aliases_for_tests([(
+        "private-model",
+        "google/gemini-4-argon",
+    )]);
+    crate::test_support::install_pricing_snapshots();
+    let pricing = PricingMap::load_embedded();
+
+    let resolved = pricing
+        .find_at(
+            "private-model",
+            crate::parse_ts_timestamp("2026-12-02T00:00:00Z").unwrap(),
+        )
+        .unwrap();
+    assert_eq!((resolved.input * 1e6, resolved.output * 1e6), (4.0, 20.0));
+
+    let override_value = ccusage_cli::PricingOverride {
+        input_cost_per_token: Some(50e-6),
+        ..Default::default()
+    };
+    let overrides =
+        std::collections::BTreeMap::from([("private-model".to_owned(), override_value)]);
+    let overridden = pricing
+        .with_user_overrides(overrides.iter())
+        .find("private-model")
+        .unwrap();
+    assert_eq!((overridden.input, overridden.output), (50e-6, 10e-6));
+}
