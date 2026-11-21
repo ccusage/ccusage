@@ -23,7 +23,7 @@ pub mod cli {
     pub use ccusage_cli::*;
 }
 
-pub use cost::{missing_pricing_model_for_token_total, stored_cost_for_mode, sum_costs};
+pub use cost::{stored_cost_for_mode, sum_costs};
 pub use date_utils::*;
 pub use diagnostics::{Diagnostics, Skip, SkipKind};
 pub use error::{CliError, Context, Result, cli_error};
