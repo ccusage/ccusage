@@ -231,7 +231,7 @@ impl PricingRows {
     fn folded_indexes(&self) -> &RowIndexes {
         self.folded_indexes.get_or_init(|| {
             let mut indexes = RowIndexes::default();
-            // Lowercase identities are already present in the case-sensitive indexes.
+            // NOTE(2026-11-21, #2230): Lowercase identities are already present in the case-sensitive indexes, so the fallback only indexes keys whose case changes.
             for (found, identity) in self.normalized_matches() {
                 if let Cow::Owned(identity) = fold_case(identity) {
                     indexes.insert(found, &identity);
