@@ -34,11 +34,7 @@ fn lookup_decodes_only_matching_embedded_rows() {
     use crate::pricing::table::decode_pricing_table;
 
     crate::test_support::install_pricing_snapshots();
-    static BYTES: OnceLock<Vec<u8>> = OnceLock::new();
-    let bytes = BYTES.get_or_init(|| {
-        miniz_oxide::inflate::decompress_to_vec(ccusage_pricing_snapshots::PRICING_TABLE).unwrap()
-    });
-    let table = decode_pricing_table(bytes);
+    let table = decode_pricing_table(ccusage_pricing_snapshots::PRICING_TABLE);
     let rows = &table.rows.rows;
     assert_eq!(rows.decoded_row_count(), 0);
     assert_eq!(table.models_dev.rows.decoded_row_count(), 0);

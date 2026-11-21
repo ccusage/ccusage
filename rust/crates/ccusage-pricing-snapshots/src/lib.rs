@@ -5,8 +5,7 @@ pub const LITELLM_SOURCES: &[u8] =
 
 /// The offline pricing catalogue, built from the LiteLLM and models.dev
 /// snapshots at compile time.
-pub const PRICING_TABLE: &[u8] =
-    include_bytes!(concat!(env!("OUT_DIR"), "/pricing-table.bin.deflate"));
+pub const PRICING_TABLE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/pricing-table.bin"));
 
 /// The filtered LiteLLM snapshot the pricing table was built from.
 pub const LITELLM_PRICING: &[u8] =

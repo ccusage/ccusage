@@ -100,7 +100,7 @@ enum Rate {
     Optional(Option<f64>),
 }
 
-// NOTE(2026-11-20, #2388): The deflated table replaces the JSON snapshots in the binary, and a row-major layout with inline rates compresses larger than they do. Keep one stream per field kind and rates as indexes into a pool ordered by frequency.
+// NOTE(2026-11-21, #2465): Inflating the indexed table still charges each report for the whole catalog. Borrow the streams directly from the binary and keep rates pooled to limit their size.
 #[derive(Default)]
 struct Writer {
     catalogues: Vec<Catalogue>,

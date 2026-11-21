@@ -14,7 +14,7 @@ const MODELS_DEV_PRICING_JSON: &str = "src/models-dev-pricing.json";
 const OUT_MODELS_DEV_PRICING_JSON: &str = "models-dev-pricing.json.deflate";
 const MODELS_DEV_CATALOG_RULES_JSON: &str = "src/models-dev-catalog-rules.json";
 const OUT_MODELS_DEV_CATALOG_RULES_JSON: &str = "models-dev-catalog-rules.json.deflate";
-const OUT_PRICING_TABLE: &str = "pricing-table.bin.deflate";
+const OUT_PRICING_TABLE: &str = "pricing-table.bin";
 const OUT_FLOAT_PROBE: &str = "float-probe.rs";
 // NOTE(2026-11-20, #2399): serde_json's default float parser misrounds this rate by one ULP and its `float_roundtrip` parser does not. Record how this build script parses it, so a test can check that the runtime parses rates the same way.
 const FLOAT_PROBE: &str = "1.4999999999999999e-07";
@@ -59,7 +59,7 @@ fn main() -> Result<(), String> {
         pricing_table: &[],
     });
     let table = encode_pricing_table(&pricing_json, &models_dev_pricing.json);
-    fs::write(out_dir_path(OUT_PRICING_TABLE)?, deflate(&table))
+    fs::write(out_dir_path(OUT_PRICING_TABLE)?, table)
         .map_err(|error| format!("write {OUT_PRICING_TABLE}: {error}"))
 }
 
