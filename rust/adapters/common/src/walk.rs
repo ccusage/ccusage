@@ -188,7 +188,7 @@ pub fn dir_entries(dir: &Path, diagnostics: &Diagnostics) -> Vec<(PathBuf, fs::F
             }
         })
         .collect();
-    entries.sort_by(|left, right| left.0.cmp(&right.0));
+    entries.sort_unstable_by(|left, right| left.0.as_os_str().cmp(right.0.as_os_str()));
     entries
 }
 

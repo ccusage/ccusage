@@ -432,7 +432,7 @@ exit: 0
           "cacheCreation1hTokens": 1000,
           "cacheCreationTokens": 1250,
           "cacheReadTokens": 22000,
-          "cost": 0.5435285,
+          "cost": 0.5477285,
           "inputTokens": 6287,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 1242,
@@ -912,7 +912,7 @@ exit: 0
       ],
       "outputTokens": 17537,
       "period": "2026-01-01",
-      "totalCost": 3.615927315,
+      "totalCost": 3.620127315,
       "totalTokens": 1508705
     }
   ],
@@ -921,7 +921,7 @@ exit: 0
     "cacheReadTokens": 668794,
     "inputTokens": 1070549,
     "outputTokens": 37494,
-    "totalCost": 15.2857435,
+    "totalCost": 15.2899435,
     "totalTokens": 1787423,
     "unpricedModels": [
       "GLM-5.3",

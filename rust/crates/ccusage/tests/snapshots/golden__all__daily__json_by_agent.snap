@@ -3500,11 +3500,10 @@ exit: 0
             {
               "cacheCreationTokens": 0,
               "cacheReadTokens": 3000,
-              "cost": 0.0,
+              "cost": 0.0042,
               "inputTokens": 600,
               "modelName": "claude-sonnet-4-20250514",
-              "outputTokens": 100,
-              "storedCost": 0.0
+              "outputTokens": 100
             }
           ],
           "modelsUsed": [
@@ -3513,7 +3512,7 @@ exit: 0
             "gpt-5"
           ],
           "outputTokens": 542,
-          "totalCost": 0.204575,
+          "totalCost": 0.20877500000000002,
           "totalTokens": 4652
         },
         {
@@ -3875,7 +3874,7 @@ exit: 0
           "cacheCreation1hTokens": 1000,
           "cacheCreationTokens": 1250,
           "cacheReadTokens": 22000,
-          "cost": 0.5435285,
+          "cost": 0.5477285,
           "inputTokens": 6287,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 1242,
@@ -4355,7 +4354,7 @@ exit: 0
       ],
       "outputTokens": 17537,
       "period": "2026-01-01",
-      "totalCost": 3.615927315,
+      "totalCost": 3.620127315,
       "totalTokens": 1508705
     },
     {
@@ -5532,7 +5531,7 @@ exit: 0
     "cacheReadTokens": 1308300,
     "inputTokens": 1262107,
     "outputTokens": 60566,
-    "totalCost": 28.070555625000004,
+    "totalCost": 28.074755625000005,
     "totalTokens": 2652038,
     "unpricedModels": [
       "GLM-5.3",

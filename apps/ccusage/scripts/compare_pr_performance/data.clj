@@ -14,9 +14,11 @@
     :desc "a few MiB of Claude logs, so fixed startup cost such as building the pricing map dominates"}])
 
 (def median-mtime "{median-mtime}")
+(def recent-mtime "{recent-mtime}")
 
 (def shape-commands
   [{:fixture :large :command (str "claude daily --since " median-mtime)}
+   {:fixture :large :command (str "claude daily --since " recent-mtime)}
    {:fixture :large :command "codex session"}
    {:fixture :many-files :command "claude daily"}
    {:fixture :proxy :command "claude daily"}

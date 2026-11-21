@@ -882,7 +882,7 @@ exit: 0
           "cacheCreation1hTokens": 1000,
           "cacheCreationTokens": 1250,
           "cacheReadTokens": 22000,
-          "cost": 0.5435285,
+          "cost": 0.5477285,
           "inputTokens": 6287,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 1242,
@@ -1362,7 +1362,7 @@ exit: 0
       ],
       "outputTokens": 17537,
       "period": "2026-01-01",
-      "totalCost": 3.615927315,
+      "totalCost": 3.620127315,
       "totalTokens": 1508705
     },
     {
@@ -1988,7 +1988,7 @@ exit: 0
           "cacheCreation1hTokens": 1000,
           "cacheCreationTokens": 6440,
           "cacheReadTokens": 106720,
-          "cost": 3.6453550000000003,
+          "cost": 3.6495550000000003,
           "inputTokens": 30748,
           "missingPricing": true,
           "modelName": "claude-sonnet-4-20250514",
@@ -2713,7 +2713,7 @@ exit: 0
       ],
       "outputTokens": 58299,
       "period": "2025-12-29",
-      "totalCost": 24.235814374999997,
+      "totalCost": 24.240014375,
       "totalTokens": 2635890
     },
     {
@@ -3328,7 +3328,7 @@ exit: 0
           "cacheCreation1hTokens": 1000,
           "cacheCreationTokens": 2240,
           "cacheReadTokens": 40760,
-          "cost": 0.6065190000000001,
+          "cost": 0.6107190000000001,
           "inputTokens": 10487,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 3989,
@@ -3931,7 +3931,7 @@ exit: 0
       ],
       "outputTokens": 28292,
       "period": "2026-01",
-      "totalCost": 6.881678265,
+      "totalCost": 6.8858782650000006,
       "totalTokens": 2177683
     },
     {
@@ -4140,6 +4140,14 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
+          "cacheReadTokens": 3000,
+          "cost": 0.0042,
+          "inputTokens": 600,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 100
+        },
+        {
+          "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.003,
           "inputTokens": 500,
@@ -4153,15 +4161,6 @@ exit: 0
           "inputTokens": 40,
           "modelName": "gpt-5",
           "outputTokens": 10
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 3000,
-          "cost": 0.0,
-          "inputTokens": 600,
-          "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 100,
-          "storedCost": 0.0
         }
       ],
       "modelsUsed": [
@@ -4172,7 +4171,7 @@ exit: 0
       ],
       "outputTokens": 622,
       "period": "ses-beta",
-      "totalCost": 2.0032430000000003,
+      "totalCost": 2.0074430000000003,
       "totalTokens": 12895
     },
     {
@@ -9513,7 +9512,7 @@ exit: 0
     "cacheReadTokens": 1308300,
     "inputTokens": 1262107,
     "outputTokens": 60566,
-    "totalCost": 28.070555625000004,
+    "totalCost": 28.074755625000005,
     "totalTokens": 2652038,
     "unpricedModels": [
       "GLM-5.3",

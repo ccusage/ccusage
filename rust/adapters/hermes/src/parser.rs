@@ -158,7 +158,7 @@ pub(super) fn to_loaded_entry(
     pricing: PriceTable<'_>,
 ) -> LoadedEntry {
     let (cost, missing_pricing_model) = price_hermes(&entry, pricing);
-    let stored_cost = stored_cost_for_mode(entry.cost_usd.filter(|cost| *cost > 0.0), mode);
+    let stored_cost = stored_cost_for_mode(ccusage_core::cost::recorded_cost(entry.cost_usd), mode);
     LoadedEntry {
         date: date_at(entry.timestamp, tz),
         timestamp: entry.timestamp,
@@ -194,7 +194,7 @@ fn price_hermes(entry: &HermesEntry, pricing: PriceTable<'_>) -> (f64, Option<St
         residual_tokens: 0,
         reported_model: Some(&entry.model),
         candidates: &candidates,
-        stored_cost: entry.cost_usd.filter(|cost| *cost > 0.0),
+        stored_cost: ccusage_core::cost::recorded_cost(entry.cost_usd),
         timestamp: Some(entry.timestamp),
     };
     let provider = (entry.provider != "hermes").then_some(entry.provider.as_str());

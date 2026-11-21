@@ -121,11 +121,10 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 3000,
-          "cost": 0.0,
+          "cost": 0.0042,
           "inputTokens": 600,
           "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 100,
-          "storedCost": 0.0
+          "outputTokens": 100
         }
       ],
       "modelsUsed": [
@@ -134,7 +133,7 @@ exit: 0
         "gpt-5"
       ],
       "outputTokens": 542,
-      "totalCost": 0.204575,
+      "totalCost": 0.20877500000000002,
       "totalTokens": 4652
     },
     {
@@ -184,7 +183,7 @@ exit: 0
     "cacheReadTokens": 22500,
     "inputTokens": 5363,
     "outputTokens": 1819,
-    "totalCost": 4.000910500000001,
+    "totalCost": 4.005110500000001,
     "totalTokens": 30362,
     "unpricedModels": [
       "kilo-mystery-1"
