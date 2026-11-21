@@ -171,23 +171,33 @@ impl ParsedUsage<'_> {
     }
 }
 
+struct DisplayModel {
+    raw: Box<str>,
+    fast: bool,
+    display: Option<Arc<str>>,
+}
+
 #[derive(Default)]
-struct DisplayModels(smallvec::SmallVec<[(Box<str>, bool, Option<Arc<str>>); 2]>);
+struct DisplayModels(smallvec::SmallVec<[DisplayModel; 2]>);
 
 impl DisplayModels {
     fn intern(&mut self, raw_model: Option<&str>, usage: &TokenUsageRaw) -> Option<Arc<str>> {
         let raw_model = raw_model?;
         let fast = matches!(usage.speed, Some(Speed::Fast));
-        if let Some((_, _, display)) = self
+        if let Some(known) = self
             .0
             .iter()
-            .find(|(raw, is_fast, _)| *is_fast == fast && raw.as_ref() == raw_model)
+            .find(|known| known.fast == fast && known.raw.as_ref() == raw_model)
         {
-            return display.clone();
+            return known.display.clone();
         }
         let display =
             ParsedUsage::display_model(Some(raw_model.to_owned()), usage).map(Arc::<str>::from);
-        self.0.push((raw_model.into(), fast, display.clone()));
+        self.0.push(DisplayModel {
+            raw: raw_model.into(),
+            fast,
+            display: display.clone(),
+        });
         display
     }
 }
