@@ -2212,3 +2212,79 @@ fn settles_repeated_fork_requests_at_the_depth_used_for_pairing() {
         &[100, 100, 200],
     );
 }
+
+#[test]
+fn folds_many_sessions_to_the_same_groups_with_settler_threads() {
+    ccusage_test_support::install_pricing_snapshots();
+    let event_line = |session: usize, event: usize| {
+        let day = (session * 7 + event) % 56;
+        token_count_line(
+            &format!(
+                "2026-{:02}-{:02}T{:02}:{:02}:00.000Z",
+                5 + day / 28,
+                1 + day % 28,
+                event % 24,
+                session,
+            ),
+            if event % 3 == 0 {
+                "gpt-5"
+            } else {
+                "gpt-5-mini"
+            },
+            json!({
+                "input_tokens": 100 + session * 10 + event,
+                "output_tokens": 1 + event,
+                "total_tokens": 101 + session * 10 + event * 2,
+            }),
+        )
+    };
+    let fixture = ccusage_test_support::Fixture::new();
+    for session in 0..24 {
+        let copied = (session % 2 == 1).then(|| (0..5).map(|event| event_line(session - 1, event)));
+        let lines = copied
+            .into_iter()
+            .flatten()
+            .chain((0..1_000).map(|event| event_line(session, event)))
+            .collect::<Vec<_>>();
+        fixture.write_file(
+            format!("sessions/session-{session:02}.jsonl"),
+            lines.join("\n"),
+        );
+    }
+    let groups = |kind, single_thread| {
+        let shared = SharedArgs {
+            single_thread,
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+            ..SharedArgs::default()
+        };
+        load_groups_from_directory(&fixture.path("sessions"), &shared, kind)
+            .unwrap()
+            .into_iter()
+            .map(|(period, group)| {
+                let models = group
+                    .models
+                    .iter()
+                    .map(|(model, usage)| (model.clone(), usage.total_tokens))
+                    .collect::<Vec<_>>();
+                (
+                    period,
+                    group.input_tokens,
+                    group.output_tokens,
+                    group.total_tokens,
+                    group.last_activity,
+                    models,
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+
+    for (kind, periods) in [
+        (AgentReportKind::Daily, 56),
+        (AgentReportKind::Monthly, 2),
+        (AgentReportKind::Session, 24),
+    ] {
+        let single = groups(kind, true);
+        assert_eq!(single.len(), periods, "{kind:?}");
+        assert_eq!(groups(kind, false), single, "{kind:?}");
+    }
+}
