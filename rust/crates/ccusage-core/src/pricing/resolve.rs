@@ -56,9 +56,6 @@ impl<'a> AgentModel<'a> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BillingRoute {
     Direct(&'static str),
-    /// A host whose own listing bills the request when the catalogue has one.
-    /// Otherwise the request bills the named vendor's own row, with that
-    /// vendor's dated schedule, because the host follows the vendor's prices.
     Host(&'static str),
     Foreign,
 }
