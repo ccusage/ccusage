@@ -281,13 +281,6 @@ exit: 0
           "outputTokens": 57
         },
         {
-          "cacheCreationTokens": 900,
-          "cacheReadTokens": 12000,
-          "inputTokens": 3000,
-          "modelName": "kimi-k2-thinking",
-          "outputTokens": 610
-        },
-        {
           "cacheCreationTokens": 50,
           "cacheReadTokens": 4500,
           "inputTokens": 1000,
@@ -300,6 +293,13 @@ exit: 0
           "inputTokens": 1800,
           "modelName": "qwen3-coder-plus",
           "outputTokens": 601
+        },
+        {
+          "cacheCreationTokens": 900,
+          "cacheReadTokens": 12000,
+          "inputTokens": 3000,
+          "modelName": "kimi-k2-thinking",
+          "outputTokens": 610
         },
         {
           "cacheCreationTokens": 0,
@@ -556,13 +556,6 @@ exit: 0
           "outputTokens": 320
         },
         {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 5000,
-          "inputTokens": 1411,
-          "modelName": "kimi-k2-thinking",
-          "outputTokens": 339
-        },
-        {
           "cacheCreationTokens": 20,
           "cacheReadTokens": 3000,
           "inputTokens": 1650,
@@ -596,6 +589,13 @@ exit: 0
           "inputTokens": 2850,
           "modelName": "deepseek-v4-pro",
           "outputTokens": 743
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 5000,
+          "inputTokens": 1411,
+          "modelName": "kimi-k2-thinking",
+          "outputTokens": 339
         },
         {
           "cacheCreationTokens": 0,

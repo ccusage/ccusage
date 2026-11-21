@@ -424,18 +424,18 @@ exit: 0
           "outputTokens": 1007
         },
         {
-          "cacheCreationTokens": 900,
-          "cacheReadTokens": 17000,
-          "inputTokens": 4511,
-          "modelName": "kimi-k2-thinking",
-          "outputTokens": 1431
-        },
-        {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 50,
           "inputTokens": 520,
           "modelName": "gpt-6.1-sol",
           "outputTokens": 57
+        },
+        {
+          "cacheCreationTokens": 900,
+          "cacheReadTokens": 17000,
+          "inputTokens": 4511,
+          "modelName": "kimi-k2-thinking",
+          "outputTokens": 1431
         },
         {
           "cacheCreationTokens": 70,

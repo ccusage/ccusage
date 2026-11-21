@@ -784,7 +784,7 @@ mod pricing_identity_tests {
                 "deepseek-v3.2",
                 "deepseek",
                 &pricing,
-                0.00068,
+                0.0007,
             ),
             (
                 "34_scheduled_flash",

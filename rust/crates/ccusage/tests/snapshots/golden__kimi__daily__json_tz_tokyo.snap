@@ -15,7 +15,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.000165,
+          "cost": 0.000185,
           "inputTokens": 100,
           "modelName": "kimi-k2-thinking",
           "outputTokens": 50
@@ -25,7 +25,7 @@ exit: 0
         "kimi-k2-thinking"
       ],
       "outputTokens": 50,
-      "totalCost": 0.000165,
+      "totalCost": 0.000185,
       "totalTokens": 150
     },
     {
@@ -37,7 +37,7 @@ exit: 0
         {
           "cacheCreationTokens": 900,
           "cacheReadTokens": 12000,
-          "cost": 0.007975,
+          "cost": 0.005665,
           "inputTokens": 3000,
           "modelName": "kimi-k2-thinking",
           "outputTokens": 610
@@ -47,7 +47,7 @@ exit: 0
         "kimi-k2-thinking"
       ],
       "outputTokens": 610,
-      "totalCost": 0.007975,
+      "totalCost": 0.005665,
       "totalTokens": 16510
     },
     {
@@ -67,7 +67,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.00010190000000000001,
+          "cost": 0.00010410000000000001,
           "inputTokens": 11,
           "modelName": "kimi-k2-thinking",
           "outputTokens": 39
@@ -78,7 +78,7 @@ exit: 0
         "kimi-k2-thinking"
       ],
       "outputTokens": 219,
-      "totalCost": 0.0041969,
+      "totalCost": 0.004199100000000001,
       "totalTokens": 18650
     },
     {
@@ -98,7 +98,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 5000,
-          "cost": 0.004555,
+          "cost": 0.003605,
           "inputTokens": 1500,
           "modelName": "kimi-k2-thinking",
           "outputTokens": 782
@@ -137,7 +137,7 @@ exit: 0
         "kimi-mystery-1"
       ],
       "outputTokens": 2747,
-      "totalCost": 0.043684999999999995,
+      "totalCost": 0.04273499999999999,
       "totalTokens": 38047
     },
     {
@@ -190,7 +190,7 @@ exit: 0
     "cacheReadTokens": 63000,
     "inputTokens": 14761,
     "outputTokens": 4426,
-    "totalCost": 0.06130939999999999,
+    "totalCost": 0.05807159999999999,
     "totalTokens": 84007,
     "unpricedModels": [
       "kimi-mystery-1"
