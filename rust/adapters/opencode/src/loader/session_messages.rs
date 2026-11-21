@@ -187,6 +187,8 @@ fn load_rows_in_parallel(
     let mut statement = prepare_session_message_query(&scan, schema, context, "rowid").ok()?;
     let diagnostics = context.diagnostics.for_table(schema.table.name());
     let mut round = Vec::with_capacity(lanes.len() * PENDING_BATCH_ROWS);
+    // NOTE(2026-11-21): The ordered scan stops at the first SQLite error. Metadata skips wait for their round so the ones after a worker error are dropped too.
+    let mut unreadable = Vec::new();
     let (mut rows, mut entries) = (0_u32, 0_u32);
     let mut failure = None;
     while failure.is_none() {
@@ -199,12 +201,7 @@ fn load_rows_in_parallel(
                     }
                     Ok(_) => {}
                     Err(UnreadableRow) => {
-                        row_diagnostics(&statement, &diagnostics).record(Skip::record(
-                            context.db_path,
-                            rows,
-                            SkipKind::InvalidData,
-                            COLUMN_READ_FAILED,
-                        ))
+                        unreadable.push((rows, row_diagnostics(&statement, &diagnostics)));
                     }
                 }
                 false
@@ -215,16 +212,27 @@ fn load_rows_in_parallel(
                 true
             }
         };
-        if !round.is_empty() && (done || round.len() == round.capacity()) {
-            if let Err(failed) = apply_round(
-                &lanes,
-                &round,
-                &diagnostics,
-                context,
-                collector,
-                &mut entries,
-            ) {
+        if done || round.len() == round.capacity() {
+            if !round.is_empty()
+                && let Err(failed) = apply_round(
+                    &lanes,
+                    &round,
+                    &diagnostics,
+                    context,
+                    collector,
+                    &mut entries,
+                )
+            {
                 failure = Some(failed);
+            }
+            let last = failure.as_ref().map_or(u32::MAX, |(row, _)| *row);
+            for (row, diagnostics) in unreadable.drain(..).filter(|(row, _)| *row <= last) {
+                diagnostics.record(Skip::record(
+                    context.db_path,
+                    row,
+                    SkipKind::InvalidData,
+                    COLUMN_READ_FAILED,
+                ));
             }
             round.clear();
         }

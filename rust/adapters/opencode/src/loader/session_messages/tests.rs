@@ -174,9 +174,11 @@ fn a_worker_that_cannot_open_applies_no_rows() {
     assert_eq!(parallel, (None, Vec::new(), Vec::new()));
 }
 
-#[test]
-fn a_worker_sqlite_error_keeps_the_rows_before_it_like_the_ordered_scan() {
-    let fixture = ccusage_test_support::Fixture::new();
+fn corrupt_overflow_database(
+    fixture: &ccusage_test_support::Fixture,
+    corrupt_row: i64,
+    before_corruption: &str,
+) -> std::path::PathBuf {
     let path = fixture.path("opencode.db");
     let db = sqlite::open(&path).unwrap();
     db.execute(format!("PRAGMA journal_mode = DELETE; {SCHEMA}; BEGIN"))
@@ -187,7 +189,7 @@ fn a_worker_sqlite_error_keeps_the_rows_before_it_like_the_ordered_scan() {
              VALUES (?1, 's', 'assistant', ?2, 1767312000000, ?3)",
         )
         .unwrap();
-    for index in 0..700_i64 {
+    for index in 0..800_i64 {
         let content = format!("{}MARK{index:04}{}", "x".repeat(5000), "x".repeat(7000));
         let data = format!(
             r#"{{"content":"{content}","model":{{"id":"gpt-test","providerID":"openai"}},"time":{{"created":1767312000000}},"tokens":{{"input":{index},"output":1}}}}"#
@@ -199,21 +201,57 @@ fn a_worker_sqlite_error_keeps_the_rows_before_it_like_the_ordered_scan() {
         insert.next().unwrap();
     }
     drop(insert);
-    db.execute("COMMIT").unwrap();
+    db.execute(format!("COMMIT; {before_corruption}")).unwrap();
     drop(db);
     let mut bytes = std::fs::read(&path).unwrap();
+    let marker = format!("MARK{:04}", corrupt_row - 1);
     let marker = bytes
-        .windows(8)
-        .position(|window| window == b"MARK0600")
+        .windows(marker.len())
+        .position(|window| window == marker.as_bytes())
         .unwrap();
     let overflow_page = marker / 4096 * 4096;
     bytes[overflow_page..overflow_page + 4].fill(0xff);
     std::fs::write(&path, bytes).unwrap();
+    path
+}
+
+#[test]
+fn a_worker_sqlite_error_keeps_the_rows_before_it_like_the_ordered_scan() {
+    let fixture = ccusage_test_support::Fixture::new();
+    let path = corrupt_overflow_database(&fixture, 601, "");
 
     let ordered = load(&path, None);
     let parallel = load(&path, Some(&|| open_read_only(&path)));
 
     assert_eq!(ordered.0, Some((600, 600)));
+    assert_eq!(parallel, ordered);
+}
+
+#[test]
+fn a_worker_sqlite_error_drops_metadata_skips_after_it_like_the_ordered_scan() {
+    let fixture = ccusage_test_support::Fixture::new();
+    let path = corrupt_overflow_database(
+        &fixture,
+        650,
+        "UPDATE session_message SET session_id = NULL WHERE id IN ('m100', 'm699')",
+    );
+
+    let ordered = load(&path, None);
+    let parallel = load(&path, Some(&|| open_read_only(&path)));
+
+    assert_eq!(ordered.0, Some((649, 648)));
+    assert!(
+        ordered
+            .2
+            .iter()
+            .any(|line| line.ends_with("session_message:m100: database column read failed"))
+    );
+    assert!(
+        !ordered
+            .2
+            .iter()
+            .any(|line| line.contains("session_message:m699"))
+    );
     assert_eq!(parallel, ordered);
 }
 
