@@ -82,7 +82,7 @@ pub(super) fn calculate_codex_model_cost(
     pricing: Option<&PricingMap>,
     speed: CodexSpeedPolicy,
 ) -> f64 {
-    let Some(handle) = pricing.and_then(|table| table.find_handle(model)) else {
+    let Some(handle) = pricing.and_then(|table| table.find_identity_handle(model)) else {
         return 0.0;
     };
     if !usage.timestamped_usage.is_empty() {

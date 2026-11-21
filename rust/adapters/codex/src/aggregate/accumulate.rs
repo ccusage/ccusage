@@ -29,9 +29,12 @@ impl CodexModels {
             return Ok(*id);
         }
 
-        let model = crate::model_aliases::resolve_model_name(logged);
+        let model = pricing.map_or_else(
+            || crate::model_aliases::resolve_model_name(logged),
+            |table| table.pricing_identity(logged),
+        );
         let id = self.resolved.intern(&model, || {
-            let price = pricing.and_then(|table| table.find_handle(&model));
+            let price = pricing.and_then(|table| table.find_identity_handle(&model));
             CodexModel {
                 name: CompactString::new(model.as_ref()),
                 long_context_threshold: price.as_ref().map_or(

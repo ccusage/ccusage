@@ -190,6 +190,38 @@ impl PricingMap {
         Some((model, handle.with_rates_at(timestamp, |rates| *rates)))
     }
 
+    /// The model id a request for `logged` is priced as: `logged` itself when a
+    /// pricing override matches it, otherwise its configured alias target when
+    /// that target has a price of its own.
+    pub fn pricing_identity<'a>(&self, logged: &'a str) -> std::borrow::Cow<'a, str> {
+        if self.has_user_override(logged) {
+            return std::borrow::Cow::Borrowed(logged);
+        }
+        configured_alias(logged)
+            .filter(|alias| {
+                self.resolve_row_with(
+                    None,
+                    &[(alias.as_ref(), MatchKind::StrictExact)],
+                    Lookup::Pricing,
+                    models_dev_pricing,
+                )
+                .is_some()
+            })
+            .unwrap_or(std::borrow::Cow::Borrowed(logged))
+    }
+
+    /// Prices a model id that is already the result of [`Self::pricing_identity`],
+    /// so its configured alias is not applied a second time.
+    pub fn find_identity_handle(&self, model: &str) -> Option<PricingHandle> {
+        let (_, found, hit) = self.resolve_row_with(
+            None,
+            &[(model, MatchKind::Fuzzy)],
+            Lookup::Pricing,
+            models_dev_pricing,
+        )?;
+        Some(PricingHandle::new(found.row, hit))
+    }
+
     pub fn find_handle(&self, model: &str) -> Option<PricingHandle> {
         let (_, found, hit) = self.resolve_row_with(
             Some(model),

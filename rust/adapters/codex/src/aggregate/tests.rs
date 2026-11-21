@@ -69,6 +69,58 @@ fn prices_the_configured_alias_target_when_both_models_have_rates() {
 }
 
 #[test]
+fn applies_a_chained_alias_once_like_every_other_adapter() {
+    ccusage_test_support::install_pricing_snapshots();
+    let _aliases = set_model_aliases_for_tests([
+        ("chain-first", "chain-second"),
+        ("chain-second", "chain-third"),
+    ]);
+    let mut pricing = PricingMap::default();
+    pricing.load_json(
+        r#"{
+                "chain-first":{"input_cost_per_token":1,"output_cost_per_token":1},
+                "chain-second":{"input_cost_per_token":2,"output_cost_per_token":2},
+                "chain-third":{"input_cost_per_token":3,"output_cost_per_token":3}
+            }"#,
+    );
+    let event = CodexTokenUsageEvent {
+        session_id: "session".into(),
+        response_id: None,
+        record_response_id: None,
+        timestamp: parse_ts_timestamp("2026-09-01T00:00:00Z").unwrap(),
+        last_activity: "2026-09-01T00:00:00Z".into(),
+        model: "chain-first".into(),
+        input_tokens: 100,
+        cached_input_tokens: 0,
+        cache_creation_tokens: 0,
+        output_tokens: 0,
+        reasoning_output_tokens: 0,
+        total_tokens: 100,
+        is_fallback_model: false,
+        service_tier: None,
+    };
+    let seen = CodexDedupe::new(1, Some(&pricing));
+    let mut provenance = CodexEventProvenance::new(0);
+    seen.record(&event, &mut provenance).unwrap();
+    let groups = seen
+        .fold(&SharedArgs::default(), AgentReportKind::Session)
+        .unwrap();
+    let group = &groups["session"];
+    assert_eq!(
+        group.models.keys().cloned().collect::<Vec<_>>(),
+        ["chain-second"]
+    );
+    assert_eq!(
+        crate::report::calculate_group_cost(
+            group,
+            Some(&pricing),
+            CodexSpeedPolicy::Auto(CodexServiceTier::Standard)
+        ),
+        200.0,
+    );
+}
+
+#[test]
 fn tier_split_uses_the_supplied_pricing_entry_instead_of_embedded_rates() {
     ccusage_test_support::install_pricing_snapshots();
     let mut pricing = PricingMap::default();
