@@ -187,6 +187,37 @@ void describe('generate-large-fixture', () => {
 		);
 	});
 
+	void it('ends some parent transcripts with an undated tail beside several subagent transcripts', async (t) => {
+		const root = await mkdtemp(path.join(tmpdir(), 'ccusage-fixture-test-'));
+		t.after(async () => rm(root, { recursive: true, force: true }));
+
+		const result = spawnSync(
+			process.execPath,
+			[generator, '--output-dir', root, '--claude-shape', 'many-small-files', '--size-mib', '8'],
+			{ encoding: 'utf8' },
+		);
+		assert.equal(result.status, 0, result.stderr);
+
+		const files = await readJsonlFiles(root);
+		const subagents = new Map<string, number>();
+		for (const file of files) {
+			const parts = path.relative(root, file.path).split(path.sep);
+			if (parts.at(-2) === 'subagents') {
+				const session = parts.slice(0, -2).join(path.sep);
+				subagents.set(session, (subagents.get(session) ?? 0) + 1);
+			}
+		}
+		const undatedTails = files.filter((file) => {
+			const tail = file.rows.slice(-1);
+			return (
+				tail.every((row) => row.timestamp === undefined) &&
+				Buffer.byteLength(JSON.stringify(tail)) > 16 * 1024 &&
+				(subagents.get(path.relative(root, file.path).replace(/\.jsonl$/u, '')) ?? 0) >= 3
+			);
+		});
+		assert.ok(undatedTails.length > 0, 'a parent with several subagents ends in an undated tail');
+	});
+
 	void it('writes requestless proxy transcripts whose lines chain through parentUuid', async (t) => {
 		const root = await mkdtemp(path.join(tmpdir(), 'ccusage-fixture-test-'));
 		t.after(async () => rm(root, { recursive: true, force: true }));

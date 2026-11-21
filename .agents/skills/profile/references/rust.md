@@ -6,7 +6,8 @@ https://nnethercote.github.io/perf-book/
 
 ## Measuring
 
-Time release builds only:
+Time release builds only, on CI or a testbox (see the skill's "Where to
+measure"); the commands below are what runs there:
 
 ```sh
 direnv exec . cargo build --manifest-path rust/Cargo.toml --release --bin ccusage
@@ -40,8 +41,14 @@ affect rendering — before believing a speedup.
 `just bench-history <ref|binary>...` builds each ref in release mode, runs every
 report command over the generated realistic fixture in interleaved rounds, and
 judges each ref against the previous one the same way the CI comment judges a
-PR against its merge base. Add `--real` to also measure the logs this
-environment points at. Judge by the CPU-time and peak-RSS ratios, not wall time.
+PR against its merge base. Run it on a `testbox-bench.yaml` box, or
+`testbox-bench-macos.yaml` for macOS timing. For the final local real-log
+confirmation, do not use `--real`: it also builds refs and runs the synthetic
+section. Build both macOS binaries on a `testbox-bench-macos.yaml` box and fetch
+them with `blacksmith testbox download`, then run them over APFS clones with
+`hyperfine --export-json` (wall `mean`, and `user` + `system` for CPU) and
+`/usr/bin/time -l` (peak RSS), and report the wall, CPU and peak-RSS ratios
+only.
 
 When a regression slips past the comparison, fix the fixture generator
 (`apps/ccusage/scripts/generate-large-fixture.ts`) so its lines carry the shape

@@ -1,12 +1,13 @@
 use std::{
     fs::{self, File},
-    io::{Read, Seek, SeekFrom},
-    ops::ControlFlow,
+    io::{self, BufRead, BufReader},
     path::{Path, PathBuf},
     time::UNIX_EPOCH,
 };
 
 use serde::Deserialize;
+
+use memchr::memmem::Finder;
 
 use crate::{
     Diagnostics, MILLIS_PER_DAY, Result, TimestampMs,
@@ -14,11 +15,9 @@ use crate::{
     cli_error, date_range_bounds_ms,
     fast::{FxHashMap, FxHashSet, LinePrefilter},
     parse_ts_timestamp, resolve_tz,
+    usage_wire::Text,
 };
-use ccusage_adapter_common::{
-    jsonl::{self, ReadPolicy},
-    read_discovered_paths, visit_usage_files as visit_usage_files_in,
-};
+use ccusage_adapter_common::{read_discovered_paths, visit_usage_files as visit_usage_files_in};
 
 pub(crate) fn claude_paths() -> Result<Vec<PathBuf>> {
     let (env_value, dirs) = match home::claude_config_dirs() {
@@ -118,6 +117,8 @@ pub(crate) fn usage_file_order(left: &Path, right: &Path) -> std::cmp::Ordering 
 
 const MTIME_PRUNE_MARGIN_MS: i64 = MILLIS_PER_DAY;
 const TAIL_PROBE_BYTES: u64 = 16 * 1024;
+const PROBE_READ_LIMIT: u64 = 1024 * 1024;
+const HEAD_PROBE_BYTES: u64 = 64 * 1024;
 
 pub(super) struct SinceFiles<T> {
     pub(super) kept: Vec<(PathBuf, T)>,
@@ -163,20 +164,19 @@ fn read_files_since<T: Send>(
             pruned: Vec::new(),
         };
     };
-    // NOTE(2026-11-20, #2355): Stat'ing and probing from the parallel readers contends in the kernel. The walker checks each mtime before queuing, and probes run serially after parsing.
+    // NOTE(2026-11-20, #2355): Stat'ing and probing from the parallel readers contends in the kernel. The walker checks each mtime and probes stale files before queuing; live files' session probes run serially after parsing.
     let mut discovered = Vec::new();
     let mut discover = discover;
+    let mut probe = StaleProbe::new(threshold);
     let mut kept = read_discovered_paths(
         single_thread,
         |visit| {
             discover(&mut |file| {
-                // NOTE(2026-11-20, #2376): A restored or imported transcript can keep an mtime older than its records. Pruning on mtime alone silently drops in-window usage, so the latest timestamp in the tail must also be stale.
-                let live = file_modified_millis(&file).is_none_or(|modified| modified >= threshold)
-                    || latest_tail_timestamp(&file).is_none_or(|latest| latest >= threshold);
+                let (live, recorded_session) = probe.file(&file);
                 if live {
                     visit(file.clone());
                 }
-                discovered.push((file, live));
+                discovered.push((file, live, recorded_session));
             });
         },
         &read,
@@ -186,7 +186,7 @@ fn read_files_since<T: Send>(
             kept,
             pruned: discovered
                 .into_iter()
-                .filter_map(|(file, live)| (!live).then_some(file))
+                .filter_map(|(file, live, _)| (!live).then_some(file))
                 .collect(),
         };
     }
@@ -194,12 +194,10 @@ fn read_files_since<T: Send>(
     let mut sessions = SessionGroups::default();
     let groups = discovered
         .into_iter()
-        .map(|(file, live)| {
-            let group = sessions.file(
-                &file,
-                first_recorded_session_id(&file).as_deref(),
-                projects_roots,
-            );
+        .map(|(file, live, recorded_session)| {
+            let recorded_session =
+                recorded_session.unwrap_or_else(|| first_recorded_session_id(&file));
+            let group = sessions.file(&file, recorded_session.as_deref(), projects_roots);
             (file, live, group)
         })
         .collect::<Vec<_>>();
@@ -266,65 +264,294 @@ impl SessionGroups {
     }
 }
 
+struct StaleProbe {
+    threshold: i64,
+    session_marker: LinePrefilter,
+    timestamp_key: Finder<'static>,
+    escape: Finder<'static>,
+    tail: Vec<u8>,
+    partial_line: Vec<u8>,
+    escaped_lines: Vec<(usize, usize)>,
+    older_lines: Vec<(usize, usize)>,
+}
+
+impl StaleProbe {
+    fn new(threshold: i64) -> Self {
+        Self {
+            threshold,
+            session_marker: session_marker(),
+            timestamp_key: Finder::new(br#""timestamp""#),
+            escape: Finder::new(br"\u00"),
+            tail: Vec::new(),
+            partial_line: Vec::new(),
+            escaped_lines: Vec::new(),
+            older_lines: Vec::new(),
+        }
+    }
+
+    // NOTE(2026-11-21, #2431): On a recent `--since` most files are stale, and each stale file is opened for its tail anyway. Taking the mtime from the open handle saves a path lookup per stale file, and session grouping's first recorded session is read from the same handle rather than from a second open.
+    fn file(&mut self, path: &Path) -> (bool, Option<Option<String>>) {
+        let Ok(file) = File::open(path) else {
+            return (true, None);
+        };
+        let Some((modified, len)) = file
+            .metadata()
+            .ok()
+            .and_then(|metadata| Some((modified_millis(&metadata)?, metadata.len())))
+        else {
+            return (true, None);
+        };
+        if modified >= self.threshold {
+            return (true, None);
+        }
+        let in_one_window = len <= TAIL_PROBE_BYTES + 1;
+        let recorded_session = if in_one_window {
+            None
+        } else {
+            head_recorded_session_id(&self.session_marker, &file, len)
+        };
+        // NOTE(2026-11-20, #2376): A restored or imported transcript can keep an mtime older than its records. Pruning on mtime alone silently drops in-window usage, so the latest timestamp in the tail must also be stale.
+        let Some(live) = self.tail_reaches(&file, len) else {
+            return (true, None);
+        };
+        let recorded_session = if in_one_window {
+            Some(lines(&self.tail).find_map(|line| recorded_session_id(&self.session_marker, line)))
+        } else {
+            recorded_session
+        };
+        (live, recorded_session)
+    }
+
+    // NOTE(2026-11-21, #2431): A tail without record timestamps proves nothing, and treating it as live revives the file's whole session group. Read further back until a record timestamp turns up; a file without any holds no dated usage. Reads stop growing at `PROBE_READ_LIMIT` so a large undated file doesn't pin its size in memory, and a line longer than that keeps the file unjudged.
+    fn tail_reaches(&mut self, file: &File, len: u64) -> Option<bool> {
+        let mut end = len;
+        let mut window = TAIL_PROBE_BYTES + 1;
+        self.partial_line.clear();
+        loop {
+            let start = end.saturating_sub(window);
+            let read = usize::try_from(end - start).ok()?;
+            self.tail.resize(read, 0);
+            read_exact_at(file, &mut self.tail, start).ok()?;
+            self.tail.extend_from_slice(&self.partial_line);
+            let (partial_end, whole_lines) = match memchr::memchr(b'\n', &self.tail) {
+                _ if start == 0 => (0, 0),
+                Some(newline) => (newline, newline + 1),
+                None => (self.tail.len(), self.tail.len()),
+            };
+            match self.judge_records(whole_lines) {
+                Records::Reach => return Some(true),
+                Records::Older => return Some(false),
+                Records::Absent if start == 0 => return Some(false),
+                Records::Absent => {}
+            }
+            if partial_end as u64 > PROBE_READ_LIMIT {
+                return None;
+            }
+            self.partial_line.clear();
+            self.partial_line
+                .extend_from_slice(&self.tail[..partial_end]);
+            end = start;
+            window = window.saturating_mul(2).min(PROBE_READ_LIMIT);
+        }
+    }
+
+    // NOTE(2026-11-21, #2431): Parsing every tail line dominated `--since` on logs where most files are stale. Only a `\u006x` or `\u007x` escape can spell a letter of `timestamp`; outside one, every `timestamp` key at any depth is spelled out. So only lines with an escape, or with a spelled value at or after the threshold or one that can't be read off the bytes, need parsing; otherwise the shortest line with a top-level timestamp is enough to call the tail older.
+    fn judge_records(&mut self, from: usize) -> Records {
+        let Self {
+            threshold,
+            timestamp_key,
+            escape,
+            tail,
+            escaped_lines,
+            older_lines,
+            ..
+        } = self;
+        let window = &tail[from..];
+        let mut older = false;
+        let mut judge = |line: &[u8]| match record_timestamp(line) {
+            Some(timestamp) if timestamp >= *threshold => true,
+            Some(_) => {
+                older = true;
+                false
+            }
+            None => false,
+        };
+        escaped_lines.clear();
+        for at in escape.find_iter(window) {
+            if escaped_lines.last().is_some_and(|&(_, end)| at < end)
+                || !matches!(window.get(at + escape.needle().len()), Some(b'6' | b'7'))
+            {
+                continue;
+            }
+            let (start, end) = line_around(window, at);
+            escaped_lines.push((start, end));
+            if judge(&window[start..end]) {
+                return Records::Reach;
+            }
+        }
+        older_lines.clear();
+        let mut escaped = escaped_lines.iter().peekable();
+        let mut parsed_through = 0;
+        for key in timestamp_key.find_iter(window) {
+            while escaped.next_if(|&&(_, end)| end < key).is_some() {}
+            if key < parsed_through || escaped.peek().is_some_and(|&&(start, _)| start <= key) {
+                continue;
+            }
+            match spelled_value(&window[key + timestamp_key.needle().len()..]) {
+                SpelledValue::NotKey => {}
+                SpelledValue::At(timestamp) if timestamp < *threshold => {
+                    if older_lines.last().is_none_or(|&(_, end)| end < key) {
+                        older_lines.push(line_around(window, key));
+                    }
+                }
+                SpelledValue::At(_) | SpelledValue::Unreadable => {
+                    let (start, end) = line_around(window, key);
+                    parsed_through = end;
+                    if judge(&window[start..end]) {
+                        return Records::Reach;
+                    }
+                }
+            }
+        }
+        if older {
+            return Records::Older;
+        }
+        older_lines.sort_unstable_by_key(|(start, end)| end - start);
+        if older_lines
+            .iter()
+            .any(|&(start, end)| record_timestamp(&window[start..end]).is_some())
+        {
+            Records::Older
+        } else {
+            Records::Absent
+        }
+    }
+}
+
+enum SpelledValue {
+    NotKey,
+    At(i64),
+    Unreadable,
+}
+
+fn spelled_value(after_key: &[u8]) -> SpelledValue {
+    let Some(value) = after_key.trim_ascii_start().strip_prefix(b":") else {
+        return SpelledValue::NotKey;
+    };
+    value
+        .trim_ascii_start()
+        .strip_prefix(b"\"")
+        .and_then(|value| Some(&value[..memchr::memchr(b'"', value)?]))
+        .filter(|value| !value.contains(&b'\\'))
+        .and_then(|value| std::str::from_utf8(value).ok())
+        .and_then(parse_ts_timestamp)
+        .map_or(SpelledValue::Unreadable, |timestamp| {
+            SpelledValue::At(timestamp.as_millis())
+        })
+}
+
+fn line_around(bytes: &[u8], at: usize) -> (usize, usize) {
+    let start = memchr::memrchr(b'\n', &bytes[..at]).map_or(0, |newline| newline + 1);
+    let end = memchr::memchr(b'\n', &bytes[at..]).map_or(bytes.len(), |newline| at + newline);
+    (start, end)
+}
+
+fn lines(bytes: &[u8]) -> impl Iterator<Item = &[u8]> {
+    let mut start = 0;
+    memchr::memchr_iter(b'\n', bytes)
+        .chain([bytes.len()])
+        .map(move |end| {
+            let line = &bytes[start..end];
+            start = end + 1;
+            line
+        })
+}
+
+enum Records {
+    Reach,
+    Older,
+    Absent,
+}
+
+#[cfg(unix)]
+fn read_exact_at(file: &File, buffer: &mut [u8], offset: u64) -> io::Result<()> {
+    std::os::unix::fs::FileExt::read_exact_at(file, buffer, offset)
+}
+
+#[cfg(not(unix))]
+fn read_exact_at(mut file: &File, buffer: &mut [u8], offset: u64) -> io::Result<()> {
+    io::Seek::seek(&mut file, io::SeekFrom::Start(offset))?;
+    io::Read::read_exact(&mut file, buffer)
+}
+
+fn record_timestamp(line: &[u8]) -> Option<i64> {
+    #[derive(Deserialize)]
+    struct TimestampProbe<'a> {
+        #[serde(borrow)]
+        timestamp: Option<Text<'a>>,
+    }
+
+    serde_json::from_slice::<TimestampProbe<'_>>(line)
+        .ok()?
+        .timestamp
+        .and_then(|timestamp| parse_ts_timestamp(&timestamp.0))
+        .map(|timestamp| timestamp.as_millis())
+}
+
+fn session_marker() -> LinePrefilter {
+    LinePrefilter::all(&[br#""sessionId""#])
+}
+
 fn first_recorded_session_id(path: &Path) -> Option<String> {
+    recorded_session_id_in(&session_marker(), &File::open(path).ok()?)
+}
+
+// NOTE(2026-11-21, #2431): Grouping needs the first recorded session only when some file is live, and a file without one would be read to its end. Read a bounded head here; past that, leave it to the lazy `first_recorded_session_id`.
+fn head_recorded_session_id(
+    marker: &LinePrefilter,
+    file: &File,
+    len: u64,
+) -> Option<Option<String>> {
+    let mut lines = BufReader::new(io::Read::take(file, HEAD_PROBE_BYTES));
+    let mut line = Vec::new();
+    while lines.read_until(b'\n', &mut line).ok()? > 0 {
+        if let Some(session_id) = recorded_session_id(marker, &line) {
+            return Some(Some(session_id));
+        }
+        line.clear();
+    }
+    (len <= HEAD_PROBE_BYTES).then_some(None)
+}
+
+fn recorded_session_id_in(marker: &LinePrefilter, file: &File) -> Option<String> {
+    let mut lines = BufReader::new(file);
+    let mut line = Vec::new();
+    while lines.read_until(b'\n', &mut line).ok()? > 0 {
+        if let Some(session_id) = recorded_session_id(marker, &line) {
+            return Some(session_id);
+        }
+        line.clear();
+    }
+    None
+}
+
+fn recorded_session_id(marker: &LinePrefilter, line: &[u8]) -> Option<String> {
     #[derive(Deserialize)]
     struct SessionIdProbe {
         #[serde(rename = "sessionId")]
         session_id: Option<String>,
     }
 
-    let marker = LinePrefilter::all(&[br#""sessionId""#]);
-    jsonl::read(path, None, ReadPolicy::PLAIN, |line, _, _| {
-        if marker.matches(line.raw)
-            && let Ok(SessionIdProbe {
-                session_id: Some(session_id),
-            }) = line.decode()
-        {
-            return ControlFlow::Break(session_id);
-        }
-        ControlFlow::Continue(())
-    })
-    .ok()
-    .flatten()
-}
-
-fn latest_tail_timestamp(path: &Path) -> Option<i64> {
-    #[derive(Deserialize)]
-    struct TimestampProbe<'a> {
-        timestamp: Option<&'a str>,
+    if !marker.matches(line) {
+        return None;
     }
-
-    let mut file = File::open(path).ok()?;
-    let start = file
-        .metadata()
+    serde_json::from_slice::<SessionIdProbe>(line)
         .ok()?
-        .len()
-        .saturating_sub(TAIL_PROBE_BYTES + 1);
-    file.seek(SeekFrom::Start(start)).ok()?;
-    let mut tail = Vec::with_capacity(TAIL_PROBE_BYTES as usize + 1);
-    file.take(TAIL_PROBE_BYTES + 1)
-        .read_to_end(&mut tail)
-        .ok()?;
-    let whole_lines = if start == 0 {
-        &tail[..]
-    } else {
-        &tail[memchr::memchr(b'\n', &tail)? + 1..]
-    };
-    whole_lines
-        .split(|&byte| byte == b'\n')
-        .filter_map(|line| {
-            serde_json::from_slice::<TimestampProbe<'_>>(line)
-                .ok()?
-                .timestamp
-        })
-        .filter_map(parse_ts_timestamp)
-        .map(|timestamp| timestamp.as_millis())
-        .max()
+        .session_id
 }
 
-fn file_modified_millis(path: &Path) -> Option<i64> {
-    fs::metadata(path)
-        .ok()?
+fn modified_millis(metadata: &fs::Metadata) -> Option<i64> {
+    metadata
         .modified()
         .ok()?
         .duration_since(UNIX_EPOCH)
