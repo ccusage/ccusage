@@ -16,7 +16,8 @@ runCommand "ccusage-pgo-profile"
   ''
     fixtures="$TMPDIR/fixtures"
     export HOME="$TMPDIR/home"
-    mkdir -p "$HOME"
+    export XDG_CONFIG_HOME="$TMPDIR/xdg/config" XDG_DATA_HOME="$TMPDIR/xdg/data" XDG_CACHE_HOME="$TMPDIR/xdg/cache"
+    mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME"
 
     node ${generator} \
       --output-dir "$fixtures/large/claude" \
