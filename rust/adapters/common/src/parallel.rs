@@ -84,10 +84,8 @@ where
         Split::ByCount => chunk_by_count(items.len(), workers),
     };
     let map = &map;
-    let mut slots = Vec::with_capacity(items.len());
-    slots.resize_with(items.len(), || None);
-    thread::scope(|scope| {
-        let handles = chunks
+    let mut results = thread::scope(|scope| {
+        chunks
             .into_iter()
             .map(|chunk| {
                 spawn_scoped_worker(scope, move || {
@@ -97,14 +95,18 @@ where
                         .collect::<Vec<_>>()
                 })
             })
-            .collect::<Vec<_>>();
-        for handle in handles {
-            for (index, result) in join_worker(handle) {
-                slots[index] = Some(result);
-            }
-        }
+            .collect::<Vec<_>>()
+            .into_iter()
+            .flat_map(join_worker)
+            .collect::<Vec<_>>()
     });
-    slots.into_iter().flatten().collect()
+    for slot in 0..results.len() {
+        while results[slot].0 != slot {
+            let target = results[slot].0;
+            results.swap(slot, target);
+        }
+    }
+    results.into_iter().map(|(_, result)| result).collect()
 }
 
 fn join_worker<T>(handle: thread::ScopedJoinHandle<'_, T>) -> T {
