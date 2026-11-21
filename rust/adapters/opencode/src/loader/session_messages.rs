@@ -452,7 +452,7 @@ fn prepare_session_message_query<'a>(
     payload: &str,
 ) -> std::result::Result<sqlite::Statement<'a>, UnitError> {
     let select = format!(
-        "SELECT id, session_id, type, {payload}, {}, {} FROM session_message",
+        "SELECT id, session_id, type, {payload}, {}, {} FROM session_message NOT INDEXED",
         schema.column_or("time_created", "NULL"),
         schema.column_or("seq", "NULL"),
     );

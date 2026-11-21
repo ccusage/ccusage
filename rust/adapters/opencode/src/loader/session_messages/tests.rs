@@ -324,3 +324,22 @@ fn a_path_replaced_while_workers_take_snapshots_leaves_the_rows_to_the_ordered_s
 
     assert_eq!(parallel, (None, Vec::new(), Vec::new()));
 }
+
+#[test]
+fn a_covering_index_keeps_the_metadata_scan_in_table_order() {
+    let fixture = database("WAL", "");
+    let path = fixture.path("opencode.db");
+    sqlite::open(&path)
+        .unwrap()
+        .execute(
+            "CREATE INDEX session_message_covering \
+             ON session_message (id, session_id, type, time_created, seq)",
+        )
+        .unwrap();
+
+    let ordered = load(&path, None);
+    let parallel = load(&path, Some(&|| open_read_only(&path)));
+
+    assert_eq!(ordered.0, Some((700, 544)));
+    assert_eq!(parallel, ordered);
+}
