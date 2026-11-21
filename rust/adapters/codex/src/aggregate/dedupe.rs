@@ -30,6 +30,8 @@ struct CodexUsageKey {
     occurrence: u32,
 }
 
+const _: () = assert!(size_of::<CodexUsageKey>() == 64);
+
 #[derive(Default)]
 struct CodexFileOccurrences {
     total: u32,
@@ -46,7 +48,7 @@ impl CodexFileOccurrences {
 }
 
 pub(super) struct CodexEventProvenance {
-    file_index: usize,
+    file_index: u32,
     occurrences: FxHashMap<CodexUsageKey, CodexFileOccurrences>,
     models: FxHashMap<CompactString, StringId>,
     session: Option<StringId>,
@@ -55,7 +57,7 @@ pub(super) struct CodexEventProvenance {
 impl CodexEventProvenance {
     pub(super) fn new(file_index: usize) -> Self {
         Self {
-            file_index,
+            file_index: u32::try_from(file_index).unwrap_or(u32::MAX),
             occurrences: FxHashMap::default(),
             models: FxHashMap::default(),
             session: None,
@@ -64,7 +66,7 @@ impl CodexEventProvenance {
 }
 
 pub(super) struct CodexAttribution {
-    file_index: usize,
+    file_index: u32,
     rollout_count: u32,
     session: StringId,
     pub(super) last_activity: CompactString,
@@ -73,7 +75,7 @@ pub(super) struct CodexAttribution {
 }
 
 impl CodexAttribution {
-    fn new(event: &CodexTokenUsageEvent, file_index: usize, session: StringId) -> Self {
+    fn new(event: &CodexTokenUsageEvent, file_index: u32, session: StringId) -> Self {
         Self {
             file_index,
             rollout_count: 0,
@@ -106,6 +108,9 @@ struct CodexRecordedUsage {
     id: Arc<str>,
     attribution: CodexAttribution,
 }
+
+const _: () = assert!(size_of::<CodexAttribution>() == 40);
+const _: () = assert!(size_of::<(CodexUsageKey, SmallVec<[CodexRecordedUsage; 1]>)>() == 136);
 
 #[derive(Default)]
 struct CodexLineage {
@@ -501,9 +506,9 @@ impl<'a> CodexDedupe<'a> {
                 let model = models
                     .resolved
                     .values
-                    .get(key.model.0.get() - 1)
+                    .get(key.model.index())
                     .ok_or_else(|| crate::cli_error("missing interned Codex model"))?;
-                let session = sessions.values[attribution.session.0.get() - 1].as_str();
+                let session = sessions.values[attribution.session.index()].as_str();
                 let Some(period) = codex_period_for(key.timestamp, Some(session), kind, &window)
                 else {
                     continue;
