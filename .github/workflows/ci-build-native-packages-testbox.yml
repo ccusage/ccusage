@@ -1,0 +1,63 @@
+name: Blacksmith Testbox
+on:
+  workflow_dispatch:
+    inputs:
+      testbox_id:
+        type: string
+        description: "Testbox session ID"
+        required: true
+  pull_request:
+    paths:
+      - '.github/workflows/**'
+
+permissions: read-all
+
+env:
+  PERSIST_CACHES: ${{ github.ref == 'refs/heads/main' }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build-native-packages:
+    name: build-linux-arm64
+    permissions:
+      actions: read
+      contents: read
+    runs-on: blacksmith-32vcpu-ubuntu-2404
+    timeout-minutes: 30
+    env:
+      NIX_CONFIG: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'access-tokens =' || '' }}
+    steps:
+      - name: Begin Testbox
+        uses: useblacksmith/begin-testbox@v2
+        with:
+          testbox_id: ${{ inputs.testbox_id }}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/build-linux-native-package
+        if: matrix.platform == 'linux'
+        with:
+          arch: arm64
+          binary: result/bin/ccusage
+          cache-scope: build-linux-arm64
+          save-nix-cache: ${{ env.PERSIST_CACHES }}
+      - uses: ./.github/actions/build-macos-nix-native-package
+        if: matrix.platform == 'darwin'
+        with:
+          arch: arm64
+          binary: result/bin/ccusage
+          cache-scope: build-linux-arm64
+      - uses: ./.github/actions/build-windows-native-package
+        if: matrix.platform == 'win32'
+        with:
+          arch: x64
+          binary: result/bin/ccusage.exe
+          save-cargo-cache: ${{ env.PERSIST_CACHES }}
+      - name: Run Testbox
+        uses: useblacksmith/run-testbox@v2
+        if: always()
+        env:
+          NIX_CONFIG: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'access-tokens =' || '' }}
