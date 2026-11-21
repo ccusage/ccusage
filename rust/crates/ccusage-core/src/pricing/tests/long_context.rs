@@ -612,3 +612,26 @@ fn a_multiplier_only_override_keeps_the_claude_4_6_premium_tier() {
     );
     assert_eq!(rates.fast_multiplier, 2.0);
 }
+
+#[test]
+fn a_long_rate_only_override_keeps_the_scheduled_one_hour_write_rate() {
+    crate::test_support::install_pricing_snapshots();
+    let override_value = ccusage_cli::PricingOverride {
+        input_cost_per_token_above_200k_tokens: Some(7e-6),
+        ..Default::default()
+    };
+    for (model, instant, one_hour) in [
+        ("claude-sonnet-4-6", "2026-03-12T00:00:00Z", Some(12e-6)),
+        ("grok-code-fast-1", "2026-05-16T00:00:00Z", None),
+    ] {
+        let key = model.to_string();
+        let pricing = PricingMap::load_embedded().with_user_overrides([(&key, &override_value)]);
+        let context = pricing
+            .find_at(model, super::timestamp(instant))
+            .unwrap()
+            .long_context
+            .unwrap();
+        assert_eq!(context.rates.input, Some(7e-6), "{model}");
+        assert_eq!(context.rates.cache_create_1h, one_hour, "{model}");
+    }
+}
