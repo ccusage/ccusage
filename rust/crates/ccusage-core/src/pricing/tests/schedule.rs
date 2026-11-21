@@ -131,7 +131,7 @@ const LEGACY_DEEPSEEK_FLASH_IDS: [&str; 4] = [
     "deepseek/deepseek-v4-flash-vision-exp",
 ];
 
-fn assert_legacy_flash_rates(pricing: &PricingMap, model: &str, instant: &str, expected: [f64; 3]) {
+fn assert_deepseek_rates(pricing: &PricingMap, model: &str, instant: &str, expected: [f64; 3]) {
     let rates = pricing.find_at(model, timestamp(instant)).unwrap();
     for (actual, expected) in [
         (rates.input, expected[0]),
@@ -157,7 +157,7 @@ fn legacy_deepseek_flash_ids_keep_the_v4_schedule_before_september_10() {
             ("2026-09-09T05:00:00Z", LEGACY_V4_FLASH_OFF_PEAK),
             ("2026-09-10T03:59:59Z", LEGACY_V4_FLASH_PEAK),
         ] {
-            assert_legacy_flash_rates(&pricing, model, instant, expected);
+            assert_deepseek_rates(&pricing, model, instant, expected);
         }
     }
 }
@@ -175,7 +175,7 @@ fn legacy_deepseek_flash_ids_bill_at_flash_rates_from_september_10() {
             ("2026-11-18T09:00:00+08:00", LEGACY_FLASH_PEAK),
             ("2026-11-18T10:00:00Z", LEGACY_FLASH_OFF_PEAK),
         ] {
-            assert_legacy_flash_rates(&pricing, model, instant, expected);
+            assert_deepseek_rates(&pricing, model, instant, expected);
         }
     }
 }
@@ -272,30 +272,31 @@ fn applies_deepseek_v4_rates_by_effective_period_for_both_models() {
             [0.44, 1.32, 0.014],
             [1.32, 3.96, 0.044],
         ),
+        (
+            "2026-09-10T00:59:59Z",
+            [0.22, 0.66, 0.007],
+            [0.66, 1.98, 0.022],
+        ),
+        (
+            "2026-09-10T03:59:59.999Z",
+            [0.44, 1.32, 0.014],
+            [1.32, 3.96, 0.044],
+        ),
+        (
+            "2026-09-10T04:00:00Z",
+            [0.15, 0.6, 0.003],
+            [0.66, 1.98, 0.022],
+        ),
+        (
+            "2026-09-10T06:00:00Z",
+            [0.3, 1.2, 0.006],
+            [1.32, 3.96, 0.044],
+        ),
     ];
 
-    for (timestamp_text, flash_expected, pro_expected) in cases {
-        let flash = pricing
-            .find_at("deepseek-v4-flash", timestamp(timestamp_text))
-            .unwrap();
-        for (actual, expected) in [flash.input, flash.output, flash.cache_read.unwrap()]
-            .map(|rate| rate * 1e6)
-            .into_iter()
-            .zip(flash_expected)
-        {
-            assert!((actual - expected).abs() < 1e-12);
-        }
-
-        let pro = pricing
-            .find_at("deepseek-v4-pro", timestamp(timestamp_text))
-            .unwrap();
-        for (actual, expected) in [pro.input, pro.output, pro.cache_read.unwrap()]
-            .map(|rate| rate * 1e6)
-            .into_iter()
-            .zip(pro_expected)
-        {
-            assert!((actual - expected).abs() < 1e-12);
-        }
+    for (instant, flash_expected, pro_expected) in cases {
+        assert_deepseek_rates(&pricing, "deepseek-v4-flash", instant, flash_expected);
+        assert_deepseek_rates(&pricing, "deepseek-v4-pro", instant, pro_expected);
     }
 }
 

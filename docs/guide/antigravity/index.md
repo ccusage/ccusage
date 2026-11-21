@@ -10,6 +10,9 @@ separate from Gemini CLI rows in focused and unified reports.
 # Daily Antigravity usage
 ccusage antigravity daily
 
+# Weekly Antigravity usage
+ccusage antigravity weekly
+
 # Monthly Antigravity usage
 ccusage antigravity monthly
 
