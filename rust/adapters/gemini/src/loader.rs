@@ -10,22 +10,20 @@ use super::{
 pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let files = discover_log_files(cx.diagnostics)?;
     let pricing = cx.pricing.table(cx.shared.mode);
-    let events =
-        read_typed_units_flat(
-            &files,
-            cx.shared.single_thread,
-            cx.diagnostics,
-            |file| match file.extension().and_then(|extension| extension.to_str()) {
-                Some("jsonl") => parse_jsonl_file(file, cx.diagnostics),
-                _ => parse_json_file(file, cx.diagnostics),
-            },
-        );
-    let mut entries = events
+    let mut events = read_typed_units_flat(
+        &files,
+        cx.shared.single_thread,
+        cx.diagnostics,
+        |file| match file.extension().and_then(|extension| extension.to_str()) {
+            Some("jsonl") => parse_jsonl_file(file, cx.diagnostics),
+            _ => parse_json_file(file, cx.diagnostics),
+        },
+    );
+    events.sort_by_key(|event| event.timestamp);
+    Ok(events
         .into_iter()
         .map(|event| event_to_loaded(event, cx.window.timezone(), pricing))
-        .collect::<Vec<_>>();
-    LoadedEntry::sort_by_timestamp(&mut entries);
-    Ok(entries)
+        .collect())
 }
 
 #[cfg(test)]
