@@ -35,6 +35,7 @@ in
         modelsDevSrc = inputs.models-dev;
       };
       cargo-hawk = pkgs.callPackage ./cargo-hawk.nix { inherit rustToolchain; };
+      blacksmith = pkgs.callPackage ../nix/tools/blacksmith { };
       actionlint = pkgs.callPackage ./actionlint.nix { };
       oxlint = pkgs.callPackage ../nix/tools/oxlint { inherit bunCli; };
       publint = pkgs.callPackage ../nix/tools/publint { inherit bunCli; };
@@ -55,6 +56,7 @@ in
         default = ccusage;
         inherit
           actionlint
+          blacksmith
           cargo-hawk
           ccusage
           changelogithub
