@@ -177,6 +177,15 @@ impl Row {
     pub(super) fn is_bare_hosted(&self, key: &str) -> bool {
         self.scope == Scope::Hosted && !key.contains('/')
     }
+
+    pub(super) fn is_bedrock(&self) -> bool {
+        self.host == Some(data::BEDROCK_HOST)
+            || (self.scope == Scope::Hosted
+                && self.key.split_once('/').is_some_and(|(prefix, _)| {
+                    prefix == "bedrock_mantle"
+                        || host_listing(prefix).is_some_and(|(host, _)| host == data::BEDROCK_HOST)
+                }))
+    }
 }
 
 pub(super) fn vendor_id<'a>(key: &'a str, provider: &str) -> &'a str {
@@ -198,11 +207,25 @@ pub(super) fn row_scope<'a>(
 }
 
 pub(super) fn host_listing(segment: &str) -> Option<(u8, &'static data::HostListing)> {
-    let segment = segment.to_ascii_lowercase().replace('-', "_");
+    find_host_listing(segment, |listing| listing.spellings)
+}
+
+fn find_host_listing(
+    segment: &str,
+    spellings: impl Fn(&data::HostListing) -> &'static [&'static str],
+) -> Option<(u8, &'static data::HostListing)> {
     data::HOSTS
         .iter()
         .zip(0..)
-        .find(|(listing, _)| listing.spellings.contains(&segment.as_str()))
+        .find(|(listing, _)| {
+            spellings(listing).iter().any(|spelling| {
+                segment.len() == spelling.len()
+                    && segment.bytes().zip(spelling.bytes()).all(|(left, right)| {
+                        left.eq_ignore_ascii_case(&right)
+                            || matches!((left, right), (b'-', b'_') | (b'_', b'-'))
+                    })
+            })
+        })
         .map(|(listing, index)| (index, listing))
 }
 
@@ -213,11 +236,7 @@ pub(super) fn is_host_segment(segment: &str) -> bool {
 
 pub(super) fn host_of_model_id(model: &str) -> Option<(u8, &'static data::HostListing)> {
     let (word, _) = model.split_once('.')?;
-    data::HOSTS
-        .iter()
-        .zip(0..)
-        .find(|(listing, _)| listing.model_id_words.contains(&word))
-        .map(|(listing, index)| (index, listing))
+    find_host_listing(word, |listing| listing.model_id_words)
 }
 
 pub(super) fn bare_host(key: &str, provider: &str) -> Option<u8> {

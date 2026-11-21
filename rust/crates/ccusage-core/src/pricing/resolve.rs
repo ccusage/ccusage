@@ -198,12 +198,12 @@ impl PricingMap {
         route: BillingRoute,
         timestamp: Option<TimestampMs>,
     ) -> Option<(&'a str, Pricing)> {
-        let (model, found, _) = self.resolve_row_with(
-            reported_model,
-            candidates,
-            Lookup::Pricing,
-            models_dev_pricing,
-        )?;
+        let lookup = match route {
+            BillingRoute::Direct(_) => Lookup::DirectPricing,
+            BillingRoute::Foreign => Lookup::Pricing,
+        };
+        let (model, found, _) =
+            self.resolve_row_with(reported_model, candidates, lookup, models_dev_pricing)?;
         let handle =
             PricingHandle::on_route(found.row, route, reported_model.unwrap_or(model), model);
         Some((model, handle.with_rates_at(timestamp, |rates| *rates)))
@@ -310,10 +310,15 @@ impl PricingMap {
             })
         };
         let hit = match lookup {
-            Lookup::Pricing => self
+            Lookup::Pricing | Lookup::DirectPricing => self
                 .requests
                 .get_or_init(RequestCache::default)
-                .get_or_init(reported, candidates, search),
+                .get_or_init(
+                    reported,
+                    candidates,
+                    matches!(lookup, Lookup::DirectPricing),
+                    search,
+                ),
             Lookup::Context => search(),
         }?;
         let model = match hit.candidate {
@@ -331,6 +336,21 @@ impl PricingMap {
         lookup: Lookup,
         live: &dyn Fn() -> Option<&'live Self>,
     ) -> Option<RequestHit> {
+        let lookup = if matches!(lookup, Lookup::Pricing)
+            && let Some(model) =
+                reported.filter(|model| model.contains('.') && !model.contains('/'))
+            && candidates.iter().any(|&(candidate, kind)| {
+                matches!(kind, MatchKind::Exact | MatchKind::StrictExact)
+                    && candidate.split_once('/').is_some_and(|(provider, id)| {
+                        id == model
+                            && (direct_billing_vendor(provider).is_some()
+                                || !is_host_segment(provider))
+                    })
+            }) {
+            Lookup::DirectPricing
+        } else {
+            lookup
+        };
         let models_dev = || self.select_models_dev(live);
         let cache = self.find_cache.get_or_init(NameCache::default);
         let matching = |name: &str, pass| {

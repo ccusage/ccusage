@@ -256,6 +256,8 @@ pub(super) struct HostListing {
     pub(super) model_id_words: &'static [&'static str],
 }
 
+pub(super) const BEDROCK_HOST: u8 = 0;
+
 // NOTE(2026-11-21, #2229): Agents log a cloud host under models.dev's IDs (`amazon-bedrock` at https://models.dev/providers/amazon-bedrock, `azure`, `google-vertex`) while LiteLLM keys the same listings `bedrock/…`, `azure/…` and `vertex_ai/…`, and keeps Bedrock's default-region rows bare under `bedrock_converse` (https://docs.litellm.ai/docs/providers/bedrock). Each entry lists the logged spellings of one host and where LiteLLM keeps its listing, so every adapter reaches the same host row.
 pub(super) static HOSTS: &[HostListing] = &[
     HostListing {
@@ -267,7 +269,7 @@ pub(super) static HOSTS: &[HostListing] = &[
         ],
         prefixes: &["bedrock", "bedrock_converse"],
         bare_providers: &["bedrock_converse", "bedrock"],
-        // NOTE(2026-11-21, #2229): Bedrock model IDs start with the model provider or a cross-region inference geography followed by `.`, as in `moonshotai.kimi-k2-thinking` or `us.anthropic.…` (https://docs.aws.amazon.com/bedrock/latest/userguide/models-supported.html, https://docs.aws.amazon.com/bedrock/latest/userguide/inference-profiles-support.html). Every bare `word.model` key in LiteLLM is a Bedrock listing, so an id spelled this way names Bedrock as its host.
+        // NOTE(2026-11-21, #2229): Bedrock model IDs start with the model provider or a cross-region inference geography followed by `.`, as in `moonshotai.kimi-k2-thinking` or `us.anthropic.…` (https://docs.aws.amazon.com/bedrock/latest/userguide/models-supported.html, https://docs.aws.amazon.com/bedrock/latest/userguide/inference-profiles-support.html). A model with this spelling can use Bedrock pricing when the logged provider does not establish a direct route.
         model_id_words: &[
             "ai21",
             "amazon",

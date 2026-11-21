@@ -7,6 +7,7 @@ use super::{Entries, Name, Row, Scope, last_segment, normalized_pricing_key};
 #[derive(Clone, Copy)]
 pub(super) enum Lookup {
     Pricing,
+    DirectPricing,
     Context,
 }
 
@@ -14,6 +15,7 @@ impl Lookup {
     pub(super) fn includes(self, row: &Row) -> bool {
         match self {
             Self::Pricing => true,
+            Self::DirectPricing => !row.is_bedrock(),
             Self::Context => row.context_limit.is_some(),
         }
     }

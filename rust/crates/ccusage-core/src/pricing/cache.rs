@@ -246,6 +246,7 @@ struct NameForms {
 struct NameSlot {
     forms: Option<Option<Arc<NameForms>>>,
     prices: [ResultCell; 6],
+    direct_prices: Option<Box<[ResultCell; 6]>>,
     limits: Option<Box<[ResultCell; 6]>>,
 }
 
@@ -255,6 +256,7 @@ impl NameSlot {
     fn result(&self, lookup: Lookup, pass: Pass) -> Option<Option<CachedHit>> {
         let slots = match lookup {
             Lookup::Pricing => &self.prices,
+            Lookup::DirectPricing => self.direct_prices.as_deref()?,
             Lookup::Context => self.limits.as_deref()?,
         };
         slots[pass as usize].get()
@@ -268,6 +270,7 @@ impl NameSlot {
     ) -> Option<CachedHit> {
         let slots = match lookup {
             Lookup::Pricing => &mut self.prices,
+            Lookup::DirectPricing => self.direct_prices.get_or_insert_with(Box::default),
             Lookup::Context => self.limits.get_or_insert_with(Box::default),
         };
         slots[pass as usize].insert(result)
@@ -419,12 +422,19 @@ pub(super) struct RequestHit {
 struct RequestSlot {
     reported: Option<Box<str>>,
     candidates: Box<[(Box<str>, MatchKind)]>,
+    direct: bool,
     hit: Arc<OnceLock<Option<RequestHit>>>,
 }
 
 impl RequestSlot {
-    fn matches(&self, reported: Option<&str>, candidates: &[(&str, MatchKind)]) -> bool {
-        self.reported.as_deref() == reported
+    fn matches(
+        &self,
+        reported: Option<&str>,
+        candidates: &[(&str, MatchKind)],
+        direct: bool,
+    ) -> bool {
+        self.direct == direct
+            && self.reported.as_deref() == reported
             && self.candidates.len() == candidates.len()
             && self
                 .candidates
@@ -442,13 +452,17 @@ impl RequestCache {
         &self,
         reported: Option<&str>,
         candidates: &[(&str, MatchKind)],
+        direct: bool,
         init: impl FnOnce() -> Option<RequestHit>,
     ) -> Option<RequestHit> {
         let mut hasher = FxHasher::default();
         reported.hash(&mut hasher);
         candidates.hash(&mut hasher);
+        if direct {
+            direct.hash(&mut hasher);
+        }
         let hash = hasher.finish();
-        let matches = |slot: &&RequestSlot| slot.matches(reported, candidates);
+        let matches = |slot: &&RequestSlot| slot.matches(reported, candidates, direct);
         let pending = {
             let table = self.0.read().unwrap_or_else(|error| error.into_inner());
             if let Some(slot) = table
@@ -476,6 +490,7 @@ impl RequestCache {
                     .iter()
                     .map(|(name, kind)| ((*name).into(), *kind))
                     .collect(),
+                direct,
                 hit: Arc::clone(&hit),
             });
             hit
