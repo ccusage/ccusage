@@ -156,7 +156,8 @@ impl PricingRows {
     fn indexes(&self) -> &RowIndexes {
         self.indexes.get_or_init(|| {
             let mut indexes = RowIndexes::default();
-            for found in self.matches() {
+            // NOTE(2026-11-21): Normalizing swaps ASCII bytes one for one, so a vendor id, which is a suffix of its key, normalizes to the same suffix of the normalized key. Reusing the cached normalized keys keeps every key to a single normalization.
+            for (found, identity) in self.normalized_matches() {
                 let row = found.row;
                 let key = found.key;
                 let index = if row.is_bare_hosted(key) {
@@ -164,10 +165,7 @@ impl PricingRows {
                 } else {
                     &mut indexes.by_identity
                 };
-                index
-                    .entry(normalized_pricing_key(key).into_owned().into_boxed_str())
-                    .or_default()
-                    .push(found.id);
+                index.entry(identity.into()).or_default().push(found.id);
                 let vendor_id = if row.scope == Scope::Direct && row.is_free() {
                     Some(last_segment(key))
                 } else {
@@ -176,7 +174,7 @@ impl PricingRows {
                 if let Some(id) = vendor_id.filter(|id| *id != key) {
                     indexes
                         .by_vendor_id
-                        .entry(normalized_pricing_key(id).into_owned().into_boxed_str())
+                        .entry(identity[identity.len() - id.len()..].into())
                         .or_default()
                         .push(found.id);
                 }

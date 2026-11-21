@@ -69,6 +69,265 @@ fn prices_the_configured_alias_target_when_both_models_have_rates() {
 }
 
 #[test]
+fn applies_a_chained_alias_once_like_every_other_adapter() {
+    ccusage_test_support::install_pricing_snapshots();
+    let _aliases = set_model_aliases_for_tests([
+        ("chain-first", "chain-second"),
+        ("chain-second", "chain-third"),
+    ]);
+    let mut pricing = PricingMap::default();
+    pricing.load_json(
+        r#"{
+                "chain-first":{"input_cost_per_token":1,"output_cost_per_token":1},
+                "chain-second":{"input_cost_per_token":2,"output_cost_per_token":2},
+                "chain-third":{"input_cost_per_token":3,"output_cost_per_token":3}
+            }"#,
+    );
+    let event = CodexTokenUsageEvent {
+        session_id: "session".into(),
+        response_id: None,
+        record_response_id: None,
+        timestamp: parse_ts_timestamp("2026-09-01T00:00:00Z").unwrap(),
+        last_activity: "2026-09-01T00:00:00Z".into(),
+        model: "chain-first".into(),
+        input_tokens: 100,
+        cached_input_tokens: 0,
+        cache_creation_tokens: 0,
+        output_tokens: 0,
+        reasoning_output_tokens: 0,
+        total_tokens: 100,
+        is_fallback_model: false,
+        service_tier: None,
+    };
+    let seen = CodexDedupe::new(1, Some(&pricing));
+    let mut provenance = CodexEventProvenance::new(0);
+    seen.record(&event, &mut provenance).unwrap();
+    let groups = seen
+        .fold(&SharedArgs::default(), AgentReportKind::Session)
+        .unwrap();
+    let group = &groups["session"];
+    assert_eq!(
+        group.models.keys().cloned().collect::<Vec<_>>(),
+        ["chain-first"]
+    );
+    assert_eq!(
+        crate::report::calculate_group_cost(
+            group,
+            Some(&pricing),
+            CodexSpeedPolicy::Auto(CodexServiceTier::Standard)
+        ),
+        200.0,
+    );
+}
+
+#[test]
+fn does_not_price_an_unpriced_alias_target_through_its_own_alias() {
+    ccusage_test_support::install_pricing_snapshots();
+    let _aliases = set_model_aliases_for_tests([
+        ("chain-own-first", "chain-own-second"),
+        ("chain-own-second", "chain-own-third"),
+    ]);
+    let mut pricing = PricingMap::default();
+    pricing.load_json(
+        r#"{
+                "chain-own-first":{"input_cost_per_token":1,"output_cost_per_token":1},
+                "chain-own-third":{"input_cost_per_token":3,"output_cost_per_token":3}
+            }"#,
+    );
+    let event = CodexTokenUsageEvent {
+        session_id: "session".into(),
+        response_id: None,
+        record_response_id: None,
+        timestamp: parse_ts_timestamp("2026-09-01T00:00:00Z").unwrap(),
+        last_activity: "2026-09-01T00:00:00Z".into(),
+        model: "chain-own-first".into(),
+        input_tokens: 100,
+        cached_input_tokens: 0,
+        cache_creation_tokens: 0,
+        output_tokens: 0,
+        reasoning_output_tokens: 0,
+        total_tokens: 100,
+        is_fallback_model: false,
+        service_tier: None,
+    };
+    let seen = CodexDedupe::new(1, Some(&pricing));
+    let mut provenance = CodexEventProvenance::new(0);
+    seen.record(&event, &mut provenance).unwrap();
+    let groups = seen
+        .fold(&SharedArgs::default(), AgentReportKind::Session)
+        .unwrap();
+    let group = &groups["session"];
+    assert_eq!(
+        group.models.keys().cloned().collect::<Vec<_>>(),
+        ["chain-own-first"]
+    );
+    assert_eq!(
+        crate::report::calculate_group_cost(
+            group,
+            Some(&pricing),
+            CodexSpeedPolicy::Auto(CodexServiceTier::Standard)
+        ),
+        100.0,
+    );
+}
+
+#[test]
+fn groups_under_the_alias_target_whose_fuzzy_row_priced_the_usage() {
+    ccusage_test_support::install_pricing_snapshots();
+    let _aliases =
+        set_model_aliases_for_tests([("codex-unpriced-logged", "claude-codex-family-9-thinking")]);
+    let mut pricing = PricingMap::default();
+    pricing.load_json(
+        r#"{"claude-codex-family-9":{"input_cost_per_token":7,"output_cost_per_token":7}}"#,
+    );
+    let event = CodexTokenUsageEvent {
+        session_id: "session".into(),
+        response_id: None,
+        record_response_id: None,
+        timestamp: parse_ts_timestamp("2026-09-01T00:00:00Z").unwrap(),
+        last_activity: "2026-09-01T00:00:00Z".into(),
+        model: "codex-unpriced-logged".into(),
+        input_tokens: 100,
+        cached_input_tokens: 0,
+        cache_creation_tokens: 0,
+        output_tokens: 0,
+        reasoning_output_tokens: 0,
+        total_tokens: 100,
+        is_fallback_model: false,
+        service_tier: None,
+    };
+    let seen = CodexDedupe::new(1, Some(&pricing));
+    let mut provenance = CodexEventProvenance::new(0);
+    seen.record(&event, &mut provenance).unwrap();
+    let groups = seen
+        .fold(&SharedArgs::default(), AgentReportKind::Session)
+        .unwrap();
+    let group = &groups["session"];
+    assert_eq!(
+        group.models.keys().cloned().collect::<Vec<_>>(),
+        ["claude-codex-family-9-thinking"]
+    );
+    assert_eq!(
+        crate::report::calculate_group_cost(
+            group,
+            Some(&pricing),
+            CodexSpeedPolicy::Auto(CodexServiceTier::Standard)
+        ),
+        700.0,
+    );
+}
+
+#[test]
+fn bills_a_fuzzy_priced_alias_target_once_even_when_it_has_its_own_alias() {
+    ccusage_test_support::install_pricing_snapshots();
+    let _aliases = set_model_aliases_for_tests([
+        ("chain-hop-a", "claude-chain-hop-9-thinking"),
+        ("claude-chain-hop-9-thinking", "chain-hop-c"),
+    ]);
+    let mut pricing = PricingMap::default();
+    pricing.load_json(
+        r#"{
+                "claude-chain-hop-9":{"input_cost_per_token":2,"output_cost_per_token":2},
+                "chain-hop-c":{"input_cost_per_token":3,"output_cost_per_token":3}
+            }"#,
+    );
+    assert_eq!(pricing.find("chain-hop-a").unwrap().input, 2.0);
+    let event = CodexTokenUsageEvent {
+        session_id: "session".into(),
+        response_id: None,
+        record_response_id: None,
+        timestamp: parse_ts_timestamp("2026-09-01T00:00:00Z").unwrap(),
+        last_activity: "2026-09-01T00:00:00Z".into(),
+        model: "chain-hop-a".into(),
+        input_tokens: 100,
+        cached_input_tokens: 0,
+        cache_creation_tokens: 0,
+        output_tokens: 0,
+        reasoning_output_tokens: 0,
+        total_tokens: 100,
+        is_fallback_model: false,
+        service_tier: None,
+    };
+    let seen = CodexDedupe::new(1, Some(&pricing));
+    let mut provenance = CodexEventProvenance::new(0);
+    seen.record(&event, &mut provenance).unwrap();
+    let groups = seen
+        .fold(&SharedArgs::default(), AgentReportKind::Session)
+        .unwrap();
+    let group = &groups["session"];
+    assert_eq!(
+        group.models.keys().cloned().collect::<Vec<_>>(),
+        ["chain-hop-a"]
+    );
+    assert_eq!(
+        crate::report::calculate_group_cost(
+            group,
+            Some(&pricing),
+            CodexSpeedPolicy::Auto(CodexServiceTier::Standard)
+        ),
+        200.0,
+    );
+}
+
+#[test]
+fn keeps_differently_priced_requests_in_separate_groups() {
+    ccusage_test_support::install_pricing_snapshots();
+    let _aliases = set_model_aliases_for_tests([
+        ("group-a-source", "group-b-target"),
+        ("group-b-target", "group-c-target"),
+    ]);
+    let mut pricing = PricingMap::default();
+    pricing.load_json(r#"{"group-b-target":{"input_cost_per_token":2,"output_cost_per_token":2}}"#);
+    let key = "group-c-target".to_owned();
+    let rates = ccusage_core::cli::PricingOverride {
+        input_cost_per_token: Some(5.0),
+        output_cost_per_token: Some(5.0),
+        ..Default::default()
+    };
+    let pricing = pricing.with_user_overrides([(&key, &rates)]);
+    for order in [
+        ["group-a-source", "group-b-target"],
+        ["group-b-target", "group-a-source"],
+    ] {
+        let seen = CodexDedupe::new(1, Some(&pricing));
+        let mut provenance = CodexEventProvenance::new(0);
+        for (index, model) in order.into_iter().enumerate() {
+            let event = CodexTokenUsageEvent {
+                session_id: "session".into(),
+                response_id: None,
+                record_response_id: None,
+                timestamp: parse_ts_timestamp(&format!("2026-09-01T00:00:0{index}Z")).unwrap(),
+                last_activity: "2026-09-01T00:00:00Z".into(),
+                model: model.into(),
+                input_tokens: 100,
+                cached_input_tokens: 0,
+                cache_creation_tokens: 0,
+                output_tokens: 0,
+                reasoning_output_tokens: 0,
+                total_tokens: 100,
+                is_fallback_model: false,
+                service_tier: None,
+            };
+            seen.record(&event, &mut provenance).unwrap();
+        }
+        let groups = seen
+            .fold(&SharedArgs::default(), AgentReportKind::Session)
+            .unwrap();
+        let group = &groups["session"];
+        assert_eq!(group.models.len(), 2, "{order:?}");
+        assert_eq!(
+            crate::report::calculate_group_cost(
+                group,
+                Some(&pricing),
+                CodexSpeedPolicy::Auto(CodexServiceTier::Standard)
+            ),
+            700.0,
+            "{order:?}"
+        );
+    }
+}
+
+#[test]
 fn tier_split_uses_the_supplied_pricing_entry_instead_of_embedded_rates() {
     ccusage_test_support::install_pricing_snapshots();
     let mut pricing = PricingMap::default();
