@@ -408,6 +408,38 @@ fn prices_the_logged_id_before_its_opencode_alias() {
 }
 
 #[test]
+fn prices_a_derived_model_at_the_vendor_rate_until_the_host_id_is_logged() {
+    ccusage_test_support::install_pricing_snapshots();
+    let mut pricing = PricingMap::default();
+    pricing.load_json(
+        r#"{
+            "gemini-3-pro-preview":{"input_cost_per_token":1,"output_cost_per_token":1},
+            "vertex_ai/gemini-3-pro-preview":{"input_cost_per_token":2,"output_cost_per_token":2}
+        }"#,
+    );
+    for (model, expected) in [
+        ("gemini-3-pro-high", 100.0),
+        ("gemini-3-pro-preview", 200.0),
+    ] {
+        let entry = message_value_to_entry(
+            message(json!({
+                "providerID": "google-vertex", "modelID": model,
+                "time": { "created": 1767312000000i64 },
+                "tokens": { "input": 100 }
+            })),
+            None,
+            None,
+            &jiff::tz::TimeZone::UTC,
+            CostMode::Calculate,
+            ccusage_core::cost::PriceTable::Calculate(&pricing),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(entry.cost, expected, "{model}");
+    }
+}
+
+#[test]
 fn primary_rates_outrank_models_dev_for_qualified_candidates() {
     ccusage_test_support::install_pricing_snapshots();
     let mut pricing = ccusage_core::PricingMap::load_embedded();

@@ -506,10 +506,10 @@ fn open_code_model_candidates(model: &str, provider: &str) -> Vec<(String, Match
     let mut candidates = base.clone();
     if provider != "unknown" {
         let provider = provider.replace('-', "_");
-        candidates.extend(
-            base.into_iter()
-                .map(|(model, _)| (format!("{provider}/{model}"), MatchKind::Exact)),
-        );
+        candidates.extend(base.into_iter().enumerate().map(|(index, (model, kind))| {
+            let kind = if index == 0 { MatchKind::Exact } else { kind };
+            (format!("{provider}/{model}"), kind)
+        }));
     }
     candidates.dedup();
     candidates
