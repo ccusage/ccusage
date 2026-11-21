@@ -32,6 +32,9 @@ description: Runs local changes on a Blacksmith testbox. Use for Linux builds, L
   with `blacksmith testbox status --id <id> --wait`, never a sleep loop.
 - Run commands as `blacksmith testbox run --id <id> "nix develop --command <cmd>"`;
   fetch results with `blacksmith testbox download`.
+- Keep `--idle-timeout` at or below 60 minutes. Both jobs stop at their
+  240-minute cap, warmup included, so for longer work stop the box and warm up a
+  new one.
 - Always `blacksmith testbox stop --id <id>` when done, including after failures.
 - Warmup works only once `testbox.yaml` is on the default branch; `--ref`
   selects the checkout the setup steps run on.
