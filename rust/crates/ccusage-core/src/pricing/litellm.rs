@@ -64,7 +64,7 @@ impl PricingMap {
             if free
                 && provider.is_some_and(|provider| {
                     sources
-                        .free_tier_only_providers
+                        .zero_token_rate_unpriced_providers
                         .iter()
                         .any(|id| id == provider)
                 })

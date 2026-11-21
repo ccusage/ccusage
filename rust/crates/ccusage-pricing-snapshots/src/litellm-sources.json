@@ -10,7 +10,7 @@
 		"dashscope",
 		"gemini"
 	],
-	"freeTierOnlyProviders": ["gemini"],
+	"zeroTokenRateUnpricedProviders": ["gemini"],
 	"embedded": [
 		{
 			"keyPrefix": "claude-"
