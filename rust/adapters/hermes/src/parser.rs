@@ -966,13 +966,14 @@ mod pricing_identity_tests {
             ..Default::default()
         };
         let with_override = pricing.with_user_overrides([(&id, &patch)]);
-        for (case, model, provider, map, expected) in [
+        for (case, model, provider, map, expected, estimated) in [
             (
                 "23_direct_v3_2",
                 "deepseek-v3.2",
                 "deepseek",
                 &pricing,
                 0.0007,
+                false,
             ),
             (
                 "34_scheduled_flash",
@@ -980,14 +981,23 @@ mod pricing_identity_tests {
                 "deepseek",
                 &pricing,
                 0.00075,
+                false,
             ),
-            ("46_glm_override", "glm-4.7", "zai", &with_override, 0.10),
+            (
+                "46_glm_override",
+                "glm-4.7",
+                "zai",
+                &with_override,
+                0.10,
+                false,
+            ),
             (
                 "113_paid_listing_before_free_suffix",
                 "novita/glm-4.7-flash",
                 "openrouter",
                 &pricing,
                 0.0004747,
+                false,
             ),
             (
                 "55_router_listing_behind_the_path",
@@ -995,6 +1005,7 @@ mod pricing_identity_tests {
                 "openrouter",
                 &pricing,
                 0.00066125,
+                false,
             ),
             (
                 "54_free_identity_estimated_through_router",
@@ -1002,6 +1013,7 @@ mod pricing_identity_tests {
                 "openrouter",
                 &pricing,
                 0.000558,
+                true,
             ),
         ] {
             let entry = HermesEntry {
@@ -1018,9 +1030,10 @@ mod pricing_identity_tests {
                 message_count: 1,
                 cost_usd: None,
             };
-            let (cost, missing, _) = price_hermes(&entry, PriceTable::Calculate(map));
+            let (cost, missing, is_estimate) = price_hermes(&entry, PriceTable::Calculate(map));
             assert!((cost - expected).abs() < 1e-12, "{case}: {cost}");
             assert_eq!(missing, None, "{case}");
+            assert_eq!(is_estimate, estimated, "{case}");
         }
     }
 }

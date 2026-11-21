@@ -1033,6 +1033,47 @@ mod pricing_identity_tests {
     use super::*;
 
     #[test]
+    fn marks_a_free_vendor_model_through_its_logged_router_as_an_estimate() {
+        ccusage_test_support::install_pricing_snapshots();
+        let pricing = ccusage_core::PricingMap::load_embedded();
+        for (provider, cost, estimated) in [
+            (Some("openrouter"), 0.000558, true),
+            (Some("ollama"), 0.0, false),
+            (None, 0.0, false),
+        ] {
+            let entry = loaded_entry(
+                &SourceFile {
+                    path: std::path::PathBuf::from("fixture.json"),
+                    kind: SourceKind::Extension,
+                    session_id: "task-a".to_string(),
+                },
+                EntryInput {
+                    timestamp: crate::parse_ts_timestamp("2026-11-17T10:00:00Z").unwrap(),
+                    model: "glm-4.7-flash".to_string(),
+                    provider: provider.map(str::to_string),
+                    usage: TokenUsageRaw {
+                        input_tokens: 1_000,
+                        output_tokens: 1_000,
+                        ..TokenUsageRaw::default()
+                    },
+                    reported_cost: None,
+                    request_id: None,
+                },
+                CostMode::Calculate,
+                PriceTable::Calculate(&pricing),
+                &jiff::tz::TimeZone::UTC,
+            );
+
+            assert!(
+                (entry.cost - cost).abs() < 1e-12,
+                "{provider:?}: {}",
+                entry.cost
+            );
+            assert_eq!(entry.estimated_pricing, estimated, "{provider:?}");
+        }
+    }
+
+    #[test]
     fn prices_a_foreign_router_without_the_deepseek_schedule() {
         ccusage_test_support::install_pricing_snapshots();
         let pricing = ccusage_core::PricingMap::load_embedded();
