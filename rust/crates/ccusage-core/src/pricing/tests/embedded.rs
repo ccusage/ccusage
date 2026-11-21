@@ -54,6 +54,17 @@ fn embedded_table_matches_the_rows_loaded_from_its_snapshots() {
 }
 
 #[test]
+fn embedded_pricing_reserves_the_encoded_row_count() {
+    crate::test_support::install_pricing_snapshots();
+    let primary = PricingMap::load_embedded();
+    for table in [&primary, embedded_models_dev_pricing()] {
+        let rows = &table.rows.entries.rows;
+        assert!(!rows.is_empty());
+        assert_eq!(rows.capacity(), rows.len());
+    }
+}
+
+#[test]
 fn loads_embedded_claude_pricing() {
     crate::test_support::install_pricing_snapshots();
     let pricing = PricingMap::load_embedded();

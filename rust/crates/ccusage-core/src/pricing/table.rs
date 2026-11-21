@@ -339,7 +339,9 @@ impl<'a> Reader<'a> {
         let mut map = PricingMap::default();
         let rows = map.rows_mut();
         let entries = &mut rows.entries;
-        for _ in 0..self.keys.usize() {
+        let count = self.keys.usize();
+        entries.reserve(count);
+        for _ in 0..count {
             let shared = self.keys.usize();
             let suffix = self.keys.usize();
             let suffix = std::str::from_utf8(self.keys.take(suffix))
