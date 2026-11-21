@@ -213,7 +213,7 @@ fn aggregate_discovered(
             .is_some_and(CodexSessionMetadata::is_fork)
     });
     if has_forks {
-        ccusage_core::sort::stable_by_key(&mut loaded, |(file, _)| file.index);
+        loaded.sort_unstable_by_key(|(file, _)| file.index);
         let bounded = has_date_bounds(shared);
         let mut available = vec![Vec::new(); dirs.len()];
         let mut probes = Vec::new();

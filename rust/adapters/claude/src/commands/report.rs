@@ -173,7 +173,7 @@ fn run_session_id(id: &str, shared: &SharedArgs) -> Result<()> {
             entry.recorded_session_id.as_deref() == Some(id) || entry.session_id.as_ref() == id
         })
         .collect::<Vec<_>>();
-    ccusage_core::sort::stable_by_key(&mut session_entries, |entry| entry.timestamp);
+    session_entries.sort_by_key(|entry| entry.timestamp);
 
     if session_entries.is_empty() {
         if wants_json(shared) {
@@ -193,9 +193,7 @@ fn run_session_id(id: &str, shared: &SharedArgs) -> Result<()> {
 
     if wants_json(shared) {
         if shared.requested_order() == Some(SortOrder::Desc) {
-            ccusage_core::sort::stable_by_key(&mut session_entries, |entry| {
-                std::cmp::Reverse(entry.timestamp)
-            });
+            session_entries.sort_by_key(|entry| std::cmp::Reverse(entry.timestamp));
         }
         let output = json!({
             "sessionId": id,
