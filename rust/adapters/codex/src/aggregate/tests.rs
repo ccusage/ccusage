@@ -2242,7 +2242,7 @@ fn settles_repeated_fork_requests_at_the_depth_used_for_pairing() {
 }
 
 #[test]
-fn folds_many_sessions_to_the_same_groups_with_settler_threads() {
+fn folds_many_sessions_to_the_same_groups_with_and_without_worker_threads() {
     ccusage_test_support::install_pricing_snapshots();
     let event_line = |session: usize, event: usize| {
         let day = (session * 7 + event) % 56;

@@ -1,10 +1,8 @@
-use ccusage_core::{PricingMap, parallel::spawn_scoped_worker};
+use ccusage_core::PricingMap;
 use std::{
     collections::BTreeMap,
     hash::{Hash, Hasher},
-    mem,
-    sync::{Arc, Mutex, PoisonError, mpsc},
-    thread,
+    sync::{Arc, Mutex},
 };
 
 use compact_str::CompactString;
@@ -499,100 +497,35 @@ impl<'a> CodexDedupe<'a> {
             .into_inner()
             .map_err(|_| crate::cli_error("codex lineage poisoned"))?;
         let window = ccusage_core::ReportWindow::from_shared(shared);
-        let settle = |shard: Mutex<CodexDedupeMap>, emit: &mut EmitSettledUsage<'_>| {
+        let mut groups = FxHashMap::<CodexPeriod, CodexGroup>::default();
+        for shard in self.shards {
             let records = shard
                 .into_inner()
                 .map_err(|_| crate::cli_error("codex dedupe poisoned"))?;
             for (key, attribution) in records.into_usage(&lineage) {
-                if let Some(period) =
+                let model = models
+                    .resolved
+                    .values
+                    .get(key.model.index())
+                    .ok_or_else(|| crate::cli_error("missing interned Codex model"))?;
+                let Some(period) =
                     codex_period_for(key.timestamp, attribution.session, kind, &window)
-                {
-                    emit((period, key, attribution))?;
-                }
+                else {
+                    continue;
+                };
+                accumulate_codex_usage_into_group(
+                    groups.entry(period).or_default(),
+                    key.usage,
+                    model,
+                    key.timestamp,
+                    &attribution,
+                );
             }
-            Ok(())
-        };
-        let mut groups = FxHashMap::<CodexPeriod, CodexGroup>::default();
-        let accumulate = |(period, key, attribution): CodexSettledUsage| {
-            let model = models
-                .resolved
-                .values
-                .get(key.model.index())
-                .ok_or_else(|| crate::cli_error("missing interned Codex model"))?;
-            accumulate_codex_usage_into_group(
-                groups.entry(period).or_default(),
-                key.usage,
-                model,
-                key.timestamp,
-                &attribution,
-            );
-            Ok(())
-        };
-        let settlers =
-            ccusage_adapter_common::worker_count(shared.single_thread, self.shards.len())
-                .saturating_sub(1)
-                .min(MAX_SETTLERS);
-        settle_shards(self.shards, settlers, &settle, accumulate)?;
-        Ok(groups
-            .into_iter()
-            .map(|(period, group)| (period.label(kind, &sessions), group))
-            .collect())
-    }
-}
-
-type CodexSettledUsage = (CodexPeriod, CodexUsageKey, CodexAttribution);
-type EmitSettledUsage<'a> = dyn FnMut(CodexSettledUsage) -> Result<()> + 'a;
-
-// NOTE(2026-11-21, #2421): One thread accumulates every settled row, so it bounds the fold. More than four settlers did not shorten it on the CI perf fixture and only keep more shard tables alive at once.
-const MAX_SETTLERS: usize = 4;
-const SETTLED_BATCH_LEN: usize = 1024;
-
-fn settle_shards<S>(
-    shards: Vec<Mutex<CodexDedupeMap>>,
-    settlers: usize,
-    settle: &S,
-    mut accumulate: impl FnMut(CodexSettledUsage) -> Result<()>,
-) -> Result<()>
-where
-    S: Fn(Mutex<CodexDedupeMap>, &mut EmitSettledUsage<'_>) -> Result<()> + Sync,
-{
-    if settlers == 0 {
-        return shards
-            .into_iter()
-            .try_for_each(|shard| settle(shard, &mut accumulate));
-    }
-    let shards = Mutex::new(shards.into_iter());
-    let (sender, receiver) = mpsc::sync_channel(settlers);
-    thread::scope(|scope| {
-        for _ in 0..settlers {
-            let sender = sender.clone();
-            let shards = &shards;
-            spawn_scoped_worker(scope, move || {
-                loop {
-                    let next = shards.lock().unwrap_or_else(PoisonError::into_inner).next();
-                    let Some(shard) = next else {
-                        break;
-                    };
-                    let mut batch = Vec::with_capacity(SETTLED_BATCH_LEN);
-                    let result = settle(shard, &mut |usage| {
-                        batch.push(usage);
-                        if batch.len() < SETTLED_BATCH_LEN {
-                            return Ok(());
-                        }
-                        let full = mem::replace(&mut batch, Vec::with_capacity(SETTLED_BATCH_LEN));
-                        sender
-                            .send(Ok(full))
-                            .map_err(|_| crate::cli_error("codex fold stopped"))
-                    });
-                    if sender.send(result.map(|()| batch)).is_err() {
-                        break;
-                    }
-                }
-            });
         }
-        drop(sender);
-        receiver
-            .into_iter()
-            .try_for_each(|batch| batch?.into_iter().try_for_each(&mut accumulate))
-    })
+        let mut labeled = BTreeMap::new();
+        for (period, group) in groups {
+            labeled.insert(period.label(kind, &sessions), group);
+        }
+        Ok(labeled)
+    }
 }
