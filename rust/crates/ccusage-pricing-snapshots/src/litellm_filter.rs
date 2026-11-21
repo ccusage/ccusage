@@ -67,6 +67,26 @@ pub(crate) fn filter_pricing_json(json: &str) -> Option<String> {
     serde_json::to_string(&Value::Object(filtered)).ok()
 }
 
+// NOTE(2026-11-21, #2228): A vendor's free row reached through a host bills an estimate only when that host is known to charge. A LiteLLM provider with at least one positive token rate is such a host, while local runtimes such as `ollama` list only $0 rows, so they stay free.
+pub(crate) fn paid_host_providers(json: &str) -> Option<Vec<String>> {
+    let Value::Object(raw) = serde_json::from_str::<Value>(json).ok()? else {
+        return None;
+    };
+    let rate = |pricing: &Map<String, Value>, field| {
+        pricing.get(field).and_then(Value::as_f64).unwrap_or(0.0) > 0.0
+    };
+    let providers = raw
+        .values()
+        .filter_map(Value::as_object)
+        .filter(|pricing| {
+            rate(pricing, "input_cost_per_token") || rate(pricing, "output_cost_per_token")
+        })
+        .filter_map(|pricing| pricing.get("litellm_provider").and_then(Value::as_str))
+        .map(str::to_owned)
+        .collect::<std::collections::BTreeSet<_>>();
+    Some(providers.into_iter().collect())
+}
+
 // NOTE(2026-11-21, #2229): A rule admits a row only when every constraint it names holds. `unqualified` admits only a key with no `/` after its `keyPrefix`, so a host's default-region listing is embedded without its regional and gateway paths, and `modes` limits a rule to token-priced listings.
 fn is_admitted(rule: &Value, key: &str, provider: Option<&str>, mode: Option<&str>) -> bool {
     let field = |name| rule.get(name).and_then(Value::as_str);
@@ -84,7 +104,7 @@ fn is_admitted(rule: &Value, key: &str, provider: Option<&str>, mode: Option<&st
 
 #[cfg(test)]
 mod tests {
-    use super::filter_pricing_json;
+    use super::{filter_pricing_json, paid_host_providers};
     use ccusage_core::{PricingMap, pricing::MatchKind};
 
     #[test]
@@ -111,6 +131,21 @@ mod tests {
                 "deepseek/deepseek-test",
                 "deepseek/deepseek-v3"
             ]
+        );
+    }
+
+    #[test]
+    fn lists_only_providers_with_a_positive_token_rate_as_paid_hosts() {
+        let json = serde_json::json!({
+            "kyma/glm-4.7-flash": {"litellm_provider":"kyma","input_cost_per_token":0.000000081,"output_cost_per_token":0.00000054},
+            "kyma/free-model": {"litellm_provider":"kyma","input_cost_per_token":0,"output_cost_per_token":0},
+            "ollama/codellama": {"litellm_provider":"ollama","input_cost_per_token":0,"output_cost_per_token":0},
+            "openrouter/out-only": {"litellm_provider":"openrouter","output_cost_per_token":0.000001},
+            "sample_spec": "not a row"
+        });
+        assert_eq!(
+            paid_host_providers(&json.to_string()).unwrap(),
+            ["kyma", "openrouter"]
         );
     }
 

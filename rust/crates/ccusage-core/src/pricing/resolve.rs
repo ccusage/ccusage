@@ -6,7 +6,7 @@ use super::{
     CachedHit, Candidate, HitKind, Lookup, Name, NameCache, Pass, Pricing, PricingMap, PricingRows,
     PricingSchedule, RequestCache, RequestHit, Row, RowMatch, Scope, host_listing,
     host_of_model_id, is_host_segment, last_segment, models_dev_pricing, names_pricing_key,
-    pricing_key_matches, schedule_for,
+    pricing_key_matches, schedule_for, unlabeled_model,
 };
 
 #[derive(Clone, Copy)]
@@ -977,7 +977,7 @@ fn configured_alias(label: &str) -> Option<std::borrow::Cow<'_, str>> {
         .find_map(|(model, alias)| (alias != model).then_some(alias))
 }
 
-// NOTE(2026-11-21, #2228): The owner decided that a vendor's free listing reached through a paid host with no listing of its own bills an estimate from the closest paid listing of the same model, because under-reporting is worse than an estimate. A host counts only when the agent logged it (the logged id itself, or an Exact or StrictExact provider candidate), and a direct vendor, a model owner or a vendor's own plan in front of the id names no host.
+// NOTE(2026-11-21, #2228): The owner decided that a vendor's free listing reached through a paid host with no listing of its own bills an estimate from the closest paid listing of the same model, because under-reporting is worse than an estimate. A host counts only when the agent logged it (the logged id itself, or an Exact or StrictExact provider candidate), and only a host known to charge counts: a shared host listing or a LiteLLM provider with a paid row. An agent's `[name] ` display label, a direct vendor, a model owner, a vendor's own plan, and a local or unknown provider such as `ollama` or `vllm` name no paid host, so their free usage stays free.
 fn names_foreign_host(reported: Option<&str>, candidates: &[(&str, MatchKind)]) -> bool {
     candidates
         .iter()
@@ -986,6 +986,21 @@ fn names_foreign_host(reported: Option<&str>, candidates: &[(&str, MatchKind)]) 
         })
         .map(|&(name, _)| name)
         .chain(reported)
-        .filter_map(|name| name.split_once('/').map(|(segment, _)| segment))
-        .any(|segment| !super::models_dev::is_vendor_segment(segment))
+        .filter_map(|name| {
+            unlabeled_model(name)
+                .split_once('/')
+                .map(|(segment, _)| segment)
+        })
+        .any(is_paid_host)
+}
+
+fn is_paid_host(segment: &str) -> bool {
+    !super::models_dev::is_vendor_segment(segment)
+        && (host_listing(segment).is_some()
+            || super::embedded::litellm_sources().is_some_and(|sources| {
+                sources
+                    .paid_host_providers
+                    .iter()
+                    .any(|provider| provider.eq_ignore_ascii_case(segment))
+            }))
 }

@@ -63,6 +63,8 @@ pub(super) struct LiteLlmSources {
     pub(super) direct_providers: Vec<String>,
     #[serde(default)]
     pub(super) zero_token_rate_unpriced_providers: Vec<String>,
+    #[serde(default)]
+    pub(super) paid_host_providers: Vec<String>,
 }
 
 pub(super) fn litellm_sources() -> Option<&'static LiteLlmSources> {

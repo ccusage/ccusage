@@ -754,8 +754,16 @@ fn resolver_table_vendor_free_rows_only_answer_their_identity_or_segment() {
         assert_eq!((rates.input, rates.output), expected, "{case}");
     }
     assert!(
-        map.find("foreign/plan-2-5-flash").is_none(),
-        "55_foreign_prefix_free_without_a_paid_listing"
+        map.find("openrouter/plan-2-5-flash").is_none(),
+        "55_paid_host_prefix_free_without_a_paid_listing"
+    );
+    let unknown = map
+        .find("foreign/plan-2-5-flash")
+        .expect("55_unknown_prefix_stays_free");
+    assert_eq!(
+        (unknown.input, unknown.output, unknown.estimated),
+        (0.0, 0.0, false),
+        "55_unknown_prefix_stays_free"
     );
     assert!(
         map.find("plan-2.5-flash-20260101").is_none(),
@@ -935,8 +943,8 @@ fn resolver_table() {
     assert!(
         pricing
             .resolve_at(
-                Some("foreign/free-niche-model"),
-                &[("foreign/free-niche-model", fuzzy)],
+                Some("openrouter/free-niche-model"),
+                &[("openrouter/free-niche-model", fuzzy)],
                 None
             )
             .is_none(),
@@ -1104,6 +1112,90 @@ fn a_vendors_free_row_through_a_paid_host_reports_missing_pricing_without_a_paid
         .resolve_at(
             Some("glm-unlisted-flash"),
             &[("glm-unlisted-flash", MatchKind::Fuzzy)],
+            None,
+        )
+        .unwrap();
+    assert_eq!((own.input, own.output, own.estimated), (0.0, 0.0, false));
+}
+
+#[test]
+fn a_vendors_free_row_stays_free_without_a_known_paid_host() {
+    crate::test_support::install_pricing_snapshots();
+    let pricing = PricingMap::load_embedded();
+    for (label, candidates) in [
+        (
+            "[pi] zai/glm-4.7-flash",
+            &[
+                ("[pi] zai/glm-4.7-flash", MatchKind::StrictExact),
+                ("zai/glm-4.7-flash", MatchKind::Fuzzy),
+            ][..],
+        ),
+        (
+            "[openclaw] zai/glm-4.7-flash",
+            &[
+                ("[openclaw] zai/glm-4.7-flash", MatchKind::StrictExact),
+                ("zai/glm-4.7-flash", MatchKind::Fuzzy),
+            ][..],
+        ),
+        (
+            "glm-4.7-flash",
+            &[
+                ("glm-4.7-flash", MatchKind::Fuzzy),
+                ("ollama/glm-4.7-flash", MatchKind::Exact),
+            ][..],
+        ),
+        (
+            "glm-4.7-flash",
+            &[
+                ("glm-4.7-flash", MatchKind::Fuzzy),
+                ("lmstudio/glm-4.7-flash", MatchKind::Exact),
+            ][..],
+        ),
+        (
+            "vllm/glm-4.7-flash",
+            &[("vllm/glm-4.7-flash", MatchKind::Fuzzy)][..],
+        ),
+    ] {
+        let (_, rates) = pricing
+            .resolve_at(Some(label), candidates, None)
+            .unwrap_or_else(|| panic!("{label} {candidates:?}: unpriced"));
+        assert_eq!(
+            (rates.input, rates.output, rates.estimated),
+            (0.0, 0.0, false),
+            "{label} {candidates:?}"
+        );
+    }
+    let (_, labeled) = pricing
+        .resolve_at(
+            Some("[pi] kyma/glm-4.7-flash"),
+            &[
+                ("[pi] kyma/glm-4.7-flash", MatchKind::StrictExact),
+                ("kyma/glm-4.7-flash", MatchKind::Fuzzy),
+            ],
+            None,
+        )
+        .unwrap();
+    assert!(labeled.estimated && labeled.input > 0.0);
+}
+
+#[test]
+fn a_named_hosts_own_free_row_answers_before_the_paid_estimate() {
+    crate::test_support::install_pricing_snapshots();
+    let mut pricing = PricingMap::default();
+    pricing.load_json(
+        r#"{
+            "zai/plan-2.5-flash": {"litellm_provider": "zai", "input_cost_per_token": 0, "output_cost_per_token": 0},
+            "openrouter/plan-2.5-flash": {"litellm_provider": "openrouter", "input_cost_per_token": 0, "output_cost_per_token": 0},
+            "novita/plan-2.5-flash": {"litellm_provider": "novita", "input_cost_per_token": 0.000001, "output_cost_per_token": 0.000002}
+        }"#,
+    );
+    let (_, own) = pricing
+        .resolve_at(
+            Some("plan-2.5-flash"),
+            &[
+                ("plan-2.5-flash", MatchKind::Fuzzy),
+                ("openrouter/plan-2.5-flash", MatchKind::Exact),
+            ],
             None,
         )
         .unwrap();

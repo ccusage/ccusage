@@ -36,6 +36,8 @@ fn main() -> Result<(), String> {
         println!("cargo:rerun-if-changed={FLAKE_LOCK_JSON}");
         fetch_pricing_json()?
     };
+    let paid_hosts = litellm_filter::paid_host_providers(&pricing_json)
+        .ok_or_else(|| "list paid LiteLLM hosts".to_string())?;
     let pricing_json = litellm_filter::filter_pricing_json(&pricing_json)
         .ok_or_else(|| "filter LiteLLM pricing JSON".to_string())?;
     ensure_reparses_to_itself("filtered LiteLLM pricing", &pricing_json)?;
@@ -44,8 +46,7 @@ fn main() -> Result<(), String> {
     fs::write(out_path, deflate(pricing_json.as_bytes()))
         .map_err(|error| format!("write build-time pricing snapshot: {error}"))?;
 
-    let litellm_sources =
-        embed_snapshot("src/litellm-sources.json", "litellm-sources.json.deflate")?;
+    let litellm_sources = embed_litellm_sources(paid_hosts)?;
     let models_dev_pricing = embed_snapshot(MODELS_DEV_PRICING_JSON, OUT_MODELS_DEV_PRICING_JSON)?;
     let models_dev_catalog_rules = embed_snapshot(
         MODELS_DEV_CATALOG_RULES_JSON,
@@ -78,6 +79,21 @@ fn embed_snapshot(source: &str, out_name: &str) -> Result<Snapshot, String> {
     let deflated = deflate(json.as_bytes());
     fs::write(out_dir_path(out_name)?, &deflated)
         .map_err(|error| format!("write {out_name}: {error}"))?;
+    Ok(Snapshot { json, deflated })
+}
+
+fn embed_litellm_sources(paid_hosts: Vec<String>) -> Result<Snapshot, String> {
+    const SOURCE: &str = "src/litellm-sources.json";
+    println!("cargo:rerun-if-changed={SOURCE}");
+    let snapshot = fs::read_to_string(SOURCE).map_err(|error| format!("read {SOURCE}: {error}"))?;
+    let mut value = serde_json::from_str::<Value>(&snapshot)
+        .map_err(|error| format!("parse {SOURCE}: {error}"))?;
+    value["paidHostProviders"] = Value::from(paid_hosts);
+    let json =
+        serde_json::to_string(&value).map_err(|error| format!("serialize {SOURCE}: {error}"))?;
+    let deflated = deflate(json.as_bytes());
+    fs::write(out_dir_path("litellm-sources.json.deflate")?, &deflated)
+        .map_err(|error| format!("write litellm-sources.json.deflate: {error}"))?;
     Ok(Snapshot { json, deflated })
 }
 
