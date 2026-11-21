@@ -4,7 +4,7 @@ use ccusage_core::{
 };
 
 // NOTE(2026-11-20, #2332): Only the provider IDs that bill through the scheduled vendor itself keep its schedule (https://docs.litellm.ai/docs/providers/deepseek). DeepSeek Harness records its own routes as `deepseek-official` and `deepseek-account`. Every other provider ID bills at a flat rate and must not inherit the schedule, whichever row the lookup reaches.
-// NOTE(2026-11-21, #2226): Google's Gemini Developer API is recorded as `google` (models.dev, https://models.dev/providers/google) or `gemini` (https://docs.litellm.ai/docs/providers/gemini), and it bills its dated price changes itself. Vertex AI stays a separate host.
+// NOTE(2026-11-21, #2226): Google's Gemini Developer API is recorded as `google` (models.dev, https://models.dev/providers/google) or `gemini` (https://docs.litellm.ai/docs/providers/gemini), and it bills its dated price changes itself. Hermes and Droid also fold their `vertex` and `vertex_ai` provider IDs into `google`, so those records keep the schedule; https://cloud.google.com/vertex-ai/generative-ai/pricing lists the same Gemini 3.x Flash step. Other Vertex spellings, such as `google-vertex`, stay foreign.
 const DIRECT_PROVIDERS: &[&str] = &[
     "deepseek",
     "deepseek-official",

@@ -6,6 +6,7 @@ const MODEL_DATE_SUFFIX_DIGITS: usize = 8;
 
 pub(super) fn with_names<T>(model: &str, mut choose: impl FnMut(&str) -> Option<T>) -> Option<T> {
     choose(model)
+        .or_else(|| vendor_spelling(model).and_then(|vendor| choose(&vendor)))
         .or_else(|| pricing_alias(model).and_then(&mut choose))
         .or_else(|| {
             let alias = crate::model_aliases::resolve_model_name(model);

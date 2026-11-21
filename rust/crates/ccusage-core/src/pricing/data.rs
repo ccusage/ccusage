@@ -375,6 +375,7 @@ const GEMINI_4_PRO_TIER: PricingSchedule = date_step(
     },
 );
 
+// NOTE(2026-11-21, #2226): https://cloud.google.com/vertex-ai/generative-ai/pricing also places Gemini 3.7 Flash, which the Gemini API page does not list, on the same introductory rate and January 1, 2027 step as 3.8 Flash. LiteLLM's `gemini/gemini-3.7-flash` row carries the introductory rate, so 3.7 Flash shares this schedule.
 // NOTE(2026-11-21, #2226): https://ai.google.dev/gemini-api/docs/pricing lists Gemini 3.8 Flash and 3.6 Flash at $0.75 input, $3.75 output and $0.075 cached through December 31, 2026, and $1.50, $7.50 and $0.15 from January 1, 2027. The change starts at 00:00 UTC for the same reason as Gemini 4.
 const GEMINI_FLASH_2027: PricingSchedule = date_step(
     1_798_761_600_000,
@@ -401,5 +402,6 @@ pub(super) static SCHEDULES: &[(&str, PricingSchedule)] = &[
     ("gemini-4-argon", GEMINI_4_PRO_TIER),
     ("gemini-4-carbon", GEMINI_4_PRO_TIER),
     ("gemini-3-8-flash", GEMINI_FLASH_2027),
+    ("gemini-3-7-flash", GEMINI_FLASH_2027),
     ("gemini-3-6-flash", GEMINI_FLASH_2027),
 ];

@@ -217,6 +217,7 @@ struct NameForms {
     builtin: Option<Alias<&'static str>>,
     configured: Option<Alias<Box<str>>>,
     configured_builtin: Option<Alias<&'static str>>,
+    configured_vendor: Option<Alias<Box<str>>>,
 }
 
 #[derive(Debug, Default)]
@@ -265,12 +266,17 @@ impl NameForms {
             .as_ref()
             .and_then(|alias| pricing_alias(&alias.text))
             .map(Alias::new);
+        let configured_vendor = configured
+            .as_ref()
+            .and_then(|alias| vendor_spelling(&alias.text))
+            .map(Alias::new);
         Some(Arc::new(Self {
             normalized,
             vendor,
             builtin,
             configured,
             configured_builtin,
+            configured_vendor,
         }))
     }
 }
@@ -313,6 +319,7 @@ impl Candidate<'_> {
                 forms.vendor.as_ref().map(Alias::name),
                 forms.builtin.as_ref().map(Alias::name),
                 forms.configured.as_ref().map(Alias::name),
+                forms.configured_vendor.as_ref().map(Alias::name),
                 forms.configured_builtin.as_ref().map(Alias::name),
             ]
             .into_iter()

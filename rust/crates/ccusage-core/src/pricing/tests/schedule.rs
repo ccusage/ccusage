@@ -884,6 +884,8 @@ fn google_spellings_follow_the_announced_gemini_price_changes() {
         ("gemini-3.8-flash", "2026-12-31T23:59:59Z", 0.75, 3.75),
         ("google/gemini-3.8-flash", "2027-01-01T00:00:00Z", 1.5, 7.5),
         ("gemini-3.6-flash", "2027-01-01T00:00:00Z", 1.5, 7.5),
+        ("gemini-3.7-flash", "2026-12-31T23:59:59Z", 0.75, 3.75),
+        ("google/gemini-3.7-flash", "2027-01-01T00:00:00Z", 1.5, 7.5),
     ] {
         let rates = pricing.find_at(model, timestamp(instant)).unwrap();
         assert_eq!(
@@ -922,4 +924,20 @@ fn usage_billed_by_google_follows_the_gemini_price_change_and_foreign_hosts_stay
             .unwrap();
         assert_eq!(rates.input * 1e6, input, "{route:?}");
     }
+}
+
+#[test]
+fn a_configured_alias_to_a_google_spelling_follows_the_gemini_schedule() {
+    let _aliases = crate::model_aliases::set_model_aliases_for_tests([(
+        "private-gemini",
+        "google/gemini-4-argon",
+    )]);
+    crate::test_support::install_pricing_snapshots();
+    let pricing = PricingMap::load_embedded();
+
+    let rates = pricing
+        .find_at("private-gemini", timestamp("2026-12-02T00:00:00Z"))
+        .unwrap();
+
+    assert_eq!((rates.input * 1e6, rates.output * 1e6), (4.0, 20.0));
 }

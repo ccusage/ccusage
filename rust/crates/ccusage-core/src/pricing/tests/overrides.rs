@@ -793,3 +793,23 @@ fn a_family_thinking_rule_matches_an_override_spelled_with_either_separator() {
         }
     }
 }
+
+#[test]
+fn a_google_spelled_override_inherits_the_gemini_row_like_its_vendor_spelling() {
+    crate::test_support::install_pricing_snapshots();
+    let base = PricingMap::load_embedded();
+    let long_context = |key: &str| {
+        let overrides = build_overrides(key, |o| {
+            o.input_cost_per_token = Some(50e-6);
+            o.output_cost_per_token = Some(50e-6);
+        });
+        base.with_user_overrides(overrides.iter())
+            .find(key)
+            .unwrap()
+            .long_context
+    };
+
+    let vendor = long_context("gemini/gemini-2.5-pro");
+    assert!(vendor.is_some());
+    assert_eq!(long_context("google/gemini-2.5-pro"), vendor);
+}
