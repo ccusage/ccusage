@@ -369,3 +369,20 @@ fn leaves_invalid_utf8_to_the_full_parse() {
     let bytes = b"{\"timestamp\":\"t\",\"message\":{\"content\":\"\xff\",\"id\":\"a\"}}";
     assert!(crate::json::JsonText::new(bytes).pick(LINE).is_none());
 }
+
+#[test]
+fn finds_a_control_byte_in_any_lane() {
+    for len in 0..80 {
+        for at in 0..len {
+            for byte in (0..=u8::MAX).step_by(7).chain([0x1f, 0x20, 0x7f, 0x80]) {
+                let mut bytes = vec![b'a'; len];
+                bytes[at] = byte;
+                assert_eq!(
+                    super::has_control_byte(&bytes),
+                    byte < 0x20,
+                    "{len} {at} {byte}"
+                );
+            }
+        }
+    }
+}

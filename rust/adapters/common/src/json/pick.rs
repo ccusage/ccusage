@@ -72,12 +72,16 @@ fn is_whitespace_char(char: char) -> bool {
     matches!(char, ' ' | '\n' | '\t' | '\r')
 }
 
+// NOTE(2026-11-21): Release builds optimize for size, where rustc does not vectorize loops. Testing eight bytes per word keeps this pass cheap at any optimization level.
 fn has_control_byte(bytes: &[u8]) -> bool {
-    bytes.chunks(64).any(|chunk| {
-        chunk
-            .iter()
-            .fold(false, |found, &byte| found | (byte < 0x20))
-    })
+    const ONES: u64 = u64::MAX / 255;
+    let (words, rest) = bytes.as_chunks::<8>();
+    let mut found = 0;
+    for word in words {
+        let word = u64::from_le_bytes(*word);
+        found |= word.wrapping_sub(ONES * 0x20) & !word;
+    }
+    found & (ONES << 7) != 0 || rest.iter().any(|&byte| byte < 0x20)
 }
 
 struct Scan<'a> {
@@ -87,6 +91,7 @@ struct Scan<'a> {
 }
 
 impl<'a> Scan<'a> {
+    #[inline(always)]
     fn peek(&mut self) -> Option<u8> {
         while let Some(b' ' | b'\n' | b'\t' | b'\r') = self.bytes.get(self.at) {
             self.at += 1;
@@ -94,10 +99,12 @@ impl<'a> Scan<'a> {
         self.bytes.get(self.at).copied()
     }
 
+    #[inline(always)]
     fn eat(&mut self, byte: u8) -> Option<()> {
         (self.peek()? == byte).then(|| self.at += 1)
     }
 
+    #[inline]
     fn string(&mut self) -> Option<bool> {
         let mut escaped = false;
         loop {
@@ -227,12 +234,14 @@ impl<'a> Scan<'a> {
         }
     }
 
+    #[inline]
     fn literal(&mut self, literal: &[u8]) -> Option<()> {
         self.bytes[self.at..]
             .starts_with(literal)
             .then(|| self.at += literal.len())
     }
 
+    #[inline]
     fn digits(&mut self) -> usize {
         let count = self.bytes[self.at..]
             .iter()
