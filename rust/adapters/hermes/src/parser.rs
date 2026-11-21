@@ -687,6 +687,33 @@ mod pricing_identity_tests {
     }
 
     #[test]
+    fn xai_provider_records_bill_grok_code_fast_1_at_the_rate_of_their_date() {
+        ccusage_test_support::install_pricing_snapshots();
+        let pricing = ccusage_core::PricingMap::load_embedded();
+        for (instant, expected) in [
+            ("2026-05-15T14:59:11Z", 0.0017),
+            ("2026-05-15T14:59:12Z", 0.003),
+        ] {
+            let entry = HermesEntry {
+                timestamp: ccusage_core::parse_ts_timestamp(instant).unwrap(),
+                session_id: "session-grok".to_string(),
+                model: "grok-code-fast-1".to_string(),
+                provider: "xai".to_string(),
+                usage: TokenUsageRaw {
+                    input_tokens: 1_000,
+                    output_tokens: 1_000,
+                    ..TokenUsageRaw::default()
+                },
+                message_count: 1,
+                cost_usd: None,
+            };
+            let (cost, missing) = price_hermes(&entry, PriceTable::Calculate(&pricing));
+            assert!((cost - expected).abs() < 1e-12, "{instant}: {cost}");
+            assert_eq!(missing, None, "{instant}");
+        }
+    }
+
+    #[test]
     fn override_on_the_reported_id_beats_provider_pricing() {
         ccusage_test_support::install_pricing_snapshots();
         let pricing = ccusage_core::PricingMap::load_embedded();
@@ -727,6 +754,74 @@ mod pricing_identity_tests {
                 (0.1, None)
             );
         }
+    }
+
+    #[test]
+    fn a_configured_alias_prices_a_provider_request_at_the_alias_target() {
+        ccusage_test_support::install_pricing_snapshots();
+        let _aliases = ccusage_core::model_aliases::set_model_aliases_for_tests([(
+            "alias-source-model",
+            "alias-target-model",
+        )]);
+        let mut pricing = ccusage_core::PricingMap::default();
+        pricing.load_json(
+            r#"{
+                "openai/alias-source-model": {"litellm_provider": "openai", "input_cost_per_token": 1e-6, "output_cost_per_token": 2e-6},
+                "alias-target-model": {"input_cost_per_token": 7e-6, "output_cost_per_token": 9e-6}
+            }"#,
+        );
+        let entry = HermesEntry {
+            timestamp: ccusage_core::parse_ts_timestamp("2026-11-17T10:00:00Z").unwrap(),
+            session_id: "s".into(),
+            model: "alias-source-model".into(),
+            provider: "openai".into(),
+            usage: TokenUsageRaw {
+                input_tokens: 1_000,
+                output_tokens: 1_000,
+                ..Default::default()
+            },
+            message_count: 1,
+            cost_usd: None,
+        };
+        let (cost, missing) = price_hermes(&entry, PriceTable::Calculate(&pricing));
+        assert!((cost - 0.016).abs() < 1e-12, "{cost}");
+        assert_eq!(missing, None);
+    }
+
+    #[test]
+    fn a_provider_qualified_override_beats_a_configured_alias() {
+        ccusage_test_support::install_pricing_snapshots();
+        let _aliases = ccusage_core::model_aliases::set_model_aliases_for_tests([(
+            "alias-source-model",
+            "alias-target-model",
+        )]);
+        let mut pricing = ccusage_core::PricingMap::default();
+        pricing.load_json(
+            r#"{"alias-target-model": {"input_cost_per_token": 7e-6, "output_cost_per_token": 9e-6}}"#,
+        );
+        let id = "openai/alias-source-model".to_owned();
+        let rates = ccusage_core::cli::PricingOverride {
+            input_cost_per_token: Some(1e-6),
+            output_cost_per_token: Some(2e-6),
+            ..Default::default()
+        };
+        let pricing = pricing.with_user_overrides([(&id, &rates)]);
+        let entry = HermesEntry {
+            timestamp: ccusage_core::parse_ts_timestamp("2026-11-17T10:00:00Z").unwrap(),
+            session_id: "s".into(),
+            model: "alias-source-model".into(),
+            provider: "openai".into(),
+            usage: TokenUsageRaw {
+                input_tokens: 1_000,
+                output_tokens: 1_000,
+                ..Default::default()
+            },
+            message_count: 1,
+            cost_usd: None,
+        };
+        let (cost, missing) = price_hermes(&entry, PriceTable::Calculate(&pricing));
+        assert!((cost - 0.003).abs() < 1e-12, "{cost}");
+        assert_eq!(missing, None);
     }
 
     #[test]

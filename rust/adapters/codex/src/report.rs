@@ -6,8 +6,7 @@ use crate::{
     CodexGroup, CodexModelUsage, CodexTimestampedUsage, PricingMap, Result, SimpleTable,
     attach_unpriced_models,
     cli::{AgentReportKind, CostMode, SharedArgs},
-    missing_pricing_model_for_token_total, print_box_title,
-    print_missing_pricing_warnings_for_models, sum_costs,
+    print_box_title, print_missing_pricing_warnings_for_models, sum_costs,
 };
 
 use super::speed::CodexSpeedPolicy;
@@ -128,17 +127,13 @@ pub(super) fn codex_model_missing_pricing(
     usage: &CodexModelUsage,
     pricing: Option<&PricingMap>,
 ) -> bool {
-    missing_pricing_model_for_token_total(
-        Some(model),
-        usage.total_tokens.max(
-            usage
-                .usage
-                .input_tokens
-                .saturating_add(usage.usage.output_tokens),
-        ),
-        pricing,
-    )
-    .is_some()
+    let tokens = usage.total_tokens.max(
+        usage
+            .usage
+            .input_tokens
+            .saturating_add(usage.usage.output_tokens),
+    );
+    pricing.is_some() && tokens != 0 && pricing.and_then(|table| table.find_handle(model)).is_none()
 }
 
 pub(crate) fn codex_missing_pricing_models(

@@ -61,6 +61,9 @@
 			"keyPrefix": "zai/"
 		},
 		{
+			"keyPrefix": "xai/"
+		},
+		{
 			"keyPrefix": "openrouter/openai/"
 		},
 		{

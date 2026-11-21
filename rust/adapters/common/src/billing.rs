@@ -1,36 +1,22 @@
 use ccusage_core::{
     cost::{EntryPrice, EntryPricing, PriceTable, price_entry, price_entry_on_route},
-    pricing::BillingRoute,
+    pricing::{BillingRoute, direct_billing_vendor},
 };
-
-// NOTE(2026-11-20, #2332): Only the provider IDs that bill through the scheduled vendor itself keep its schedule (https://docs.litellm.ai/docs/providers/deepseek). DeepSeek Harness records its own routes as `deepseek-official` and `deepseek-account`. Every other provider ID bills at a flat rate and must not inherit the schedule, whichever row the lookup reaches.
-// NOTE(2026-11-21, #2226): Google's Gemini Developer API is recorded as `google` (models.dev, https://models.dev/providers/google) or `gemini` (https://docs.litellm.ai/docs/providers/gemini), and it bills its dated price changes itself. Hermes and Droid also fold their `vertex` and `vertex_ai` provider IDs into `google`, so those records keep the schedule; https://cloud.google.com/vertex-ai/generative-ai/pricing lists the same Gemini 3.x Flash step. Other Vertex spellings, such as `google-vertex`, stay foreign.
-const DIRECT_PROVIDERS: &[&str] = &[
-    "deepseek",
-    "deepseek-official",
-    "deepseek-account",
-    "google",
-    "gemini",
-];
 
 const UNKNOWN_PROVIDERS: &[&str] = &["", "unknown"];
 
 /// Billing route for a provider ID recorded by an agent.
 ///
-/// `Direct` means DeepSeek billed the request itself, so its time-of-day
-/// schedule applies. `Foreign` means another provider billed it, so the
-/// schedule must not. `None` means the record does not name a provider, and the
+/// `Direct` names the vendor that billed the request itself, so that vendor's
+/// dated schedules apply. `Foreign` means another provider billed it, so no
+/// schedule does. `None` means the record does not name a provider, and the
 /// caller keeps the inferred behavior.
 pub fn billing_route(provider: Option<&str>) -> Option<BillingRoute> {
     let provider = provider?.trim().to_ascii_lowercase().replace('_', "-");
     if UNKNOWN_PROVIDERS.contains(&provider.as_str()) {
         return None;
     }
-    Some(if DIRECT_PROVIDERS.contains(&provider.as_str()) {
-        BillingRoute::Direct
-    } else {
-        BillingRoute::Foreign
-    })
+    Some(direct_billing_vendor(&provider).map_or(BillingRoute::Foreign, BillingRoute::Direct))
 }
 
 /// Prices an entry on the route its recorded provider implies.
@@ -53,20 +39,32 @@ mod tests {
 
     #[test]
     fn direct_vendor_ids_keep_their_own_schedule() {
-        for provider in [
-            "deepseek",
-            "DeepSeek",
-            "deepseek-official",
-            "deepseek_account",
-            "google",
-            "gemini",
+        for (provider, vendor) in [
+            ("deepseek", "deepseek"),
+            ("DeepSeek", "deepseek"),
+            ("deepseek-official", "deepseek"),
+            ("deepseek_account", "deepseek"),
+            ("google", "google"),
+            ("gemini", "google"),
         ] {
             assert_eq!(
                 billing_route(Some(provider)),
-                Some(BillingRoute::Direct),
+                Some(BillingRoute::Direct(vendor)),
                 "{provider}"
             );
         }
+    }
+
+    #[test]
+    fn a_vendors_own_provider_id_names_that_vendor() {
+        assert_eq!(
+            billing_route(Some("xai")),
+            Some(BillingRoute::Direct("xai"))
+        );
+        assert_eq!(
+            billing_route(Some("XAI")),
+            Some(BillingRoute::Direct("xai"))
+        );
     }
 
     #[test]
