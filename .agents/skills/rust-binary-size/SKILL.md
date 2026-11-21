@@ -20,12 +20,16 @@ changing the profile. Measure `bin/ccusage` for platform package size.
 
 ## Investigation
 
-Measure before editing code or dependencies:
+Measure before editing code or dependencies, with the shipped artefacts on
+CI rather than a local build:
 
 ```sh
-direnv exec . cargo build --manifest-path rust/Cargo.toml --release --bin ccusage
-ls -lh rust/target/release/ccusage
+gh workflow run binary-size.yaml --repo ccusage/ccusage -f refs='main <branch>'
 ```
+
+It builds every ref and target in parallel and reports bytes, sections and
+symbol growth. A local `cargo build --release` is only for a
+quick check of one change.
 
 When the release profile does not explain a regression, look at feature flags
 (`cargo tree -e features -p ccusage`) and large symbols (`cargo bloat --release
