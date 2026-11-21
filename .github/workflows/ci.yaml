@@ -418,9 +418,15 @@ jobs:
 
       - name: Build base and PR binaries
         run: |
-          nix build .#ccusage-static --out-link "$RUNNER_TEMP/ccusage-head"
-          nix build "git+file://$PWD?rev=$BASE_SHA#ccusage-static" \
-            --out-link "$RUNNER_TEMP/ccusage-base"
+          nix build .#ccusage-static-no-pgo --out-link "$RUNNER_TEMP/ccusage-head"
+          base="git+file://$PWD?rev=$BASE_SHA"
+          system="$(nix eval --impure --raw --expr builtins.currentSystem)"
+          base_package=ccusage-static-no-pgo
+          # NOTE(2026-11-21, #2457): Bases older than the untrained twin only have ccusage-static. That attribute was untrained there, so it is the same comparison.
+          if [ "$(nix eval "$base#packages.$system" --apply 'packages: packages ? ccusage-static-no-pgo')" != true ]; then
+            base_package=ccusage-static
+          fi
+          nix build "$base#$base_package" --out-link "$RUNNER_TEMP/ccusage-base"
 
       - name: Generate benchmark fixtures
         run: just generate-benchmark-fixtures "$RUNNER_TEMP/ccusage-fixtures"
