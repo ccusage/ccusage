@@ -4,6 +4,7 @@
     {
       config,
       pkgs,
+      rustToolchain,
       system,
       ...
     }:
@@ -36,6 +37,7 @@
             buildInputs = [ ];
           };
           doInstallCheck = true;
+          llvmProfdata = "${rustToolchain}/lib/rustlib/${pkgs.stdenv.hostPlatform.rust.rustcTarget}/bin/llvm-profdata";
           postInstall = ''
             if "''${READELF:-readelf}" -l $out/bin/ccusage | grep -q INTERP; then
               echo "error: ccusage-static is not statically linked" >&2

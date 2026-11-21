@@ -8,6 +8,7 @@
   doInstallCheck,
   postInstall,
   description,
+  llvmProfdata ? null,
 }:
 let
   cargoExtraArgs = "-p ccusage --bin ccusage --target ${target}";
@@ -31,7 +32,6 @@ let
     inherit (depsOnlyArgs) dummySrc;
     cargoArtifacts = dependencyArtifacts;
   };
-  cargoArtifacts = workspaceArtifacts.adapters;
   unsafeCodeCheck = import ./unsafe-code-check.nix {
     inherit
       commonArgs
@@ -41,19 +41,62 @@ let
       ;
     inherit (pkgs) lib nushell;
   };
+  withRustflags = name: rustflags: {
+    pname = "${commonArgs.pname}-${name}";
+    RUSTFLAGS = "${commonArgs.RUSTFLAGS} ${rustflags}";
+    cargoArtifacts = craneLib.buildDepsOnly (
+      depsOnlyArgs
+      // {
+        pname = "${commonArgs.pname}-${name}";
+        RUSTFLAGS = "${depsOnlyArgs.RUSTFLAGS} ${rustflags}";
+      }
+    );
+  };
+  instrumented = craneLib.buildPackage (
+    commonArgs
+    // withRustflags "pgo-instrumented" "-Cprofile-generate"
+    // {
+      doInstallCheck = false;
+    }
+  );
+  pgoProfile = pkgs.callPackage ./pgo-profile.nix {
+    inherit instrumented llvmProfdata root;
+  };
+  pgo = llvmProfdata != null;
 in
 craneLib.buildPackage (
   commonArgs
+  // (
+    if pgo then
+      withRustflags "pgo" "-Cprofile-use=${pgoProfile}"
+    else
+      { cargoArtifacts = workspaceArtifacts.adapters; }
+  )
   // {
-    inherit cargoArtifacts doInstallCheck postInstall;
+    inherit (commonArgs) pname;
+    inherit doInstallCheck postInstall;
     passthru = {
       inherit
-        cargoArtifacts
         dependencyArtifacts
         unsafeCodeCheck
         workspaceArtifacts
         ;
-    };
+      cargoArtifacts = workspaceArtifacts.adapters;
+      # The instrumented dependencies depend only on Cargo.lock, so they are the PGO build's reusable cache.
+      cacheRoot = pkgs.linkFarm "ccusage-release-cache-root" (
+        [
+          {
+            name = "workspace";
+            path = workspaceArtifacts.cacheRoot;
+          }
+        ]
+        ++ pkgs.lib.optional pgo {
+          name = "pgo-instrumented-dependencies";
+          path = instrumented.cargoArtifacts;
+        }
+      );
+    }
+    // pkgs.lib.optionalAttrs pgo { inherit instrumented pgoProfile; };
     meta = package.meta // {
       inherit description;
     };

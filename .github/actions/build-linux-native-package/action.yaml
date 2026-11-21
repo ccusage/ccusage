@@ -38,7 +38,7 @@ runs:
         system="$(nix eval --impure --raw --expr builtins.currentSystem)"
         user_gcroot="/nix/var/nix/gcroots/per-user/$(id -un)/ci"
         mkdir -p "$user_gcroot"
-        nix build ".#packages.$system.ccusage-release-linux-$ARCH.passthru.workspaceArtifacts.cacheRoot" \
+        nix build ".#packages.$system.ccusage-release-linux-$ARCH.passthru.cacheRoot" \
           --out-link "$user_gcroot/ccusage-cargo-artifacts"
 
     - name: Stage native package
