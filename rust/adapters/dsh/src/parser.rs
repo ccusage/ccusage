@@ -478,6 +478,7 @@ pub(super) fn dsh_entry_to_loaded(
     };
     let priced = price_entry_for_provider(entry_pricing, entry.provider.as_deref(), pricing);
     let cost = priced.cost;
+    let estimated_pricing = priced.estimated;
     let missing_pricing_model = priced
         .missing_pricing
         .then(|| ccusage_core::model_aliases::resolve_model_name(&entry.model).into_owned());
@@ -494,6 +495,7 @@ pub(super) fn dsh_entry_to_loaded(
         model: Some(entry.model),
         usage_limit_reset_time: None,
         missing_pricing_model,
+        estimated_pricing,
         usage: entry.usage,
         message_id: None,
         version: None,

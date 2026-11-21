@@ -105,6 +105,7 @@ pub(super) fn row_to_entry(
     };
     let priced = price_entry_for_provider(entry_pricing, provider_name.as_deref(), pricing);
     let cost = priced.cost;
+    let estimated_pricing = priced.estimated;
     let missing_pricing_model = priced
         .missing_pricing
         .then(|| ccusage_core::model_aliases::resolve_model_name(&model).into_owned());
@@ -120,6 +121,7 @@ pub(super) fn row_to_entry(
         model: Some(model),
         usage_limit_reset_time: None,
         missing_pricing_model,
+        estimated_pricing,
         extra_total_tokens: reasoning_tokens,
         message_count: None,
         usage,

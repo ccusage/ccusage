@@ -136,6 +136,12 @@ pub(super) fn codex_model_missing_pricing(
     pricing.is_some() && tokens != 0 && pricing.and_then(|table| table.find_handle(model)).is_none()
 }
 
+pub(super) fn codex_model_estimated(model: &str, pricing: Option<&PricingMap>) -> bool {
+    pricing
+        .and_then(|table| table.find_handle(model))
+        .is_some_and(|handle| handle.is_estimate())
+}
+
 pub(crate) fn codex_missing_pricing_models(
     groups: &BTreeMap<String, CodexGroup>,
     pricing: Option<&PricingMap>,

@@ -157,7 +157,7 @@ pub(super) fn to_loaded_entry(
     mode: CostMode,
     pricing: PriceTable<'_>,
 ) -> LoadedEntry {
-    let (cost, missing_pricing_model) = price_hermes(&entry, pricing);
+    let (cost, missing_pricing_model, estimated_pricing) = price_hermes(&entry, pricing);
     let stored_cost = stored_cost_for_mode(ccusage_core::cost::recorded_cost(entry.cost_usd), mode);
     LoadedEntry {
         date: date_at(entry.timestamp, tz),
@@ -172,6 +172,7 @@ pub(super) fn to_loaded_entry(
         model: Some(entry.model),
         usage_limit_reset_time: None,
         missing_pricing_model,
+        estimated_pricing,
         stored_cost,
         usage: entry.usage,
         message_id: Some(format!("hermes:{}", entry.session_id)),
@@ -180,7 +181,7 @@ pub(super) fn to_loaded_entry(
     }
 }
 
-fn price_hermes(entry: &HermesEntry, pricing: PriceTable<'_>) -> (f64, Option<String>) {
+fn price_hermes(entry: &HermesEntry, pricing: PriceTable<'_>) -> (f64, Option<String>, bool) {
     let candidates = model_candidates(entry);
     let candidates: Vec<_> = candidates
         .iter()
@@ -204,6 +205,7 @@ fn price_hermes(entry: &HermesEntry, pricing: PriceTable<'_>) -> (f64, Option<St
         priced
             .missing_pricing
             .then(|| ccusage_core::model_aliases::resolve_model_name(&entry.model).into_owned()),
+        priced.estimated,
     )
 }
 

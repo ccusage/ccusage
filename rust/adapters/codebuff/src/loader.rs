@@ -36,7 +36,7 @@ fn to_loaded_entry(
     tz: &JiffTimeZone,
     pricing: PriceTable<'_>,
 ) -> LoadedEntry {
-    let (cost, missing_pricing_model) = price_codebuff(&entry, pricing);
+    let (cost, missing_pricing_model, estimated_pricing) = price_codebuff(&entry, pricing);
     LoadedEntry {
         date: date_at(entry.timestamp, tz),
         timestamp: entry.timestamp,
@@ -49,6 +49,7 @@ fn to_loaded_entry(
         model: Some(entry.model),
         usage_limit_reset_time: None,
         missing_pricing_model,
+        estimated_pricing,
         message_count: None,
         usage: entry.usage,
         message_id: Some(entry.dedup_key.clone()),
@@ -364,6 +365,7 @@ mod tests {
             missing_pricing_model: None,
             message_count: None,
             stored_cost: None,
+            estimated_pricing: false,
         };
         let rows = ccusage_adapter_common::source::EntrySource::summarize(
             &crate::SOURCE,

@@ -111,6 +111,8 @@ pub struct ModelBreakdown {
     pub cost: f64,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub missing_pricing: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub estimated_pricing: bool,
     /// Subset of `cost` taken from stored `costUSD` values in `auto` mode.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stored_cost: Option<f64>,
@@ -148,6 +150,7 @@ impl ModelBreakdown {
             .saturating_add(other.extra_total_tokens);
         self.cost += other.cost;
         self.missing_pricing |= other.missing_pricing;
+        self.estimated_pricing |= other.estimated_pricing;
         self.add_stored_cost(other.stored_cost);
     }
 
@@ -191,6 +194,7 @@ pub struct LoadedEntry {
     pub model: Option<String>,
     pub usage_limit_reset_time: Option<TimestampMs>,
     pub missing_pricing_model: Option<String>,
+    pub estimated_pricing: bool,
     pub stored_cost: Option<f64>,
 }
 
@@ -279,6 +283,7 @@ pub struct Totals {
     pub total_cost: f64,
     pub credits: Option<f64>,
     pub unpriced_models: Vec<String>,
+    pub estimated_models: Vec<String>,
 }
 
 impl Totals {
@@ -304,7 +309,9 @@ impl Totals {
         totals.total_cost = crate::sum_costs(costs);
         let credits = crate::sum_costs(credits);
         totals.credits = (credits > 0.0).then_some(credits);
-        totals.unpriced_models = crate::output::unpriced_models(breakdowns.into_iter().flatten());
+        let breakdowns: Vec<_> = breakdowns.into_iter().flatten().collect();
+        totals.unpriced_models = crate::output::unpriced_models(breakdowns.iter().copied());
+        totals.estimated_models = crate::output::estimated_models(breakdowns);
         totals
     }
 

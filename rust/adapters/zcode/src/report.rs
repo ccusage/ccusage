@@ -32,6 +32,7 @@ mod tests {
             usage_limit_reset_time: None,
             missing_pricing_model: None,
             stored_cost: None,
+            estimated_pricing: false,
         }
     }
 
@@ -268,6 +269,7 @@ mod tests {
                     usage_limit_reset_time: None,
                     missing_pricing_model: None,
                     stored_cost: None,
+                    estimated_pricing: false,
                 }
             },
         )

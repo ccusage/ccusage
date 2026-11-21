@@ -145,6 +145,7 @@ fn breakdown(model: &str, missing_pricing: bool) -> ModelBreakdown {
         cost: if missing_pricing { 0.0 } else { 0.25 },
         missing_pricing,
         stored_cost: None,
+        estimated_pricing: false,
     }
 }
 
@@ -338,6 +339,7 @@ fn model_breakdown_total_includes_extra_tokens() {
         cost: 0.25,
         missing_pricing: false,
         stored_cost: None,
+        estimated_pricing: false,
     };
 
     assert_eq!(breakdown.total_tokens(), 172);
@@ -376,6 +378,7 @@ fn snapshot_summary(period: &str, project: Option<&str>, credits: Option<f64>) -
                 cost: 0.3,
                 missing_pricing: false,
                 stored_cost: None,
+                estimated_pricing: false,
             },
             ModelBreakdown {
                 model_name: "claude-sonnet-4-20250514".to_string(),
@@ -388,6 +391,7 @@ fn snapshot_summary(period: &str, project: Option<&str>, credits: Option<f64>) -
                 cost: 0.12,
                 missing_pricing: false,
                 stored_cost: None,
+                estimated_pricing: false,
             },
         ],
         project: project.map(str::to_string),

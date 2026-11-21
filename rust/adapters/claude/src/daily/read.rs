@@ -124,22 +124,30 @@ impl FilePricing<'_> {
         usage: TokenUsageRaw,
         stored_cost: Option<f64>,
         timestamp: TimestampMs,
-    ) -> (f64, Option<String>) {
+    ) -> (f64, Option<String>, bool) {
         let table = match self.table {
-            PriceTable::Display => return (stored_cost.unwrap_or_default(), None),
+            PriceTable::Display => return (stored_cost.unwrap_or_default(), None, false),
             PriceTable::Auto(_) if stored_cost.is_some() => {
-                return (stored_cost.unwrap_or_default(), None);
+                return (stored_cost.unwrap_or_default(), None, false);
             }
             PriceTable::Auto(table) | PriceTable::Calculate(table) => table,
         };
         let Some(model) = model else {
-            return (0.0, None);
+            return (0.0, None, false);
+        };
+        let priced = |handle: Option<&PricingHandle>| {
+            let (cost, missing) = price_resolved_usage(model, usage, timestamp, handle);
+            (
+                cost,
+                missing,
+                handle.is_some_and(PricingHandle::is_estimate),
+            )
         };
         if let Some((_, handle)) = self.models.iter().find(|(name, _)| name.as_ref() == model) {
-            return price_resolved_usage(model, usage, timestamp, handle.as_ref());
+            return priced(handle.as_ref());
         }
         let handle = table.find_handle(model);
-        let price = price_resolved_usage(model, usage, timestamp, handle.as_ref());
+        let price = priced(handle.as_ref());
         self.models.push((model.into(), handle));
         price
     }
@@ -228,7 +236,7 @@ pub(crate) fn read_usage_file<E>(
             _ => None,
         };
         let raw_model = data.message.model;
-        let (cost, missing_pricing_model) =
+        let (cost, missing_pricing_model, estimated_pricing) =
             file_pricing.price(raw_model.as_deref(), usage, data.cost_usd, timestamp);
         let parent = ParsedUsage {
             key: DedupKey {
@@ -243,6 +251,7 @@ pub(crate) fn read_usage_file<E>(
             usage,
             cost,
             missing_pricing_model,
+            estimated_pricing,
             stored_cost: data
                 .cost_usd
                 .filter(|_| matches!(pricing, PriceTable::Auto(_))),
@@ -261,7 +270,7 @@ pub(crate) fn read_usage_file<E>(
             .into_iter()
             .enumerate()
             .map(|(index, advisor)| {
-                let (cost, missing_pricing_model) =
+                let (cost, missing_pricing_model, estimated_pricing) =
                     file_pricing.price(Some(&advisor.model), advisor.usage, None, timestamp);
                 ParsedUsage {
                     key: DedupKey {
@@ -280,6 +289,7 @@ pub(crate) fn read_usage_file<E>(
                     usage: advisor.usage,
                     cost,
                     missing_pricing_model,
+                    estimated_pricing,
                     stored_cost: None,
                     raw_model: Some(advisor.model),
                     timestamp_text: parent.timestamp_text.clone(),

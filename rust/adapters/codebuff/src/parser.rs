@@ -385,7 +385,7 @@ fn infer_provider(model: &str) -> &'static str {
 pub(super) fn price_codebuff(
     entry: &CodebuffEntry,
     pricing: PriceTable<'_>,
-) -> (f64, Option<String>) {
+) -> (f64, Option<String>, bool) {
     let candidates = codebuff_model_candidates(entry);
     let candidates: Vec<_> = candidates
         .iter()
@@ -408,6 +408,7 @@ pub(super) fn price_codebuff(
         priced
             .missing_pricing
             .then(|| ccusage_core::model_aliases::resolve_model_name(&entry.model).into_owned()),
+        priced.estimated,
     )
 }
 

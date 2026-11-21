@@ -324,6 +324,7 @@ fn read_session_file_data_with_context(
             pricing,
         );
         let cost = priced.cost;
+        let estimated_pricing = priced.estimated;
         usage_records.push(PiUsageRecord {
             signature: PiUsageSignature {
                 timestamp,
@@ -369,6 +370,7 @@ fn read_session_file_data_with_context(
                 recorded_cost: display_cost,
                 usage_limit_reset_time: None,
                 missing_pricing_model,
+                estimated_pricing,
                 stored_cost,
             },
         });

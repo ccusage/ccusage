@@ -1628,6 +1628,7 @@ fn loaded_usage_entry(fixture: UsageEntryFixture) -> ClaudeEntry {
             usage_limit_reset_time: None,
             missing_pricing_model: None,
             stored_cost: None,
+            estimated_pricing: false,
         },
     }
 }

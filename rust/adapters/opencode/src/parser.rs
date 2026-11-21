@@ -377,6 +377,7 @@ impl OpenCodeUsage {
             timestamp: pricing_timestamp,
         };
         let priced = price_entry_for_provider(entry_pricing, Some(provider.as_str()), pricing);
+        let estimated_pricing = priced.estimated;
         let missing_pricing_model = priced.missing_pricing.then(|| model.clone());
         let stored_cost = stored_cost_for_mode(recorded_cost, mode);
         let loaded_session_id = self.session_id.unwrap_or_else(|| "unknown".to_string());
@@ -393,6 +394,7 @@ impl OpenCodeUsage {
             model: Some(model),
             usage_limit_reset_time: None,
             missing_pricing_model,
+            estimated_pricing,
             stored_cost,
             usage,
             message_id: self.id,

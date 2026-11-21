@@ -131,6 +131,7 @@ pub(super) struct ParsedUsage<'a> {
     pub(super) usage: TokenUsageRaw,
     pub(super) cost: f64,
     pub(super) missing_pricing_model: Option<String>,
+    pub(super) estimated_pricing: bool,
     pub(super) stored_cost: Option<f64>,
     pub(super) raw_model: Option<String>,
     pub(super) timestamp_text: Cow<'a, str>,
@@ -166,6 +167,7 @@ impl ParsedUsage<'_> {
             usage: self.usage,
             cost: self.cost,
             missing_pricing: self.missing_pricing_model.is_some(),
+            estimated_pricing: self.estimated_pricing,
             recorded_cost: RecordedCost::new(self.cost_usd, self.stored_cost),
         }
     }

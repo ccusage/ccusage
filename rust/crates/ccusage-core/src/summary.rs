@@ -106,6 +106,7 @@ impl UsageAccumulator {
             if entry.missing_pricing_model.is_some() {
                 breakdown.missing_pricing = true;
             }
+            breakdown.estimated_pricing |= entry.estimated_pricing;
             breakdown.add_stored_cost(entry.stored_cost);
         }
     }

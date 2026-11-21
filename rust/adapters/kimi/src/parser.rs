@@ -366,7 +366,7 @@ pub(super) fn kimi_entry_to_loaded(
         speed: None,
         cache_creation: None,
     };
-    let (cost, missing_pricing_model) = price_kimi_usage(&entry, pricing, usage);
+    let (cost, missing_pricing_model, estimated_pricing) = price_kimi_usage(&entry, pricing, usage);
     LoadedEntry {
         date: date_at(entry.timestamp, tz),
         timestamp: entry.timestamp,
@@ -380,6 +380,7 @@ pub(super) fn kimi_entry_to_loaded(
         model: Some(entry.model),
         usage_limit_reset_time: None,
         missing_pricing_model,
+        estimated_pricing,
         usage,
         message_id: entry.message_id.clone(),
         version: None,
@@ -392,7 +393,7 @@ fn price_kimi_usage(
     entry: &KimiUsageEntry,
     pricing: PriceTable<'_>,
     usage: TokenUsageRaw,
-) -> (f64, Option<String>) {
+) -> (f64, Option<String>, bool) {
     let names = model_candidates(entry);
     let candidates: Vec<_> = names
         .iter()
@@ -416,6 +417,7 @@ fn price_kimi_usage(
         priced
             .missing_pricing
             .then(|| crate::model_aliases::resolve_model_name(&entry.model).into_owned()),
+        priced.estimated,
     )
 }
 

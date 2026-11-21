@@ -143,6 +143,10 @@ impl PricingHandle {
         self.schedule.is_some()
     }
 
+    pub fn is_estimate(&self) -> bool {
+        self.rates.estimated
+    }
+
     pub fn with_rates_at<T>(
         &self,
         timestamp: Option<TimestampMs>,

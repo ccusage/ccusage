@@ -26,6 +26,7 @@ pub(super) struct ClaudeEntry {
     pub(super) cost: f64,
     pub(super) model: Option<Arc<str>>,
     pub(super) missing_pricing: bool,
+    pub(super) estimated_pricing: bool,
     pub(super) recorded_cost: RecordedCost,
 }
 

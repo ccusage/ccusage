@@ -30,6 +30,7 @@ pub struct EntryPrice<'a> {
     pub cost: f64,
     pub matched: Option<&'a str>,
     pub missing_pricing: bool,
+    pub estimated: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -87,6 +88,7 @@ fn price_entry_with<'a>(
             cost: entry.stored_cost.unwrap_or(0.0),
             matched: None,
             missing_pricing: false,
+            estimated: false,
         };
     };
     if matches!(pricing, PriceTable::Auto(_))
@@ -96,6 +98,7 @@ fn price_entry_with<'a>(
             cost,
             matched: None,
             missing_pricing: false,
+            estimated: false,
         };
     }
     let usage = crate::TokenUsageRaw {
@@ -111,11 +114,13 @@ fn price_entry_with<'a>(
             cost: cost_at_speed(usage, &rates_for(entry.granularity, rates)),
             matched: Some(model),
             missing_pricing: false,
+            estimated: rates.estimated,
         },
         None => EntryPrice {
             cost: 0.0,
             matched: None,
             missing_pricing: !entry.candidates.is_empty() && crate::total_usage_tokens(usage) != 0,
+            estimated: false,
         },
     }
 }

@@ -393,6 +393,7 @@ fn amp_entry(
         pricing,
     );
     let cost = priced.cost;
+    let estimated_pricing = priced.estimated;
     let missing_pricing_model = priced
         .missing_pricing
         .then(|| crate::model_aliases::resolve_model_name(&record.model).into_owned());
@@ -409,6 +410,7 @@ fn amp_entry(
         model: Some(record.model),
         usage_limit_reset_time: None,
         missing_pricing_model,
+        estimated_pricing,
         usage: record.usage,
         message_id: record.id,
         version: None,

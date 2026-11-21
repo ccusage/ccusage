@@ -9,8 +9,8 @@ use ccusage_core::{ModelBreakdown, PricingMap, Result, cli::CostMode, progress::
 use crate::{
     CodexGroup,
     report::{
-        calculate_codex_model_cost, calculate_group_cost, codex_model_missing_pricing,
-        non_cached_input_tokens,
+        calculate_codex_model_cost, calculate_group_cost, codex_model_estimated,
+        codex_model_missing_pricing, non_cached_input_tokens,
     },
     resolve_codex_speed,
 };
@@ -94,6 +94,8 @@ pub fn unified_row_from_group(
                 cost: calculate_codex_model_cost(model, usage, pricing, speed),
                 missing_pricing: mode != CostMode::Display
                     && codex_model_missing_pricing(model, usage, pricing),
+                estimated_pricing: mode != CostMode::Display
+                    && codex_model_estimated(model, pricing),
                 stored_cost: None,
             }
         })

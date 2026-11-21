@@ -338,7 +338,7 @@ pub(super) fn event_to_loaded(
     let extra_total_tokens = event
         .total_output_tokens
         .saturating_sub(event.output_tokens);
-    let (cost, missing_pricing_model) = price_antigravity(
+    let (cost, missing_pricing_model, estimated_pricing) = price_antigravity(
         &event.model,
         event.logged_model.as_deref(),
         event.provider,
@@ -359,6 +359,7 @@ pub(super) fn event_to_loaded(
         model: Some(event.model),
         usage_limit_reset_time: None,
         missing_pricing_model,
+        estimated_pricing,
         usage,
         message_id: event.message_id,
         version: None,

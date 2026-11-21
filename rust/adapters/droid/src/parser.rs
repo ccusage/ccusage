@@ -151,7 +151,10 @@ fn settings_timestamp(
     Some((timestamp, None))
 }
 
-pub(super) fn price_droid(entry: &DroidEntry, pricing: PriceTable<'_>) -> (f64, Option<String>) {
+pub(super) fn price_droid(
+    entry: &DroidEntry,
+    pricing: PriceTable<'_>,
+) -> (f64, Option<String>, bool) {
     let (direct, reseller) = provider_prefixes(&entry.provider);
     let logged = entry.logged_model.as_deref().unwrap_or(&entry.model);
     let locked: Vec<_> = direct
@@ -203,6 +206,7 @@ pub(super) fn price_droid(entry: &DroidEntry, pricing: PriceTable<'_>) -> (f64, 
         priced
             .missing_pricing
             .then(|| ccusage_core::model_aliases::resolve_model_name(&entry.model).into_owned()),
+        priced.estimated,
     )
 }
 

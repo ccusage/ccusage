@@ -82,6 +82,7 @@ impl DailyAccumulator {
             if entry.missing_pricing {
                 breakdown.missing_pricing = true;
             }
+            breakdown.estimated_pricing |= entry.estimated_pricing;
             breakdown.add_stored_cost(entry.recorded_cost.billed());
         }
     }

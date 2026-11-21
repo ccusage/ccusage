@@ -216,6 +216,7 @@ mod tests {
             usage_limit_reset_time: None,
             missing_pricing_model: missing_pricing_model.map(str::to_string),
             stored_cost,
+            estimated_pricing: false,
         }
     }
 }
