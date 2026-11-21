@@ -4,8 +4,8 @@ use crate::TimestampMs;
 
 use super::{
     CachedHit, Candidate, HitKind, Lookup, Name, NameCache, Pass, Pricing, PricingMap, PricingRows,
-    PricingSchedule, RequestCache, RequestHit, Row, RowMatch, Scope, last_segment,
-    models_dev_pricing, names_pricing_key, pricing_key_matches, schedule_for,
+    PricingSchedule, RequestCache, RequestHit, Row, RowMatch, Scope, host_listing, is_host_segment,
+    last_segment, models_dev_pricing, names_pricing_key, pricing_key_matches, schedule_for,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -305,7 +305,7 @@ impl PricingMap {
             if fallback && !has_fallback {
                 break;
             }
-            for pass in [Pass::S2, Pass::S34, Pass::S3f, Pass::S56] {
+            for pass in [Pass::Host, Pass::S2, Pass::S34, Pass::S3f, Pass::S56] {
                 if matches!((lookup, pass), (Lookup::Context, Pass::S3f)) {
                     continue;
                 }
@@ -348,6 +348,7 @@ impl PricingMap {
         models_dev: &impl Fn() -> Option<&'a PricingRows>,
     ) -> Option<CachedHit> {
         match pass {
+            Pass::Host => self.search_host(model, slot, lookup, models_dev),
             Pass::Label => {
                 let id = self.overrides.label_id(model, slot)?;
                 let found = self.resolve_override(id, models_dev, false)?;
@@ -411,6 +412,50 @@ impl PricingMap {
                 })
             }
         }
+    }
+
+    // NOTE(2026-11-21, #2229): When an agent names the host that served a request, the host's own listing bills it ahead of the vendor's list price found through another candidate. A model owner or a direct vendor in front of the id names no host. Only LiteLLM keys a listing by its host, so models.dev's `owner/model` ids are not host listings.
+    fn search_host<'a>(
+        &'a self,
+        model: &str,
+        slot: &Candidate<'_>,
+        lookup: Lookup,
+        models_dev: &impl Fn() -> Option<&'a PricingRows>,
+    ) -> Option<CachedHit> {
+        let (segment, _) = model.split_once('/')?;
+        if !is_host_segment(segment) {
+            return None;
+        }
+        let name = slot.name(model);
+        let hosted = |row: &Row| row.scope == Scope::Hosted;
+        let listed = match host_listing(segment) {
+            Some((host, listing)) => {
+                let id = name.suffixes().next()?;
+                listing
+                    .prefixes
+                    .iter()
+                    .find_map(|prefix| {
+                        let key = format!("{prefix}/{}", id.raw());
+                        let identity = std::sync::OnceLock::new();
+                        self.authoritative(
+                            Name::new(&key, &identity),
+                            lookup,
+                            false,
+                            models_dev,
+                            hosted,
+                        )
+                    })
+                    .or_else(|| {
+                        let found = self.rows.host_row(id, host, lookup)?;
+                        match self.overrides.shadow(found) {
+                            Some(id) => self.resolve_override(id, models_dev, false),
+                            None => Some(found),
+                        }
+                    })
+            }
+            None => self.authoritative(name, lookup, false, models_dev, hosted),
+        };
+        listed.map(|found| CachedHit::new(found, HitKind::AuthoritativeIdentity))
     }
 
     fn search_fuzzy<'a>(

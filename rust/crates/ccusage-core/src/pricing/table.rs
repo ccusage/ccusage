@@ -174,6 +174,10 @@ impl Writer {
                 + 1
         });
         varint(&mut self.flags, schedule as u64);
+        varint(
+            &mut self.flags,
+            row.host.map_or(0, |host| u64::from(host) + 1),
+        );
         let context_limit = row.context_limit.map_or(0, |limit| {
             limit.checked_add(1).expect("context limit fits the table")
         });
@@ -349,6 +353,11 @@ impl<'a> Reader<'a> {
             .usize()
             .checked_sub(1)
             .map(|index| &data::SCHEDULES[index].1);
+        let host = self
+            .flags
+            .usize()
+            .checked_sub(1)
+            .map(|host| u8::try_from(host).expect("embedded pricing table has a known host"));
         let context_limit = self.limits.u64().checked_sub(1);
         Row {
             key: Arc::default(),
@@ -359,6 +368,7 @@ impl<'a> Reader<'a> {
             exact_only: flags & EXACT_ONLY != 0,
             scope,
             vendor_start,
+            host,
         }
     }
 

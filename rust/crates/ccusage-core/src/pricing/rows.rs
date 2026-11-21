@@ -146,6 +146,26 @@ impl PricingRows {
             })
     }
 
+    pub(super) fn host_row(
+        &self,
+        name: Name<'_>,
+        host: u8,
+        lookup: Lookup,
+    ) -> Option<RowMatch<'_>> {
+        let on_host = |found: &RowMatch<'_>| found.row.host == Some(host);
+        self.literal(name.raw(), lookup)
+            .filter(on_host)
+            .or_else(|| {
+                self.indexes()
+                    .bare_hosted
+                    .get(name.identity())?
+                    .iter()
+                    .filter_map(|id| self.at(*id))
+                    .filter(|found| lookup.includes(found.row) && on_host(found))
+                    .min_by_key(|found| found.key)
+            })
+    }
+
     pub(super) fn exact(&self, name: Name<'_>, lookup: Lookup) -> Option<RowMatch<'_>> {
         self.literal(name.raw(), lookup).or_else(|| {
             let indexes = self.indexes();

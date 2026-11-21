@@ -257,6 +257,7 @@ impl PricingMap {
                 source: Source::Override,
                 scope: Scope::Direct,
                 vendor_start: super::vendor_start(&slot.key, &slot.key),
+                host: None,
                 exact_only,
                 schedule,
                 context_limit,

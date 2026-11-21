@@ -20,6 +20,7 @@ pub(super) struct Row {
     pub(super) exact_only: bool,
     pub(super) scope: Scope,
     pub(super) vendor_start: Option<NonZeroUsize>,
+    pub(super) host: Option<u8>,
 }
 
 impl Default for Row {
@@ -33,6 +34,7 @@ impl Default for Row {
             exact_only: false,
             scope: Scope::Hosted,
             vendor_start: None,
+            host: None,
         }
     }
 }
@@ -192,6 +194,26 @@ pub(super) fn row_scope<'a>(
     } else {
         (Scope::Hosted, None)
     }
+}
+
+pub(super) fn host_listing(segment: &str) -> Option<(u8, &'static data::HostListing)> {
+    let segment = segment.to_ascii_lowercase().replace('-', "_");
+    data::HOSTS
+        .iter()
+        .zip(0..)
+        .find(|(listing, _)| listing.spellings.contains(&segment.as_str()))
+        .map(|(listing, index)| (index, listing))
+}
+
+pub(super) fn bare_host(key: &str, provider: &str) -> Option<u8> {
+    if key.contains('/') {
+        return None;
+    }
+    data::HOSTS
+        .iter()
+        .zip(0..)
+        .find(|(listing, _)| listing.bare_providers.contains(&provider))
+        .map(|(_, index)| index)
 }
 
 pub(super) fn vendor_start(key: &str, vendor_id: &str) -> Option<NonZeroUsize> {
