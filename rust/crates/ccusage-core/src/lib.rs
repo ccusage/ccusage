@@ -11,6 +11,7 @@ pub mod parallel;
 pub mod pricing;
 pub mod progress;
 pub mod project_names;
+pub mod sort;
 pub mod summary;
 pub mod types;
 pub mod window;
