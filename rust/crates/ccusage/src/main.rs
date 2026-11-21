@@ -11,20 +11,6 @@ use ccusage_core::{Result, pricing, summary::Bucket};
 #[global_allocator]
 static GLOBAL_ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-// NOTE(2026-11-20, #2406): mimalloc v3 keeps freed memory committed for 1000 ms, longer than a whole report run. Every block a growing table or vector leaves behind then stays in peak RSS. `MIMALLOC_PURGE_DELAY` still overrides this default.
-#[cfg(all(target_os = "linux", target_env = "musl"))]
-fn configure_allocator() {
-    const MI_OPTION_PURGE_DELAY: libmimalloc_sys::mi_option_t = 15;
-    #[expect(unsafe_code)]
-    // SAFETY: setting an option default has no preconditions, and no other thread exists yet.
-    unsafe {
-        libmimalloc_sys::mi_option_set_default(MI_OPTION_PURGE_DELAY, 0);
-    }
-}
-
-#[cfg(not(all(target_os = "linux", target_env = "musl")))]
-fn configure_allocator() {}
-
 fn install_embedded_snapshots() {
     pricing::set_embedded_snapshots(pricing::EmbeddedSnapshots {
         litellm_sources: ccusage_pricing_snapshots::LITELLM_SOURCES,
@@ -34,7 +20,6 @@ fn install_embedded_snapshots() {
 }
 
 fn main() -> Result<ExitCode> {
-    configure_allocator();
     install_embedded_snapshots();
     pricing::set_json_fetcher(http::fetch_json);
     let command = match cli::parse() {

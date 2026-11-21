@@ -40,7 +40,6 @@ sqlite.workspace = true
 zstd.workspace = true
 
 [target.'cfg(all(target_os = "linux", target_env = "musl"))'.dependencies]
-libmimalloc-sys.workspace = true
 mimalloc.workspace = true
 
 [lints]
