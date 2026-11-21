@@ -265,3 +265,28 @@ fn a_without_rowid_table_applies_no_rows() {
     assert_eq!(parallel, (None, Vec::new(), Vec::new()));
     assert_eq!(load(&path, None).0, Some((700, 544)));
 }
+
+#[cfg(unix)]
+#[test]
+fn a_path_replaced_while_workers_take_snapshots_leaves_the_rows_to_the_ordered_scan() {
+    let fixture = database("WAL", "");
+    let first = fixture.path("opencode.db");
+    let second = fixture.path("replacement.db");
+    std::fs::copy(&first, &second).unwrap();
+    let path = fixture.path("link.db");
+    std::os::unix::fs::symlink(&first, &path).unwrap();
+    let opened = AtomicUsize::new(0);
+
+    let parallel = load(
+        &path,
+        Some(&|| {
+            if opened.fetch_add(1, Ordering::Relaxed) == 2 {
+                std::fs::remove_file(&path).unwrap();
+                std::os::unix::fs::symlink(&second, &path).unwrap();
+            }
+            open_read_only(&path)
+        }),
+    );
+
+    assert_eq!(parallel, (None, Vec::new(), Vec::new()));
+}
