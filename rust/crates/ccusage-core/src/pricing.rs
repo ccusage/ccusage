@@ -213,7 +213,17 @@ fn curated_long_context(key: &str) -> Option<&'static data::CuratedLongContext> 
         .filter(|(_, version)| !version.is_empty() && version.bytes().all(|b| b.is_ascii_digit()))
         .map_or(model, |(model, _)| model);
     let model = normalized_pricing_key(model);
-    let model = model_without_date_suffix(&model);
+    let model = data::FAMILY_PRICE_NEUTRAL_SUFFIX_WORDS
+        .iter()
+        .filter(|(family, _)| model.starts_with(family))
+        .flat_map(|(_, words)| words.iter())
+        .find_map(|word| {
+            model
+                .strip_suffix(word)
+                .and_then(|model| model.strip_suffix('-'))
+        })
+        .unwrap_or(&model);
+    let model = model_without_date_suffix(model);
     data::ANTHROPIC_LONG_CONTEXT
         .iter()
         .find_map(|(id, curated)| (*id == model).then_some(curated))

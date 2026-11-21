@@ -335,6 +335,7 @@ fn claude_long_context_tiers_bill_anthropics_published_rates_whichever_row_wins(
             ("claude-sonnet-4-5", sonnet_4),
             ("claude-sonnet-4-5-20250929", sonnet_4),
             ("claude-sonnet-4-5@20250929", sonnet_4),
+            ("claude-sonnet-4-5-20250929-thinking", sonnet_4),
             ("claude-haiku-5-5", haiku_5_5),
         ] {
             let rates = pricing
