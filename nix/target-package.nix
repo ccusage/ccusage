@@ -124,20 +124,18 @@ craneLib.buildPackage (
         unsafeCodeCheck
         workspaceArtifacts
         ;
-      cargoArtifacts = workspaceArtifacts.adapters;
-      # NOTE(2026-11-21, #2440): The instrumented dependencies depend only on Cargo.lock. Root them so the PGO build reuses them across commits.
-      cacheRoot = pkgs.linkFarm "ccusage-release-cache-root" (
-        [
-          {
-            name = "workspace";
-            path = workspaceArtifacts.cacheRoot;
-          }
-        ]
-        ++ pkgs.lib.optional pgo {
-          name = "pgo-instrumented-dependencies";
-          path = instrumented.cargoArtifacts;
-        }
-      );
+      inherit (finalArgs) cargoArtifacts;
+      # NOTE(2026-11-21, #2440): The instrumented dependencies depend only on Cargo.lock. They are the one layer a PGO build reuses, because the profile-use layers change with every profile.
+      cacheRoot =
+        if pgo then
+          pkgs.linkFarm "ccusage-pgo-cache-root" [
+            {
+              name = "instrumented-dependencies";
+              path = instrumented.cargoArtifacts;
+            }
+          ]
+        else
+          workspaceArtifacts.cacheRoot;
     }
     // pkgs.lib.optionalAttrs pgo { inherit instrumented pgoProfile; };
     meta = package.meta // {
