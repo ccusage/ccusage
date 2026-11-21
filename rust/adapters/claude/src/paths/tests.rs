@@ -365,6 +365,30 @@ fn keeps_a_stale_transcript_whose_recorded_session_links_it_after_its_live_sibli
 }
 
 #[test]
+fn revives_a_stale_transcript_longer_than_its_tail_by_the_session_it_records() {
+    let old = record_at("2026-09-01T12:00:00Z");
+    let fixture = fs_fixture!({
+        "projects/p/live.jsonl": record_at("2026-09-21T12:00:00Z"),
+        "projects/p/agent-1.jsonl": format!(
+            "{{\"sessionId\":\"live\",\"timestamp\":\"2026-09-01T12:00:00Z\"}}\n{}",
+            vec![old; 32 * 1024 / 60].join("\n")
+        ),
+    });
+    let live = fixture.path("projects/p/live.jsonl");
+    let agent = fixture.path("projects/p/agent-1.jsonl");
+    set_modified(&live, instant("2026-09-21T12:00:00Z"));
+    set_modified(&agent, instant("2026-09-01T12:00:00Z"));
+
+    let split = split_files_before_since(
+        vec![live.clone(), agent.clone()],
+        &shared_since(Some("20260920")),
+        TimestampMs::from_millis(instant("2026-09-24T00:00:00Z").millis()),
+    );
+
+    assert_eq!(split.kept, [live, agent]);
+}
+
+#[test]
 fn splits_a_window_that_keeps_or_prunes_every_file() {
     let fixture = fs_fixture!({
         "projects/p/old.jsonl": "{}",
@@ -474,22 +498,236 @@ fn reads_the_latest_record_after_a_tail_that_starts_mid_line() {
     assert_eq!(split.kept, [restored]);
 }
 
+fn records_then_undated(last_record: &str, undated_bytes: usize) -> String {
+    let undated = format!(r#"{{"type":"progress","text":"{}"}}"#, "x".repeat(1000));
+    std::iter::repeat_n(record_at("2026-09-01T12:00:00Z"), 200 * 1024 / 60)
+        .chain([record_at(last_record)])
+        .chain(std::iter::repeat_n(undated, undated_bytes / 1024 + 1))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn nested_time_line(timestamp: &str) -> String {
+    format!(
+        r#"{{"type":"file-history-snapshot","snapshot":{{"timestamp":"{timestamp}","text":"{}"}}}}"#,
+        "x".repeat(1024)
+    )
+}
+
+fn trailer_without_timestamps() -> String {
+    format!(
+        r#"{{"type":"file-history-snapshot","snapshot":{{"timestamp":"2026-09-21T12:00:00Z","text":"{}"}}}}"#,
+        "x".repeat(32 * 1024)
+    )
+}
+
 #[test]
-fn keeps_a_stale_transcript_whose_tail_holds_no_whole_record() {
-    let fixture = fs_fixture!({
-        "projects/p/long.jsonl": format!(
-            r#"{{"timestamp":"2026-09-01T12:00:00Z","text":"{}"}}"#,
+fn judges_a_stale_transcript_by_its_latest_record_before_a_tail_without_timestamps() {
+    let long_line = |timestamp: &str| {
+        format!(
+            r#"{{"timestamp":"{timestamp}","text":"{}"}}"#,
             "x".repeat(32 * 1024)
+        )
+    };
+    let cases = [
+        (
+            "in-window long line",
+            long_line("2026-09-21T12:00:00Z"),
+            true,
         ),
-        "projects/p/summary.jsonl": r#"{"type":"summary"}"#,
+        ("old long line", long_line("2026-09-01T12:00:00Z"), false),
+        (
+            "in-window record, then a trailer",
+            format!(
+                "{}\n{}\n",
+                record_at("2026-09-21T12:00:00Z"),
+                trailer_without_timestamps()
+            ),
+            true,
+        ),
+        (
+            "old record, then a trailer",
+            format!(
+                "{}\n{}\n",
+                record_at("2026-09-01T12:00:00Z"),
+                trailer_without_timestamps()
+            ),
+            false,
+        ),
+        (
+            "in-window record under an escaped key",
+            r#"{"\u0074imestamp":"2026-09-21T12:00:00Z"}"#.to_string(),
+            true,
+        ),
+        (
+            "in-window record under an escaped key after older records",
+            format!(
+                "{}\n{}",
+                record_at("2026-09-01T12:00:00Z"),
+                r#"{"\u0074imestamp":"2026-09-21T12:00:00Z"}"#
+            ),
+            true,
+        ),
+        (
+            "in-window record beside control-character escapes",
+            format!(
+                "{}\n{}",
+                r#"{"timestamp":"2026-09-01T12:00:00Z","text":"\u001b[0m"}"#,
+                record_at("2026-09-21T12:00:00Z")
+            ),
+            true,
+        ),
+        (
+            "in-window record before 16 KiB of older nested times",
+            format!(
+                "{}\n{}",
+                record_at("2026-09-21T12:00:00Z"),
+                vec![nested_time_line("2026-09-01T12:00:00Z"); 20].join("\n")
+            ),
+            true,
+        ),
+        (
+            "older record before 16 KiB of older nested times",
+            format!(
+                "{}\n{}",
+                record_at("2026-09-01T12:00:00Z"),
+                vec![nested_time_line("2026-09-01T12:00:00Z"); 20].join("\n")
+            ),
+            false,
+        ),
+        (
+            "in-window record whose timestamp carries an escape",
+            r#"{"timestamp":"2026-09-21T12:00:00\u005a","message":{"id":"m","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":1}}}"#.to_string(),
+            true,
+        ),
+        (
+            "in-window record three reads back",
+            records_then_undated("2026-09-21T12:00:00Z", 64 * 1024),
+            true,
+        ),
+        (
+            "older record three reads back",
+            records_then_undated("2026-09-01T12:00:00Z", 64 * 1024),
+            false,
+        ),
+        (
+            "in-window record behind more than the read limit of undated lines",
+            records_then_undated("2026-09-21T12:00:00Z", 3 * 1024 * 1024),
+            true,
+        ),
+        (
+            "older record behind more than the read limit of undated lines",
+            records_then_undated("2026-09-01T12:00:00Z", 3 * 1024 * 1024),
+            false,
+        ),
+        (
+            "undated last line longer than the read limit",
+            format!(
+                "{}\n{{\"text\":\"{}\"}}",
+                record_at("2026-09-01T12:00:00Z"),
+                "x".repeat(2 * 1024 * 1024)
+            ),
+            true,
+        ),
+        (
+            "no record timestamps",
+            r#"{"type":"summary"}"#.to_string(),
+            false,
+        ),
+    ];
+    let fixture = fs_fixture!({ "projects/p/.keep": "" });
+    for (index, (name, content, kept)) in cases.into_iter().enumerate() {
+        let file = fixture.path(format!("projects/p/{index}.jsonl"));
+        std::fs::write(&file, content).unwrap();
+
+        let split = stale_since_split(vec![file.clone()]);
+
+        assert_eq!(split.kept.is_empty(), !kept, "{name}");
+    }
+}
+
+#[test]
+fn keeps_the_probe_buffer_bounded_on_a_large_undated_file() {
+    let fixture = fs_fixture!({
+        "projects/p/undated.jsonl": records_then_undated("2026-09-01T12:00:00Z", 8 * 1024 * 1024),
     });
-    let long = fixture.path("projects/p/long.jsonl");
-    let summary = fixture.path("projects/p/summary.jsonl");
+    let undated = fixture.path("projects/p/undated.jsonl");
+    set_modified(&undated, instant("2026-09-01T12:00:00Z"));
+    let mut probe = super::StaleProbe::new(instant("2026-09-19T00:00:00Z").millis());
 
-    let split = stale_since_split(vec![long.clone(), summary.clone()]);
+    let (live, _) = probe.file(&undated);
 
-    assert_eq!(split.kept, [long, summary]);
-    assert!(split.pruned.is_empty());
+    assert!(!live);
+    let limit = usize::try_from(super::PROBE_READ_LIMIT).unwrap();
+    assert!(
+        probe.tail.capacity() < 3 * limit,
+        "{}",
+        probe.tail.capacity()
+    );
+}
+
+#[test]
+fn revives_a_stale_transcript_whose_recorded_session_follows_a_head_longer_than_the_probe() {
+    let fixture = fs_fixture!({
+        "projects/p/live.jsonl": record_at("2026-09-21T12:00:00Z"),
+        "projects/p/agent-1.jsonl": format!(
+            "{{\"type\":\"summary\",\"text\":\"{}\"}}\n{{\"sessionId\":\"live\",\"timestamp\":\"2026-09-01T12:00:00Z\"}}\n{}",
+            "x".repeat(100 * 1024),
+            record_at("2026-09-01T12:00:00Z")
+        ),
+    });
+    let live = fixture.path("projects/p/live.jsonl");
+    let agent = fixture.path("projects/p/agent-1.jsonl");
+    set_modified(&live, instant("2026-09-21T12:00:00Z"));
+    set_modified(&agent, instant("2026-09-01T12:00:00Z"));
+    let mut probe = super::StaleProbe::new(instant("2026-09-19T00:00:00Z").millis());
+    assert_eq!(probe.file(&agent), (false, None));
+
+    let split = split_files_before_since(
+        vec![live.clone(), agent.clone()],
+        &shared_since(Some("20260920")),
+        TimestampMs::from_millis(instant("2026-09-24T00:00:00Z").millis()),
+    );
+
+    assert_eq!(split.kept, [live, agent]);
+}
+
+#[test]
+fn reads_no_stale_session_group_for_a_transcript_whose_tail_has_no_timestamps() {
+    let old = record_at("2026-09-01T12:00:00Z");
+    let fixture = fs_fixture!({
+        "projects/p/live.jsonl": record_at("2026-09-21T12:00:00Z"),
+        "projects/p/stale.jsonl": format!("{old}\n{}\n", trailer_without_timestamps()),
+        "projects/p/stale/subagents/agent-a.jsonl": old.clone(),
+        "projects/p/stale/subagents/agent-b.jsonl": old.clone(),
+        "projects/p/stale/subagents/agent-c.jsonl": old,
+    });
+    let files = [
+        "live.jsonl",
+        "stale.jsonl",
+        "stale/subagents/agent-a.jsonl",
+        "stale/subagents/agent-b.jsonl",
+        "stale/subagents/agent-c.jsonl",
+    ]
+    .map(|name| fixture.path(format!("projects/p/{name}")));
+    set_modified(&files[0], instant("2026-09-21T12:00:00Z"));
+    for stale in &files[1..] {
+        set_modified(stale, instant("2026-09-01T12:00:00Z"));
+    }
+    let parsed = std::sync::Mutex::new(Vec::new());
+
+    super::read_files_since(
+        false,
+        super::prune_threshold(
+            &shared_since(Some("20260920")),
+            TimestampMs::from_millis(instant("2026-09-24T00:00:00Z").millis()),
+        ),
+        &[fixture.path("projects")],
+        |visit| files.iter().cloned().for_each(visit),
+        |file| parsed.lock().unwrap().push(file.clone()),
+    );
+
+    assert_eq!(parsed.into_inner().unwrap(), [files[0].clone()]);
 }
 
 #[test]
