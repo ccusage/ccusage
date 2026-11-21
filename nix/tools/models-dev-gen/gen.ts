@@ -38,6 +38,7 @@ type ModelMetadata = {
 type Provider = { id?: string; models?: Record<string, Model> };
 type EmbeddedModel = {
 	cost: Cost;
+	provider: string;
 	limit?: { context: number };
 	exactOnly?: true;
 };
@@ -86,6 +87,7 @@ for (const [providerId, provider] of sortedEntries(providers)) {
 		const pricingKey = selectModelsDevPricingKey(modelId, model.id);
 		const longContextTier = selectLongContextTier(cost.tiers);
 		const entry: EmbeddedModel = {
+			provider: sourceProviderId,
 			cost: {
 				input: cost.input,
 				output: cost.output,

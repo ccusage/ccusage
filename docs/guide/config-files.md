@@ -470,6 +470,8 @@ To find the exact name, run `ccusage <agent> daily --json` and look at the `mode
 Pi also accepts a bare model name as an override key; that key applies to the default store and any named Pi store using the same model. Use the prefixed label to price one store separately.
 A model alias can inherit unspecified fields from its target. An override that sets a token rate (`inputCostPerToken`, `outputCostPerToken`, or a cache rate) is the price at every context size: the model's published long-context tier is dropped, and requests above its threshold use the long-context rates only when the override sets its own `*Above200kTokens` fields, at the model's published threshold (200K tokens when it has none). Above-threshold rates the override leaves out fall back to its base rates. An override that builds on another override, such as one keyed by a model alias, keeps the `*Above200kTokens` rates that the other override sets. An override that sets only `*Above200kTokens` fields changes those rates and keeps the rest of the published tier; one that sets no rates, such as `maxInputTokens` alone, keeps the whole tier. A models.dev base supplies its flat rates and context limit. If no catalog row matches, ccusage uses the model family's cache defaults for any omitted cache-write rates. For an OpenAI-family model such as `gpt-5.5-private`, cache writes default to the input rate.
 
+For Anthropic, Google Gemini and xAI models, the override's `*Above200kTokens` rates apply to the entire request once the prompt crosses the threshold. The prompt includes cached input and cache writes. A published xAI tier for prompts of at least 200,000 tokens applies at exactly 200,000. Published whole-request tiers from other vendors keep their billing mode. Otherwise, the rates apply marginally to the tokens in each category that exceed the threshold. If the model has no published threshold, the rates apply above 200,000 tokens. This includes an xAI model that only appears in `pricingOverrides`.
+
 ### Supported Fields
 
 All fields are optional. Unspecified fields keep existing values. Without a pricing entry, token rates default to `0.0`, and speed multipliers use the published Fast, Flex, or Ultrafast rate for that model name or its alias target, or `1.0` if none is published.
@@ -477,7 +479,7 @@ All fields are optional. Unspecified fields keep existing values. Without a pric
 - `inputCostPerToken`, `outputCostPerToken` — base per-token rates
 - `cacheCreationInputTokenCost`, `cacheReadInputTokenCost` — cache pricing
 - `cacheCreationInputTokenCostAbove1hr` — one-hour cache write pricing, including an explicit zero rate
-- `inputCostPerTokenAbove200kTokens`, `outputCostPerTokenAbove200kTokens`, `cacheCreationInputTokenCostAbove200kTokens`, `cacheReadInputTokenCostAbove200kTokens` — tiered pricing past 200k tokens
+- `inputCostPerTokenAbove200kTokens`, `outputCostPerTokenAbove200kTokens`, `cacheCreationInputTokenCostAbove200kTokens`, `cacheReadInputTokenCostAbove200kTokens` — per-token rates for the long-context tier
 - `maxInputTokens` — context window limit (used by the Claude statusline hook)
 - `fastMultiplier` applies when Codex usage uses Fast pricing.
 - `flexMultiplier` applies when Codex usage uses Flex pricing.
