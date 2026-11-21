@@ -261,7 +261,7 @@ fn prune_invalid(value: &mut Value, rejects: &dyn Fn(&Value) -> bool) -> bool {
     let Some(key) = invalid else {
         return false;
     };
-    let wrap = |child: &Value| Value::Object(Map::from_iter([(key.clone(), child.clone())]));
+    let wrap = |child: &Value| single_field(key.clone(), child.clone());
     if let Some(child) = fields.get_mut(&key)
         && prune_invalid(child, &|child| rejects(&wrap(child)))
     {
@@ -280,13 +280,19 @@ pub(crate) fn decode<T: DeserializeOwned>(value: &Value, path: &str) -> Result<T
     })
 }
 
+fn single_field(key: String, value: Value) -> Value {
+    let mut fields = Map::new();
+    fields.insert(key, value);
+    Value::Object(fields)
+}
+
 fn failing_path(value: &Value, path: &str, rejects: &dyn Fn(&Value) -> bool) -> String {
     if let Value::Object(fields) = value {
         if rejects(&Value::Object(Map::new())) {
             return path.to_string();
         }
         for (key, child) in fields {
-            let wrap = |child: Value| Value::Object(Map::from_iter([(key.clone(), child)]));
+            let wrap = |child: Value| single_field(key.clone(), child);
             if rejects(&wrap(child.clone())) {
                 return failing_path(child, &format!("{path}.{key}"), &|child| {
                     rejects(&wrap(child.clone()))

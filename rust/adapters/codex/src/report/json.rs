@@ -44,17 +44,14 @@ pub(super) fn group_json(
         group.cached_input_tokens,
         group.cache_creation_tokens,
     );
-    let models = group
-        .models
-        .iter()
-        .map(|(model, usage)| {
-            let mut value = model_usage_json(usage);
-            if mode != CostMode::Display && codex_model_missing_pricing(model, usage, pricing) {
-                value["missingPricing"] = json!(true);
-            }
-            (model.clone(), value)
-        })
-        .collect::<BTreeMap<_, _>>();
+    let mut models = BTreeMap::new();
+    for (model, usage) in &group.models {
+        let mut value = model_usage_json(usage);
+        if mode != CostMode::Display && codex_model_missing_pricing(model, usage, pricing) {
+            value["missingPricing"] = json!(true);
+        }
+        models.insert(model.clone(), value);
+    }
     let mut row = json!({
         period_key(kind): period,
         "inputTokens": input_tokens,
