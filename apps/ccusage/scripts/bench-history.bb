@@ -1,5 +1,5 @@
 #!/usr/bin/env nix
-#! nix shell --inputs-from ../../.. nixpkgs#babashka-unwrapped nixpkgs#hyperfine nixpkgs#git --command bb
+#! nix shell --inputs-from ../../.. nixpkgs#babashka-unwrapped nixpkgs#bash nixpkgs#time nixpkgs#hyperfine nixpkgs#git --command bb
 
 (ns bench-history
   (:require [babashka.classpath :as cp]

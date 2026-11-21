@@ -8,20 +8,29 @@
 (defn command-args [command] (remove str/blank? (str/split command #" ")))
 (defn command-argv [bin command] (vec (concat [bin] (command-args command) ["--offline" "--json"])))
 
-(def metric-keys
-  {:wall :time_wall_clock :cpu :time_cpu :rss :memory_peak_resident :instructions :instructions})
+;; NOTE(2026-11-21, #2449): Under hyperfine 2.0, ccusage's parallel OpenCode reads spent 1.6x the wall time and 1.6-3x the kernel time they do under /usr/bin/time, with or without hardware counters. Time each run with the shell's own `time`, and use hyperfine only for instruction counts.
+;; NOTE(2026-11-21, #2449): bash 5.3 rounds a three-digit `time` fraction without carrying, so 0.9998 s prints as `0.:00`. Six digits are the exact microseconds and never round.
+(def timing-script
+  "TIMEFORMAT='%6R %6U %6S'; times=$1 errors=$2; shift 2; { time \"$@\" >/dev/null 2>\"$errors\"; } 2>\"$times\"")
 
-(defn run-sample
-  [measurement]
-  (let [value (fn [k] (get-in measurement [(metric-keys k) :value]))
-        seconds (fn [k]
-                  (let [unit (get-in measurement [(metric-keys k) :unit])]
-                    (when-not (= "second" unit)
-                      (data/fail! (str "Unexpected hyperfine time unit: " (pr-str unit)) {:kind :malformed-hyperfine :metric k}))
-                    (* 1000.0 (value k))))]
-    {:wall (seconds :wall) :cpu (seconds :cpu) :rss (value :rss) :instructions (value :instructions)}))
+(defn parse-timing [times rss-kib]
+  (let [[wall user system] (map #(Double/parseDouble %) (str/split (str/trim times) #"\s+"))]
+    {:wall (* 1000.0 wall) :cpu (* 1000.0 (+ user system)) :rss (* 1024 (Long/parseLong (str/trim rss-kib)))}))
 
-(defn read-hyperfine-runs
+(defn timed-run [argv label]
+  (let [dir (system/temp-dir "ccusage-timed.")
+        [times errors rss] (map #(system/path dir %) ["times" "stderr" "rss"])]
+    (try
+      (let [result (system/run-process (into ["bash" "-c" timing-script "timed-run" times errors "time" "-f" "%M" "-o" rss] argv)
+                                       {:env {"LC_ALL" "C"}})]
+        (when-not (zero? (:exit result))
+          (data/fail! (format "%s failed: exit %d\n%s" label (:exit result)
+                              (str/trim (str (when (fs/exists? errors) (slurp errors)) (:err result))))
+                      {:kind :child-command-failed :argv argv :exit (:exit result)}))
+        (parse-timing (slurp times) (last (str/split-lines (slurp rss)))))
+      (finally (fs/delete-tree dir)))))
+
+(defn read-hyperfine-instructions
   [export-path names]
   (let [data (try (json/parse-string (slurp export-path) true)
                   (catch Exception e (data/fail! (str "Malformed hyperfine output: " (ex-message e))
@@ -35,21 +44,26 @@
                       (when-not (= 1 (count matches))
                         (data/fail! (format "hyperfine reported %d results named %s, expected 1" (count matches) name)
                                {:kind :malformed-hyperfine :name name :actual (count matches)}))
-                      [name (run-sample (first (:measurements (first matches))))])))
+                      [name (get-in (first matches) [:measurements 0 :instructions :value])])))
           names)))
 
 (defn rotate [items n]
   (let [k (mod n (count items))] (vec (concat (drop k items) (take k items)))))
 
-(defn hyperfine-round [variants command env label]
+(defn timing-round [variants command env label]
+  (into {} (map (fn [{variant :label bin :bin}]
+                  [variant (timed-run (data/benchmark-argv env (command-argv bin command)) (str label " / " variant))]))
+        variants))
+
+(defn instruction-counts [variants command env label]
   (let [dir (system/temp-dir "ccusage-hyperfine.") export (system/path dir "hyperfine.json")
-        argv (vec (concat ["hyperfine" "--shell" "none" "--runs" "1" "--export-json" export
+        argv (vec (concat ["hyperfine" "--shell" "none" "--runs" "1" "--metrics" "all" "--export-json" export
                            "--style" "none" "--output" "pipe"]
                           (mapcat #(vector "--command-name" (:label %)) variants)
                           (map #(data/benchmark-command-text env (command-argv (:bin %) command)) variants)))]
     (try
       (system/run-checked argv {} (str "hyperfine failed for " label))
-      (read-hyperfine-runs export (mapv :label variants))
+      (read-hyperfine-instructions export (mapv :label variants))
       (finally (fs/delete-tree dir)))))
 
 (defn measure-command
@@ -57,8 +71,10 @@
   (let [label (str title " / " command)]
     (system/write-progress (str label " started"))
     (doseq [round (range warmup)]
-      (hyperfine-round (rotate variants round) command env label))
-    (let [rounds (mapv #(hyperfine-round (rotate variants %) command env label) (range runs))]
+      (timing-round (rotate variants round) command env label))
+    (let [rounds (mapv #(timing-round (rotate variants %) command env label) (range runs))
+          instructions (instruction-counts variants command env label)
+          rounds (mapv (fn [round] (reduce-kv #(assoc-in %1 [%2 :instructions] %3) round instructions)) rounds)]
       (system/write-progress (str label " done"))
       {:command command :rounds rounds})))
 

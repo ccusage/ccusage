@@ -1,5 +1,5 @@
 #!/usr/bin/env nix
-#! nix shell --inputs-from ../../.. nixpkgs#babashka-unwrapped --command bb
+#! nix shell --inputs-from ../../.. nixpkgs#babashka-unwrapped nixpkgs#bash nixpkgs#time --command bb
 
 (ns compare-pr-performance-test
   (:require [babashka.classpath :as cp]
@@ -135,46 +135,89 @@
       (finally
         (babashka.fs/delete-tree dir)))))
 
-(defn hyperfine-result [name wall]
+(defn hyperfine-result [name instructions]
   {:name name :command "x"
-   :measurements [{:time_wall_clock {:value wall :unit "second"} :time_cpu {:value (* 4 wall) :unit "second"}
-                   :memory_peak_resident {:value 1048576.0 :unit "byte"} :exit_code 0}]})
+   :measurements [{:instructions {:value instructions :unit "count"} :exit_code 0}]})
 
 (defn hyperfine-export [results]
   (cheshire.core/generate-string {:schema_version 2 :results results}))
 
-(deftest hyperfine-runs
+(deftest hyperfine-instructions
   (with-hyperfine-export
-    (hyperfine-export [(hyperfine-result "PR" 0.2) (hyperfine-result "base" 0.1)])
+    (hyperfine-export [(hyperfine-result "PR" 200.0) (hyperfine-result "base" 100.0)])
     (fn [output]
-      (is (= {"base" {:wall 100.0 :cpu 400.0 :rss 1048576.0 :instructions nil}
-              "PR" {:wall 200.0 :cpu 800.0 :rss 1048576.0 :instructions nil}}
-             (benchmark/read-hyperfine-runs output ["base" "PR"])))))
+      (is (= {"base" 100.0 "PR" 200.0} (benchmark/read-hyperfine-instructions output ["base" "PR"])))))
+  (testing "a runner without hardware counters reports no instructions"
+    (with-hyperfine-export
+      (hyperfine-export [{:name "base" :command "x" :measurements [{:exit_code 0}]}])
+      (fn [output]
+        (is (= {"base" nil} (benchmark/read-hyperfine-instructions output ["base"]))))))
   (with-hyperfine-export
     "not json"
     (fn [output]
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Malformed hyperfine output"
-                            (benchmark/read-hyperfine-runs output ["base"])))))
+                            (benchmark/read-hyperfine-instructions output ["base"])))))
   (with-hyperfine-export
     (cheshire.core/generate-string {:results []})
     (fn [output]
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"schema version"
-                            (benchmark/read-hyperfine-runs output ["base"])))))
+                            (benchmark/read-hyperfine-instructions output ["base"])))))
   (with-hyperfine-export
-    (hyperfine-export [(hyperfine-result "base" 0.1)])
+    (hyperfine-export [(hyperfine-result "base" 1.0)])
     (fn [output]
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"0 results named PR"
-                            (benchmark/read-hyperfine-runs output ["base" "PR"])))))
+                            (benchmark/read-hyperfine-instructions output ["base" "PR"])))))
   (with-hyperfine-export
-    (hyperfine-export [(hyperfine-result "base" 0.1) (hyperfine-result "base" 0.2)])
+    (hyperfine-export [(hyperfine-result "base" 1.0) (hyperfine-result "base" 2.0)])
     (fn [output]
       (is (thrown-with-msg? clojure.lang.ExceptionInfo #"2 results named base"
-                            (benchmark/read-hyperfine-runs output ["base"])))))
-  (with-hyperfine-export
-    (hyperfine-export [(assoc-in (hyperfine-result "base" 0.1) [:measurements 0 :time_cpu :unit] "millisecond")])
-    (fn [output]
-      (is (thrown-with-msg? clojure.lang.ExceptionInfo #"Unexpected hyperfine time unit"
-                            (benchmark/read-hyperfine-runs output ["base"]))))))
+                            (benchmark/read-hyperfine-instructions output ["base"]))))))
+
+(deftest instruction-pass-tolerates-missing-counters
+  (let [argv (atom nil)]
+    (with-redefs [system/run-checked (fn [a _ _]
+                                       (reset! argv a)
+                                       (spit (second (drop-while #(not= "--export-json" %) a))
+                                             (hyperfine-export [{:name "base" :command "x" :measurements [{:exit_code 0}]}
+                                                                {:name "PR" :command "x" :measurements [{:exit_code 0}]}]))
+                                       {:exit 0})]
+      (is (= {"base" nil "PR" nil}
+             (benchmark/instruction-counts [{:label "base" :bin "/b"} {:label "PR" :bin "/p"}] "daily" {:vars {}} "t")))
+      (testing "hyperfine is asked for every metric, so it skips counters the runner lacks instead of failing"
+        (is (= "all" (second (drop-while #(not= "--metrics" %) @argv))))))))
+
+(deftest timed-runs
+  (testing "wall, CPU, and peak RSS come from the process itself, not from hyperfine"
+    (let [{:keys [wall cpu rss]} (benchmark/timed-run ["sleep" "0.2"] "sleep")]
+      (is (<= 200 wall 1000) (str "wall " wall))
+      (is (< cpu 100) (str "cpu " cpu))
+      (is (pos? rss))))
+  (testing "the timing line is parsed in milliseconds and the RSS in bytes"
+    (is (= {:wall 281.0 :cpu 748.0 :rss (* 57280 1024)} (benchmark/parse-timing "0.281000 0.515000 0.233000\n" "57280\n"))))
+  (testing "a time that rounds up to a whole second keeps its digits"
+    (let [{:keys [wall]} (benchmark/timed-run ["sleep" "0.9999"] "sleep")]
+      (is (< 999 wall 1500) (str "wall " wall))))
+  (testing "a failing command stops the benchmark with its stderr"
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"(?s)broken.*boom"
+                          (benchmark/timed-run ["bash" "-c" "echo boom >&2; exit 3"] "broken")))))
+
+(deftest rounds-carry-one-instruction-count
+  (let [calls (atom [])]
+    (with-redefs [benchmark/timed-run (fn [argv _] (swap! calls conj (some #{"/b" "/p"} argv)) {:wall 10.0 :cpu 20.0 :rss 1024})
+                  benchmark/instruction-counts (fn [variants _ _ _] (zipmap (map :label variants) [100.0 150.0]))]
+      (let [{:keys [rounds]} (benchmark/measure-command [{:label "base" :bin "/b"} {:label "PR" :bin "/p"}] "daily" {:vars {}}
+                                                        {:runs 3 :warmup 1 :title "t"})]
+        (is (= 3 (count rounds)))
+        (is (every? #(= 150.0 (get-in % ["PR" :instructions])) rounds))
+        (is (= 1.5 (get-in (benchmark/compare-variants rounds "base" "PR" 0.1) [:instructions :median])))
+        (testing "the one instruction count renders as a single ratio, not a spread"
+          (let [comparison (benchmark/compare-variants rounds "base" "PR" 0.1)
+                markdown (report/table-md (report/comparison-rows [{:command "daily" :base (benchmark/variant-summary rounds "base")
+                                                                    :head (benchmark/variant-summary rounds "PR") :comparison comparison}]))]
+            (is (.contains markdown "| 1.50 |"))
+            (is (not (.contains markdown "1.50 (1.50–1.50)")))))
+        (testing "every warmup and measured round runs both binaries, alternating which goes first"
+          (is (= ["/b" "/p" "/b" "/p" "/p" "/b" "/b" "/p"] @calls)))))))
 
 (deftest report-rendering
   (let [rounds [(round 1000 600) (round 1000 620) (round 1000 610)]
@@ -356,6 +399,10 @@
                                              :err ""}
                                 "merge-base" (do (swap! checks conj (vec (take-last 2 argv)))
                                                  {:exit (if (= old-commit (last argv)) 1 0) :out "" :err ""}))
+                              "bash"
+                              (do (spit (nth argv 4) "0.100 0.050 0.010\n")
+                                  (spit (nth argv 10) "1024\n")
+                                  {:exit 0 :out "" :err ""})
                               "hyperfine"
                               (let [export (second (drop-while #(not= "--export-json" %) argv))]
                                 (spit export (hyperfine-export [(hyperfine-result "old" 0.1) (hyperfine-result "new" 0.1)]))

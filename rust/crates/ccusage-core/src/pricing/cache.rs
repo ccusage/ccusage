@@ -28,7 +28,8 @@ impl CachedHit {
     const PRESENT: usize = 2;
     const STEP_SHIFT: usize = 2;
     const ALIASED: usize = 1 << 5;
-    const ROW_SHIFT: usize = 6;
+    const FOLDED: usize = 1 << 6;
+    const ROW_SHIFT: usize = 7;
     const STEP_MASK: usize = 7;
     #[cfg(feature = "resolver-trace")]
     const STEPS: [ResolutionStep; 6] = [
@@ -64,6 +65,14 @@ impl CachedHit {
 
     pub(super) fn aliased(self) -> bool {
         self.0 & Self::ALIASED != 0
+    }
+
+    pub(super) fn through_case_fallback(self) -> Self {
+        Self(self.0 | Self::FOLDED)
+    }
+
+    pub(super) fn case_fallback(self) -> bool {
+        self.0 & Self::FOLDED != 0
     }
 
     pub(super) fn same_row(self, other: Self) -> bool {
@@ -136,7 +145,7 @@ pub(super) enum Pass {
 }
 
 impl Pass {
-    pub(super) const CANDIDATE: [Self; 4] = [Self::S2, Self::S34, Self::S3f, Self::S56];
+    pub(super) const IDENTITY: [Self; 3] = [Self::S2, Self::S34, Self::S3f];
 
     pub(super) fn searches(self, lookup: Lookup) -> bool {
         !matches!((lookup, self), (Lookup::Context, Self::S3f))
@@ -365,6 +374,13 @@ impl Candidate<'_> {
 pub(super) struct NameCache(RwLock<FxHashMap<Box<str>, NameSlot>>);
 
 impl NameCache {
+    pub(super) fn candidate(&self) -> Candidate<'_> {
+        Candidate {
+            cache: Some(self),
+            forms: OnceCell::new(),
+        }
+    }
+
     fn with_slot<T>(&self, text: &str, update: impl FnOnce(&mut NameSlot) -> T) -> T {
         let mut guard = self.0.write().unwrap_or_else(|error| error.into_inner());
         if let Some(slot) = guard.get_mut(text) {
@@ -402,11 +418,7 @@ impl NameCache {
         if let Some(hit) = self.get(name, lookup, pass) {
             return hit;
         }
-        let candidate = Candidate {
-            cache: Some(self),
-            forms: OnceCell::new(),
-        };
-        let result = init(&candidate);
+        let result = init(&self.candidate());
         self.with_slot(name, |slot| slot.insert(lookup, pass, result))
     }
 }
@@ -602,6 +614,7 @@ mod tests {
             assert_eq!(table.find("provider/literal").unwrap().input, 3.0);
         }
         assert!(table.rows.indexes.get().is_none());
+        assert!(table.rows.folded_indexes.get().is_none());
         assert!(
             table.find_cache.get().unwrap().0.read().unwrap()["provider/literal"]
                 .forms

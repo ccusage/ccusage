@@ -1,5 +1,5 @@
 #!/usr/bin/env nix
-#! nix shell --inputs-from ../../.. nixpkgs#babashka-unwrapped nixpkgs#hyperfine --command bb
+#! nix shell --inputs-from ../../.. nixpkgs#babashka-unwrapped nixpkgs#bash nixpkgs#time nixpkgs#hyperfine --command bb
 
 (ns compare-pr-performance
   (:require [babashka.classpath :as cp]
