@@ -5,8 +5,10 @@ use smallvec::SmallVec;
 
 use super::{
     Candidate, LongContext, LongContextMode, Lookup, Name, Pricing, PricingMap, PricingOverride,
-    PricingRows, Row, RowMatch, Scope, Source, SpeedMultipliers, data, last_segment,
-    normalized_pricing_key, row::cache_defaults, unlabeled_model, with_names,
+    PricingRows, Row, RowMatch, Scope, Source, SpeedMultipliers, last_segment,
+    normalized_pricing_key,
+    row::{cache_defaults, whole_request_threshold},
+    unlabeled_model, with_names,
 };
 
 #[derive(Debug, Default)]
@@ -245,21 +247,31 @@ impl PricingMap {
             if pricing.explicit_long_rate_fields() != 0
                 && let Some(tier) = &mut pricing.long_context
             {
+                let model = unlabeled_model(&slot.key);
+                let catalog_row = base.or_else(|| {
+                    with_names(model, |name| self.rows.entries.get(name))
+                        .or_else(|| secondary_base(secondary, model))
+                });
                 let published_tier = inherited_tier.or_else(|| match slot.base {
                     Some(Base::Override(parent)) => {
                         self.overrides.published_tier(parent, secondary)
                     }
-                    _ => None,
+                    _ => catalog_row?.pricing.long_context.as_deref().copied(),
                 });
                 if let Some(published) = published_tier {
                     tier.threshold = published.threshold;
+                    tier.mode = published.mode;
                 }
-                whole_request_tiers |= with_names(&slot.key, model_bills_whole_request).is_some();
-                tier.mode = if whole_request_tiers {
-                    LongContextMode::WholeRequest
-                } else {
-                    LongContextMode::Marginal
-                };
+                whole_request_tiers = whole_request_tiers
+                    || catalog_row.is_some_and(|row| row.whole_request_tiers)
+                    || with_names(model, |name| {
+                        let (path, _) = name.rsplit_once('/')?;
+                        whole_request_threshold(last_segment(path))
+                    })
+                    .is_some();
+                if whole_request_tiers {
+                    tier.mode = LongContextMode::WholeRequest;
+                }
             }
             pricing.replace_tier_with_explicit_rates();
             pricing.long_context = pricing
@@ -301,32 +313,4 @@ fn uncataloged_pricing(key: &str) -> Pricing {
             cache_defaults: cache_defaults(unlabeled_model(key), None),
             ..Pricing::empty()
         })
-}
-
-fn model_bills_whole_request(key: &str) -> Option<()> {
-    let key = unlabeled_model(key);
-    if key
-        .rsplit_once('/')
-        .is_some_and(|(path, _)| data::WHOLE_REQUEST_TIER_PROVIDERS.contains(&last_segment(path)))
-    {
-        return Some(());
-    }
-    let model = last_segment(key);
-    std::iter::once(model)
-        .chain(
-            model
-                .match_indices(['.', ':', '@'])
-                .map(|(index, _)| &model[index + 1..]),
-        )
-        .map(normalized_pricing_key)
-        .any(|model| {
-            data::WHOLE_REQUEST_TIER_MODEL_PREFIXES
-                .iter()
-                .any(|prefix| {
-                    model
-                        .get(..prefix.len())
-                        .is_some_and(|head| head.eq_ignore_ascii_case(prefix))
-                })
-        })
-        .then_some(())
 }

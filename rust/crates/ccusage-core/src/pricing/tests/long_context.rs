@@ -499,6 +499,32 @@ fn fast_mode_claude_opus_4_6_bills_no_1m_beta_premium_before_ga() {
 }
 
 #[test]
+fn a_litellm_gemini_request_above_200k_uses_the_published_tier_for_all_tokens() {
+    crate::test_support::install_pricing_snapshots();
+    let model = "gemini-test-model";
+    let mut pricing = PricingMap::default();
+    pricing.load_json(
+        r#"{
+            "gemini-test-model": {
+                "litellm_provider": "gemini",
+                "input_cost_per_token": 1e-6,
+                "output_cost_per_token": 2e-6,
+                "input_cost_per_token_above_200k_tokens": 3e-6,
+                "output_cost_per_token_above_200k_tokens": 5e-6
+            }
+        }"#,
+    );
+
+    for (input_tokens, expected) in [(199_999, 0.201999), (300_000, 0.905)] {
+        let cost = request_cost(&pricing, model, input_tokens, None, None);
+        assert!(
+            (cost - expected).abs() < 1e-9,
+            "{input_tokens} input tokens: {cost} != {expected}"
+        );
+    }
+}
+
+#[test]
 fn an_override_tier_uses_its_catalogue_vendors_billing_mode_and_threshold() {
     crate::test_support::install_pricing_snapshots();
     let mut catalogue = PricingMap::default();
@@ -506,11 +532,23 @@ fn an_override_tier_uses_its_catalogue_vendors_billing_mode_and_threshold() {
         r#"{
             "proxy/flat-whole": {"litellm_provider": "gemini", "input_cost_per_token": 1e-6, "output_cost_per_token": 2e-6},
             "flat-marginal": {"litellm_provider": "deepseek", "input_cost_per_token": 1e-6, "output_cost_per_token": 2e-6},
+            "flat-openai": {"litellm_provider": "openai", "input_cost_per_token": 1e-6, "output_cost_per_token": 2e-6},
             "proxy/tiered-whole": {"litellm_provider": "gemini", "input_cost_per_token": 1e-6, "output_cost_per_token": 2e-6, "input_cost_per_token_above_200k_tokens": 4e-6},
             "tiered-whole": {"litellm_provider": "xai", "input_cost_per_token": 1e-6, "output_cost_per_token": 2e-6, "input_cost_per_token_above_200k_tokens": 4e-6},
             "tiered-marginal": {"litellm_provider": "deepseek", "input_cost_per_token": 1e-6, "output_cost_per_token": 2e-6, "input_cost_per_token_above_200k_tokens": 4e-6}
         }"#,
     );
+    let mut secondary = PricingMap::default();
+    secondary.load_models_dev_json_for_tests(
+        r#"{
+            "secondary-flat": {"provider": "google", "cost": {"input": 1, "output": 2}},
+            "secondary-tiered": {"provider": "google", "cost": {"input": 1, "output": 2,
+                "tiers": [{"input": 4, "tier": {"type": "context", "size": 128000}}]}},
+            "secondary-published": {"provider": "minimax", "cost": {"input": 1, "output": 2,
+                "tiers": [{"input": 4, "tier": {"type": "context", "size": 128000}}]}}
+        }"#,
+    );
+    let catalogue = super::layered(&catalogue, Some(&secondary));
     let override_value = ccusage_cli::PricingOverride {
         input_cost_per_token_above_200k_tokens: Some(3e-6),
         output_cost_per_token_above_200k_tokens: Some(5e-6),
@@ -520,31 +558,18 @@ fn an_override_tier_uses_its_catalogue_vendors_billing_mode_and_threshold() {
     for (model, threshold, expected) in [
         ("proxy/flat-whole", 200_000, [0.202, 0.605003]),
         ("flat-marginal", 200_000, [0.202, 0.202003]),
+        ("flat-openai", 200_000, [0.202, 0.202003]),
         ("proxy/tiered-whole", 200_000, [0.202, 0.605003]),
         ("tiered-whole", 199_999, [0.201999, 0.605]),
         ("tiered-marginal", 200_000, [0.202, 0.202003]),
+        ("secondary-flat", 200_000, [0.202, 0.605003]),
+        ("secondary-tiered", 128_000, [0.13, 0.389003]),
+        ("secondary-published", 128_000, [0.13, 0.389003]),
     ] {
         let key = model.to_owned();
         let pricing = catalogue.with_user_overrides([(&key, &override_value)]);
         for (input_tokens, expected) in [threshold, threshold + 1].into_iter().zip(expected) {
-            let cost = crate::cost::price_entry(
-                crate::cost::EntryPricing {
-                    granularity: crate::cost::UsageGranularity::Request,
-                    usage: crate::TokenUsageRaw {
-                        input_tokens,
-                        output_tokens: 1_000,
-                        ..Default::default()
-                    },
-                    reasoning_tokens: 0,
-                    residual_tokens: 0,
-                    reported_model: Some(model),
-                    candidates: &[(model, MatchKind::Exact)],
-                    stored_cost: None,
-                    timestamp: None,
-                },
-                crate::cost::PriceTable::Calculate(&pricing),
-            )
-            .cost;
+            let cost = request_cost(&pricing, model, input_tokens, None, None);
             assert!(
                 (cost - expected).abs() < 1e-9,
                 "{model}, {input_tokens} input tokens: {cost} != {expected}"
@@ -564,30 +589,46 @@ fn fast_opus_uses_whole_request_override_rates_after_the_1m_window_left_beta() {
     let pricing = PricingMap::load_embedded().with_user_overrides([(&model, &override_value)]);
 
     for (input_tokens, expected) in [(199_999, 6.14997), (200_000, 6.15), (300_000, 14.55)] {
-        let cost = crate::cost::price_entry(
-            crate::cost::EntryPricing {
-                granularity: crate::cost::UsageGranularity::Request,
-                usage: crate::TokenUsageRaw {
-                    input_tokens,
-                    output_tokens: 1_000,
-                    speed: Some(crate::Speed::Fast),
-                    ..Default::default()
-                },
-                reasoning_tokens: 0,
-                residual_tokens: 0,
-                reported_model: Some(&model),
-                candidates: &[(&model, MatchKind::Fuzzy)],
-                stored_cost: None,
-                timestamp: Some(super::timestamp("2026-03-13T00:00:00Z")),
-            },
-            crate::cost::PriceTable::Calculate(&pricing),
-        )
-        .cost;
+        let cost = request_cost(
+            &pricing,
+            &model,
+            input_tokens,
+            Some(crate::Speed::Fast),
+            Some(super::timestamp("2026-03-13T00:00:00Z")),
+        );
         assert!(
             (cost - expected).abs() < 1e-9,
             "{input_tokens} input tokens: {cost} != {expected}"
         );
     }
+}
+
+fn request_cost(
+    pricing: &PricingMap,
+    model: &str,
+    input_tokens: u64,
+    speed: Option<crate::Speed>,
+    timestamp: Option<crate::TimestampMs>,
+) -> f64 {
+    crate::cost::price_entry(
+        crate::cost::EntryPricing {
+            granularity: crate::cost::UsageGranularity::Request,
+            usage: crate::TokenUsageRaw {
+                input_tokens,
+                output_tokens: 1_000,
+                speed,
+                ..Default::default()
+            },
+            reasoning_tokens: 0,
+            residual_tokens: 0,
+            reported_model: Some(model),
+            candidates: &[(model, MatchKind::Fuzzy)],
+            stored_cost: None,
+            timestamp,
+        },
+        crate::cost::PriceTable::Calculate(pricing),
+    )
+    .cost
 }
 
 fn long_request_cost_with_override(model: &str, input: f64, output: f64, instant: &str) -> f64 {

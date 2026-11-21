@@ -7,8 +7,8 @@ use crate::fast::FxHashMap;
 
 use super::{
     LongContext, LongContextMode, LongContextRates, Pricing, PricingMap, Row, RowPricing, Scope,
-    Source, data, embedded::embedded_pricing_table, model_without_date_suffix, pricing_alias,
-    provider_cache_defaults, speed::PublishedSpeed,
+    Source, embedded::embedded_pricing_table, model_without_date_suffix, pricing_alias,
+    provider_cache_defaults, row::whole_request_threshold, speed::PublishedSpeed,
 };
 
 mod catalog;
@@ -49,6 +49,7 @@ enum ModelsDevJson {
 #[derive(Debug, Deserialize)]
 struct ModelsDevModel {
     id: Option<String>,
+    provider: Option<String>,
     cost: Option<ModelsDevCost>,
     limit: Option<ModelsDevLimit>,
     modalities: Option<ModelsDevModalities>,
@@ -266,7 +267,12 @@ impl PricingMap {
                         provider_cache_defaults(None),
                     ),
                     exact_only,
-                    whole_request_tiers: data::WHOLE_REQUEST_TIER_PROVIDERS.contains(&provider_id),
+                    whole_request_tiers: whole_request_threshold(if provider_id.is_empty() {
+                        model.provider.as_deref().unwrap_or_default()
+                    } else {
+                        provider_id
+                    })
+                    .is_some(),
                     context_limit,
                     key: Arc::default(),
                     source: Source::ModelsDev,

@@ -201,6 +201,12 @@ pub(super) fn vendor_start(key: &str, vendor_id: &str) -> Option<NonZeroUsize> {
     NonZeroUsize::new(key.len() - vendor_id.len() + 1)
 }
 
+pub(super) fn whole_request_threshold(provider: &str) -> Option<u64> {
+    data::WHOLE_REQUEST_LONG_CONTEXT_PROVIDERS
+        .iter()
+        .find_map(|(id, threshold)| (*id == provider).then_some(*threshold))
+}
+
 pub(super) fn cache_defaults(model: &str, provider: Option<&str>) -> &'static CacheDefaults {
     model_cache_defaults(model).unwrap_or(provider_cache_defaults(provider))
 }
