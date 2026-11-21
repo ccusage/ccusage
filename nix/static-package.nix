@@ -17,34 +17,45 @@
           pkgs.pkgsCross.musl64
         else
           pkgs.pkgsCross.aarch64-multiplatform-musl;
+      staticPackage =
+        args:
+        import ./target-package.nix (
+          {
+            package = config.packages.ccusage;
+            inherit pkgs target;
+            root = ./..;
+            craneLib = (inputs.crane.mkLib staticPkgs).overrideToolchain (
+              p: (p.rust-bin.fromRustupToolchainFile ../rust-toolchain.toml).override { targets = [ target ]; }
+            );
+            overrides = {
+              nativeBuildInputs = with staticPkgs; [
+                mold
+                pkg-config
+              ];
+              buildInputs = [ ];
+            };
+            doInstallCheck = true;
+            postInstall = ''
+              if "''${READELF:-readelf}" -l $out/bin/ccusage | grep -q INTERP; then
+                echo "error: ccusage-static is not statically linked" >&2
+                exit 1
+              fi
+            '';
+            description = "Static Linux build of ccusage";
+          }
+          // args
+        );
     in
     lib.mkIf pkgs.stdenv.hostPlatform.isLinux {
       packages = {
         "ccusage-release-linux-${arch}" = config.packages.ccusage-static;
         # NOTE(2026-06-11, #1279): Blacksmith trims the sticky disk to Nix GC roots. Expose the static build artifacts so CI can root them across runs.
-        ccusage-static = import ./target-package.nix {
-          package = config.packages.ccusage;
-          inherit pkgs target;
-          root = ./..;
-          craneLib = (inputs.crane.mkLib staticPkgs).overrideToolchain (
-            p: (p.rust-bin.fromRustupToolchainFile ../rust-toolchain.toml).override { targets = [ target ]; }
-          );
-          overrides = {
-            nativeBuildInputs = with staticPkgs; [
-              mold
-              pkg-config
-            ];
-            buildInputs = [ ];
-          };
-          doInstallCheck = true;
+        ccusage-static = staticPackage {
           llvmProfdata = "${rustToolchain}/lib/rustlib/${pkgs.stdenv.hostPlatform.rust.rustcTarget}/bin/llvm-profdata";
-          postInstall = ''
-            if "''${READELF:-readelf}" -l $out/bin/ccusage | grep -q INTERP; then
-              echo "error: ccusage-static is not statically linked" >&2
-              exit 1
-            fi
-          '';
-          description = "Static Linux build of ccusage";
+        };
+        # NOTE(2026-11-21, #2457): PGO profiles vary between training runs. The PR perf comparison builds this untrained twin so it measures code changes, not profile noise.
+        ccusage-static-no-pgo = staticPackage {
+          description = "Static Linux build of ccusage without PGO";
         };
       };
     };
