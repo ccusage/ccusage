@@ -118,8 +118,7 @@ impl CachedHit {
 }
 
 const _: () = assert!(size_of::<CachedHit>() <= 8);
-// NOTE(2026-11-21, #2228): Every flag bit below `ROW_SHIFT` halves the row index range.
-// The packed index must still cover every row a `Vec<Row>` can hold.
+// NOTE(2026-11-21, #2228): Every flag bit below `ROW_SHIFT` halves the row index range. The packed index must still cover every row a `Vec<Row>` can hold.
 const _: () = assert!(isize::MAX as usize / size_of::<Row>() <= usize::MAX >> CachedHit::ROW_SHIFT);
 
 #[derive(Clone, Copy, Debug, Default)]
