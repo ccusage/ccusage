@@ -1,5 +1,4 @@
 [env]
-# NOTE(2026-11-21, #2485): Unused heap accounting serializes allocations across independent SQLite readers.
 SQLITE_DEFAULT_MEMSTATUS = "0"
 SQLITE_OMIT_AUTHORIZATION = "1"
 SQLITE_OMIT_AUTOMATIC_INDEX = "1"
