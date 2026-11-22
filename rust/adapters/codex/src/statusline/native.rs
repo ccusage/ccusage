@@ -15,6 +15,7 @@ use ccusage_core::{
 use serde_json::Value;
 
 use crate::{
+    CodexServiceTier,
     aggregate::{load_groups_from_file_selection, select_session_files},
     paths, report, resolve_codex_speed,
     speed::CodexSpeedPolicy,
@@ -133,7 +134,7 @@ struct Fingerprint {
     thread_id: String,
     today: ccusage_core::cli::DateBound,
     speed: CodexSpeedPolicy,
-    files: Vec<(PathBuf, u64, SystemTime)>,
+    files: Vec<(PathBuf, u64, SystemTime, Option<CodexServiceTier>)>,
 }
 
 struct CachedUsage {
@@ -158,16 +159,19 @@ fn refresh(
     let speed = resolve_codex_speed(args.codex_speed);
     let files = file_groups
         .iter()
-        .flat_map(|group| &group.files)
-        .filter_map(|path| {
-            match fs::metadata(path).and_then(|metadata| Ok((metadata.len(), metadata.modified()?)))
-            {
-                Ok((len, modified)) => Some((path.clone(), len, modified)),
-                Err(error) => {
-                    UnitError::from(error).record(path, diagnostics);
-                    None
+        .flat_map(|group| {
+            let configured_tier = group.source.configured_tier;
+            group.files.iter().filter_map(move |path| {
+                match fs::metadata(path)
+                    .and_then(|metadata| Ok((metadata.len(), metadata.modified()?)))
+                {
+                    Ok((len, modified)) => Some((path.clone(), len, modified, configured_tier)),
+                    Err(error) => {
+                        UnitError::from(error).record(path, diagnostics);
+                        None
+                    }
                 }
-            }
+            })
         })
         .collect();
     let fingerprint = Fingerprint {
