@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import {
+	type DailyRollup,
+	parsePublicStats,
 	previousUtcDay,
 	type RollupBindings,
 	writeDailyRollup,
@@ -172,6 +174,42 @@ void describe('writeDailyRollup', () => {
 			snapshot.days.map((day: { date: string }) => day.date),
 			['2026-10-21'],
 		);
+	});
+
+	void it('bounds legacy archive breakdowns at publication without changing totals or archives', async () => {
+		const legacy = {
+			date: '2026-10-20',
+			generatedAt: '2026-10-21T00:15:00Z',
+			dailyActiveUsers: 100,
+			weeklyActiveUsers: 200,
+			monthlyActiveUsers: 300,
+			byPlatform: Array.from({ length: 25 }, (_, index) => ({
+				os: `platform-${index}`,
+				arch: 'x86_64',
+				users: index + 1,
+			})),
+			byVersion: Array.from({ length: 25 }, (_, index) => ({
+				version: `20.0.${index}`,
+				users: index + 1,
+			})),
+			byCommand: [{ command: 'daily', users: 100 }],
+		} satisfies DailyRollup;
+		const stored = JSON.stringify(legacy);
+		const { env, values } = fakeEnv({ 'daily/2026-10-20.json': stored });
+
+		await writeDailyRollup(env, '2026-10-21', new Date('2026-10-22T00:15:00Z'));
+
+		const snapshot = parsePublicStats(values.get('public-stats.json') ?? '', '2026-10-22');
+		const day = snapshot.days.find(({ date }) => date === legacy.date);
+		assert.ok(day);
+		assert.deepEqual(day.byPlatform, legacy.byPlatform.toReversed().slice(0, 20));
+		assert.deepEqual(day.byVersion, legacy.byVersion.toReversed().slice(0, 20));
+		assert.deepEqual(
+			[day.dailyActiveUsers, day.weeklyActiveUsers, day.monthlyActiveUsers],
+			[100, 200, 300],
+		);
+		assert.equal('samplingObserved' in day, false);
+		assert.equal(values.get('daily/2026-10-20.json'), stored);
 	});
 
 	void it('replaces an older day without dropping newer archive data', async () => {

@@ -35,6 +35,8 @@ The weekly and monthly counts are distinct users over the 7 and 30 days ending t
 
 Platform, version and command queries retain the top 20 groups per day. The limit applies in SQL, before results reach the Worker, and keeps the 90-day public projection well below the KV value-size limit even with high-cardinality valid input. Active-ID totals are queried separately and are not truncated; no synthetic "other" count is produced by summing distinct groups.
 
+Public projection also selects the top 20 platform and version groups from every archive, including older unbounded archives. It preserves the stored archives, active-ID totals and sampling metadata.
+
 Each new rollup records `samplingObserved` from `APPROX_MAX(sampleInterval)` in its six Analytics SQL queries. The installation ID is reused across days and is the dimension being counted; it is not a unique index per event. Sampling intervals are diagnostic metadata, not a multiplier for distinct IDs or an error estimate. Older archives without the metadata remain valid. The dashboard warns about observed sampling and inconsistent nested-window counts without clamping the returned values.
 
 The three-day lookback recovers recent missed runs; longer outages remain visible as gaps. Rejected scheduled promises appear in Cloudflare's Cron Trigger Past Events status. The `Check telemetry rollup` GitHub workflow checks the public snapshot daily at 02:23 UTC, after its one-hour edge cache can refresh, and fails when yesterday's aggregate is missing. It can also be dispatched manually and requires no Cloudflare credentials. Request logging stays disabled.

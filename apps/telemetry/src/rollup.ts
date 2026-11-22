@@ -153,10 +153,14 @@ function toPublicDailyRollup(rollup: DailyRollup): PublicDailyRollup {
 		dailyActiveUsers: rollup.dailyActiveUsers,
 		weeklyActiveUsers: rollup.weeklyActiveUsers,
 		monthlyActiveUsers: rollup.monthlyActiveUsers,
-		byPlatform: rollup.byPlatform,
-		byVersion: rollup.byVersion,
+		byPlatform: topGroups(rollup.byPlatform),
+		byVersion: topGroups(rollup.byVersion),
 		...(rollup.samplingObserved === undefined ? {} : { samplingObserved: rollup.samplingObserved }),
 	};
+}
+
+function topGroups<Row extends { users: number }>(rows: Row[]): Row[] {
+	return rows.toSorted((left, right) => right.users - left.users).slice(0, MAX_BREAKDOWN_ROWS);
 }
 
 async function buildDailyRollup(
