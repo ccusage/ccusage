@@ -289,11 +289,15 @@ pub(crate) fn reconcile_otel_calls(files: Vec<OtelFileCalls>) -> Vec<CopilotUsag
             model: candidate.model,
             logged_model: candidate.logged_model,
             input_tokens: candidate.input_tokens,
-            output_tokens: candidate.output_tokens - candidate.fallback_output_tokens,
+            output_tokens: candidate
+                .output_tokens
+                .saturating_sub(candidate.fallback_output_tokens),
             cache_creation_tokens: candidate.cache_creation_tokens,
             cache_read_tokens: candidate.cache_read_tokens,
             reasoning_output_tokens: candidate.reasoning_output_tokens,
-            extra_total_tokens: candidate.extra_total_tokens + candidate.fallback_output_tokens,
+            extra_total_tokens: candidate
+                .extra_total_tokens
+                .saturating_add(candidate.fallback_output_tokens),
             request_count: 1,
             nano_aiu: None,
             dedup_key: candidate.dedup_key,
@@ -400,7 +404,7 @@ fn to_call(
     };
     let additional = AdditionalTokens::from_total(usage, 0, total);
     let (matching_output, extra_total_tokens) = additional.replay_counts(usage.output_tokens);
-    let fallback_output_tokens = matching_output - usage.output_tokens;
+    let fallback_output_tokens = matching_output.saturating_sub(usage.output_tokens);
     let Some(counted_tokens) =
         ccusage_core::checked_total_usage_tokens(usage, additional.report_remainder)
     else {
