@@ -54,6 +54,7 @@ let
   artifactCommonArgs =
     builtins.removeAttrs commonArgs [
       "CCUSAGE_PRICING_JSON_PATH"
+      "CCUSAGE_TELEMETRY_ENDPOINT"
       "CCUSAGE_VERSION"
       "cargoExtraArgs"
       "src"

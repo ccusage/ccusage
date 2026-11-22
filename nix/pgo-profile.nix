@@ -12,6 +12,7 @@ in
 runCommand "ccusage-pgo-profile"
   {
     nativeBuildInputs = [ nodejs ];
+    CCUSAGE_TELEMETRY_DISABLED = "1";
   }
   ''
     fixtures="$TMPDIR/fixtures"
