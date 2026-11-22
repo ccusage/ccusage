@@ -148,11 +148,7 @@ fn embedded_pricing_carries_exact_only_catalog_entries() {
 
     for model in ["claude-opus-5-fast", "claude-opus-5@eu"] {
         assert!(
-            embedded
-                .rows
-                .entries
-                .get(model)
-                .is_some_and(|row| row.exact_only),
+            embedded.rows.get(model).is_some_and(|row| row.exact_only),
             "{model}"
         );
         assert!(pricing.find(model).is_some(), "{model}");
