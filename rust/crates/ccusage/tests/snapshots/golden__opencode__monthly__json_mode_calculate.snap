@@ -106,7 +106,7 @@ exit: 0
           "cost": 0.00009999999999999999,
           "inputTokens": 100,
           "modelName": "claude-haiku-4.5",
-          "outputTokens": 245
+          "outputTokens": 0
         },
         {
           "cacheCreationTokens": 0,
@@ -138,7 +138,7 @@ exit: 0
         "claude-haiku-4.5"
       ],
       "month": "2026-01",
-      "outputTokens": 652,
+      "outputTokens": 407,
       "totalCost": 0.01281,
       "totalTokens": 6201
     }
@@ -147,7 +147,7 @@ exit: 0
     "cacheCreationTokens": 700,
     "cacheReadTokens": 17500,
     "inputTokens": 7186,
-    "outputTokens": 1831,
+    "outputTokens": 1586,
     "totalCost": 0.08890125,
     "totalTokens": 27267,
     "unpricedModels": [

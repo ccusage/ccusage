@@ -6,7 +6,7 @@ use std::{
 use rustc_hash::FxHashMap;
 
 use super::{
-    CacheDefaults, LongContext, Pricing, PricingSchedule, SpeedMultipliers, data,
+    CacheDefaults, LongContext, Pricing, PricingSchedule, SpeedMultipliers, data, last_segment,
     normalized_pricing_key, speed::PublishedSpeed,
 };
 
@@ -261,10 +261,39 @@ pub(super) fn vendor_start(key: &str, vendor_id: &str) -> Option<NonZeroUsize> {
     NonZeroUsize::new(key.len() - vendor_id.len() + 1)
 }
 
-pub(super) fn whole_request_threshold(provider: &str) -> Option<u64> {
-    data::WHOLE_REQUEST_LONG_CONTEXT_PROVIDERS
-        .iter()
-        .find_map(|(id, threshold)| (*id == provider).then_some(*threshold))
+pub(super) fn whole_request_threshold(model: &str) -> Option<u64> {
+    let model = last_segment(model);
+    std::iter::once(model)
+        .chain(
+            model
+                .match_indices(['.', '@'])
+                .map(|(index, _)| &model[index + 1..]),
+        )
+        .find_map(|part| {
+            data::WHOLE_REQUEST_LONG_CONTEXT_VENDORS
+                .iter()
+                .find(|vendor| {
+                    vendor.model_families.iter().any(|family| {
+                        part.as_bytes().split_at_checked(family.len()).is_some_and(
+                            |(prefix, rest)| {
+                                prefix.eq_ignore_ascii_case(family.as_bytes())
+                                    && matches!(rest.first(), Some(b'-' | b'.' | b'@'))
+                            },
+                        )
+                    })
+                })
+                .map(|vendor| vendor.threshold)
+        })
+}
+
+pub(super) fn whole_request_override_model(model: &str) -> bool {
+    whole_request_threshold(model).is_some()
+        || model.rsplit_once('/').is_some_and(|(path, _)| {
+            let namespace = last_segment(path);
+            data::WHOLE_REQUEST_LONG_CONTEXT_VENDORS
+                .iter()
+                .any(|vendor| vendor.namespaces.contains(&namespace))
+        })
 }
 
 pub(super) fn cache_defaults(model: &str, provider: Option<&str>) -> &'static CacheDefaults {
@@ -327,10 +356,6 @@ pub(super) struct Entries {
 }
 
 impl Entries {
-    pub(super) fn contains_key(&self, key: &str) -> bool {
-        self.literal.contains_key(key)
-    }
-
     pub(super) fn id(&self, key: &str) -> Option<usize> {
         self.literal.get(key).copied()
     }
@@ -359,10 +384,13 @@ impl Entries {
         }
     }
 
-    pub(super) fn append(&mut self, key: String, mut row: Row) -> &mut Row {
-        let id = self.rows.len();
+    fn append(&mut self, key: String, mut row: Row) -> &mut Row {
         row.key = Arc::from(key);
-        self.literal.insert(Arc::clone(&row.key), id);
+        self.append_row(row)
+    }
+
+    pub(super) fn append_row(&mut self, row: Row) -> &mut Row {
+        self.literal.insert(Arc::clone(&row.key), self.rows.len());
         self.rows.push_mut(row)
     }
 

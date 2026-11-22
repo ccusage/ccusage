@@ -59,7 +59,7 @@ exit: 0
           "cost": 0.0,
           "inputTokens": 600,
           "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 600
+          "outputTokens": 100
         },
         {
           "cacheCreationTokens": 50,
@@ -75,7 +75,7 @@ exit: 0
           "cost": 0.0,
           "inputTokens": 0,
           "modelName": "gpt-5",
-          "outputTokens": 345
+          "outputTokens": 0
         }
       ],
       "modelsUsed": [
@@ -84,7 +84,7 @@ exit: 0
         "gpt-5"
       ],
       "month": "2026-01",
-      "outputTokens": 1315,
+      "outputTokens": 470,
       "totalCost": 0.0,
       "totalTokens": 12065
     }
@@ -94,7 +94,7 @@ exit: 0
     "cacheReadTokens": 25000,
     "credits": 5.2,
     "inputTokens": 5100,
-    "outputTokens": 2265,
+    "outputTokens": 1420,
     "totalCost": 0.0,
     "totalTokens": 32915
   }

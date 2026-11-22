@@ -136,7 +136,7 @@ exit: 0
           "inputTokens": 250,
           "missingPricing": true,
           "modelName": "gemini-mystery-1",
-          "outputTokens": 724
+          "outputTokens": 70
         }
       ],
       "modelsUsed": [
@@ -146,7 +146,7 @@ exit: 0
         "gemini-2.5-flash",
         "claude-sonnet-4-20250514"
       ],
-      "outputTokens": 2114,
+      "outputTokens": 1460,
       "totalCost": 0.8083701900000001,
       "totalTokens": 455282
     },
@@ -208,7 +208,7 @@ exit: 0
     "cacheCreationTokens": 0,
     "cacheReadTokens": 155413,
     "inputTokens": 306499,
-    "outputTokens": 3169,
+    "outputTokens": 2515,
     "totalCost": 0.8230483900000001,
     "totalTokens": 465376,
     "unpricedModels": [

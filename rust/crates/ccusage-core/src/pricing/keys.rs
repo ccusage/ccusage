@@ -36,66 +36,75 @@ pub(super) fn last_segment(key: &str) -> &str {
     key.rsplit_once('/').map_or(key, |(_, segment)| segment)
 }
 
-pub(super) fn pricing_key_matches(
-    candidate: &str,
-    normalized_candidate: &str,
-    model: &str,
-    normalized_model: &str,
-) -> bool {
-    names_same_model((model, model), (candidate, candidate))
-        || names_same_model((normalized_model, model), (normalized_candidate, candidate))
+pub(super) fn pricing_key_matches(candidate: &str, model: &str, normalized_model: &str) -> bool {
+    names_same_model::<false>(model, model, candidate)
+        || names_same_model::<true>(normalized_model, model, candidate)
 }
 
-pub(super) fn names_pricing_key(
-    candidate: &str,
-    normalized_candidate: &str,
-    model: &str,
-    normalized_model: &str,
-) -> bool {
-    contains_pricing_key((model, model), (candidate, candidate))
-        || contains_pricing_key((normalized_model, model), (normalized_candidate, candidate))
+pub(super) fn names_pricing_key(candidate: &str, model: &str, normalized_model: &str) -> bool {
+    contains_pricing_key::<false>(model, model, candidate)
+        || contains_pricing_key::<true>(normalized_model, model, candidate)
 }
 
 // NOTE(2026-11-20, #2236): Either id may carry only a host or provider qualifier in front of the other, so a word in front, as in `chat-gpt-5.4` for `gpt-5.4`, makes it another model. The qualifier is read from the raw id because the identity spells `openai.` as `openai-`. Only the logged id may add a price-neutral suffix: a catalogue lists a dated, `[1m]` or effort-level id because it prices that variant itself.
-fn names_same_model((model, raw_model): (&str, &str), (key, raw_key): (&str, &str)) -> bool {
+fn names_same_model<const NORMALIZE: bool>(model: &str, raw_model: &str, key: &str) -> bool {
     if model.len() >= key.len() {
-        contains_pricing_key((model, raw_model), (key, raw_key))
+        contains_pricing_key::<NORMALIZE>(model, raw_model, key)
     } else {
-        key.strip_suffix(model).is_some_and(|qualifier| {
-            raw_key
-                .as_bytes()
-                .get(qualifier.len() - 1)
-                .copied()
-                .is_some_and(is_qualifier_end)
-        })
+        let start = key.len() - model.len();
+        is_qualifier_end(key.as_bytes()[start - 1])
+            && key
+                .get(start..)
+                .is_some_and(|suffix| key_bytes_match::<NORMALIZE>(suffix, model))
     }
 }
 
-fn contains_pricing_key((value, raw_value): (&str, &str), (key, raw_key): (&str, &str)) -> bool {
-    key_positions(value, key).any(|index| {
+fn contains_pricing_key<const NORMALIZE: bool>(value: &str, raw_value: &str, key: &str) -> bool {
+    key_positions::<NORMALIZE>(value, key).any(|index| {
         let before = index
             .checked_sub(1)
             .and_then(|before| raw_value.as_bytes().get(before))
             .copied();
         before.is_none_or(is_qualifier_end)
-            && is_price_neutral_suffix(&value[index + key.len()..], family_words(raw_key))
+            && is_price_neutral_suffix(&value[index + key.len()..], family_words(key))
     })
 }
 
+fn key_bytes_match<const NORMALIZE: bool>(key: &str, identity: &str) -> bool {
+    if NORMALIZE {
+        normalized_key_bytes(key).eq(identity.bytes())
+    } else {
+        key == identity
+    }
+}
+
 // NOTE(2026-11-21, #2226): The fuzzy pass tests every catalogue key against a short model id, and building a substring searcher per pair cost more than the search. Scanning for the key's first byte and comparing from there finds the same non-overlapping positions as `str::match_indices`.
-fn key_positions<'a>(text: &'a str, key: &'a str) -> impl Iterator<Item = usize> + 'a {
-    let (value, key) = (text.as_bytes(), key.as_bytes());
+fn key_positions<'a, const NORMALIZE: bool>(
+    text: &'a str,
+    key: &'a str,
+) -> impl Iterator<Item = usize> + 'a {
+    let value = text.as_bytes();
     let mut start = 0;
     std::iter::from_fn(move || {
-        let Some((&first, _)) = key.split_first() else {
+        let Some((&first, _)) = key.as_bytes().split_first() else {
             let index = start;
             let next = text.get(index..)?.chars().next();
             start = next.map_or(text.len() + 1, |char| index + char.len_utf8());
             return Some(index);
         };
+        let first = if NORMALIZE {
+            normalize_key_byte(first)
+        } else {
+            first
+        };
         while start + key.len() <= value.len() {
             let index = start + memchr::memchr(first, &value[start..=value.len() - key.len()])?;
-            if value[index..].starts_with(key) {
+            let matched = if NORMALIZE {
+                normalized_key_bytes(key).eq(value[index..index + key.len()].iter().copied())
+            } else {
+                value[index..].starts_with(key.as_bytes())
+            };
+            if matched {
                 start = index + key.len();
                 return Some(index);
             }
@@ -105,8 +114,12 @@ fn key_positions<'a>(text: &'a str, key: &'a str) -> impl Iterator<Item = usize>
     })
 }
 
-fn is_qualifier_end(byte: u8) -> bool {
+pub(super) fn is_qualifier_end(byte: u8) -> bool {
     !byte.is_ascii_alphanumeric() && !matches!(byte, b'-' | b'_')
+}
+
+pub(super) fn starts_price_neutral_suffix(byte: u8) -> bool {
+    matches!(byte, b'[' | b'-' | b'.' | b'_' | b':' | b'@')
 }
 
 fn is_price_neutral_suffix(suffix: &str, family: &[&str]) -> bool {
@@ -119,7 +132,7 @@ fn is_price_neutral_suffix(suffix: &str, family: &[&str]) -> bool {
             rest = &rest[end + 1..];
             continue;
         }
-        if !matches!(separator, b'-' | b'.' | b'_' | b':' | b'@') {
+        if !starts_price_neutral_suffix(separator) {
             return false;
         }
         let word_len = rest[1..]
@@ -208,6 +221,18 @@ pub(super) fn is_pricing_key_separator(byte: u8) -> bool {
     matches!(byte, b'.' | b'@')
 }
 
+fn normalize_key_byte(byte: u8) -> u8 {
+    if is_pricing_key_separator(byte) {
+        b'-'
+    } else {
+        byte
+    }
+}
+
+pub(super) fn normalized_key_bytes(value: &str) -> impl Iterator<Item = u8> + '_ {
+    value.bytes().map(normalize_key_byte)
+}
+
 pub(super) fn dash_pricing_key_separators(chars: impl Iterator<Item = char>) -> String {
     chars
         .map(|char| if matches!(char, '.' | '@') { '-' } else { char })
@@ -216,16 +241,7 @@ pub(super) fn dash_pricing_key_separators(chars: impl Iterator<Item = char>) -> 
 
 pub(super) fn normalized_pricing_key(value: &str) -> Cow<'_, str> {
     if value.bytes().any(is_pricing_key_separator) {
-        let dashed = value
-            .bytes()
-            .map(|byte| {
-                if is_pricing_key_separator(byte) {
-                    b'-'
-                } else {
-                    byte
-                }
-            })
-            .collect();
+        let dashed = normalized_key_bytes(value).collect();
         Cow::Owned(String::from_utf8(dashed).expect("replacing ASCII bytes keeps UTF-8"))
     } else {
         Cow::Borrowed(value)
@@ -312,7 +328,29 @@ mod tests {
         ] {
             let expected: Vec<_> = value.match_indices(key).map(|(index, _)| index).collect();
             assert_eq!(
-                super::key_positions(value, key).collect::<Vec<_>>(),
+                super::key_positions::<false>(value, key).collect::<Vec<_>>(),
+                expected,
+                "{value} {key}"
+            );
+        }
+    }
+
+    #[test]
+    fn normalized_key_positions_match_materialized_identity() {
+        for (value, key) in [
+            ("x-é-5-é-5", "é@5"),
+            ("model-1-2[1m]", "model.1@2"),
+            ("------", ".@"),
+            ("foo-bar", "@baz"),
+            ("é1", ""),
+        ] {
+            let identity = super::normalized_pricing_key(key);
+            let expected: Vec<_> = value
+                .match_indices(identity.as_ref())
+                .map(|(index, _)| index)
+                .collect();
+            assert_eq!(
+                super::key_positions::<true>(value, key).collect::<Vec<_>>(),
                 expected,
                 "{value} {key}"
             );

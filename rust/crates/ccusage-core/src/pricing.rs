@@ -47,6 +47,7 @@ use row::{
 };
 mod rows;
 use rows::{Lookup, PricingRows, RowMatch};
+mod secondary_index;
 mod speed;
 use speed::SpeedMultipliers;
 mod table;
@@ -94,18 +95,22 @@ impl PricingMap {
 
     fn rows_mut(&mut self) -> &mut PricingRows {
         let rows = Arc::make_mut(&mut self.rows);
-        rows.indexes.take();
-        rows.folded_indexes.take();
-        rows.normalized_keys.take();
-        rows.exact_only_by_identity.take();
+        rows.make_mutable();
         rows
+    }
+
+    fn from_embedded_rows(rows: table::EmbeddedRows) -> Self {
+        Self {
+            rows: Arc::new(PricingRows::from_embedded(rows)),
+            ..Self::default()
+        }
     }
 
     fn build_embedded() -> Self {
         let table = embedded_pricing_table();
         Self {
-            rows: Arc::clone(&table.rows.rows),
-            models_dev: Some(Arc::clone(&table.models_dev.rows)),
+            rows: Arc::clone(&table.rows),
+            models_dev: Some(Arc::clone(&embedded_models_dev_pricing().rows)),
             ..Self::default()
         }
     }
@@ -184,7 +189,7 @@ impl PricingMap {
                 pricing: pricing.into(),
                 context_limit,
                 source: Source::Curated,
-                whole_request_tiers: row::whole_request_threshold(provider).is_some(),
+                whole_request_tiers: row::whole_request_threshold(model).is_some(),
                 scope: Scope::Direct,
                 vendor_start: vendor_start(model, vendor_id(model, provider)),
                 schedule: schedule_for(vendor_id(model, provider)),
@@ -274,7 +279,6 @@ impl PricingMap {
             if (row.pricing.input - curated.input).abs() < f64::EPSILON
                 && (row.pricing.output - curated.output).abs() < f64::EPSILON
             {
-                row.whole_request_tiers = row::whole_request_threshold("anthropic").is_some();
                 row.pricing.long_context = curated.long_context.map(Arc::new);
                 if let Some(schedule) = curated.schedule.and_then(schedule_for) {
                     row.schedule = Some(schedule);

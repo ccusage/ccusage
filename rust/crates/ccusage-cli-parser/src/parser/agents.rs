@@ -6,7 +6,7 @@ use ccusage_cli::{
 
 use super::{
     RootOptions, agent_command_args, command_option, parse_extra_command,
-    shared::{parse_shared_arg, parse_shared_arg_for_command},
+    shared::{parse_claude_report_arg, parse_shared_arg, parse_shared_arg_for_command},
     values::{parse_codex_speed, parse_week_day},
 };
 use crate::arg_parser::ArgParser;
@@ -67,12 +67,11 @@ fn parse_claude_daily_command(
     let mut project = None;
     config.apply_daily_args(&mut args);
     while parser.peek().is_some() {
-        if parse_shared_arg_for_command(parser, &mut args.shared)? {
+        if parse_claude_report_arg(parser, &mut args.shared, &mut project)? {
             continue;
         }
         match parser.next_flag()?.as_str() {
             "-i" | "--instances" => args.instances = true,
-            "-p" | "--project" => project = Some(parser.value_for("--project")?),
             "--project-aliases" => {
                 args.project_aliases = Some(parser.value_for("--project-aliases")?)
             }
@@ -88,12 +87,17 @@ fn parse_claude_daily_command(
 fn parse_claude_monthly_command(
     parser: &mut ArgParser,
     mut shared: SharedArgs,
-    _config: &dyn CliConfig,
 ) -> Result<Command, String> {
+    let mut project = None;
     while parser.peek().is_some() {
-        parse_shared_arg(parser, &mut shared)?;
+        if !parse_claude_report_arg(parser, &mut shared, &mut project)? {
+            parse_shared_arg(parser, &mut shared)?;
+        }
     }
-    Ok(Command::claude_report(ClaudeReport::Monthly(shared)))
+    Ok(Command::Claude {
+        report: ClaudeReport::Monthly(shared),
+        project,
+    })
 }
 
 fn parse_claude_weekly_command(
@@ -105,9 +109,10 @@ fn parse_claude_weekly_command(
         shared,
         start_of_week: WeekDay::Sunday,
     };
+    let mut project = None;
     config.apply_weekly_args(&mut args);
     while parser.peek().is_some() {
-        if parse_shared_arg_for_command(parser, &mut args.shared)? {
+        if parse_claude_report_arg(parser, &mut args.shared, &mut project)? {
             continue;
         }
         match parser.next_flag()?.as_str() {
@@ -117,17 +122,20 @@ fn parse_claude_weekly_command(
             flag => return Err(format!("Unknown weekly option '{flag}'")),
         }
     }
-    Ok(Command::claude_report(ClaudeReport::Weekly(args)))
+    Ok(Command::Claude {
+        report: ClaudeReport::Weekly(args),
+        project,
+    })
 }
 
 fn parse_claude_session_command(
     parser: &mut ArgParser,
     shared: SharedArgs,
-    _config: &dyn CliConfig,
 ) -> Result<Command, String> {
     let mut args = SessionArgs { shared, id: None };
+    let mut project = None;
     while parser.peek().is_some() {
-        if parse_shared_arg_for_command(parser, &mut args.shared)? {
+        if parse_claude_report_arg(parser, &mut args.shared, &mut project)? {
             continue;
         }
         match parser.next_flag()?.as_str() {
@@ -135,7 +143,10 @@ fn parse_claude_session_command(
             flag => return Err(format!("Unknown session option '{flag}'")),
         }
     }
-    Ok(Command::claude_report(ClaudeReport::Session(args)))
+    Ok(Command::Claude {
+        report: ClaudeReport::Session(args),
+        project,
+    })
 }
 
 fn parse_claude_command(
@@ -153,9 +164,9 @@ fn parse_claude_command(
     };
     match command.as_str() {
         "daily" => parse_claude_daily_command(parser, shared, config),
-        "monthly" => parse_claude_monthly_command(parser, shared, config),
+        "monthly" => parse_claude_monthly_command(parser, shared),
         "weekly" => parse_claude_weekly_command(parser, shared, config),
-        "session" => parse_claude_session_command(parser, shared, config),
+        "session" => parse_claude_session_command(parser, shared),
         command => Err(format!("Unknown claude command '{command}'")),
     }
 }

@@ -80,7 +80,7 @@ exit: 0
           "cost": 0.0026875,
           "inputTokens": 700,
           "modelName": "gpt-5",
-          "outputTokens": 495
+          "outputTokens": 150
         },
         {
           "cacheCreationTokens": 0,
@@ -98,7 +98,7 @@ exit: 0
         "claude-sonnet-4-20250514",
         "codebuff-mystery-1"
       ],
-      "outputTokens": 1165,
+      "outputTokens": 820,
       "totalCost": 0.0149375,
       "totalTokens": 19965
     },
@@ -168,7 +168,7 @@ exit: 0
     "cacheReadTokens": 25540,
     "credits": 8.2,
     "inputTokens": 5651,
-    "outputTokens": 1912,
+    "outputTokens": 1567,
     "totalCost": 0.0320255,
     "totalTokens": 34063,
     "unpricedModels": [

@@ -108,7 +108,7 @@ exit: 0
           "cost": 0.0026875,
           "inputTokens": 700,
           "modelName": "gpt-5",
-          "outputTokens": 495
+          "outputTokens": 150
         },
         {
           "cacheCreationTokens": 0,
@@ -125,7 +125,7 @@ exit: 0
         "gpt-5",
         "codebuff-mystery-1"
       ],
-      "outputTokens": 772,
+      "outputTokens": 427,
       "sessionId": "manicode/alpha/2025-12-30T10-00-00.000Z",
       "totalCost": 0.0111505,
       "totalTokens": 9583
@@ -168,7 +168,7 @@ exit: 0
     "cacheReadTokens": 25540,
     "credits": 8.2,
     "inputTokens": 5651,
-    "outputTokens": 1912,
+    "outputTokens": 1567,
     "totalCost": 0.0320255,
     "totalTokens": 34063,
     "unpricedModels": [

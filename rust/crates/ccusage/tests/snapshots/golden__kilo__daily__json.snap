@@ -124,7 +124,7 @@ exit: 0
           "cost": 0.000325,
           "inputTokens": 100,
           "modelName": "gpt-5",
-          "outputTokens": 365
+          "outputTokens": 20
         }
       ],
       "modelsUsed": [
@@ -132,7 +132,7 @@ exit: 0
         "kilo-mystery-1",
         "gpt-5"
       ],
-      "outputTokens": 542,
+      "outputTokens": 197,
       "totalCost": 0.204525,
       "totalTokens": 4652
     },
@@ -182,7 +182,7 @@ exit: 0
     "cacheCreationTokens": 550,
     "cacheReadTokens": 22500,
     "inputTokens": 5363,
-    "outputTokens": 1819,
+    "outputTokens": 1474,
     "totalCost": 4.0008605,
     "totalTokens": 30362,
     "unpricedModels": [

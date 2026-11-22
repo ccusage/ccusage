@@ -43,7 +43,7 @@ exit: 0
           "cost": 0.0,
           "inputTokens": 0,
           "modelName": "qwen-mystery-1",
-          "outputTokens": 654
+          "outputTokens": 0
         }
       ],
       "modelsUsed": [
@@ -52,7 +52,7 @@ exit: 0
         "qwen-2.5-72b-instruct",
         "qwen-mystery-1"
       ],
-      "outputTokens": 1478,
+      "outputTokens": 824,
       "projectPath": "alpha",
       "sessionId": "sess-a",
       "totalCost": 0.009337,
@@ -113,7 +113,7 @@ exit: 0
     "cacheCreationTokens": 0,
     "cacheReadTokens": 1380,
     "inputTokens": 3201,
-    "outputTokens": 1598,
+    "outputTokens": 944,
     "totalCost": 0.011526999999999999,
     "totalTokens": 6389
   }

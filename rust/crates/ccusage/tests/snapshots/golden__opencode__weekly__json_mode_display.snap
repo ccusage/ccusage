@@ -9,7 +9,7 @@ exit: 0
     "cacheCreationTokens": 700,
     "cacheReadTokens": 17500,
     "inputTokens": 7186,
-    "outputTokens": 1831,
+    "outputTokens": 1586,
     "totalCost": 2.75,
     "totalTokens": 27267
   },
@@ -111,7 +111,7 @@ exit: 0
           "cost": 0.0,
           "inputTokens": 100,
           "modelName": "claude-haiku-4.5",
-          "outputTokens": 245
+          "outputTokens": 0
         }
       ],
       "modelsUsed": [
@@ -125,7 +125,7 @@ exit: 0
         "k2p6",
         "claude-haiku-4.5"
       ],
-      "outputTokens": 1781,
+      "outputTokens": 1536,
       "totalCost": 2.75,
       "totalTokens": 27117,
       "week": "2025-12-29"

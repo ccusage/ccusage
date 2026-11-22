@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use serde::Deserialize;
 use serde_json::Value;
@@ -7,8 +7,11 @@ use crate::fast::FxHashMap;
 
 use super::{
     LongContext, LongContextMode, LongContextRates, Pricing, PricingMap, Row, RowPricing, Scope,
-    Source, embedded::embedded_pricing_table, model_without_date_suffix, pricing_alias,
-    provider_cache_defaults, row::whole_request_threshold, speed::PublishedSpeed,
+    Source,
+    embedded::{embedded_models_dev_index, embedded_models_dev_rows},
+    model_without_date_suffix, pricing_alias, provider_cache_defaults,
+    row::whole_request_threshold,
+    speed::PublishedSpeed,
 };
 
 mod catalog;
@@ -64,7 +67,6 @@ enum ModelsDevJson {
 #[derive(Debug, Deserialize)]
 struct ModelsDevModel {
     id: Option<String>,
-    provider: Option<String>,
     cost: Option<ModelsDevCost>,
     limit: Option<ModelsDevLimit>,
     modalities: Option<ModelsDevModalities>,
@@ -222,7 +224,7 @@ impl PricingMap {
             };
             let normalized_id = normalized_models_dev_model_id(&model_id).into_owned();
             let claimed = claims.get(&normalized_id).cloned();
-            if claimed.is_none() && self.rows.entries.contains_key(&model_id) {
+            if claimed.is_none() && self.rows.get(&model_id).is_some() {
                 continue;
             }
             let Some(input) = cost.input else {
@@ -282,12 +284,7 @@ impl PricingMap {
                         provider_cache_defaults(None),
                     ),
                     exact_only,
-                    whole_request_tiers: whole_request_threshold(if provider_id.is_empty() {
-                        model.provider.as_deref().unwrap_or_default()
-                    } else {
-                        provider_id
-                    })
-                    .is_some(),
+                    whole_request_tiers: whole_request_threshold(&model_id).is_some(),
                     context_limit,
                     key: Arc::default(),
                     source: Source::ModelsDev,
@@ -352,11 +349,10 @@ impl PricingMap {
             .chain((base != resolved).then_some(base))
             .find_map(|key| {
                 self.rows
-                    .entries
                     .get(key)
                     .or_else(|| {
                         let exact_only = self.rows.exact_only_id(key)?;
-                        self.rows.entries.get(exact_only)
+                        self.rows.get(exact_only)
                     })
                     .map(|row| row.pricing.long_context.as_deref().copied())
             })
@@ -412,5 +408,12 @@ struct ModelsDevLongContextRates {
 }
 
 pub(super) fn embedded_models_dev_pricing() -> &'static PricingMap {
-    &embedded_pricing_table().models_dev
+    static MAP: OnceLock<PricingMap> = OnceLock::new();
+    MAP.get_or_init(|| PricingMap {
+        rows: Arc::new(super::PricingRows::from_deferred(
+            embedded_models_dev_rows,
+            embedded_models_dev_index(),
+        )),
+        ..PricingMap::default()
+    })
 }

@@ -6483,10 +6483,10 @@
 	},
 	"aws-mantle/gpt-5.6-sol": {
 		"cost": {
-			"cache_read": 0.44,
-			"cache_write": 5.5,
-			"input": 4.4,
-			"output": 26.4
+			"cache_read": 0.55,
+			"cache_write": 6.875,
+			"input": 5.5,
+			"output": 33
 		},
 		"limit": {
 			"context": 921600
@@ -14705,6 +14705,17 @@
 		"exactOnly": true,
 		"limit": {
 			"context": 1048576
+		},
+		"provider": "llmgateway-providers"
+	},
+	"fireworks/qwen3.8-2.4t-a95b": {
+		"cost": {
+			"cache_read": 0.25,
+			"input": 2,
+			"output": 6
+		},
+		"limit": {
+			"context": 1009981
 		},
 		"provider": "llmgateway-providers"
 	},

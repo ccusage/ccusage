@@ -66,7 +66,7 @@ exit: 0
           "cost": 0.0026875,
           "inputTokens": 700,
           "modelName": "gpt-5",
-          "outputTokens": 495
+          "outputTokens": 150
         },
         {
           "cacheCreationTokens": 60,
@@ -112,7 +112,7 @@ exit: 0
         "grok-4"
       ],
       "month": "2026-01",
-      "outputTokens": 1655,
+      "outputTokens": 1310,
       "totalCost": 0.0183125,
       "totalTokens": 28395
     }
@@ -122,7 +122,7 @@ exit: 0
     "cacheReadTokens": 25540,
     "credits": 8.2,
     "inputTokens": 5651,
-    "outputTokens": 1912,
+    "outputTokens": 1567,
     "totalCost": 0.0320255,
     "totalTokens": 34063,
     "unpricedModels": [

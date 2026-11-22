@@ -18,8 +18,8 @@ use jiff::tz::TimeZone as JiffTimeZone;
 use memchr::memmem;
 
 use super::{
-    claude_paths, containing_projects_root, daily, dedupe, dedupe::DedupEntry as _,
-    extract_session_parts, projects_roots, read_usage_files_since, visit_usage_files,
+    claude_paths, containing_projects_root, daily, dedupe, extract_session_parts, projects_roots,
+    read_usage_files_since, visit_usage_files,
 };
 
 /// Loads every deduplicated Claude usage entry, regardless of `since`.
@@ -88,17 +88,7 @@ impl std::ops::Deref for ClaudeEntry {
 
 impl DedupedEntries {
     pub(super) fn main_thread_sessions(&self) -> MainThreadSessions {
-        main_thread_sessions(
-            self.entries
-                .iter()
-                .map(|entry| (loaded_entry_session_id(entry), entry))
-                .chain(
-                    self.copies
-                        .iter()
-                        .map(|(index, session)| (session.as_ref(), &self.entries[*index])),
-                )
-                .map(|(session, entry)| (session, entry.is_sidechain())),
-        )
+        main_thread_sessions(&self.entries, &self.copies)
     }
 }
 
@@ -139,10 +129,18 @@ pub(crate) fn load_daily_summaries(
 
 pub(crate) type MainThreadSessions = HashSet<Arc<str>>;
 
-pub(super) fn main_thread_sessions<'a>(
-    entries: impl Iterator<Item = (&'a str, bool)>,
+pub(super) fn main_thread_sessions(
+    entries: &[impl dedupe::DedupEntry],
+    copies: &[(usize, Arc<str>)],
 ) -> MainThreadSessions {
     entries
+        .iter()
+        .map(|entry| (entry.session_id(), entry.is_sidechain()))
+        .chain(
+            copies
+                .iter()
+                .map(|(index, session)| (session.as_ref(), entries[*index].is_sidechain())),
+        )
         .filter(|(_, is_sidechain)| !is_sidechain)
         .map(|(session_id, _)| session_id)
         .collect::<HashSet<_>>()
@@ -163,13 +161,18 @@ pub(crate) fn load_daily_summaries_with_detection_progress(
     report_window: Option<&crate::ReportWindow>,
     owner: ProgressOwner,
     diagnostics: &Diagnostics,
+    requested: impl FnOnce() -> bool,
 ) -> Result<DailySummaries> {
     let load = || daily::load_daily_entries(shared, project_filter, diagnostics);
     let daily = owner.run(progress::UsageLoadAgent("Claude"), shared.json, load)?;
     Ok(DailySummaries {
         summaries: daily.summaries(false, report_window),
         detected: daily.detected,
-        sessions: daily.sessions(),
+        sessions: if requested() {
+            daily.sessions()
+        } else {
+            MainThreadSessions::new()
+        },
     })
 }
 

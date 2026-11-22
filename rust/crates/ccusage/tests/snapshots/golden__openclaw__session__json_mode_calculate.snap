@@ -35,7 +35,7 @@ exit: 0
           "cost": 0.0026875,
           "inputTokens": 700,
           "modelName": "[openclaw] gpt-5",
-          "outputTokens": 495
+          "outputTokens": 150
         },
         {
           "cacheCreationTokens": 0,
@@ -53,7 +53,7 @@ exit: 0
         "[openclaw] gpt-5",
         "[openclaw] claude-haiku-4-5-20251001"
       ],
-      "outputTokens": 1102,
+      "outputTokens": 757,
       "projectPath": "OpenClaw",
       "sessionId": "alpha",
       "totalCost": 0.0148625,
@@ -234,7 +234,7 @@ exit: 0
     "cacheCreationTokens": 1850,
     "cacheReadTokens": 40500,
     "inputTokens": 9124,
-    "outputTokens": 2876,
+    "outputTokens": 2531,
     "totalCost": 0.04634375,
     "totalTokens": 54700,
     "unpricedModels": [

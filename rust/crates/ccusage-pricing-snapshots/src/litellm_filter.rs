@@ -207,6 +207,7 @@ mod tests {
             litellm_sources: crate::LITELLM_SOURCES,
             models_dev_catalog_rules: crate::MODELS_DEV_CATALOG_RULES,
             pricing_table: crate::PRICING_TABLE,
+            models_dev_table: crate::MODELS_DEV_TABLE,
         });
         let filtered = filter_pricing_json(
             r#"{

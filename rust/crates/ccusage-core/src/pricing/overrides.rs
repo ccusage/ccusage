@@ -5,9 +5,8 @@ use smallvec::SmallVec;
 
 use super::{
     Candidate, LongContext, LongContextMode, Lookup, Name, Pricing, PricingMap, PricingOverride,
-    PricingRows, Row, RowMatch, Scope, Source, SpeedMultipliers, last_segment,
-    normalized_pricing_key,
-    row::{cache_defaults, whole_request_threshold},
+    PricingRows, Row, RowMatch, Scope, Source, SpeedMultipliers, normalized_pricing_key,
+    row::{cache_defaults, whole_request_override_model},
     unlabeled_model, with_names,
 };
 
@@ -36,13 +35,6 @@ enum Base {
 impl Overrides {
     pub(super) fn is_empty(&self) -> bool {
         self.rows.is_empty()
-    }
-
-    fn id(&self, name: &str) -> Option<usize> {
-        if self.is_empty() {
-            return None;
-        }
-        self.id_identity(normalized_pricing_key(name).as_ref())
     }
 
     pub(super) fn id_identity(&self, identity: &str) -> Option<usize> {
@@ -78,8 +70,23 @@ impl Overrides {
     }
 
     pub(super) fn shadow(&self, found: RowMatch<'_>) -> Option<usize> {
-        self.id(found.key)
-            .or_else(|| self.id(found.row.vendor_id()?))
+        if self.is_empty() {
+            return None;
+        }
+        self.shadow_identity(&normalized_pricing_key(found.key), || {
+            found.row.vendor_id().map(str::len)
+        })
+    }
+
+    pub(super) fn shadow_identity(
+        &self,
+        identity: &str,
+        vendor_len: impl FnOnce() -> Option<usize>,
+    ) -> Option<usize> {
+        self.id_identity(identity).or_else(|| {
+            // NOTE(2026-11-21, #2465): Normalization swaps ASCII bytes one for one. The vendor ID can use the same suffix offset in the normalized key.
+            self.id_identity(&identity[identity.len() - vendor_len()?..])
+        })
     }
 
     pub(super) fn names(&self) -> impl Iterator<Item = (&str, &str)> {
@@ -269,8 +276,7 @@ impl PricingMap {
                 whole_request_tiers = whole_request_tiers
                     || catalog_row.is_some_and(|row| row.whole_request_tiers)
                     || with_names(model, |name| {
-                        let (path, _) = name.rsplit_once('/')?;
-                        whole_request_threshold(last_segment(path))
+                        whole_request_override_model(name).then_some(())
                     })
                     .is_some();
                 if whole_request_tiers {

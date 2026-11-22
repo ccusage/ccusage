@@ -435,7 +435,6 @@ pub(super) fn entry_to_loaded(
         .missing_pricing
         .then(|| crate::model_aliases::resolve_model_name(&entry.model).into_owned());
     let stored_cost = stored_cost_for_mode(entry.cost, mode);
-    let (usage, extra_total_tokens) = additional.for_report(usage);
     LoadedEntry {
         date: date_at(entry.timestamp, tz),
         timestamp: entry.timestamp,
@@ -443,7 +442,7 @@ pub(super) fn entry_to_loaded(
         session_id: Arc::from(entry.session_id),
         project_path: Arc::from("OpenClaw"),
         cost,
-        extra_total_tokens,
+        extra_total_tokens: additional.report_remainder,
         credits: None,
         message_count: None,
         model: Some(identity.into_display()),
@@ -747,7 +746,9 @@ mod tests {
     }
 
     #[test]
-    fn falls_back_to_total_tokens_when_openclaw_parts_are_missing() {
+    fn keeps_total_only_usage_out_of_output_tokens() {
+        ccusage_test_support::install_pricing_snapshots();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         let record = serde_json::from_value::<OpenClawLine>(serde_json::json!({
             "type": "message",
             "message": {
@@ -773,10 +774,12 @@ mod tests {
         let loaded = entry_to_loaded(
             entry,
             &JiffTimeZone::UTC,
-            CostMode::Display,
-            PriceTable::Display,
+            CostMode::Calculate,
+            PriceTable::Calculate(&pricing),
         );
-        assert_eq!(loaded.usage.output_tokens, 222);
+        assert_eq!(loaded.usage.output_tokens, 0);
+        assert_eq!(loaded.extra_total_tokens, 222);
+        assert_eq!(loaded.cost, 0.0);
     }
 
     #[test]
