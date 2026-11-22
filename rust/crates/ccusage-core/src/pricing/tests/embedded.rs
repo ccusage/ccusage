@@ -87,6 +87,38 @@ fn a_primary_hit_and_unlisted_synthetic_model_leave_the_secondary_table_cold() {
 }
 
 #[test]
+fn unknown_override_keeps_embedded_catalogues_cold() {
+    use std::sync::Arc;
+
+    use crate::pricing::{
+        embedded::embedded_models_dev_index,
+        table::{RecordOffsets, decode_pricing_table},
+    };
+
+    crate::test_support::install_pricing_snapshots();
+    let mut pricing = PricingMap::from_embedded_rows(decode_pricing_table(
+        ccusage_pricing_snapshots::PRICING_TABLE,
+        RecordOffsets::Absolute,
+    ));
+    pricing.models_dev = Some(Arc::new(PricingRows::from_deferred(
+        || panic!("an unknown override should leave the secondary catalogue cold"),
+        embedded_models_dev_index(),
+    )));
+    let key = "brand-new-model".to_owned();
+    let rates = ccusage_cli::PricingOverride {
+        input_cost_per_token: Some(1e-6),
+        output_cost_per_token: Some(2e-6),
+        ..Default::default()
+    };
+
+    let pricing = pricing.with_user_overrides([(&key, &rates)]);
+    let entry = pricing.find(&key).unwrap();
+    assert_eq!((entry.input, entry.output), (1e-6, 2e-6));
+    assert!(pricing.rows.folded_indexes.get().is_none());
+    assert_eq!(pricing.rows.decode_cache_counts(), (0, 0));
+}
+
+#[test]
 fn embedded_table_matches_the_rows_loaded_from_its_snapshots() {
     let [litellm, models_dev] = eager_catalogues();
     let embedded = PricingMap::load_embedded();

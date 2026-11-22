@@ -5,9 +5,8 @@ use smallvec::SmallVec;
 
 use super::{
     Candidate, LongContext, LongContextMode, Lookup, Name, Pricing, PricingMap, PricingOverride,
-    PricingRows, Row, RowMatch, Scope, Source, SpeedMultipliers, last_segment,
-    normalized_pricing_key,
-    row::{cache_defaults, whole_request_threshold},
+    PricingRows, Row, RowMatch, Scope, Source, SpeedMultipliers, normalized_pricing_key,
+    row::{cache_defaults, whole_request_override_model},
     rows::{fold_case, has_uppercase, identity_order, matching_folded_ids, sort_folded_ids},
     unlabeled_model, with_names,
 };
@@ -238,7 +237,7 @@ impl PricingMap {
                     return Some(Base::Override(dependency));
                 }
                 self.rows
-                    .authoritative(name, false, fold, Some)
+                    .authoritative_base(name, fold)
                     .map(|found| Base::Authority(Box::new(found.row.clone())))
             })
         })
@@ -316,8 +315,7 @@ impl PricingMap {
                 whole_request_tiers = whole_request_tiers
                     || catalog_row.is_some_and(|row| row.whole_request_tiers)
                     || with_names(model, |name| {
-                        let (path, _) = name.rsplit_once('/')?;
-                        whole_request_threshold(last_segment(path))
+                        whole_request_override_model(name).then_some(())
                     })
                     .is_some();
                 if whole_request_tiers {
@@ -351,7 +349,7 @@ fn secondary_base<'a>(rows: Option<&'a PricingRows>, key: &str) -> Option<&'a Ro
     let rows = rows?;
     [false, true].into_iter().find_map(|fold| {
         with_names(key, |name| {
-            rows.exact(Name::new(name, &OnceLock::new()), Lookup::Pricing, fold)
+            rows.exact_base(Name::new(name, &OnceLock::new()), fold)
                 .map(|found| found.row)
         })
     })

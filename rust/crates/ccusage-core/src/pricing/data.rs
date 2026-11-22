@@ -320,12 +320,43 @@ pub(super) static VENDOR_SPELLINGS: &[(&str, &str)] = &[("google", "gemini")];
 
 // NOTE(2026-11-21, #2227): xAI lists separate "(≥ 200k prompt tokens)" rows and bills every token of such a request at them at https://docs.x.ai/developers/pricing. LiteLLM's above-200k fields on xAI's own rows describe that tier, not a marginal one. A request is long when its context exceeds the threshold, so 199,999 makes a 200,000-token prompt long.
 const XAI_LONG_CONTEXT_THRESHOLD: u64 = 199_999;
+
+pub(super) struct WholeRequestVendor {
+    pub(super) model_families: &'static [&'static str],
+    pub(super) namespaces: &'static [&'static str],
+    pub(super) threshold: u64,
+}
+
 // NOTE(2026-11-21, #2472): Google prices Gemini prompts over 200K as whole requests (https://ai.google.dev/gemini-api/docs/pricing). The cutoff here applies to LiteLLM split fields. Models.dev supplies a cutoff per model.
-pub(super) static WHOLE_REQUEST_LONG_CONTEXT_PROVIDERS: &[(&str, u64)] = &[
-    ("anthropic", DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS),
-    ("gemini", DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS),
-    ("google", DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS),
-    ("xai", XAI_LONG_CONTEXT_THRESHOLD),
+// NOTE(2026-11-22, #2495): Bedrock's geographic and global Claude Sonnet 4.5 listings can have different rates (https://aws.amazon.com/blogs/machine-learning/unlock-global-ai-inference-scalability-using-new-global-cross-region-inference-on-amazon-bedrock-with-anthropics-claude-sonnet-4-5/). Match the model family so each listing applies its own tier to the whole request.
+pub(super) static WHOLE_REQUEST_LONG_CONTEXT_VENDORS: &[WholeRequestVendor] = &[
+    WholeRequestVendor {
+        model_families: &[
+            "claude",
+            "anthropic-claude",
+            "anthropic--claude",
+            "databricks-claude",
+        ],
+        namespaces: &["anthropic"],
+        threshold: DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS,
+    },
+    WholeRequestVendor {
+        model_families: &["gemini", "google-gemini", "databricks-gemini"],
+        namespaces: &["gemini", "google"],
+        threshold: DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS,
+    },
+    WholeRequestVendor {
+        model_families: &[
+            "grok",
+            "grok4",
+            "xai-grok",
+            "x-ai-grok",
+            "spacexai-grok",
+            "databricks-grok",
+        ],
+        namespaces: &["xai"],
+        threshold: XAI_LONG_CONTEXT_THRESHOLD,
+    },
 ];
 
 pub(super) struct CuratedLongContext {

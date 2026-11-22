@@ -3,6 +3,8 @@ use std::{
     sync::{Arc, OnceLock},
 };
 
+use smallvec::SmallVec;
+
 use crate::fast::FxHashMap;
 
 use super::{
@@ -305,12 +307,23 @@ impl PricingRows {
         })
     }
 
+    #[cfg(test)]
     pub(super) fn indexed_rows<'a>(
         &'a self,
         identity: &str,
         index: Index,
         fold: bool,
     ) -> impl Iterator<Item = RowMatch<'a>> {
+        self.search_index::<false>(identity, index, fold)
+    }
+
+    fn search_index<'a, const INHERITANCE: bool>(
+        &'a self,
+        identity: &str,
+        index: Index,
+        fold: bool,
+    ) -> impl Iterator<Item = RowMatch<'a>> {
+        let mut uncached = SmallVec::<[usize; 1]>::new();
         let (sensitive, folded) = match self.embedded() {
             Some(rows) => (
                 RowIds::Embedded(rows.indexed_ids(identity, index, false)),
@@ -320,23 +333,36 @@ impl PricingRows {
                     &[]
                 }),
             ),
-            None => (
-                RowIds::Live(
-                    index
-                        .sensitive(self.indexes())
-                        .get(identity)
-                        .map_or(&[], |ids| ids.as_slice()),
-                ),
-                RowIds::Live(if fold {
-                    self.folded_ids(identity, index)
-                } else {
+            None => {
+                let keys = index.sensitive(self.indexes());
+                let folded = if !fold {
                     &[]
-                }),
-            ),
+                } else if INHERITANCE && self.folded_indexes.get().is_none() {
+                    uncached.extend(
+                        keys.iter()
+                            .filter_map(|(key, ids)| {
+                                (key.len() == identity.len()
+                                    && key.as_ref() != identity
+                                    && folded_identity(key).eq(identity.bytes()))
+                                .then_some(ids)
+                            })
+                            .flatten()
+                            .copied(),
+                    );
+                    &[]
+                } else {
+                    self.folded_ids(identity, index)
+                };
+                (
+                    RowIds::Live(keys.get(identity).map_or(&[], |ids| ids.as_slice())),
+                    RowIds::Live(folded),
+                )
+            }
         };
         sensitive
             .iter()
             .chain(folded.iter())
+            .chain(uncached)
             .filter_map(|id| self.at(id))
     }
 
@@ -350,6 +376,23 @@ impl PricingRows {
     }
 
     pub(super) fn authoritative<'a>(
+        &'a self,
+        name: Name<'_>,
+        hosted: bool,
+        fold: bool,
+        visible: impl Fn(RowMatch<'a>) -> Option<RowMatch<'a>>,
+    ) -> Option<RowMatch<'a>> {
+        self.authoritative_on_index::<false>(name, hosted, fold, visible)
+    }
+
+    pub(super) fn authoritative_base(&self, name: Name<'_>, fold: bool) -> Option<RowMatch<'_>> {
+        if !self.may_contain(name.raw()) {
+            return None;
+        }
+        self.authoritative_on_index::<true>(name, false, fold, Some)
+    }
+
+    fn authoritative_on_index<'a, const INHERITANCE: bool>(
         &'a self,
         name: Name<'_>,
         hosted: bool,
@@ -373,7 +416,7 @@ impl PricingRows {
             Cow::Borrowed(name.identity())
         };
         let matches = |index| {
-            self.indexed_rows(&identity, index, fold)
+            self.search_index::<INHERITANCE>(&identity, index, fold)
                 .filter_map(|raw| Some((raw.key, visible(raw)?)))
         };
         let by_key = |select| {
@@ -415,15 +458,19 @@ impl PricingRows {
         lookup: Lookup,
         fold: bool,
     ) -> Option<RowMatch<'_>> {
-        self.exact_on_index(name, lookup, fold, Some(host))
+        self.exact_on_index::<false>(name, lookup, fold, Some(host))
     }
 
     pub(super) fn exact(&self, name: Name<'_>, lookup: Lookup, fold: bool) -> Option<RowMatch<'_>> {
-        self.exact_on_index(name, lookup, fold, None)
+        self.exact_on_index::<false>(name, lookup, fold, None)
+    }
+
+    pub(super) fn exact_base(&self, name: Name<'_>, fold: bool) -> Option<RowMatch<'_>> {
+        self.exact_on_index::<true>(name, Lookup::Pricing, fold, None)
     }
 
     #[inline(never)]
-    fn exact_on_index(
+    fn exact_on_index<const INHERITANCE: bool>(
         &self,
         name: Name<'_>,
         lookup: Lookup,
@@ -447,7 +494,7 @@ impl PricingRows {
         } else {
             Index::Identity
         };
-        self.indexed_rows(&identity, index, fold)
+        self.search_index::<INHERITANCE>(&identity, index, fold)
             .filter(|found| lookup.includes(found.row) && on_host(found))
             .min_by_key(|found| identity_order(name, found.key, fold))
     }
