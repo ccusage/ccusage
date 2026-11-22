@@ -675,9 +675,7 @@ fn splits_otel_input_tokens_like_session_state() {
 
 #[test]
 fn keeps_total_only_otel_usage_out_of_output_tokens() {
-    ccusage_test_support::install_pricing_snapshots();
-    let mut pricing = ccusage_core::PricingMap::default();
-    pricing.load_json(r#"{"test-model":{"output_cost_per_token":2}}"#);
+    let pricing = test_model_pricing();
     let fixture = fs_fixture!({
         "copilot.jsonl":
         format!(
