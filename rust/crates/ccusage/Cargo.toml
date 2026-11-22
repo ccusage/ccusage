@@ -26,6 +26,8 @@ jiff.workspace = true
 ring.workspace = true
 rustls.workspace = true
 rustls-webpki.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 ureq.workspace = true
 
 [build-dependencies]

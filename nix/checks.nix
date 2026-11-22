@@ -86,7 +86,6 @@ in
         commonArgs
         // {
           pname = "generate-telemetry-schema";
-          # The generator only needs serde and schemars, so skip the adapter artifacts.
           inherit cargoArtifacts;
           cargoExtraArgs = "-p ccusage-telemetry --bin generate-telemetry-schema";
           doCheck = false;
@@ -95,9 +94,6 @@ in
           };
         }
       );
-      # Fail `nix flake check` when the collector Worker's ping schema drifts from
-      # the Rust `Ping` type the CLI sends. A drifted Worker would reject real pings
-      # with a 400 that nobody sees (run `just telemetry::generate-schema` to fix).
       telemetry-schema =
         pkgs.runCommand "telemetry-schema-check"
           {

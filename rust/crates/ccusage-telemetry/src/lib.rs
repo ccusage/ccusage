@@ -9,8 +9,6 @@
 use schemars::{JsonSchema, r#gen::SchemaSettings};
 use serde::Serialize;
 
-/// Short identifiers: versions, OS and architecture names, and commands such as
-/// `codex monthly`.
 const SHORT_FIELD_PATTERN: &str = r"^[\w .+-]{1,64}$";
 
 /// The one document the CLI sends, at most once per UTC day.

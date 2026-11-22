@@ -730,6 +730,7 @@ fn every_accepted_agent_report_is_in_the_matrix() {
 
     let (kinds, agents): (BTreeSet<&str>, BTreeSet<&str>) = commands
         .iter()
+        .filter(|command| command.as_str() != "telemetry")
         .map(String::as_str)
         .partition(|command| ALL_REPORT_KINDS.contains(command));
     assert_eq!(

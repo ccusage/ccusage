@@ -130,6 +130,7 @@ dependencies = [
  "ring",
  "rustls",
  "rustls-webpki",
+ "serde",
  "serde_json",
  "sqlite",
  "ureq",

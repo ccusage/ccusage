@@ -1,10 +1,3 @@
-//! Anonymous, opt-out usage telemetry.
-//!
-//! At most one ping per UTC day, carrying only the ccusage version, the OS and
-//! CPU architecture, the command name, and a random ID. Nothing read from agent
-//! logs is ever part of it. `CCUSAGE_TELEMETRY_DISABLED`, `DO_NOT_TRACK`, CI
-//! environments, and `ccusage telemetry disable` all turn it off.
-
 use std::{
     env, fs,
     fs::File,
@@ -15,39 +8,28 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use ccusage_cli::{
-    AgentCommand, AgentReportKind, ClaudeReport, Command, StandardAgent, TelemetryAction,
-};
+use ccusage_cli::{AgentCommand, AgentReportKind, ClaudeReport, Command, TelemetryAction};
 use ccusage_telemetry::{Ping, PingEvent};
 use ring::rand::{SecureRandom, SystemRandom};
 use serde::{Deserialize, Serialize};
 
 use crate::{Result, http};
 
-/// Builds without this endpoint never send anything, so forks and local builds
-/// cannot report into the official collector by accident.
 const ENDPOINT: Option<&str> = option_env!("CCUSAGE_TELEMETRY_ENDPOINT");
 const DOCS_URL: &str = "https://ccusage.com/guide/telemetry";
 const SEND_TIMEOUT: Duration = Duration::from_secs(3);
-/// The longest a finished report waits for an unsent ping. The ping only happens
-/// on the first run of a day, so this bounds a once-a-day delay.
 const EXIT_WAIT: Duration = Duration::from_millis(500);
 const SECONDS_PER_DAY: u64 = 86_400;
 const DISABLE_VARS: [&str; 2] = ["CCUSAGE_TELEMETRY_DISABLED", "DO_NOT_TRACK"];
 
-/// A ping running on a background thread.
 pub(crate) struct PendingPing(mpsc::Receiver<()>);
 
 impl PendingPing {
-    /// Gives the ping a short window to finish before the process exits and
-    /// kills the thread; a slow or failed ping is simply dropped.
     pub(crate) fn finish(self) {
         let _ = self.0.recv_timeout(EXIT_WAIT);
     }
 }
 
-/// Why telemetry is off. Checked in this order, so `telemetry status` names the
-/// setting a user would actually have to change.
 #[derive(Debug, Eq, PartialEq)]
 enum Disabled {
     EnvVar(&'static str),
@@ -59,29 +41,22 @@ enum Disabled {
 #[derive(Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", default)]
 struct State {
-    /// `None` means the user never chose, which keeps telemetry on.
     #[serde(skip_serializing_if = "Option::is_none")]
     enabled: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     anonymous_id: Option<String>,
-    /// Unix seconds when the first-run notice was printed.
     #[serde(skip_serializing_if = "Option::is_none")]
     notified_at: Option<u64>,
-    /// UTC day number (days since the Unix epoch) of the last ping.
     #[serde(skip_serializing_if = "Option::is_none")]
     last_sent_day: Option<u64>,
 }
 
-/// What one run should do, decided from the stored state.
 #[derive(Debug, Eq, PartialEq)]
 struct Plan {
     notice: bool,
     send: bool,
 }
 
-/// Starts today's ping if one is due, printing the first-run notice when needed.
-///
-/// Returns `None` whenever nothing was sent, including every disabled case.
 pub(crate) fn start(command: Option<&Command>, offline: bool) -> Option<PendingPing> {
     if matches!(command, Some(Command::Telemetry(_))) {
         return None;
@@ -103,12 +78,10 @@ pub(crate) fn start(command: Option<&Command>, offline: bool) -> Option<PendingP
         print_debug_payload(&state, command);
         return None;
     }
-    // Statusline output is read by Claude Code, not a person, so the notice
-    // waits for the next interactive command instead of disappearing there.
+    // NOTE(2026-11-22): Statusline output is consumed by Claude Code. Defer the notice until a normal invocation.
     let can_notify = !is_statusline(command);
     let now = unix_seconds();
-    // The first interactive invocation is notice-only, giving users a full
-    // run to opt out before any ping leaves the machine.
+    // NOTE(2026-11-22): The first eligible invocation only shows the notice. This lets users opt out before a ping.
     let plan = plan(&mut state, now, can_notify);
     if !plan.send {
         if plan.notice {
@@ -120,8 +93,6 @@ pub(crate) fn start(command: Option<&Command>, offline: bool) -> Option<PendingP
     if state.anonymous_id.is_none() {
         state.anonymous_id = Some(new_anonymous_id()?);
     }
-    // A state that cannot be saved would mint a new ID and ping again on every
-    // run, inflating the counts, so an unwritable state never sends.
     save_state(&path, &state).ok()?;
     drop(_lock);
 
@@ -134,10 +105,9 @@ pub(crate) fn start(command: Option<&Command>, offline: bool) -> Option<PendingP
     Some(PendingPing(finished))
 }
 
-/// Runs `ccusage telemetry [status|enable|disable]`.
 pub(crate) fn run(action: TelemetryAction) -> Result<()> {
     let path = state_path().ok_or_else(|| {
-        crate::cli_error("Cannot locate a config directory for the telemetry setting")
+        ccusage_core::cli_error("Cannot locate a config directory for the telemetry setting")
     })?;
     let _lock = StateLock::acquire(&path)?;
     let mut state = load_state(&path)?;
@@ -145,14 +115,12 @@ pub(crate) fn run(action: TelemetryAction) -> Result<()> {
         TelemetryAction::Status => {}
         TelemetryAction::Enable => {
             state.enabled = Some(true);
-            // Enabling it explicitly is consent enough; no notice afterwards.
             state.notified_at.get_or_insert_with(unix_seconds);
             save_state(&path, &state)?;
             println!("Telemetry enabled.");
         }
         TelemetryAction::Disable => {
             state.enabled = Some(false);
-            // A later `enable` starts over as a new anonymous user.
             state.anonymous_id = None;
             state.last_sent_day = None;
             save_state(&path, &state)?;
@@ -182,9 +150,9 @@ fn print_status(state: &State, path: &Path) {
 
 fn print_notice() {
     eprintln!(
-        "ccusage collects anonymous usage data to count its users: at most one ping a day with \
-         the ccusage version, OS, CPU architecture, command name, and a random ID. \
-         Nothing from your usage logs is sent.\n\
+        "ccusage will send minimal usage statistics on a later run: at most one ping per UTC day with \
+         version, OS, CPU architecture, first command name, and a random installation ID. \
+         Nothing from your agent logs is sent.\n\
          Opt out with `ccusage telemetry disable` or CCUSAGE_TELEMETRY_DISABLED=1. \
          Learn more: {DOCS_URL}\n"
     );
@@ -212,8 +180,6 @@ fn plan(state: &mut State, now: u64, can_notify: bool) -> Plan {
     let today = now / SECONDS_PER_DAY;
     let send = !notice && state.notified_at.is_some() && state.last_sent_day != Some(today);
     if send {
-        // Recorded before sending: a failed ping is not retried, and parallel
-        // statusline runs do not all report the same day.
         state.last_sent_day = Some(today);
     }
     Plan { notice, send }
@@ -230,8 +196,6 @@ fn payload(anonymous_id: &str, command: Option<&Command>) -> Ping {
     }
 }
 
-/// Names the command the way a user types it, so `ccusage daily` and
-/// `ccusage claude daily` stay distinct even though both parse to report types.
 fn command_name(command: Option<&Command>) -> String {
     let (agent, report) = match command {
         None => (None, "daily"),
@@ -300,8 +264,6 @@ fn env_disabled(lookup: impl Fn(&str) -> Option<String>) -> Option<Disabled> {
         .or_else(|| truthy(lookup("CI").as_deref()).then_some(Disabled::Ci))
 }
 
-/// Treats any value except empty, `0`, and `false` as set, matching how
-/// `DO_NOT_TRACK` and `CI` are used in practice.
 fn truthy(value: Option<&str>) -> bool {
     value.is_some_and(|value| {
         let value = value.trim();
@@ -316,7 +278,7 @@ fn env_var(name: &str) -> Option<String> {
 fn state_path() -> Option<PathBuf> {
     state_path_under(
         env::var_os("XDG_CONFIG_HOME").map(PathBuf::from),
-        ccusage_core::home::home_dir(),
+        ccusage_cli::home::home_dir(),
     )
 }
 
@@ -330,8 +292,7 @@ fn state_path_under(xdg_config_home: Option<PathBuf>, home: Option<PathBuf>) -> 
         .map(|base| base.join("ccusage").join("telemetry.json"))
 }
 
-/// A missing file is the never-configured default; an existing unreadable or
-/// corrupt file fails closed so telemetry cannot silently re-enable itself.
+// NOTE(2026-11-22): Read errors are not the default state. Do not silently re-enable telemetry.
 fn load_state(path: &Path) -> io::Result<State> {
     match fs::read_to_string(path) {
         Ok(contents) => serde_json::from_str(&contents)
@@ -380,7 +341,6 @@ impl Drop for StateLock {
     }
 }
 
-/// Writes through a temporary file so a concurrent reader never sees half a file.
 fn save_state(path: &Path, state: &State) -> io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
@@ -547,7 +507,7 @@ mod tests {
         );
         assert_eq!(
             command_name(Some(&Command::agent_report(
-                StandardAgent::Codex,
+                ccusage_cli::StandardAgent::Codex,
                 agent_args(AgentReportKind::Session)
             ))),
             "codex session"
@@ -627,7 +587,7 @@ mod tests {
         };
 
         assert!(command_offline(Some(&Command::agent_report(
-            StandardAgent::Codex,
+            ccusage_cli::StandardAgent::Codex,
             args
         ))));
     }
