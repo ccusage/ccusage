@@ -344,12 +344,12 @@ impl PricingMap {
             return self.rows.authoritative(model, hosted, fold, project);
         }
         self.overrides
-            .id_identity(model.identity())
+            .identity_id(model)
             .and_then(|id| self.resolve_override(id, models_dev, false))
             .and_then(project)
             .or_else(|| {
                 self.rows.authoritative(model, hosted, fold, |found| {
-                    let found = match self.overrides.shadow(found) {
+                    let found = match self.overrides.shadow(found, true) {
                         Some(id) => self.resolve_override(id, models_dev, false)?,
                         None => found,
                     };
@@ -447,15 +447,18 @@ impl PricingMap {
                 .enumerate()
                 .filter(|(_, (_, kind))| *kind != MatchKind::Fallback)
                 .map(|(index, &(model, _))| (Some(index), model));
-            if let Some(hit) =
-                reported
-                    .into_iter()
-                    .chain(requested)
-                    .find_map(|(candidate, model)| {
-                        matching(model, Pass::Label).map(|row| RequestHit { candidate, row })
-                    })
-            {
-                return Some(hit);
+            let mut folded = None;
+            for (candidate, model) in reported.into_iter().chain(requested) {
+                if let Some(row) = matching(model, Pass::Label) {
+                    let hit = RequestHit { candidate, row };
+                    if !row.case_fallback() {
+                        return Some(hit);
+                    }
+                    folded.get_or_insert(hit);
+                }
+            }
+            if folded.is_some() {
+                return folded;
             }
         }
         if let Some(alias) = reported.and_then(configured_alias)
@@ -713,11 +716,16 @@ impl PricingMap {
     ) -> Option<CachedHit> {
         match pass {
             Pass::Label => {
-                let id = self.overrides.label_id(model, slot)?;
+                let (id, folded) = self.overrides.label_id(model, slot)?;
                 let found = self.resolve_override(id, models_dev, false)?;
-                lookup
-                    .includes(found.row)
-                    .then(|| CachedHit::new(found, HitKind::ReportedOverride))
+                lookup.includes(found.row).then(|| {
+                    let hit = CachedHit::new(found, HitKind::ReportedOverride);
+                    if folded {
+                        hit.through_case_fallback()
+                    } else {
+                        hit
+                    }
+                })
             }
             Pass::S2 | Pass::S34 | Pass::S3f => {
                 self.search_identity(model, slot, lookup, pass, false, models_dev)
@@ -801,7 +809,7 @@ impl PricingMap {
     ) -> Option<RowMatch<'a>> {
         self.rows
             .host_row(id, host, lookup, fold)
-            .and_then(|found| match self.overrides.shadow(found) {
+            .and_then(|found| match self.overrides.shadow(found, true) {
                 Some(id) => self.resolve_override(id, models_dev, false),
                 None => Some(found),
             })
@@ -845,14 +853,14 @@ impl PricingMap {
             let shadowed = self.override_shadows.get_or_init(|| {
                 self.rows
                     .matches()
-                    .filter_map(|found| self.overrides.shadow(found))
+                    .filter_map(|found| self.overrides.shadow(found, false))
                     .collect()
             });
             let matches =
                 |key, identity| pricing_key_matches(key, identity, name.raw(), normalized);
             let resolve = |id| self.resolve_override(id, models_dev, true);
             let base = base.filter_map(|(raw, identity)| {
-                let found = match self.overrides.shadow(raw) {
+                let found = match self.overrides.shadow(raw, false) {
                     Some(id) if matches(raw.key, identity) => resolve(id)?,
                     Some(_) => return None,
                     None => raw,

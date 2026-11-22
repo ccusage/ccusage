@@ -466,13 +466,15 @@ When a catalogue lacks your model or its price differs from your contract, set `
 
 ### Raw Model Names
 
-Use the model label shown in the report, including any adapter prefix. The override also applies to separator respellings of that label and to every label that ends in it after a provider or host path, such as `zai/glm-4.7` or `azure/gpt-5.5` for a `glm-4.7` or `gpt-5.5` key, even when that host has its own catalog rate. A key for the full label, such as `azure/gpt-5.5`, wins over the bare key for that label. A bare override also applies when the source records an explicit provider, such as a Droid `providerLock` or a Hermes provider.
+Use the model label shown in the report, including any adapter prefix. The override also applies to separator respellings of that label and to every label that ends in it after a provider or host path, such as `zai/glm-4.7` or `azure/gpt-5.5` for a `glm-4.7` or `gpt-5.5` key, even when that host has its own catalog rate. A bare override also applies when the source records an explicit provider, such as a Droid `providerLock` or a Hermes provider.
 
 | Adapter                                | Prefix    | Example key                    |
 | -------------------------------------- | --------- | ------------------------------ |
 | Pi                                     | `[pi] `   | `[pi] gpt-5.4`                 |
 | Named Pi store                         | `[name] ` | `[omp] gpt-5.4`                |
 | Others (Claude, Codex, OpenCode, etc.) | none      | `claude-sonnet-4-5`, `gpt-5.5` |
+
+ccusage tries override keys with the reported case first, then ignores ASCII case. In each pass, a key for the full label, such as `azure/gpt-5.5`, wins over the bare key for that label. A case-insensitive override still takes precedence over a catalogue price with the exact case.
 
 To find the exact name, run `ccusage <agent> daily --json` and look at the `modelName` field in each row's `modelBreakdowns`.
 Pi also accepts a bare model name as an override key; that key applies to the default store and any named Pi store using the same model. Use the prefixed label to price one store separately.

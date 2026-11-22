@@ -53,6 +53,77 @@ fn full_override_creates_new_model() {
 }
 
 #[test]
+fn case_insensitive_override_prices_a_custom_model() {
+    let mut pricing = PricingMap::default();
+    let overrides = build_overrides("GLM-Custom", |value| {
+        value.input_cost_per_token = Some(1e-6);
+        value.output_cost_per_token = Some(2e-6);
+    });
+    pricing.apply_overrides(overrides.iter());
+
+    let entry = pricing.find("glm-custom").unwrap();
+    assert_eq!((entry.input, entry.output), (1e-6, 2e-6));
+}
+
+#[test]
+fn case_insensitive_override_wins_over_an_exact_catalogue_match() {
+    let mut pricing = PricingMap::default();
+    pricing.insert_test_pricing(
+        "claude-sonnet-4-5".to_string(),
+        Pricing {
+            input: 3e-6,
+            output: 15e-6,
+            ..Pricing::empty()
+        },
+    );
+    let overrides = build_overrides("Claude-Sonnet-4-5", |value| {
+        value.input_cost_per_token = Some(2e-6);
+        value.output_cost_per_token = Some(10e-6);
+    });
+    pricing.apply_overrides(overrides.iter());
+
+    let entry = pricing.find("claude-sonnet-4-5").unwrap();
+    assert_eq!((entry.input, entry.output), (2e-6, 10e-6));
+}
+
+#[test]
+fn case_insensitive_partial_override_inherits_catalogue_rates() {
+    let mut pricing = PricingMap::default();
+    pricing.insert_test_pricing(
+        "claude-sonnet-4-5".to_string(),
+        Pricing {
+            input: 3e-6,
+            output: 15e-6,
+            ..Pricing::empty()
+        },
+    );
+    let overrides = build_overrides("Claude-Sonnet-4-5", |value| {
+        value.input_cost_per_token = Some(2e-6);
+    });
+    pricing.apply_overrides(overrides.iter());
+
+    let entry = pricing.find("claude-sonnet-4-5").unwrap();
+    assert_eq!((entry.input, entry.output), (2e-6, 15e-6));
+}
+
+#[test]
+fn exact_case_wins_when_overrides_differ_only_by_case() {
+    let mut pricing = PricingMap::default();
+    let mut overrides = build_overrides("GLM-Custom", |value| {
+        value.input_cost_per_token = Some(1e-6);
+    });
+    overrides.extend(build_overrides("glm-custom", |value| {
+        value.input_cost_per_token = Some(2e-6);
+    }));
+    pricing.apply_overrides(overrides.iter());
+
+    let fallback = pricing.find("Glm-Custom");
+    assert_eq!(pricing.find("GLM-Custom").unwrap().input, 1e-6);
+    assert_eq!(pricing.find("glm-custom").unwrap().input, 2e-6);
+    assert!(fallback.is_some());
+}
+
+#[test]
 fn override_only_openai_models_charge_cache_writes_at_input_rate() {
     let input_rate = 1e-6;
     for model in ["gpt-5.5-private", "[pi] gpt-5.5-private"] {
