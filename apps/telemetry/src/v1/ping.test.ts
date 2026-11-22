@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import type { FromSchema } from 'json-schema-to-ts';
 
 import { app } from '../index.ts';
+import { pingJsonSchema } from './ping-schema.gen.ts';
 
 const validPing = {
 	event: 'cli_daily_active',
@@ -10,7 +12,7 @@ const validPing = {
 	os: 'macos',
 	arch: 'aarch64',
 	command: 'codex monthly',
-} as const;
+} as const satisfies FromSchema<typeof pingJsonSchema>;
 
 function recordingEnv() {
 	const points: AnalyticsEngineDataPoint[] = [];
