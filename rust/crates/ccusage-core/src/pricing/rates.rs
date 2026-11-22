@@ -115,11 +115,7 @@ impl Pricing {
 
     // NOTE(2026-11-22, #2496): Gemini's published cached-input rate doubles with its long input rate (https://ai.google.dev/gemini-api/docs/pricing). Missing cache rates must follow the selected input tier even when cached tokens alone cross the cutoff.
     /// Completes the rates for usage assigned to a whole-request long-context tier.
-    pub fn whole_request_rates(self) -> LongContextRates {
-        let Some(context) = self.long_context else {
-            return LongContextRates::default();
-        };
-        let rates = context.rates;
+    pub fn whole_request_rates(self, rates: LongContextRates) -> LongContextRates {
         let defaults = self.cache_defaults;
         LongContextRates {
             cache_create: rates.cache_rate(rates.cache_create, defaults.write_x),
