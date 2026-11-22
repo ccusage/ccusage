@@ -231,14 +231,15 @@ agents! {
 
 impl AgentId {
     const fn focused_reports(self) -> &'static [AgentReportKind] {
-        match self {
-            // The separate Codex runner hard-codes Monday when grouping weeks.
-            Self::Codex => &[
+        if matches!(self, Self::Codex) {
+            // NOTE(2026-11-22, #2501): The separate Codex runner hard-codes Monday when grouping weeks.
+            &[
                 AgentReportKind::Daily,
                 AgentReportKind::Monthly,
                 AgentReportKind::Session,
-            ],
-            _ => &AgentReportKind::ALL,
+            ]
+        } else {
+            &AgentReportKind::ALL
         }
     }
 
