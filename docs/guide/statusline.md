@@ -24,6 +24,8 @@ Merge these entries into existing tables, then restart Codex. You can also selec
 
 Like the Claude Code statusline, the provider shows the current model and reasoning level, **session cost** and **today's cost**. Session usage includes the displayed thread's stored rollouts across days, including consumption before backtracking. Today's cost covers all local Codex threads in the selected timezone. Token counts describe recorded consumption rather than remaining context.
 
+In auto mode, changes to a Codex home's configured service tier update fallback pricing on the next statusline refresh.
+
 ```text
 🤖 GPT-6 Sol (medium) | Est. $0.23 session / $1.23 today | 15,000 tokens
 ```
