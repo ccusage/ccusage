@@ -1,28 +1,49 @@
-use crate::{CodexServiceTier, CodexTimestampedUsage, CodexUsageBucket, speed::CodexSpeedPolicy};
+use std::collections::BTreeMap;
+
+use crate::{
+    CodexServiceTier, CodexUsageBucket, TierBuckets, speed::CodexSpeedPolicy,
+    types::ConfiguredTiers,
+};
 
 pub(super) fn calculate_codex_usage_cost(
-    usage: CodexTimestampedUsage,
+    total_usage: &CodexUsageBucket,
+    tier_usage: &TierBuckets,
+    configured_copy_usage: &BTreeMap<ConfiguredTiers, CodexUsageBucket>,
     pricing: &crate::Pricing,
     speed: CodexSpeedPolicy,
 ) -> f64 {
-    let CodexTimestampedUsage {
-        usage: total_usage,
-        tier_usage,
-    } = usage;
-    let standard_cost = calculate_codex_bucket_cost(&total_usage, pricing);
+    let standard_cost = calculate_codex_bucket_cost(total_usage, pricing);
     let empty = CodexUsageBucket::default();
     let (flex_usage, fast_usage, ultrafast_usage) = match speed {
         CodexSpeedPolicy::Forced(CodexServiceTier::Standard) => {
             return standard_cost;
         }
-        CodexSpeedPolicy::Forced(CodexServiceTier::Flex) => (total_usage, empty, empty),
-        CodexSpeedPolicy::Forced(CodexServiceTier::Fast) => (empty, total_usage, empty),
-        CodexSpeedPolicy::Forced(CodexServiceTier::Ultrafast) => (empty, empty, total_usage),
-        CodexSpeedPolicy::Auto => (
-            tier_usage[CodexServiceTier::Flex],
-            tier_usage[CodexServiceTier::Fast],
-            tier_usage[CodexServiceTier::Ultrafast],
-        ),
+        CodexSpeedPolicy::Forced(CodexServiceTier::Flex) => (*total_usage, empty, empty),
+        CodexSpeedPolicy::Forced(CodexServiceTier::Fast) => (empty, *total_usage, empty),
+        CodexSpeedPolicy::Forced(CodexServiceTier::Ultrafast) => (empty, empty, *total_usage),
+        CodexSpeedPolicy::Auto => {
+            let mut tier_usage = *tier_usage;
+            let rates = [
+                (CodexServiceTier::Flex, pricing.flex_multiplier),
+                (CodexServiceTier::Fast, pricing.fast_multiplier),
+                (CodexServiceTier::Ultrafast, pricing.ultrafast_multiplier),
+                (CodexServiceTier::Standard, 1.0),
+            ];
+            for (&tiers, &usage) in configured_copy_usage {
+                if let Some((tier, _)) = rates
+                    .into_iter()
+                    .filter(|(tier, _)| tiers.contains(*tier))
+                    .max_by(|(_, left), (_, right)| left.total_cmp(right))
+                {
+                    tier_usage[tier] += usage;
+                }
+            }
+            (
+                tier_usage[CodexServiceTier::Flex],
+                tier_usage[CodexServiceTier::Fast],
+                tier_usage[CodexServiceTier::Ultrafast],
+            )
+        }
     };
     standard_cost
         + calculate_codex_bucket_cost(&flex_usage, pricing) * (pricing.flex_multiplier - 1.0)

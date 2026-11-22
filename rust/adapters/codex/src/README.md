@@ -44,8 +44,9 @@ Relevant speed-setting event in Codex CLI 0.144.0 and later:
 - `thread_settings_applied` is not emitted per turn, so short rollouts carry no tier at all and stay unclassified for report policy to resolve.
 
 Unclassified usage uses the `service_tier` from the rollout's Codex home.
-When attributions merge across homes, the precedence for configured and
-recorded tiers is Standard, then Ultrafast, Fast, and Flex.
+When attributions merge across homes, recorded tiers take precedence. For
+unclassified copies, retain the configured tiers through aggregation and use
+the highest multiplier for the model when pricing the request.
 Read the top-level value in `config.toml`, with an override from a legacy
 named profile when the top-level `profile` selects it. Missing tiers and tiers
 without a model-specific rate use Standard pricing. Profile selections made

@@ -104,7 +104,7 @@ By default, `ccusage codex` uses `--speed auto`. Codex CLI 0.144.0 and later can
 
 Some usage remains unclassified, including older rollouts, saved headless `codex exec --json` output, startup usage before the first persisted settings event, and usage recorded with an unrecognized tier. In auto mode, each unclassified request uses the `service_tier` from the `config.toml` of the Codex home that supplied its rollout. Missing tiers and tiers without a model-specific rate use Standard pricing. Explicit `--speed standard`, `--speed flex`, and `--speed fast` override recorded and configured tiers.
 
-When ccusage merges copies of the same request across Codex homes, a recorded tier takes precedence over the configured fallback. Among configured tiers, precedence runs from Standard through Ultrafast, Fast, and Flex.
+When ccusage merges copies of the same request across Codex homes, a recorded tier takes precedence over the configured fallback. For unclassified copies, ccusage uses the highest pricing multiplier among the configured tiers for that model. A tier without a model-specific rate counts as Standard (1×).
 
 Fallback detection reads the top-level `service_tier` and lets a named profile override it only when `profile = "name"` selects that profile in `config.toml`. Inactive profiles are ignored, and a selected profile without its own tier inherits the top-level setting. If Codex selected a profile through `--profile` or another configuration file, use an explicit `--speed` for unclassified usage because ccusage cannot infer that selection from `config.toml`.
 
