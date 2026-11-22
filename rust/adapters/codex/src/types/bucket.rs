@@ -148,12 +148,3 @@ impl AddAssign for TierBuckets {
         }
     }
 }
-
-impl TierBuckets {
-    #[cfg(test)]
-    pub(crate) fn total(self) -> CodexUsageBucket {
-        self.0
-            .into_iter()
-            .fold(CodexUsageBucket::default(), Add::add)
-    }
-}
