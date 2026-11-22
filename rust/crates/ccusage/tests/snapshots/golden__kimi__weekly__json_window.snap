@@ -10,7 +10,7 @@ exit: 0
     "cacheReadTokens": 29000,
     "inputTokens": 6861,
     "outputTokens": 2886,
-    "totalCost": 0.0434941,
+    "totalCost": 0.042414099999999996,
     "totalTokens": 39617,
     "unpricedModels": [
       "kimi-mystery-1"
@@ -31,20 +31,20 @@ exit: 0
           "outputTokens": 1200
         },
         {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 5000,
-          "cost": 0.0037091000000000003,
-          "inputTokens": 1511,
-          "modelName": "kimi-k2-thinking",
-          "outputTokens": 821
-        },
-        {
           "cacheCreationTokens": 20,
           "cacheReadTokens": 3000,
           "cost": 0.00351,
           "inputTokens": 1850,
           "modelName": "kimi-for-coding",
           "outputTokens": 695
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 5000,
+          "cost": 0.0026291,
+          "inputTokens": 1511,
+          "modelName": "kimi-k2-thinking",
+          "outputTokens": 821
         },
         {
           "cacheCreationTokens": 0,
@@ -72,7 +72,7 @@ exit: 0
         "kimi-mystery-1"
       ],
       "outputTokens": 2886,
-      "totalCost": 0.0434941,
+      "totalCost": 0.042414099999999996,
       "totalTokens": 39617,
       "week": "2025-12-29"
     }
