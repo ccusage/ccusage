@@ -220,9 +220,9 @@ impl PricingMap {
             with_names(key, |raw| {
                 let identity = OnceLock::new();
                 let name = Name::new(raw, &identity);
-                if raw != key
-                    && let Some(dependency) =
-                        overrides.and_then(|rows| rows.id_identity(name, fold))
+                if !fold
+                    && raw != key
+                    && let Some(dependency) = overrides.and_then(|rows| rows.identity_id(name))
                     && dependency != id
                 {
                     return Some(Base::Override(dependency));

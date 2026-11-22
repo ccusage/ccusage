@@ -111,16 +111,22 @@ fn exact_case_wins_when_overrides_differ_only_by_case() {
     let mut pricing = PricingMap::default();
     let mut overrides = build_overrides("GLM-Custom", |value| {
         value.input_cost_per_token = Some(1e-6);
+        value.output_cost_per_token = Some(3e-6);
     });
     overrides.extend(build_overrides("glm-custom", |value| {
         value.input_cost_per_token = Some(2e-6);
+        value.output_cost_per_token = Some(4e-6);
     }));
     pricing.apply_overrides(overrides.iter());
 
-    let fallback = pricing.find("Glm-Custom");
-    assert_eq!(pricing.find("GLM-Custom").unwrap().input, 1e-6);
-    assert_eq!(pricing.find("glm-custom").unwrap().input, 2e-6);
-    assert!(fallback.is_some());
+    for (model, expected) in [
+        ("Glm-Custom", (1e-6, 3e-6)),
+        ("GLM-Custom", (1e-6, 3e-6)),
+        ("glm-custom", (2e-6, 4e-6)),
+    ] {
+        let entry = pricing.find(model).unwrap();
+        assert_eq!((entry.input, entry.output), expected, "{model}");
+    }
 }
 
 #[test]
@@ -746,6 +752,29 @@ fn applies_target_overrides_before_aliases_that_sort_first() {
     let into_cycle = pricing.find("a-into-cycle").unwrap();
     assert_eq!(into_cycle.input, 5e-6);
     assert_eq!(into_cycle.output, 9e-6);
+}
+
+#[test]
+fn layered_override_inherits_folded_parent_before_exact_catalogue() {
+    let _aliases = crate::model_aliases::set_model_aliases_for_tests([("child-x", "existing")]);
+    let mut pricing = PricingMap::default();
+    pricing.insert_test_pricing(
+        "existing".to_string(),
+        Pricing {
+            output: 20e-6,
+            ..Pricing::empty()
+        },
+    );
+    let mut overrides = build_overrides("Existing", |value| {
+        value.output_cost_per_token = Some(99e-6);
+    });
+    overrides.extend(build_overrides("child-x", |value| {
+        value.input_cost_per_token = Some(5e-6);
+    }));
+    pricing.apply_overrides(overrides.iter());
+
+    let child = pricing.find("child-x").unwrap();
+    assert_eq!((child.input, child.output), (5e-6, 99e-6));
 }
 
 #[test]
