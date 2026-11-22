@@ -39,7 +39,7 @@ impl Claude {
         claims: ClaudeClaimsTx,
     ) -> Result<LoadedRows> {
         let (rows, counted) = self.load(request, true)?;
-        // NOTE(2026-11-22, #2498): Check every project so excluded Claude rows cannot reappear as OpenCode usage.
+        // NOTE(2026-11-22, #2498): Project filters hide Claude rows. Checking every project prevents excluded sessions from reappearing under OpenCode.
         let counted = if request.options.claude_project.is_some() {
             match request.kind {
                 LoadKind::Day => {
