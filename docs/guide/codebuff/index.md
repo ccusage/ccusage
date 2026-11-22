@@ -56,6 +56,7 @@ CODEBUFF_DATA_DIR="$HOME/.config/manicode,/backup/codebuff" ccusage codebuff ses
 | Focused view               | Description                          | See also                                |
 | -------------------------- | ------------------------------------ | --------------------------------------- |
 | `ccusage codebuff daily`   | Aggregate usage by date              | [Daily Usage](/guide/daily-reports)     |
+| `ccusage codebuff weekly`  | Aggregate usage by week              | [Weekly Usage](/guide/weekly-reports)   |
 | `ccusage codebuff monthly` | Aggregate usage by month             | [Monthly Usage](/guide/monthly-reports) |
 | `ccusage codebuff session` | Group usage by Codebuff chat session | [Session Usage](/guide/session-reports) |
 

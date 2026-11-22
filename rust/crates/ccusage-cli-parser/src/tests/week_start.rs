@@ -67,11 +67,8 @@ fn rejects_start_of_week_outside_weekly_reports() {
 }
 
 #[test]
-fn every_registered_weekly_agent_accepts_a_week_start() {
-    for agent in AGENTS
-        .iter()
-        .filter(|agent| agent.reports.contains(&AgentReportKind::Weekly))
-    {
+fn every_agent_except_the_fixed_week_codex_runner_accepts_a_week_start() {
+    for agent in AGENTS.iter().filter(|agent| agent.name != "codex") {
         let command = parse(&["ccusage", agent.name, "weekly", "-w", "friday"]);
         assert_eq!(
             command.period(),

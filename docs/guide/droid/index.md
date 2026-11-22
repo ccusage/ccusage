@@ -2,7 +2,7 @@
 
 > Droid support is experimental. Expect breaking changes while both ccusage and Droid continue to evolve.
 
-ccusage can read local Droid session settings files as one of its supported data sources, using the same daily, monthly, and session report views as the rest of ccusage.
+ccusage can read local Droid session settings files as one of its supported data sources, using the same daily, weekly, monthly, and session report views as the rest of ccusage.
 
 ## Focused Views
 
@@ -40,6 +40,7 @@ DROID_SESSIONS_DIR="$HOME/.factory/sessions,/backup/factory/sessions" ccusage dr
 | Focused view            | Description                  | See also                                |
 | ----------------------- | ---------------------------- | --------------------------------------- |
 | `ccusage droid daily`   | Aggregate usage by date      | [Daily Usage](/guide/daily-reports)     |
+| `ccusage droid weekly`  | Aggregate usage by week      | [Weekly Usage](/guide/weekly-reports)   |
 | `ccusage droid monthly` | Aggregate usage by month     | [Monthly Usage](/guide/monthly-reports) |
 | `ccusage droid session` | Group usage by Droid session | [Session Usage](/guide/session-reports) |
 

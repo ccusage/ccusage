@@ -1,0 +1,84 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage pi weekly --offline --json --since 20251231 --until 20260101
+---
+exit: 0
+--- stdout ---
+{
+  "totals": {
+    "cacheCreationTokens": 701,
+    "cacheReadTokens": 30006,
+    "inputTokens": 4465,
+    "outputTokens": 2141,
+    "totalCost": 4.061926850000001,
+    "totalTokens": 37563,
+    "unpricedModels": [
+      "[pi] pi-mystery-1"
+    ]
+  },
+  "weekly": [
+    {
+      "cacheCreationTokens": 701,
+      "cacheReadTokens": 30006,
+      "inputTokens": 4465,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 601,
+          "cacheReadTokens": 21006,
+          "cost": 4.03007685,
+          "inputTokens": 2750,
+          "modelName": "[pi] claude-haiku-4-5-20251001",
+          "outputTokens": 1206,
+          "storedCost": 4.03
+        },
+        {
+          "cacheCreationTokens": 100,
+          "cacheReadTokens": 8000,
+          "cost": 0.0251,
+          "inputTokens": 1300,
+          "modelName": "[pi] claude-sonnet-4-20250514",
+          "outputTokens": 310,
+          "storedCost": 0.02
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 1000,
+          "cost": 0.006749999999999999,
+          "inputTokens": 100,
+          "modelName": "[pi] claude-opus-4-20250514",
+          "outputTokens": 50
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 0,
+          "modelName": "[pi] gpt-5",
+          "outputTokens": 500
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 300,
+          "missingPricing": true,
+          "modelName": "[pi] pi-mystery-1",
+          "outputTokens": 70
+        }
+      ],
+      "modelsUsed": [
+        "[pi] claude-sonnet-4-20250514",
+        "[pi] claude-haiku-4-5-20251001",
+        "[pi] gpt-5",
+        "[pi] claude-opus-4-20250514",
+        "[pi] pi-mystery-1"
+      ],
+      "outputTokens": 2141,
+      "totalCost": 4.061926850000001,
+      "totalTokens": 37563,
+      "week": "2025-12-29"
+    }
+  ]
+}
+
+--- stderr ---

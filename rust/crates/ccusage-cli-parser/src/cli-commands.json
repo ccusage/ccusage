@@ -13,11 +13,24 @@
 		"codex_period_options": ["codex_options", "last_options"],
 		"codex_session_options": ["codex_options", "session_options"],
 		"opencode_period_options": ["agent_options", "opencode_options", "last_options"],
+		"opencode_weekly_options": [
+			"agent_options",
+			"opencode_options",
+			"all_weekly_options",
+			"last_options"
+		],
 		"opencode_session_options": ["agent_options", "opencode_options"],
 		"openclaw_combined_options": ["agent_options", "openclaw_options"],
 		"openclaw_period_options": ["agent_options", "openclaw_options", "last_options"],
+		"openclaw_weekly_options": [
+			"agent_options",
+			"openclaw_options",
+			"all_weekly_options",
+			"last_options"
+		],
 		"pi_combined_options": ["agent_options", "pi_options"],
-		"pi_period_options": ["agent_options", "pi_options", "last_options"]
+		"pi_period_options": ["agent_options", "pi_options", "last_options"],
+		"pi_weekly_options": ["agent_options", "pi_options", "all_weekly_options", "last_options"]
 	},
 	"root": {
 		"usage": ["ccusage [daily] <OPTIONS>", "ccusage <COMMANDS>"],
@@ -290,10 +303,6 @@
 					"description": "Show OpenCode token usage grouped by day"
 				},
 				{
-					"name": "weekly",
-					"description": "Show OpenCode token usage grouped by week"
-				},
-				{
 					"name": "monthly",
 					"description": "Show OpenCode token usage grouped by month"
 				},
@@ -307,12 +316,6 @@
 			"path": ["opencode", "daily"],
 			"description": "Show OpenCode token usage grouped by day",
 			"usage": "ccusage opencode daily <OPTIONS>",
-			"options": "opencode_period_options"
-		},
-		{
-			"path": ["opencode", "weekly"],
-			"description": "Show OpenCode token usage grouped by week",
-			"usage": "ccusage opencode weekly <OPTIONS>",
 			"options": "opencode_period_options"
 		},
 		{
@@ -596,10 +599,6 @@
 					"description": "Show GitHub Copilot CLI usage grouped by date"
 				},
 				{
-					"name": "weekly",
-					"description": "Show GitHub Copilot CLI usage grouped by week"
-				},
-				{
 					"name": "monthly",
 					"description": "Show GitHub Copilot CLI usage grouped by month"
 				},
@@ -614,12 +613,6 @@
 			"description": "Show GitHub Copilot CLI usage grouped by date",
 			"usage": "ccusage copilot daily <OPTIONS>",
 			"options": "agent_period_options"
-		},
-		{
-			"path": ["copilot", "weekly"],
-			"description": "Show GitHub Copilot CLI usage grouped by week",
-			"usage": "ccusage copilot weekly <OPTIONS>",
-			"options": "agent_weekly_options"
 		},
 		{
 			"path": ["copilot", "monthly"],
@@ -680,10 +673,6 @@
 					"description": "Show Antigravity usage grouped by date"
 				},
 				{
-					"name": "weekly",
-					"description": "Show Antigravity usage grouped by week"
-				},
-				{
 					"name": "monthly",
 					"description": "Show Antigravity usage grouped by month"
 				},
@@ -698,12 +687,6 @@
 			"description": "Show Antigravity usage grouped by date",
 			"usage": "ccusage antigravity daily <OPTIONS>",
 			"options": "agent_period_options"
-		},
-		{
-			"path": ["antigravity", "weekly"],
-			"description": "Show Antigravity usage grouped by week",
-			"usage": "ccusage antigravity weekly <OPTIONS>",
-			"options": "agent_weekly_options"
 		},
 		{
 			"path": ["antigravity", "monthly"],
@@ -727,10 +710,6 @@
 					"description": "Show Kimi usage grouped by date"
 				},
 				{
-					"name": "weekly",
-					"description": "Show Kimi usage grouped by week"
-				},
-				{
 					"name": "monthly",
 					"description": "Show Kimi usage grouped by month"
 				},
@@ -745,12 +724,6 @@
 			"description": "Show Kimi usage grouped by date",
 			"usage": "ccusage kimi daily <OPTIONS>",
 			"options": "agent_period_options"
-		},
-		{
-			"path": ["kimi", "weekly"],
-			"description": "Show Kimi usage grouped by week",
-			"usage": "ccusage kimi weekly <OPTIONS>",
-			"options": "agent_weekly_options"
 		},
 		{
 			"path": ["kimi", "monthly"],
@@ -885,10 +858,6 @@
 					"description": "Show ZCode usage grouped by date"
 				},
 				{
-					"name": "weekly",
-					"description": "Show ZCode usage grouped by week"
-				},
-				{
 					"name": "monthly",
 					"description": "Show ZCode usage grouped by month"
 				},
@@ -903,12 +872,6 @@
 			"description": "Show ZCode usage grouped by date",
 			"usage": "ccusage zcode daily <OPTIONS>",
 			"options": "agent_period_options"
-		},
-		{
-			"path": ["zcode", "weekly"],
-			"description": "Show ZCode usage grouped by week",
-			"usage": "ccusage zcode weekly <OPTIONS>",
-			"options": "agent_weekly_options"
 		},
 		{
 			"path": ["zcode", "monthly"],
@@ -932,10 +895,6 @@
 					"description": "Show Cline usage grouped by date"
 				},
 				{
-					"name": "weekly",
-					"description": "Show Cline usage grouped by week"
-				},
-				{
 					"name": "monthly",
 					"description": "Show Cline usage grouped by month"
 				},
@@ -949,12 +908,6 @@
 			"path": ["cline", "daily"],
 			"description": "Show Cline usage grouped by date",
 			"usage": "ccusage cline daily <OPTIONS>",
-			"options": "agent_period_options"
-		},
-		{
-			"path": ["cline", "weekly"],
-			"description": "Show Cline usage grouped by week",
-			"usage": "ccusage cline weekly <OPTIONS>",
 			"options": "agent_period_options"
 		},
 		{
@@ -979,10 +932,6 @@
 					"description": "Show DeepSeek Harness usage grouped by date"
 				},
 				{
-					"name": "weekly",
-					"description": "Show DeepSeek Harness usage grouped by week"
-				},
-				{
 					"name": "monthly",
 					"description": "Show DeepSeek Harness usage grouped by month"
 				},
@@ -996,12 +945,6 @@
 			"path": ["dsh", "daily"],
 			"description": "Show DeepSeek Harness usage grouped by date",
 			"usage": "ccusage dsh daily <OPTIONS>",
-			"options": "agent_period_options"
-		},
-		{
-			"path": ["dsh", "weekly"],
-			"description": "Show DeepSeek Harness usage grouped by week",
-			"usage": "ccusage dsh weekly <OPTIONS>",
 			"options": "agent_period_options"
 		},
 		{

@@ -1,0 +1,24 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage gemini weekly --offline
+---
+exit: 0
+--- stdout ---
+┌────────────┬──────────────────────────┬───────────┬───────────┬───────────────┬─────────────┬───────────────┬─────────────┐
+│ Week       │ Models                   │     Input │    Output │  Cache Create │  Cache Read │  Total Tokens │  Cost (USD) │
+├────────────┼──────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2025-12-22 │ - sonnet-4               │       100 │        50 │             0 │           0 │           150 │       $0.00 │
+├────────────┼──────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2025-12-29 │ - gemini-2.5-flash       │   306,399 │     3,119 │             0 │     155,413 │       465,226 │       $0.82 │
+│            │ - gemini-2.5-pro         │           │           │               │             │               │             │
+│            │ - gemini-3-flash-preview │           │           │               │             │               │             │
+│            │ - gemini-mystery-1       │           │           │               │             │               │             │
+│            │ - sonnet-4               │           │           │               │             │               │             │
+│            │ - unknown                │           │           │               │             │               │             │
+├────────────┼──────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ Total      │                          │   306,499 │     3,169 │             0 │     155,413 │       465,376 │       $0.82 │
+└────────────┴──────────────────────────┴───────────┴───────────┴───────────────┴─────────────┴───────────────┴─────────────┘
+
+--- stderr ---
+WARN  Missing embedded pricing for gemini-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for unknown; cost excludes this model. Run without --offline or update ccusage after pricing is added.

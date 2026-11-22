@@ -75,6 +75,7 @@ ccusage reads local usage data from coding agent CLIs and turns it into daily, w
 | DeepSeek Harness   | `ccusage dsh daily`         |
 
 Use `ccusage daily`, `ccusage weekly`, `ccusage monthly`, or `ccusage session` to include every detected source in one report.
+Use `ccusage <agent> weekly` for a focused weekly report. Codex weekly usage is available in the unified report with `ccusage weekly --by-agent`.
 
 ## Installation
 

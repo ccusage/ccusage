@@ -47,6 +47,7 @@ Sessions that Qwen Code archives to `chats/archive/` are read as well, so archiv
 | Focused view           | Description                 | See also                                |
 | ---------------------- | --------------------------- | --------------------------------------- |
 | `ccusage qwen daily`   | Aggregate usage by date     | [Daily Usage](/guide/daily-reports)     |
+| `ccusage qwen weekly`  | Aggregate usage by week     | [Weekly Usage](/guide/weekly-reports)   |
 | `ccusage qwen monthly` | Aggregate usage by month    | [Monthly Usage](/guide/monthly-reports) |
 | `ccusage qwen session` | Group usage by Qwen session | [Session Usage](/guide/session-reports) |
 

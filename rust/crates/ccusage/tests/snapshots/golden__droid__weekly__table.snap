@@ -1,0 +1,26 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage droid weekly --offline
+---
+exit: 0
+--- stdout ---
+┌────────────┬───────────────────┬───────────┬───────────┬───────────────┬─────────────┬───────────────┬─────────────┐
+│ Week       │ Models            │     Input │    Output │  Cache Create │  Cache Read │  Total Tokens │  Cost (USD) │
+├────────────┼───────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2025-12-22 │ - sonnet-4        │       100 │        50 │             0 │           0 │           150 │       $0.00 │
+├────────────┼───────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2025-12-29 │ - droid-mystery-1 │     5,310 │     1,800 │           520 │      20,000 │        27,730 │       $0.07 │
+│            │ - gemini-2-5-pro  │           │           │               │             │               │             │
+│            │ - gpt-5           │           │           │               │             │               │             │
+│            │ - gpt-unknown     │           │           │               │             │               │             │
+│            │ - grok-unknown    │           │           │               │             │               │             │
+│            │ - haiku-4-5       │           │           │               │             │               │             │
+│            │ - opus-4          │           │           │               │             │               │             │
+│            │ - sonnet-4        │           │           │               │             │               │             │
+├────────────┼───────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ Total      │                   │     5,410 │     1,850 │           520 │      20,000 │        27,880 │       $0.07 │
+└────────────┴───────────────────┴───────────┴───────────┴───────────────┴─────────────┴───────────────┴─────────────┘
+
+--- stderr ---
+WARN  Missing embedded pricing for droid-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for grok-unknown; cost excludes this model. Run without --offline or update ccusage after pricing is added.

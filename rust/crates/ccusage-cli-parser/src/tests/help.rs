@@ -82,6 +82,15 @@ fn contextual_root_weekly_help_lists_start_of_week_option() {
 }
 
 #[test]
+fn focused_weekly_help_lists_week_options_for_every_weekly_runner() {
+    for agent in AGENTS.iter().filter(|agent| agent.accepts("weekly")) {
+        let help = help_text_for_args(&[agent.name.to_string(), "weekly".to_string()]);
+        assert!(help.contains("--start-of-week"), "{}", agent.name);
+        assert!(help.contains("--last"), "{}", agent.name);
+    }
+}
+
+#[test]
 fn contextual_statusline_help_lists_choice_options() {
     let help = help_text_for_args(&["statusline".to_string()]);
 

@@ -56,9 +56,9 @@ expression: cases
   {
     "args": [
       "ccusage",
-      "pi",
+      "codex",
       "weekly"
     ],
-    "error": "The \"weekly\" report is not available for pi-agent usage.\nUse \"ccusage pi daily\" for pi-agent usage reports."
+    "error": "The \"weekly\" report is not available for Codex usage.\nUse \"ccusage codex daily\" for Codex usage reports."
   }
 ]

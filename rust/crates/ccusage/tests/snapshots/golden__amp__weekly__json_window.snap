@@ -1,0 +1,75 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage amp weekly --offline --json --since 20251231 --until 20260101
+---
+exit: 0
+--- stdout ---
+{
+  "totals": {
+    "cacheCreationTokens": 200,
+    "cacheReadTokens": 15000,
+    "credits": 3.7,
+    "inputTokens": 3200,
+    "outputTokens": 1215,
+    "totalCost": 0.013425,
+    "totalTokens": 19615,
+    "unpricedModels": [
+      "amp-mystery-1"
+    ]
+  },
+  "weekly": [
+    {
+      "cacheCreationTokens": 200,
+      "cacheReadTokens": 15000,
+      "credits": 3.7,
+      "inputTokens": 3200,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 5000,
+          "cost": 0.005375,
+          "inputTokens": 1400,
+          "modelName": "gpt-5",
+          "outputTokens": 645
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 3000,
+          "cost": 0.0042,
+          "inputTokens": 600,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 100
+        },
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 7000,
+          "cost": 0.00385,
+          "inputTokens": 900,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 400
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 300,
+          "missingPricing": true,
+          "modelName": "amp-mystery-1",
+          "outputTokens": 70
+        }
+      ],
+      "modelsUsed": [
+        "gpt-5",
+        "claude-haiku-4-5-20251001",
+        "claude-sonnet-4-20250514",
+        "amp-mystery-1"
+      ],
+      "outputTokens": 1215,
+      "totalCost": 0.013425,
+      "totalTokens": 19615,
+      "week": "2025-12-29"
+    }
+  ]
+}
+
+--- stderr ---

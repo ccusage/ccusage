@@ -1,0 +1,84 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage hermes weekly --offline --json --since 20251231 --until 20260101
+---
+exit: 0
+--- stdout ---
+{
+  "totals": {
+    "cacheCreationTokens": 270,
+    "cacheReadTokens": 13045,
+    "inputTokens": 3270,
+    "outputTokens": 870,
+    "totalCost": 0.27916812500000004,
+    "totalTokens": 17455,
+    "unpricedModels": [
+      "hermes-mystery-1"
+    ]
+  },
+  "weekly": [
+    {
+      "cacheCreationTokens": 270,
+      "cacheReadTokens": 13045,
+      "inputTokens": 3270,
+      "messageCount": 27,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 2545,
+          "cost": 0.250455625,
+          "inputTokens": 820,
+          "modelName": "gpt-5",
+          "outputTokens": 180,
+          "storedCost": 0.25
+        },
+        {
+          "cacheCreationTokens": 50,
+          "cacheReadTokens": 3000,
+          "cost": 0.021937500000000002,
+          "inputTokens": 600,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 100
+        },
+        {
+          "cacheCreationTokens": 220,
+          "cacheReadTokens": 7500,
+          "cost": 0.004375,
+          "inputTokens": 1150,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 440
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0024000000000000002,
+          "inputTokens": 400,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 80
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 300,
+          "missingPricing": true,
+          "modelName": "hermes-mystery-1",
+          "outputTokens": 70
+        }
+      ],
+      "modelsUsed": [
+        "claude-haiku-4-5-20251001",
+        "gpt-5",
+        "claude-sonnet-4-20250514",
+        "claude-opus-4-20250514",
+        "hermes-mystery-1"
+      ],
+      "outputTokens": 870,
+      "totalCost": 0.27916812500000004,
+      "totalTokens": 17455,
+      "week": "2025-12-29"
+    }
+  ]
+}
+
+--- stderr ---

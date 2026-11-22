@@ -20,6 +20,33 @@ fn published_example_uses_valid_config_keys() {
     assert!(warnings.is_empty(), "{warnings:?}");
 }
 
+#[test]
+fn schema_accepts_week_starts_at_each_weekly_config_layer() {
+    let schema = generated_schema();
+    for agent in ccusage_cli::AGENTS
+        .iter()
+        .filter(|agent| agent.name != "codex")
+    {
+        let config = json!({
+            "defaults": { "startOfWeek": "monday" },
+            "commands": {
+                "weekly": { "startOfWeek": "tuesday" },
+                (format!("{} weekly", agent.name)): { "startOfWeek": "wednesday" },
+                (format!("{}:weekly", agent.name)): { "startOfWeek": "thursday" },
+            },
+            (agent.name): {
+                "defaults": { "startOfWeek": "friday" },
+                "commands": { "weekly": { "startOfWeek": "saturday" } },
+            }
+        });
+        let parsed = crate::layers::ConfigFile::parse(config.clone()).unwrap();
+        assert!(parsed.warnings.is_empty(), "{:?}", parsed.warnings);
+        let mut warnings = Vec::new();
+        unknown_fields(&config, &schema, &schema, "$", &mut warnings);
+        assert!(warnings.is_empty(), "{warnings:?}");
+    }
+}
+
 fn unknown_fields(
     value: &Value,
     schema: &Value,
@@ -87,7 +114,11 @@ fn schema_option_sets_expose_expected_keys() {
         "until",
     ];
 
-    assert_schema_properties(&schema, &["defaults"], &with_keys(&shared, &["project"]));
+    assert_schema_properties(
+        &schema,
+        &["defaults"],
+        &with_keys(&shared, &["project", "startOfWeek"]),
+    );
     assert_schema_properties(
         &schema,
         &["commands", "daily"],
@@ -133,19 +164,20 @@ fn schema_option_sets_expose_expected_keys() {
     assert_schema_properties(
         &schema,
         &["pi", "defaults"],
-        &with_keys(&shared, &["piPath", "piAgentDir"]),
+        &with_keys(&shared, &["piPath", "piAgentDir", "startOfWeek"]),
     );
     assert!(schema_property(&schema, &["pi", "stores"]).is_some());
     assert_schema_properties(
         &schema,
         &["openclaw", "defaults"],
-        &with_keys(&shared, &["openClawPath"]),
+        &with_keys(&shared, &["openClawPath", "startOfWeek"]),
     );
-    assert_schema_properties(&schema, &["grok", "defaults"], &shared);
-    assert_schema_properties(&schema, &["antigravity", "defaults"], &shared);
-    assert_schema_properties(&schema, &["zcode", "defaults"], &shared);
-    assert_schema_properties(&schema, &["cline", "defaults"], &shared);
-    assert_schema_properties(&schema, &["cline", "commands", "weekly"], &shared);
+    let weekly_defaults = with_keys(&shared, &["startOfWeek"]);
+    assert_schema_properties(&schema, &["grok", "defaults"], &weekly_defaults);
+    assert_schema_properties(&schema, &["antigravity", "defaults"], &weekly_defaults);
+    assert_schema_properties(&schema, &["zcode", "defaults"], &weekly_defaults);
+    assert_schema_properties(&schema, &["cline", "defaults"], &weekly_defaults);
+    assert_schema_properties(&schema, &["cline", "commands", "weekly"], &weekly_defaults);
 }
 
 #[test]

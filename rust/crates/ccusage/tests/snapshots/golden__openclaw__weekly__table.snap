@@ -1,0 +1,28 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage openclaw weekly --offline
+---
+exit: 0
+--- stdout ---
+┌────────────┬───────────────────────────┬───────────┬───────────┬───────────────┬─────────────┬───────────────┬─────────────┐
+│ Week       │ Models                    │     Input │    Output │  Cache Create │  Cache Read │  Total Tokens │  Cost (USD) │
+├────────────┼───────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2025-12-22 │ - [openclaw]              │       111 │        57 │             0 │           0 │           168 │       $0.01 │
+│            │ claude-opus-4             │           │           │               │             │               │             │
+│            │ - [openclaw] unknown      │           │           │               │             │               │             │
+├────────────┼───────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2025-12-29 │ - [openclaw]              │     9,013 │     2,819 │         1,850 │      40,500 │        54,532 │       $1.81 │
+│            │ claude-haiku-4-5          │           │           │               │             │               │             │
+│            │ - [openclaw]              │           │           │               │             │               │             │
+│            │ claude-sonnet-4           │           │           │               │             │               │             │
+│            │ - [openclaw] gpt-5        │           │           │               │             │               │             │
+│            │ - [openclaw]              │           │           │               │             │               │             │
+│            │ openclaw-mystery-1        │           │           │               │             │               │             │
+│            │ - [openclaw] unknown      │           │           │               │             │               │             │
+├────────────┼───────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ Total      │                           │     9,124 │     2,876 │         1,850 │      40,500 │        54,700 │       $1.82 │
+└────────────┴───────────────────────────┴───────────┴───────────┴───────────────┴─────────────┴───────────────┴─────────────┘
+
+--- stderr ---
+WARN  Missing embedded pricing for [openclaw] openclaw-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for [openclaw] unknown; cost excludes this model. Run without --offline or update ccusage after pricing is added.

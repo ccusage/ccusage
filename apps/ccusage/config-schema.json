@@ -703,6 +703,21 @@
 											"markdownDescription": "Disable parallel file processing.",
 											"type": "boolean"
 										},
+										"startOfWeek": {
+											"default": "monday",
+											"description": "First day of week for weekly grouping.",
+											"enum": [
+												"sunday",
+												"monday",
+												"tuesday",
+												"wednesday",
+												"thursday",
+												"friday",
+												"saturday"
+											],
+											"markdownDescription": "First day of week for weekly grouping.",
+											"type": "string"
+										},
 										"timezone": {
 											"description": "Timezone for date grouping (IANA).",
 											"markdownDescription": "Timezone for date grouping (IANA).",
@@ -879,6 +894,20 @@
 									"description": "Disable parallel file processing.",
 									"markdownDescription": "Disable parallel file processing.",
 									"type": "boolean"
+								},
+								"startOfWeek": {
+									"description": "First day of week for weekly grouping.",
+									"enum": [
+										"sunday",
+										"monday",
+										"tuesday",
+										"wednesday",
+										"thursday",
+										"friday",
+										"saturday"
+									],
+									"markdownDescription": "First day of week for weekly grouping.",
+									"type": "string"
 								},
 								"timezone": {
 									"description": "Timezone for date grouping (IANA).",
@@ -1587,6 +1616,21 @@
 											"markdownDescription": "Disable parallel file processing.",
 											"type": "boolean"
 										},
+										"startOfWeek": {
+											"default": "monday",
+											"description": "First day of week for weekly grouping.",
+											"enum": [
+												"sunday",
+												"monday",
+												"tuesday",
+												"wednesday",
+												"thursday",
+												"friday",
+												"saturday"
+											],
+											"markdownDescription": "First day of week for weekly grouping.",
+											"type": "string"
+										},
 										"timezone": {
 											"description": "Timezone for date grouping (IANA).",
 											"markdownDescription": "Timezone for date grouping (IANA).",
@@ -1763,6 +1807,20 @@
 									"description": "Disable parallel file processing.",
 									"markdownDescription": "Disable parallel file processing.",
 									"type": "boolean"
+								},
+								"startOfWeek": {
+									"description": "First day of week for weekly grouping.",
+									"enum": [
+										"sunday",
+										"monday",
+										"tuesday",
+										"wednesday",
+										"thursday",
+										"friday",
+										"saturday"
+									],
+									"markdownDescription": "First day of week for weekly grouping.",
+									"type": "string"
 								},
 								"timezone": {
 									"description": "Timezone for date grouping (IANA).",
@@ -3813,6 +3871,21 @@
 											"markdownDescription": "Disable parallel file processing.",
 											"type": "boolean"
 										},
+										"startOfWeek": {
+											"default": "monday",
+											"description": "First day of week for weekly grouping.",
+											"enum": [
+												"sunday",
+												"monday",
+												"tuesday",
+												"wednesday",
+												"thursday",
+												"friday",
+												"saturday"
+											],
+											"markdownDescription": "First day of week for weekly grouping.",
+											"type": "string"
+										},
 										"timezone": {
 											"description": "Timezone for date grouping (IANA).",
 											"markdownDescription": "Timezone for date grouping (IANA).",
@@ -3989,6 +4062,20 @@
 									"description": "Disable parallel file processing.",
 									"markdownDescription": "Disable parallel file processing.",
 									"type": "boolean"
+								},
+								"startOfWeek": {
+									"description": "First day of week for weekly grouping.",
+									"enum": [
+										"sunday",
+										"monday",
+										"tuesday",
+										"wednesday",
+										"thursday",
+										"friday",
+										"saturday"
+									],
+									"markdownDescription": "First day of week for weekly grouping.",
+									"type": "string"
 								},
 								"timezone": {
 									"description": "Timezone for date grouping (IANA).",
@@ -4697,6 +4784,21 @@
 											"markdownDescription": "Disable parallel file processing.",
 											"type": "boolean"
 										},
+										"startOfWeek": {
+											"default": "monday",
+											"description": "First day of week for weekly grouping.",
+											"enum": [
+												"sunday",
+												"monday",
+												"tuesday",
+												"wednesday",
+												"thursday",
+												"friday",
+												"saturday"
+											],
+											"markdownDescription": "First day of week for weekly grouping.",
+											"type": "string"
+										},
 										"timezone": {
 											"description": "Timezone for date grouping (IANA).",
 											"markdownDescription": "Timezone for date grouping (IANA).",
@@ -4873,6 +4975,20 @@
 									"description": "Disable parallel file processing.",
 									"markdownDescription": "Disable parallel file processing.",
 									"type": "boolean"
+								},
+								"startOfWeek": {
+									"description": "First day of week for weekly grouping.",
+									"enum": [
+										"sunday",
+										"monday",
+										"tuesday",
+										"wednesday",
+										"thursday",
+										"friday",
+										"saturday"
+									],
+									"markdownDescription": "First day of week for weekly grouping.",
+									"type": "string"
 								},
 								"timezone": {
 									"description": "Timezone for date grouping (IANA).",
@@ -8093,6 +8209,21 @@
 											"markdownDescription": "Disable parallel file processing.",
 											"type": "boolean"
 										},
+										"startOfWeek": {
+											"default": "monday",
+											"description": "First day of week for weekly grouping.",
+											"enum": [
+												"sunday",
+												"monday",
+												"tuesday",
+												"wednesday",
+												"thursday",
+												"friday",
+												"saturday"
+											],
+											"markdownDescription": "First day of week for weekly grouping.",
+											"type": "string"
+										},
 										"timezone": {
 											"description": "Timezone for date grouping (IANA).",
 											"markdownDescription": "Timezone for date grouping (IANA).",
@@ -8269,6 +8400,20 @@
 									"description": "Disable parallel file processing.",
 									"markdownDescription": "Disable parallel file processing.",
 									"type": "boolean"
+								},
+								"startOfWeek": {
+									"description": "First day of week for weekly grouping.",
+									"enum": [
+										"sunday",
+										"monday",
+										"tuesday",
+										"wednesday",
+										"thursday",
+										"friday",
+										"saturday"
+									],
+									"markdownDescription": "First day of week for weekly grouping.",
+									"type": "string"
 								},
 								"timezone": {
 									"description": "Timezone for date grouping (IANA).",
@@ -8453,6 +8598,20 @@
 							"description": "Disable parallel file processing.",
 							"markdownDescription": "Disable parallel file processing.",
 							"type": "boolean"
+						},
+						"startOfWeek": {
+							"description": "First day of week for weekly grouping.",
+							"enum": [
+								"sunday",
+								"monday",
+								"tuesday",
+								"wednesday",
+								"thursday",
+								"friday",
+								"saturday"
+							],
+							"markdownDescription": "First day of week for weekly grouping.",
+							"type": "string"
 						},
 						"timezone": {
 							"description": "Timezone for date grouping (IANA).",
@@ -9158,6 +9317,21 @@
 											"markdownDescription": "Disable parallel file processing.",
 											"type": "boolean"
 										},
+										"startOfWeek": {
+											"default": "monday",
+											"description": "First day of week for weekly grouping.",
+											"enum": [
+												"sunday",
+												"monday",
+												"tuesday",
+												"wednesday",
+												"thursday",
+												"friday",
+												"saturday"
+											],
+											"markdownDescription": "First day of week for weekly grouping.",
+											"type": "string"
+										},
 										"timezone": {
 											"description": "Timezone for date grouping (IANA).",
 											"markdownDescription": "Timezone for date grouping (IANA).",
@@ -9334,6 +9508,20 @@
 									"description": "Disable parallel file processing.",
 									"markdownDescription": "Disable parallel file processing.",
 									"type": "boolean"
+								},
+								"startOfWeek": {
+									"description": "First day of week for weekly grouping.",
+									"enum": [
+										"sunday",
+										"monday",
+										"tuesday",
+										"wednesday",
+										"thursday",
+										"friday",
+										"saturday"
+									],
+									"markdownDescription": "First day of week for weekly grouping.",
+									"type": "string"
 								},
 								"timezone": {
 									"description": "Timezone for date grouping (IANA).",
@@ -10042,6 +10230,21 @@
 											"markdownDescription": "Disable parallel file processing.",
 											"type": "boolean"
 										},
+										"startOfWeek": {
+											"default": "monday",
+											"description": "First day of week for weekly grouping.",
+											"enum": [
+												"sunday",
+												"monday",
+												"tuesday",
+												"wednesday",
+												"thursday",
+												"friday",
+												"saturday"
+											],
+											"markdownDescription": "First day of week for weekly grouping.",
+											"type": "string"
+										},
 										"timezone": {
 											"description": "Timezone for date grouping (IANA).",
 											"markdownDescription": "Timezone for date grouping (IANA).",
@@ -10218,6 +10421,20 @@
 									"description": "Disable parallel file processing.",
 									"markdownDescription": "Disable parallel file processing.",
 									"type": "boolean"
+								},
+								"startOfWeek": {
+									"description": "First day of week for weekly grouping.",
+									"enum": [
+										"sunday",
+										"monday",
+										"tuesday",
+										"wednesday",
+										"thursday",
+										"friday",
+										"saturday"
+									],
+									"markdownDescription": "First day of week for weekly grouping.",
+									"type": "string"
 								},
 								"timezone": {
 									"description": "Timezone for date grouping (IANA).",
@@ -10926,6 +11143,21 @@
 											"markdownDescription": "Disable parallel file processing.",
 											"type": "boolean"
 										},
+										"startOfWeek": {
+											"default": "monday",
+											"description": "First day of week for weekly grouping.",
+											"enum": [
+												"sunday",
+												"monday",
+												"tuesday",
+												"wednesday",
+												"thursday",
+												"friday",
+												"saturday"
+											],
+											"markdownDescription": "First day of week for weekly grouping.",
+											"type": "string"
+										},
 										"timezone": {
 											"description": "Timezone for date grouping (IANA).",
 											"markdownDescription": "Timezone for date grouping (IANA).",
@@ -11102,6 +11334,20 @@
 									"description": "Disable parallel file processing.",
 									"markdownDescription": "Disable parallel file processing.",
 									"type": "boolean"
+								},
+								"startOfWeek": {
+									"description": "First day of week for weekly grouping.",
+									"enum": [
+										"sunday",
+										"monday",
+										"tuesday",
+										"wednesday",
+										"thursday",
+										"friday",
+										"saturday"
+									],
+									"markdownDescription": "First day of week for weekly grouping.",
+									"type": "string"
 								},
 								"timezone": {
 									"description": "Timezone for date grouping (IANA).",
@@ -11810,6 +12056,21 @@
 											"markdownDescription": "Disable parallel file processing.",
 											"type": "boolean"
 										},
+										"startOfWeek": {
+											"default": "monday",
+											"description": "First day of week for weekly grouping.",
+											"enum": [
+												"sunday",
+												"monday",
+												"tuesday",
+												"wednesday",
+												"thursday",
+												"friday",
+												"saturday"
+											],
+											"markdownDescription": "First day of week for weekly grouping.",
+											"type": "string"
+										},
 										"timezone": {
 											"description": "Timezone for date grouping (IANA).",
 											"markdownDescription": "Timezone for date grouping (IANA).",
@@ -11986,6 +12247,20 @@
 									"description": "Disable parallel file processing.",
 									"markdownDescription": "Disable parallel file processing.",
 									"type": "boolean"
+								},
+								"startOfWeek": {
+									"description": "First day of week for weekly grouping.",
+									"enum": [
+										"sunday",
+										"monday",
+										"tuesday",
+										"wednesday",
+										"thursday",
+										"friday",
+										"saturday"
+									],
+									"markdownDescription": "First day of week for weekly grouping.",
+									"type": "string"
 								},
 								"timezone": {
 									"description": "Timezone for date grouping (IANA).",
@@ -12694,6 +12969,21 @@
 											"markdownDescription": "Disable parallel file processing.",
 											"type": "boolean"
 										},
+										"startOfWeek": {
+											"default": "monday",
+											"description": "First day of week for weekly grouping.",
+											"enum": [
+												"sunday",
+												"monday",
+												"tuesday",
+												"wednesday",
+												"thursday",
+												"friday",
+												"saturday"
+											],
+											"markdownDescription": "First day of week for weekly grouping.",
+											"type": "string"
+										},
 										"timezone": {
 											"description": "Timezone for date grouping (IANA).",
 											"markdownDescription": "Timezone for date grouping (IANA).",
@@ -12870,6 +13160,20 @@
 									"description": "Disable parallel file processing.",
 									"markdownDescription": "Disable parallel file processing.",
 									"type": "boolean"
+								},
+								"startOfWeek": {
+									"description": "First day of week for weekly grouping.",
+									"enum": [
+										"sunday",
+										"monday",
+										"tuesday",
+										"wednesday",
+										"thursday",
+										"friday",
+										"saturday"
+									],
+									"markdownDescription": "First day of week for weekly grouping.",
+									"type": "string"
 								},
 								"timezone": {
 									"description": "Timezone for date grouping (IANA).",
@@ -13578,6 +13882,21 @@
 											"markdownDescription": "Disable parallel file processing.",
 											"type": "boolean"
 										},
+										"startOfWeek": {
+											"default": "monday",
+											"description": "First day of week for weekly grouping.",
+											"enum": [
+												"sunday",
+												"monday",
+												"tuesday",
+												"wednesday",
+												"thursday",
+												"friday",
+												"saturday"
+											],
+											"markdownDescription": "First day of week for weekly grouping.",
+											"type": "string"
+										},
 										"timezone": {
 											"description": "Timezone for date grouping (IANA).",
 											"markdownDescription": "Timezone for date grouping (IANA).",
@@ -13754,6 +14073,20 @@
 									"description": "Disable parallel file processing.",
 									"markdownDescription": "Disable parallel file processing.",
 									"type": "boolean"
+								},
+								"startOfWeek": {
+									"description": "First day of week for weekly grouping.",
+									"enum": [
+										"sunday",
+										"monday",
+										"tuesday",
+										"wednesday",
+										"thursday",
+										"friday",
+										"saturday"
+									],
+									"markdownDescription": "First day of week for weekly grouping.",
+									"type": "string"
 								},
 								"timezone": {
 									"description": "Timezone for date grouping (IANA).",
@@ -14462,6 +14795,21 @@
 											"markdownDescription": "Disable parallel file processing.",
 											"type": "boolean"
 										},
+										"startOfWeek": {
+											"default": "monday",
+											"description": "First day of week for weekly grouping.",
+											"enum": [
+												"sunday",
+												"monday",
+												"tuesday",
+												"wednesday",
+												"thursday",
+												"friday",
+												"saturday"
+											],
+											"markdownDescription": "First day of week for weekly grouping.",
+											"type": "string"
+										},
 										"timezone": {
 											"description": "Timezone for date grouping (IANA).",
 											"markdownDescription": "Timezone for date grouping (IANA).",
@@ -14638,6 +14986,20 @@
 									"description": "Disable parallel file processing.",
 									"markdownDescription": "Disable parallel file processing.",
 									"type": "boolean"
+								},
+								"startOfWeek": {
+									"description": "First day of week for weekly grouping.",
+									"enum": [
+										"sunday",
+										"monday",
+										"tuesday",
+										"wednesday",
+										"thursday",
+										"friday",
+										"saturday"
+									],
+									"markdownDescription": "First day of week for weekly grouping.",
+									"type": "string"
 								},
 								"timezone": {
 									"description": "Timezone for date grouping (IANA).",
@@ -15346,6 +15708,21 @@
 											"markdownDescription": "Disable parallel file processing.",
 											"type": "boolean"
 										},
+										"startOfWeek": {
+											"default": "monday",
+											"description": "First day of week for weekly grouping.",
+											"enum": [
+												"sunday",
+												"monday",
+												"tuesday",
+												"wednesday",
+												"thursday",
+												"friday",
+												"saturday"
+											],
+											"markdownDescription": "First day of week for weekly grouping.",
+											"type": "string"
+										},
 										"timezone": {
 											"description": "Timezone for date grouping (IANA).",
 											"markdownDescription": "Timezone for date grouping (IANA).",
@@ -15522,6 +15899,20 @@
 									"description": "Disable parallel file processing.",
 									"markdownDescription": "Disable parallel file processing.",
 									"type": "boolean"
+								},
+								"startOfWeek": {
+									"description": "First day of week for weekly grouping.",
+									"enum": [
+										"sunday",
+										"monday",
+										"tuesday",
+										"wednesday",
+										"thursday",
+										"friday",
+										"saturday"
+									],
+									"markdownDescription": "First day of week for weekly grouping.",
+									"type": "string"
 								},
 								"timezone": {
 									"description": "Timezone for date grouping (IANA).",
@@ -16194,6 +16585,21 @@
 											"markdownDescription": "Disable parallel file processing.",
 											"type": "boolean"
 										},
+										"startOfWeek": {
+											"default": "monday",
+											"description": "First day of week for weekly grouping.",
+											"enum": [
+												"sunday",
+												"monday",
+												"tuesday",
+												"wednesday",
+												"thursday",
+												"friday",
+												"saturday"
+											],
+											"markdownDescription": "First day of week for weekly grouping.",
+											"type": "string"
+										},
 										"timezone": {
 											"description": "Timezone for date grouping (IANA).",
 											"markdownDescription": "Timezone for date grouping (IANA).",
@@ -16361,6 +16767,20 @@
 									"description": "Disable parallel file processing.",
 									"markdownDescription": "Disable parallel file processing.",
 									"type": "boolean"
+								},
+								"startOfWeek": {
+									"description": "First day of week for weekly grouping.",
+									"enum": [
+										"sunday",
+										"monday",
+										"tuesday",
+										"wednesday",
+										"thursday",
+										"friday",
+										"saturday"
+									],
+									"markdownDescription": "First day of week for weekly grouping.",
+									"type": "string"
 								},
 								"timezone": {
 									"description": "Timezone for date grouping (IANA).",
@@ -17069,6 +17489,21 @@
 											"markdownDescription": "Disable parallel file processing.",
 											"type": "boolean"
 										},
+										"startOfWeek": {
+											"default": "monday",
+											"description": "First day of week for weekly grouping.",
+											"enum": [
+												"sunday",
+												"monday",
+												"tuesday",
+												"wednesday",
+												"thursday",
+												"friday",
+												"saturday"
+											],
+											"markdownDescription": "First day of week for weekly grouping.",
+											"type": "string"
+										},
 										"timezone": {
 											"description": "Timezone for date grouping (IANA).",
 											"markdownDescription": "Timezone for date grouping (IANA).",
@@ -17245,6 +17680,20 @@
 									"description": "Disable parallel file processing.",
 									"markdownDescription": "Disable parallel file processing.",
 									"type": "boolean"
+								},
+								"startOfWeek": {
+									"description": "First day of week for weekly grouping.",
+									"enum": [
+										"sunday",
+										"monday",
+										"tuesday",
+										"wednesday",
+										"thursday",
+										"friday",
+										"saturday"
+									],
+									"markdownDescription": "First day of week for weekly grouping.",
+									"type": "string"
 								},
 								"timezone": {
 									"description": "Timezone for date grouping (IANA).",
@@ -17937,6 +18386,21 @@
 											"markdownDescription": "Disable parallel file processing.",
 											"type": "boolean"
 										},
+										"startOfWeek": {
+											"default": "monday",
+											"description": "First day of week for weekly grouping.",
+											"enum": [
+												"sunday",
+												"monday",
+												"tuesday",
+												"wednesday",
+												"thursday",
+												"friday",
+												"saturday"
+											],
+											"markdownDescription": "First day of week for weekly grouping.",
+											"type": "string"
+										},
 										"timezone": {
 											"description": "Timezone for date grouping (IANA).",
 											"markdownDescription": "Timezone for date grouping (IANA).",
@@ -18109,6 +18573,20 @@
 									"description": "Disable parallel file processing.",
 									"markdownDescription": "Disable parallel file processing.",
 									"type": "boolean"
+								},
+								"startOfWeek": {
+									"description": "First day of week for weekly grouping.",
+									"enum": [
+										"sunday",
+										"monday",
+										"tuesday",
+										"wednesday",
+										"thursday",
+										"friday",
+										"saturday"
+									],
+									"markdownDescription": "First day of week for weekly grouping.",
+									"type": "string"
 								},
 								"timezone": {
 									"description": "Timezone for date grouping (IANA).",
@@ -18840,6 +19318,21 @@
 											"markdownDescription": "Disable parallel file processing.",
 											"type": "boolean"
 										},
+										"startOfWeek": {
+											"default": "monday",
+											"description": "First day of week for weekly grouping.",
+											"enum": [
+												"sunday",
+												"monday",
+												"tuesday",
+												"wednesday",
+												"thursday",
+												"friday",
+												"saturday"
+											],
+											"markdownDescription": "First day of week for weekly grouping.",
+											"type": "string"
+										},
 										"timezone": {
 											"description": "Timezone for date grouping (IANA).",
 											"markdownDescription": "Timezone for date grouping (IANA).",
@@ -19016,6 +19509,20 @@
 									"description": "Disable parallel file processing.",
 									"markdownDescription": "Disable parallel file processing.",
 									"type": "boolean"
+								},
+								"startOfWeek": {
+									"description": "First day of week for weekly grouping.",
+									"enum": [
+										"sunday",
+										"monday",
+										"tuesday",
+										"wednesday",
+										"thursday",
+										"friday",
+										"saturday"
+									],
+									"markdownDescription": "First day of week for weekly grouping.",
+									"type": "string"
 								},
 								"timezone": {
 									"description": "Timezone for date grouping (IANA).",
@@ -19724,6 +20231,21 @@
 											"markdownDescription": "Disable parallel file processing.",
 											"type": "boolean"
 										},
+										"startOfWeek": {
+											"default": "monday",
+											"description": "First day of week for weekly grouping.",
+											"enum": [
+												"sunday",
+												"monday",
+												"tuesday",
+												"wednesday",
+												"thursday",
+												"friday",
+												"saturday"
+											],
+											"markdownDescription": "First day of week for weekly grouping.",
+											"type": "string"
+										},
 										"timezone": {
 											"description": "Timezone for date grouping (IANA).",
 											"markdownDescription": "Timezone for date grouping (IANA).",
@@ -19900,6 +20422,20 @@
 									"description": "Disable parallel file processing.",
 									"markdownDescription": "Disable parallel file processing.",
 									"type": "boolean"
+								},
+								"startOfWeek": {
+									"description": "First day of week for weekly grouping.",
+									"enum": [
+										"sunday",
+										"monday",
+										"tuesday",
+										"wednesday",
+										"thursday",
+										"friday",
+										"saturday"
+									],
+									"markdownDescription": "First day of week for weekly grouping.",
+									"type": "string"
 								},
 								"timezone": {
 									"description": "Timezone for date grouping (IANA).",

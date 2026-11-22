@@ -1,0 +1,82 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage gemini weekly --offline --json --since 20251231 --until 20260101
+---
+exit: 0
+--- stdout ---
+{
+  "totals": {
+    "cacheCreationTokens": 0,
+    "cacheReadTokens": 152383,
+    "inputTokens": 302955,
+    "outputTokens": 2459,
+    "totalCost": 0.8134376900000001,
+    "totalTokens": 458032,
+    "unpricedModels": [
+      "gemini-mystery-1"
+    ]
+  },
+  "weekly": [
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 152383,
+      "inputTokens": 302955,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 151700,
+          "cost": 0.8114725000000002,
+          "inputTokens": 301808,
+          "modelName": "gemini-2.5-pro",
+          "outputTokens": 1510
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 180,
+          "cost": 0.0010615,
+          "inputTokens": 785,
+          "modelName": "gemini-3-flash-preview",
+          "outputTokens": 185
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0009000000000000001,
+          "inputTokens": 100,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 40
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 3,
+          "cost": 3.69e-6,
+          "inputTokens": 12,
+          "modelName": "gemini-2.5-flash",
+          "outputTokens": 0
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 500,
+          "cost": 0.0,
+          "inputTokens": 250,
+          "missingPricing": true,
+          "modelName": "gemini-mystery-1",
+          "outputTokens": 724
+        }
+      ],
+      "modelsUsed": [
+        "gemini-2.5-pro",
+        "gemini-3-flash-preview",
+        "gemini-mystery-1",
+        "gemini-2.5-flash",
+        "claude-sonnet-4-20250514"
+      ],
+      "outputTokens": 2459,
+      "totalCost": 0.8134376900000001,
+      "totalTokens": 458032,
+      "week": "2025-12-29"
+    }
+  ]
+}
+
+--- stderr ---

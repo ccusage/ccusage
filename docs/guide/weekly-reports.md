@@ -1,6 +1,6 @@
 # Weekly Usage
 
-Weekly usage aggregates usage by week, providing a mid-range view between daily and monthly usage. `ccusage weekly` covers every detected source. Use `ccusage <agent> weekly` to focus the report on Antigravity, Claude Code, Cline, Copilot, DeepSeek Harness, Kimi, OpenCode, or ZCode.
+`ccusage weekly` groups usage by week across every detected source. Use `ccusage <agent> weekly` to focus on one source. For Codex, use `ccusage weekly --by-agent` to see its weekly rows in the unified report.
 
 ## Basic Usage
 
@@ -44,7 +44,7 @@ The columns are identical to daily reports but aggregated by week:
 
 ### Week Start Day
 
-Every focused agent command that supports weekly reports accepts `-w` and `--start-of-week`, as well as the `startOfWeek` configuration setting. Unified weekly reports apply their resolved week start to every source.
+Weekly commands accept `-w` and `--start-of-week`, as well as the [`startOfWeek` configuration setting](/guide/config-files#weekly-command). Weeks start on Monday by default, with Sunday as the default for `ccusage claude weekly`. Unified weekly reports apply their resolved week start to every source.
 
 Configure which day starts the week:
 

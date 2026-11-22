@@ -23,6 +23,8 @@ ccusage codex session
 
 Most users can start with unified reports such as `ccusage daily`. Add the `codex` namespace only when you want to focus the same report shape on Codex usage or pass Codex-specific options such as `--speed`.
 
+Use [`ccusage weekly --by-agent`](/guide/weekly-reports) to see a separate Codex row for each week in the unified report.
+
 ## Statusline
 
 `ccusage codex statusline --mcp` provides usage and estimated cost inside Codex's native statusline. Its stdio MCP server is built into the Rust binary and adds no MCP SDK or runtime dependency. See [native statusline setup](/guide/statusline#codex-native-statusline-experimental).

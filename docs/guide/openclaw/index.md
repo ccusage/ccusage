@@ -38,6 +38,9 @@ Both `OPENCLAW_DIR` and `--open-claw-path` can be one root directory or a comma-
 # Show daily OpenClaw usage
 ccusage openclaw daily
 
+# Show weekly OpenClaw usage
+ccusage openclaw weekly
+
 # Show monthly OpenClaw usage
 ccusage openclaw monthly
 

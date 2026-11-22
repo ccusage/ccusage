@@ -114,7 +114,7 @@ pub fn generate_config_schema_json() -> serde_json::Result<String> {
         (
             "defaults".to_string(),
             described(
-                claude_defaults.clone(),
+                with_options(claude_defaults.clone(), &weekly),
                 "Default values for all-agent reports and legacy Claude commands.",
             ),
         ),
@@ -127,6 +127,7 @@ pub fn generate_config_schema_json() -> serde_json::Result<String> {
         ),
     ]);
     for agent in AGENTS {
+        let has_focused_weekly = agent.reports.contains(&AgentReportKind::Weekly);
         let defaults = match agent.name {
             "claude" => option_section(&[&shared, &claude, &daily, &weekly, &blocks, &statusline]),
             "codex" => codex_section.clone(),
@@ -147,6 +148,10 @@ pub fn generate_config_schema_json() -> serde_json::Result<String> {
                         &[("startOfWeek", json!("sunday"))],
                     ),
                     ("claude", _) => claude_defaults.clone(),
+                    (_, AgentReportKind::Weekly) if has_focused_weekly => with_defaults(
+                        with_options(defaults.clone(), &weekly),
+                        &[("startOfWeek", json!("monday"))],
+                    ),
                     _ => defaults.clone(),
                 };
                 (report.name().to_string(), section)
@@ -155,6 +160,11 @@ pub fn generate_config_schema_json() -> serde_json::Result<String> {
         for command in agent.extra_commands {
             commands.insert(command.name.to_string(), extra_section(command.kind)?);
         }
+        let defaults = if has_focused_weekly && agent.name != "claude" {
+            with_options(defaults, &weekly)
+        } else {
+            defaults
+        };
         let mut agent_properties = Map::from_iter([
             ("defaults".to_string(), defaults),
             ("commands".to_string(), object_schema(commands)),
@@ -226,6 +236,14 @@ fn option_section(sections: &[&Map<String, Value>]) -> Value {
 fn described(mut schema: Value, description: &str) -> Value {
     schema["description"] = json!(description);
     schema
+}
+
+fn with_options(mut section: Value, options: &Map<String, Value>) -> Value {
+    section["properties"]
+        .as_object_mut()
+        .expect("option section has properties")
+        .extend(options.clone());
+    section
 }
 
 fn with_defaults(mut schema: Value, defaults: &[(&str, Value)]) -> Value {
