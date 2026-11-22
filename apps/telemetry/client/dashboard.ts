@@ -315,11 +315,15 @@ async function startDashboard(): Promise<void> {
 	if (storedTheme) document.documentElement.dataset.theme = storedTheme;
 	const systemTheme = matchMedia('(prefers-color-scheme: dark)');
 	const initialTheme = storedTheme ?? (systemTheme.matches ? 'dark' : 'light');
-	themeToggle.setAttribute('aria-pressed', String(initialTheme === 'dark'));
-	themeToggle.setAttribute(
-		'aria-label',
-		`Switch to ${initialTheme === 'dark' ? 'light' : 'dark'} color theme`,
-	);
+	updateThemeButton(initialTheme);
+
+	function updateThemeButton(theme: 'light' | 'dark'): void {
+		themeToggle.setAttribute('aria-pressed', String(theme === 'dark'));
+		themeToggle.setAttribute(
+			'aria-label',
+			`Switch to ${theme === 'dark' ? 'light' : 'dark'} color theme`,
+		);
+	}
 
 	function showEmptyChart(message: string): void {
 		chartEmpty.hidden = false;
@@ -344,11 +348,7 @@ async function startDashboard(): Promise<void> {
 
 	function setTheme(theme: 'light' | 'dark', persist: boolean): void {
 		document.documentElement.dataset.theme = theme;
-		themeToggle.setAttribute('aria-pressed', String(theme === 'dark'));
-		themeToggle.setAttribute(
-			'aria-label',
-			`Switch to ${theme === 'dark' ? 'light' : 'dark'} color theme`,
-		);
+		updateThemeButton(theme);
 		if (persist) storeThemePreference(theme);
 		refreshChart();
 	}
@@ -374,7 +374,10 @@ async function startDashboard(): Promise<void> {
 		});
 	}
 	systemTheme.addEventListener('change', () => {
-		if (!document.documentElement.hasAttribute('data-theme')) refreshChart();
+		if (!document.documentElement.hasAttribute('data-theme')) {
+			updateThemeButton(systemTheme.matches ? 'dark' : 'light');
+			refreshChart();
+		}
 	});
 	refreshChart();
 
