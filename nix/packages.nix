@@ -24,15 +24,6 @@ in
           root
           ;
       };
-      ccusageRelease = import ../default.nix {
-        inherit
-          craneLib
-          inputs
-          pkgs
-          root
-          ;
-        telemetryEndpoint = "https://telemetry.ccusage.com/v1/ping";
-      };
       ccusageProgram = pkgs.lib.getExe' ccusage "ccusage";
       bunNodeModules = pkgs.callPackage ../nix/bun-node-modules.nix {
         bun2nix = inputs.bun2nix.packages.${system}.default;
@@ -73,7 +64,6 @@ in
           oxlint
           publint
           ;
-        ccusage-release = ccusageRelease;
       };
     };
 }

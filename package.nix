@@ -10,7 +10,6 @@
   root ? ./.,
   stdenv,
   apple-sdk_15,
-  telemetryEndpoint ? null,
 }:
 let
   inherit (lib.importJSON (root + /package.json)) version;
@@ -59,10 +58,7 @@ let
       apple-sdk_15
     ];
   }
-  // cargoConfigEnv
-  // lib.optionalAttrs (telemetryEndpoint != null) {
-    CCUSAGE_TELEMETRY_ENDPOINT = telemetryEndpoint;
-  };
+  // cargoConfigEnv;
   cargoTomlFilter =
     path:
     !lib.lists.hasPrefix [
@@ -73,7 +69,6 @@ let
   depsOnlyArgs =
     builtins.removeAttrs commonArgs [
       "CCUSAGE_PRICING_JSON_PATH"
-      "CCUSAGE_TELEMETRY_ENDPOINT"
       "CCUSAGE_VERSION"
       "src"
     ]

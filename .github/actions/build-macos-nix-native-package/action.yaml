@@ -35,21 +35,9 @@ runs:
         ARCH: ${{ inputs.arch }}
         TELEMETRY_ENABLED: ${{ inputs.telemetry-enabled }}
       run: |
+        package="ccusage-release-darwin-$ARCH"
         if [ "$TELEMETRY_ENABLED" = "true" ]; then
-          package="ccusage-release-darwin-$ARCH"
-        else
-          case "$ARCH" in
-            arm64)
-              package=ccusage
-              ;;
-            x64)
-              package=ccusage-darwin-x64
-              ;;
-            *)
-              echo "Unsupported arch: $ARCH" >&2
-              exit 1
-              ;;
-          esac
+          package="$package-telemetry"
         fi
         echo "package=$package" >> "$GITHUB_OUTPUT"
         nix build ".#$package" ".#$package.passthru.unsafeCodeCheck"

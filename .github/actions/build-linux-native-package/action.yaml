@@ -33,9 +33,9 @@ runs:
         ARCH: ${{ inputs.arch }}
         TELEMETRY_ENABLED: ${{ inputs.telemetry-enabled }}
       run: |
-        package=ccusage-static
+        package="ccusage-release-linux-$ARCH"
         if [ "$TELEMETRY_ENABLED" = "true" ]; then
-          package="ccusage-release-linux-$ARCH"
+          package="$package-telemetry"
         fi
         echo "package=$package" >> "$GITHUB_OUTPUT"
         nix build ".#$package" ".#$package.passthru.unsafeCodeCheck"

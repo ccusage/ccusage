@@ -48,7 +48,8 @@
     in
     lib.mkIf pkgs.stdenv.hostPlatform.isLinux {
       packages = {
-        "ccusage-release-linux-${arch}" = config.packages.ccusage-static.overrideAttrs (_: {
+        "ccusage-release-linux-${arch}" = config.packages.ccusage-static;
+        "ccusage-release-linux-${arch}-telemetry" = config.packages.ccusage-static.overrideAttrs (_: {
           CCUSAGE_TELEMETRY_ENDPOINT = "https://telemetry.ccusage.com/v1/ping";
         });
         # NOTE(2026-06-11, #1279): Blacksmith trims the sticky disk to Nix GC roots. Expose the static build artifacts so CI can root them across runs.
