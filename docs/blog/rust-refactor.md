@@ -26,19 +26,37 @@ We compared the final build against v20.0.51 (pre-refactor `main`). Both are the
 
 On a maintainer's real logs, reports take 0.45× the wall time and 0.43× the peak memory. We measured that locally on copies of the logs, and only ratios left the machine.
 
-Per command, against v20.0.51:
+### Measured times on benchmark machines
 
-| Command                          | Linux wall | Linux memory | macOS wall | macOS memory |
-| -------------------------------- | ---------: | -----------: | ---------: | -----------: |
-| `ccusage claude daily`           |      0.44× |        0.26× |      0.44× |        0.28× |
-| `ccusage claude session`         |      0.58× |        0.52× |      0.47× |        0.51× |
-| `ccusage claude blocks`          |      0.67× |        0.55× |      0.53× |        0.52× |
-| `ccusage claude daily --since …` |      0.32× |        0.25× |      0.48× |        0.34× |
-| `ccusage codex daily`            |      0.35× |        0.37× |      0.44× |        0.33× |
-| `ccusage codex session`          |      0.37× |        0.38× |      0.45× |        0.33× |
-| `ccusage daily` (all sources)    |      0.38× |        0.47× |      0.47× |        0.38× |
-| `ccusage opencode daily`         |      0.29× |        0.32× |      0.29× |        0.54× |
-| `ccusage opencode session`       |      0.27× |        0.32× |      0.29× |        0.54× |
+Ratios hide how long you actually wait, so here are the measured times. The input is the generated benchmark data from our CI: 10.3 GiB of Claude Code logs, 14.2 GiB of Codex logs (4.5 GiB compressed on disk), and a 256 MiB OpenCode database. The `ccusage daily` row reads the Claude, Codex, and Grok data together. Wall time is the mean of 15 runs after 3 warmups, measured with hyperfine; the OpenCode rows use the shell's `time` over 15 interleaved runs after 3 warmups instead, because hyperfine skews multi-threaded runs (#2461). Peak memory is the median of 5 runs (15 for OpenCode).
+
+**Linux x64, 32 vCPU**
+
+| Command                               | Wall time, v20.0.51 → now | Peak memory, v20.0.51 → now |
+| ------------------------------------- | ------------------------: | --------------------------: |
+| `ccusage claude daily`                |       1.23 s → **0.54 s** |     1,941 MiB → **512 MiB** |
+| `ccusage claude session`              |       1.48 s → **0.86 s** |   2,005 MiB → **1,037 MiB** |
+| `ccusage claude blocks`               |       1.56 s → **1.04 s** |   1,997 MiB → **1,106 MiB** |
+| `ccusage claude daily --since …`      |       0.86 s → **0.28 s** |     1,005 MiB → **255 MiB** |
+| `ccusage codex daily`                 |       2.85 s → **1.01 s** |     1,403 MiB → **521 MiB** |
+| `ccusage codex session`               |       3.05 s → **1.12 s** |     1,441 MiB → **543 MiB** |
+| `ccusage daily` (Claude, Codex, Grok) |       3.50 s → **1.33 s** |     1,963 MiB → **914 MiB** |
+| `ccusage opencode daily`              |       436 ms → **127 ms** |         94 MiB → **31 MiB** |
+| `ccusage opencode session`            |       483 ms → **129 ms** |         96 MiB → **31 MiB** |
+
+**macOS, Apple silicon, 12 CPU**
+
+| Command                               | Wall time, v20.0.51 → now | Peak memory, v20.0.51 → now |
+| ------------------------------------- | ------------------------: | --------------------------: |
+| `ccusage claude daily`                |       1.10 s → **0.48 s** |     1,842 MiB → **522 MiB** |
+| `ccusage claude session`              |       1.30 s → **0.61 s** |   2,108 MiB → **1,078 MiB** |
+| `ccusage claude blocks`               |       1.35 s → **0.71 s** |   2,103 MiB → **1,097 MiB** |
+| `ccusage claude daily --since …`      |       0.65 s → **0.31 s** |       750 MiB → **258 MiB** |
+| `ccusage codex daily`                 |       2.99 s → **1.33 s** |     1,488 MiB → **487 MiB** |
+| `ccusage codex session`               |       2.93 s → **1.31 s** |     1,568 MiB → **523 MiB** |
+| `ccusage daily` (Claude, Codex, Grok) |       3.50 s → **1.63 s** |     2,170 MiB → **815 MiB** |
+| `ccusage opencode daily`              |       410 ms → **119 ms** |         64 MiB → **34 MiB** |
+| `ccusage opencode session`            |       408 ms → **119 ms** |         64 MiB → **35 MiB** |
 
 ## Where the speed came from
 
