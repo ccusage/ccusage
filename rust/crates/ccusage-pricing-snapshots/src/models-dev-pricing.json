@@ -26282,7 +26282,7 @@
 			"output": 3.2187
 		},
 		"limit": {
-			"context": 262144
+			"context": 256000
 		},
 		"provider": "nano-gpt"
 	},
@@ -33189,7 +33189,7 @@
 			"output": 3
 		},
 		"limit": {
-			"context": 262144
+			"context": 258048
 		},
 		"provider": "nano-gpt"
 	},
@@ -40960,9 +40960,9 @@
 	},
 	"z-ai/glm-5.1:thinking": {
 		"cost": {
-			"cache_read": 0.1794,
-			"input": 0.966,
-			"output": 3.036
+			"cache_read": 0.247,
+			"input": 1.33,
+			"output": 4.18
 		},
 		"limit": {
 			"context": 204800
