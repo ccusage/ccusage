@@ -30,9 +30,9 @@ pub(super) struct DroidEntry {
 }
 
 #[derive(Default)]
-pub(super) struct DroidTokenUsage {
-    pub(super) usage: TokenUsageRaw,
-    pub(super) additional: AdditionalTokens,
+struct DroidTokenUsage {
+    usage: TokenUsageRaw,
+    additional: AdditionalTokens,
 }
 
 pub(super) fn load_settings_file(
@@ -92,7 +92,7 @@ pub(super) fn load_settings_file(
     }))
 }
 
-pub(super) fn parse_token_usage(
+fn parse_token_usage(
     value: Option<&Value>,
 ) -> std::result::Result<Option<DroidTokenUsage>, UnitError> {
     let Some(usage) = value.and_then(Value::as_object) else {
