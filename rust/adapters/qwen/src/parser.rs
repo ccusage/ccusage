@@ -322,6 +322,10 @@ mod tests {
 
     #[test]
     fn keeps_total_only_usage_out_of_output_tokens() {
+        ccusage_test_support::install_pricing_snapshots();
+        let mut pricing = ccusage_core::PricingMap::default();
+        pricing
+            .load_json(r#"{"qwen3-coder":{"input_cost_per_token":1,"output_cost_per_token":2}}"#);
         let record = serde_json::from_value::<QwenLine>(serde_json::json!({
             "type": "assistant",
             "timestamp": "2026-01-02T00:00:00.000Z",
@@ -336,16 +340,14 @@ mod tests {
             Path::new("/tmp/project/chat.jsonl"),
             &record,
             &jiff::tz::TimeZone::UTC,
-            PriceTable::for_map(
-                ccusage_core::cli::CostMode::Auto,
-                &ccusage_core::PricingMap::default(),
-            ),
+            PriceTable::Calculate(&pricing),
         )
         .unwrap()
         .unwrap();
 
         assert_eq!(entry.usage.output_tokens, 0);
         assert_eq!(entry.extra_total_tokens, 321);
+        assert_eq!(entry.cost, 0.0);
     }
 
     #[test]

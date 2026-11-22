@@ -101,10 +101,7 @@ mod tests {
     use ccusage_test_support::{Environment, fs_fixture};
     use serde_json::json;
 
-    use super::super::{
-        parser::{normalize_droid_model_name, parse_token_usage},
-        paths::DROID_SESSIONS_DIR_ENV,
-    };
+    use super::super::{parser::normalize_droid_model_name, paths::DROID_SESSIONS_DIR_ENV};
     use super::*;
     use crate::{TokenUsageRaw, cli::AgentReportKind, parse_ts_timestamp};
     #[test]
@@ -125,16 +122,19 @@ mod tests {
 
     #[test]
     fn falls_back_to_total_tokens_when_droid_parts_are_missing() {
-        let usage = parse_token_usage(Some(&serde_json::json!({
-            "totalTokens": 456
-        })))
-        .unwrap()
-        .unwrap();
+        ccusage_test_support::install_pricing_snapshots();
+        let pricing = ccusage_core::PricingMap::load_embedded();
+        let fixture = fs_fixture!({
+            "session.settings.json": r#"{"model":"gpt-5","providerLockTimestamp":"2026-05-01T01:02:03Z","tokenUsage":{"totalTokens":456}}"#,
+        });
+        let parsed = load_settings_file(&fixture.path("session.settings.json"))
+            .unwrap()
+            .unwrap();
+        let entry = to_loaded_entry(parsed, &JiffTimeZone::UTC, PriceTable::Calculate(&pricing));
 
-        let extra_total_tokens = usage.additional.total();
-        let usage = usage.usage;
-        assert_eq!(usage.output_tokens, 0);
-        assert_eq!(extra_total_tokens, 456);
+        assert_eq!(entry.usage.output_tokens, 0);
+        assert_eq!(entry.extra_total_tokens, 456);
+        assert_eq!(entry.cost, 0.0);
     }
 
     #[test]

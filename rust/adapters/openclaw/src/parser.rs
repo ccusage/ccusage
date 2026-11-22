@@ -747,6 +747,8 @@ mod tests {
 
     #[test]
     fn keeps_total_only_usage_out_of_output_tokens() {
+        ccusage_test_support::install_pricing_snapshots();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         let record = serde_json::from_value::<OpenClawLine>(serde_json::json!({
             "type": "message",
             "message": {
@@ -772,11 +774,12 @@ mod tests {
         let loaded = entry_to_loaded(
             entry,
             &JiffTimeZone::UTC,
-            CostMode::Display,
-            PriceTable::Display,
+            CostMode::Calculate,
+            PriceTable::Calculate(&pricing),
         );
         assert_eq!(loaded.usage.output_tokens, 0);
         assert_eq!(loaded.extra_total_tokens, 222);
+        assert_eq!(loaded.cost, 0.0);
     }
 
     #[test]

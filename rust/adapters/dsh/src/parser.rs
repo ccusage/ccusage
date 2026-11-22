@@ -768,6 +768,9 @@ mod tests {
 
     #[test]
     fn ignores_zero_usage_and_dates_requests_by_the_header() {
+        ccusage_test_support::install_pricing_snapshots();
+        let mut pricing = ccusage_core::PricingMap::default();
+        pricing.load_json(r#"{"unknown":{"input_cost_per_token":1,"output_cost_per_token":2}}"#);
         let entries = parse(&lines(&[
             r#"{"type":"session","createdAt":1700000000000}"#,
             "not json",
@@ -782,10 +785,11 @@ mod tests {
         let entry = dsh_entry_to_loaded(
             entries.into_iter().next().unwrap(),
             &JiffTimeZone::UTC,
-            PriceTable::Display,
+            PriceTable::Calculate(&pricing),
         );
         assert_eq!(entry.usage.output_tokens, 0);
         assert_eq!(entry.extra_total_tokens, 7);
+        assert_eq!(entry.cost, 0.0);
     }
 
     #[test]

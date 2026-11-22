@@ -829,8 +829,10 @@ mod tests {
 
     #[test]
     fn keeps_total_only_usage_out_of_output_tokens() {
+        ccusage_test_support::install_pricing_snapshots();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         let event = build_usage(
-            Some("gemini-test"),
+            Some("gemini-2.5-pro"),
             GeminiTokens {
                 total: Some(654),
                 ..GeminiTokens::default()
@@ -843,10 +845,11 @@ mod tests {
         let entry = event_to_loaded(
             event.at("session", TimestampMs::UNIX_EPOCH),
             &JiffTimeZone::UTC,
-            PriceTable::Display,
+            PriceTable::Calculate(&pricing),
         );
         assert_eq!(entry.usage.output_tokens, 0);
         assert_eq!(entry.extra_total_tokens, 654);
+        assert_eq!(entry.cost, 0.0);
     }
 
     #[test]

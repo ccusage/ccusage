@@ -633,6 +633,8 @@ mod tests {
 
     #[test]
     fn keeps_total_only_usage_out_of_output_tokens() {
+        ccusage_test_support::install_pricing_snapshots();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         let fixture = fs_fixture!({
             "thread.json": r#"{"id":"thread-a","usageLedger":{"events":[{"id":"event-a","timestamp":"2026-01-02T00:00:00.000Z","model":"gpt-5","tokens":{"total":345}}]}}"#,
         });
@@ -641,10 +643,7 @@ mod tests {
         let entries = read_thread(
             &file,
             &jiff::tz::TimeZone::UTC,
-            ccusage_core::cost::PriceTable::for_map(
-                ccusage_core::cli::CostMode::Auto,
-                &ccusage_core::PricingMap::default(),
-            ),
+            ccusage_core::cost::PriceTable::Calculate(&pricing),
             &Diagnostics::new("amp"),
         )
         .unwrap();
@@ -652,6 +651,7 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].usage.output_tokens, 0);
         assert_eq!(entries[0].extra_total_tokens, 345);
+        assert_eq!(entries[0].cost, 0.0);
     }
 
     #[test]
@@ -781,6 +781,8 @@ mod tests {
 
     #[test]
     fn keeps_total_only_message_usage_out_of_output_tokens() {
+        ccusage_test_support::install_pricing_snapshots();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         let fixture = fs_fixture!({
             "thread.json": r#"{
                 "id":"T-thread-a",
@@ -798,10 +800,7 @@ mod tests {
         let entries = read_thread(
             &file,
             &jiff::tz::TimeZone::UTC,
-            ccusage_core::cost::PriceTable::for_map(
-                ccusage_core::cli::CostMode::Auto,
-                &ccusage_core::PricingMap::default(),
-            ),
+            ccusage_core::cost::PriceTable::Calculate(&pricing),
             &Diagnostics::new("amp"),
         )
         .unwrap();
@@ -809,6 +808,7 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].usage.output_tokens, 0);
         assert_eq!(entries[0].extra_total_tokens, 345);
+        assert_eq!(entries[0].cost, 0.0);
     }
 
     #[test]

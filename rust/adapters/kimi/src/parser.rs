@@ -590,6 +590,8 @@ mod tests {
 
     #[test]
     fn keeps_total_only_usage_out_of_output_tokens() {
+        ccusage_test_support::install_pricing_snapshots();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         let fixture = fs_fixture!({
             "sessions/group/session-a/wire.jsonl": "",
         });
@@ -615,9 +617,11 @@ mod tests {
         )
         .unwrap();
 
-        let entry = kimi_entry_to_loaded(entry, &JiffTimeZone::UTC, PriceTable::Display);
+        let entry =
+            kimi_entry_to_loaded(entry, &JiffTimeZone::UTC, PriceTable::Calculate(&pricing));
         assert_eq!(entry.usage.output_tokens, 0);
         assert_eq!(entry.extra_total_tokens, 432);
+        assert_eq!(entry.cost, 0.0);
     }
 
     #[test]
