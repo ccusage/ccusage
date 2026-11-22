@@ -191,7 +191,7 @@ fn calculate_cost_from_pricing(usage: crate::TokenUsageRaw, pricing: &Pricing) -
             .saturating_add(cache_create_5m_tokens)
             .saturating_add(cache_create_1h_tokens);
         let rates = if context_tokens > context.threshold {
-            pricing.whole_request_rates(context.rates)
+            pricing.whole_request_rates(context)
         } else {
             LongContextRates::default()
         };

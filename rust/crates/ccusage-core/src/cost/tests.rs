@@ -477,6 +477,35 @@ fn prices_two_stage_model_as_whole_request_at_long_context_rates() {
 }
 
 #[test]
+fn derived_whole_request_cache_rates_are_floored_at_the_base_rates() {
+    crate::test_support::install_pricing_snapshots();
+    let mut pricing = PricingMap::default();
+    pricing.load_json(
+        r#"{"claude-sonnet-5-5-example": {
+            "litellm_provider": "anthropic",
+            "input_cost_per_token": 1e-6,
+            "output_cost_per_token": 5e-6,
+            "input_cost_per_token_above_200k_tokens": 1.5e-6,
+            "cache_read_input_token_cost": 0.1e-6,
+            "cache_creation_input_token_cost": 2e-6,
+            "cache_creation_input_token_cost_above_1hr": 4e-6
+        }}"#,
+    );
+    let rates = pricing.find("claude-sonnet-5-5-example").unwrap();
+    let usage = crate::TokenUsageRaw {
+        cache_read_input_tokens: 250_000,
+        cache_creation: Some(crate::CacheCreationRaw {
+            ephemeral_5m_input_tokens: 25_000,
+            ephemeral_1h_input_tokens: 25_000,
+        }),
+        ..Default::default()
+    };
+
+    let cost = calculate_cost_from_pricing(usage, &rates);
+    assert!((cost - 0.175).abs() < 1e-12, "{cost}");
+}
+
+#[test]
 fn gemini_pro_previews_bill_the_same_long_context_cache_reads() {
     crate::test_support::install_pricing_snapshots();
     let pricing = PricingMap::load_embedded();

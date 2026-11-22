@@ -41,7 +41,7 @@ pub struct LongContextRates {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LongContext {
     pub(crate) threshold: u64,
-    pub rates: LongContextRates,
+    pub(crate) rates: LongContextRates,
     pub(crate) mode: LongContextMode,
 }
 
@@ -62,8 +62,8 @@ impl LongContext {
 }
 
 impl LongContextRates {
-    fn cache_rate(self, explicit: Option<f64>, multiplier: f64) -> Option<f64> {
-        explicit.or_else(|| self.input.map(|input| input * multiplier))
+    fn cache_rate(self, explicit: Option<f64>, multiplier: f64, base: f64) -> Option<f64> {
+        explicit.or_else(|| self.input.map(|input| (input * multiplier).max(base)))
     }
 
     pub(super) fn marginal(self) -> Option<LongContext> {
@@ -110,17 +110,37 @@ impl Pricing {
 
     pub(crate) fn one_hour_cache_creation_rate_above_200k(self) -> Option<f64> {
         let rates = self.long_context?.rates;
-        rates.cache_rate(rates.cache_create_1h, self.cache_defaults.write_1h_x)
+        rates.cache_rate(
+            rates.cache_create_1h,
+            self.cache_defaults.write_1h_x,
+            self.one_hour_cache_creation_rate(),
+        )
     }
 
     // NOTE(2026-11-22, #2496): Gemini's published cached-input rate doubles with its long input rate (https://ai.google.dev/gemini-api/docs/pricing). Missing cache rates must follow the selected input tier even when cached tokens alone cross the cutoff.
-    /// Completes the rates for usage assigned to a whole-request long-context tier.
-    pub fn whole_request_rates(self, rates: LongContextRates) -> LongContextRates {
+    /// Returns the selected tier's rates, filling missing cache rates for whole-request tiers.
+    pub fn whole_request_rates(self, context: LongContext) -> LongContextRates {
+        let rates = context.rates;
+        if context.mode != LongContextMode::WholeRequest {
+            return rates;
+        }
         let defaults = self.cache_defaults;
         LongContextRates {
-            cache_create: rates.cache_rate(rates.cache_create, defaults.write_x),
-            cache_create_1h: rates.cache_rate(rates.cache_create_1h, defaults.write_1h_x),
-            cache_read: rates.cache_rate(rates.cache_read, defaults.read_x),
+            cache_create: rates.cache_rate(
+                rates.cache_create,
+                defaults.write_x,
+                self.cache_creation_rate(),
+            ),
+            cache_create_1h: rates.cache_rate(
+                rates.cache_create_1h,
+                defaults.write_1h_x,
+                self.one_hour_cache_creation_rate(),
+            ),
+            cache_read: rates.cache_rate(
+                rates.cache_read,
+                defaults.read_x,
+                self.cache_read_rate_at(self.input),
+            ),
             ..rates
         }
     }

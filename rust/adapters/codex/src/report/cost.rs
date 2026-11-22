@@ -36,7 +36,7 @@ fn calculate_codex_bucket_cost(usage: &CodexUsageBucket, pricing: &crate::Pricin
     let cache_creation = pricing.cache_creation_rate();
     let rates = pricing
         .long_context
-        .map(|context| pricing.whole_request_rates(context.rates))
+        .map(|context| pricing.whole_request_rates(context))
         .unwrap_or_default();
     let long_input_rate = rates.input.unwrap_or(pricing.input);
     let long_output_rate = rates.output.unwrap_or(pricing.output);

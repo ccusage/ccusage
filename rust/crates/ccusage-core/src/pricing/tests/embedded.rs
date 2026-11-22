@@ -55,82 +55,118 @@ fn embedded_table_matches_the_rows_loaded_from_its_snapshots() {
 
 #[test]
 fn whole_request_catalogue_rows_bill_cache_at_the_long_context_rates() {
-    use crate::{
-        TokenUsageRaw,
-        cost::{EntryPricing, PriceTable, UsageGranularity, price_entry},
-        pricing::LongContextMode,
-    };
+    use crate::pricing::LongContextMode;
 
     crate::test_support::install_pricing_snapshots();
     let primary = PricingMap::load_embedded();
-    let mut failures = Vec::new();
     for catalogue in [&primary, embedded_models_dev_pricing()] {
         for row in &catalogue.rows.entries.rows {
-            let rates = row.rates();
-            let Some(tier) = rates
+            let pricing = row.rates();
+            let Some(tier) = pricing
                 .long_context
                 .filter(|tier| tier.mode == LongContextMode::WholeRequest)
             else {
                 continue;
             };
             let model = row.key.as_ref();
-            let mut pricing = PricingMap::default();
-            pricing.insert_test_pricing(model.to_owned(), rates);
-            let tokens = tier.threshold + 1;
-            let cache_rates = [
+            let resolved = pricing.whole_request_rates(tier);
+            let [read, write, write_1h] = expected_cache_multipliers(model);
+            for (bucket, actual, published, base, multiplier) in [
                 (
                     "read",
-                    TokenUsageRaw {
-                        cache_read_input_tokens: tokens,
-                        ..Default::default()
-                    },
-                    tier.rates
-                        .cache_read
-                        .or_else(|| {
-                            tier.rates
-                                .input
-                                .map(|input| input * rates.cache_defaults.read_x)
-                        })
-                        .unwrap_or_else(|| rates.cache_read_rate_at(rates.input)),
+                    resolved.cache_read,
+                    tier.rates.cache_read,
+                    pricing.cache_read_rate_at(pricing.input),
+                    read,
                 ),
                 (
                     "five-minute write",
-                    TokenUsageRaw {
-                        cache_creation_input_tokens: tokens,
-                        ..Default::default()
-                    },
-                    tier.rates
-                        .cache_create
-                        .or_else(|| {
-                            tier.rates
-                                .input
-                                .map(|input| input * rates.cache_defaults.write_x)
-                        })
-                        .unwrap_or_else(|| rates.cache_creation_rate()),
+                    resolved.cache_create,
+                    tier.rates.cache_create,
+                    pricing.cache_creation_rate(),
+                    write,
                 ),
-            ];
-            for (bucket, usage, expected_rate) in cache_rates {
-                let cost = price_entry(
-                    EntryPricing {
-                        usage,
-                        granularity: UsageGranularity::Request,
-                        reasoning_tokens: 0,
-                        reported_model: Some(model),
-                        candidates: &[(model, MatchKind::StrictExact)],
-                        stored_cost: None,
-                        timestamp: None,
-                    },
-                    PriceTable::Calculate(&pricing),
-                )
-                .cost;
-                let expected = expected_rate * tokens as f64;
-                if (cost - expected).abs() > 1e-12 {
-                    failures.push(format!("{model} {bucket}: {cost} != {expected}"));
+                (
+                    "one-hour write",
+                    resolved.cache_create_1h,
+                    tier.rates.cache_create_1h,
+                    pricing.one_hour_cache_creation_rate(),
+                    write_1h,
+                ),
+            ] {
+                let Some(input) = tier.rates.input.filter(|_| published.is_none()) else {
+                    assert_eq!(actual, published, "{model} {bucket}");
+                    continue;
+                };
+                let actual = actual.unwrap_or_else(|| panic!("{model} {bucket} has no rate"));
+                assert!(actual >= base, "{model} {bucket}: {actual} < {base}");
+                if let Some(multiplier) = multiplier {
+                    let expected = (input * multiplier).max(base);
+                    assert!(
+                        (actual - expected).abs() < 1e-15,
+                        "{model} {bucket}: {actual} != {expected}"
+                    );
                 }
             }
         }
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+fn expected_cache_multipliers(model: &str) -> [Option<f64>; 3] {
+    let model = model.rsplit('/').next().unwrap().to_ascii_lowercase();
+    let model = model
+        .find(".claude-")
+        .map_or(model.as_str(), |start| &model[start + 1..])
+        .replace('.', "-");
+    let model = model.strip_prefix("openai-").unwrap_or(&model);
+    match model {
+        model if model.starts_with("gemini-4") => [Some(0.05), None, None],
+        model if model.starts_with("gemini-") => [Some(0.1), None, None],
+        model if model.starts_with("grok-4-5") => [Some(0.15), None, None],
+        model if model.starts_with("grok-") => [Some(0.25), None, None],
+        model
+            if [
+                "gpt-6-1-sol",
+                "gpt-6-1-terra",
+                "gpt-6-2-sol",
+                "gpt-6-2-astra",
+            ]
+            .iter()
+            .any(|prefix| model.starts_with(prefix)) =>
+        {
+            [Some(0.05), Some(1.25), None]
+        }
+        model
+            if ["gpt-5-6", "gpt-5-7", "gpt-5-8", "gpt-5-9", "gpt-6"]
+                .iter()
+                .any(|prefix| model.starts_with(prefix)) =>
+        {
+            [Some(0.1), Some(1.25), None]
+        }
+        model if model.starts_with("gpt-") => [Some(0.1), Some(1.0), None],
+        model if model.starts_with("claude-") => match model {
+            model
+                if model.starts_with("claude-sonnet-5-5")
+                    || model.starts_with("claude-opus-5-5") =>
+            {
+                [Some(0.05), Some(1.25), Some(2.0)]
+            }
+            model
+                if [
+                    "claude-fable-5-1",
+                    "claude-fable-5-2",
+                    "claude-mythos-5-1",
+                    "claude-mythos-5-2",
+                ]
+                .iter()
+                .any(|prefix| model.starts_with(prefix)) =>
+            {
+                [Some(0.025), Some(1.25), Some(2.0)]
+            }
+            _ => [Some(0.1), Some(1.25), Some(2.0)],
+        },
+        _ => [None; 3],
+    }
 }
 
 #[test]
