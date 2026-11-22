@@ -20,6 +20,7 @@ type DailyStat = {
 	dailyActiveUsers: number;
 	weeklyActiveUsers: number;
 	monthlyActiveUsers: number;
+	samplingObserved?: boolean;
 	byPlatform: { os: string; arch: string; users: number }[];
 	byVersion: { version: string; users: number }[];
 };
@@ -69,6 +70,9 @@ function parseStats(value: unknown): PublicStats | null {
 		) {
 			return null;
 		}
+		if (entry.samplingObserved !== undefined && typeof entry.samplingObserved !== 'boolean') {
+			return null;
+		}
 		if (!Array.isArray(entry.byPlatform) || !Array.isArray(entry.byVersion)) return null;
 		const byPlatform: DailyStat['byPlatform'] = [];
 		for (const platform of entry.byPlatform) {
@@ -94,6 +98,7 @@ function parseStats(value: unknown): PublicStats | null {
 			dailyActiveUsers: entry.dailyActiveUsers,
 			weeklyActiveUsers: entry.weeklyActiveUsers,
 			monthlyActiveUsers: entry.monthlyActiveUsers,
+			samplingObserved: entry.samplingObserved,
 			byPlatform,
 			byVersion,
 		});
@@ -332,12 +337,8 @@ async function startDashboard(): Promise<void> {
 			ariaLabel:
 				'Daily, weekly and monthly active environments. Exact values are in the data table below.',
 		});
-		showEmptyChart(
-			chart.hasActivity
-				? 'Missing daily aggregates are gaps, not zero activity.'
-				: 'Activity will appear here after the first daily aggregate.',
-		);
 		chartEmpty.hidden = chart.hasActivity;
+		chartEmpty.textContent = 'Activity will appear here after the first daily aggregate.';
 		renderTable(tableBody, chart.rows);
 	}
 
@@ -383,6 +384,22 @@ async function startDashboard(): Promise<void> {
 		const parsed = parseStats(await response.json());
 		if (!parsed) throw new Error('Invalid statistics response');
 		stats = parsed;
+		const quality = element<HTMLDivElement>('quality');
+		const inconsistent = stats.days.some(
+			(day) =>
+				day.dailyActiveUsers > day.weeklyActiveUsers ||
+				day.weeklyActiveUsers > day.monthlyActiveUsers,
+		);
+		const sampled = stats.days.some((day) => day.samplingObserved === true);
+		quality.hidden = !inconsistent && !sampled;
+		quality.textContent = [
+			sampled ? 'Some counts were read from sampled data and may be incomplete.' : '',
+			inconsistent
+				? 'Some daily, weekly and monthly counts are inconsistent. Treat these figures as incomplete; inspect the aggregate JSON for the affected dates.'
+				: '',
+		]
+			.filter(Boolean)
+			.join(' ');
 		const latest = stats.days.at(-1);
 		if (!latest) {
 			status.textContent =

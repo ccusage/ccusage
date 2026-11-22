@@ -12,7 +12,8 @@ const versionSchema = z.object({ version: z.string(), users: count });
 const platformRowSchema = z.object({ os: z.string(), arch: z.string(), users: usersSchema });
 const versionRowSchema = z.object({ version: z.string(), users: usersSchema });
 const commandRowSchema = z.object({ command: z.string(), users: usersSchema });
-const countRowSchema = z.object({ users: usersSchema });
+const countRowSchema = z.object({ users: usersSchema, maxSampleInterval: usersSchema });
+const samplingRowSchema = z.object({ maxSampleInterval: usersSchema }).passthrough();
 const publicDaySchema = z.object({
 	date: z.iso.date(),
 	generatedAt: z.iso.datetime({ offset: true }),
@@ -21,6 +22,7 @@ const publicDaySchema = z.object({
 	monthlyActiveUsers: count,
 	byPlatform: z.array(platformSchema),
 	byVersion: z.array(versionSchema),
+	samplingObserved: z.boolean().optional(),
 });
 const publicStatsSchema = z.object({
 	generatedAt: z.iso.datetime({ offset: true }),
@@ -35,6 +37,7 @@ const dailyRollupSchema = z.object({
 	byPlatform: z.array(platformSchema),
 	byVersion: z.array(versionSchema),
 	byCommand: z.array(z.object({ command: z.string(), users: count })),
+	samplingObserved: z.boolean().optional(),
 });
 
 export type PublicDailyRollup = z.infer<typeof publicDaySchema>;
@@ -43,7 +46,7 @@ export type PublicStats = z.infer<typeof publicStatsSchema>;
 export type RollupBindings = {
 	ANALYTICS: { query(request: AnalyticsSQLQuery): Promise<{ data: unknown[] }> };
 	ROLLUPS: {
-		get(key: string): Promise<string | null>;
+		get(keys: string[]): Promise<Map<string, string | null>>;
 		put(key: string, value: string): Promise<unknown>;
 	};
 };
@@ -73,29 +76,73 @@ export async function writeDailyRollup(
 	date: string,
 	now: Date,
 ): Promise<DailyRollup> {
+	const [rollup] = await writeRollups(env, [date], now);
+	if (!rollup) throw new Error('The daily rollup was not created');
+	return rollup;
+}
+
+export async function writeRecentRollups(
+	env: RollupBindings,
+	latestDate: string,
+	now: Date,
+): Promise<DailyRollup[]> {
+	if (!z.iso.date().safeParse(latestDate).success) {
+		throw new Error('The rollup date must be a completed UTC day');
+	}
+	const latestDateMs = Date.parse(`${latestDate}T00:00:00Z`);
+	const dates = [2, 1, 0].map((daysAgo) => isoDate(latestDateMs - daysAgo * DAY_MS));
+	return writeRollups(env, dates, now);
+}
+
+async function writeRollups(
+	env: RollupBindings,
+	dates: string[],
+	now: Date,
+): Promise<DailyRollup[]> {
 	const today = now.toISOString().slice(0, 10);
-	if (!z.iso.date().safeParse(date).success || date >= today) {
+	if (dates.some((date) => !z.iso.date().safeParse(date).success || date >= today)) {
 		throw new Error('The rollup date must be a completed UTC day');
 	}
 
-	const rollup = await buildDailyRollup(env.ANALYTICS, date, now);
-	const storedSnapshot = await env.ROLLUPS.get(PUBLIC_STATS_KEY);
-	const previousDays = storedSnapshot === null ? [] : parsePublicStats(storedSnapshot, today).days;
-	const cutoff = isoDate(Date.parse(`${today}T00:00:00Z`) - MAX_PUBLIC_DAYS * DAY_MS);
-	const daysByDate = new Map(
-		previousDays.filter((day) => day.date >= cutoff).map((day) => [day.date, day]),
+	const rollups = await Promise.all(
+		dates.map((date) => buildDailyRollup(env.ANALYTICS, date, now)),
 	);
-	if (date >= cutoff) daysByDate.set(date, toPublicDailyRollup(rollup));
-	const days = Array.from(daysByDate.values())
-		.sort((left, right) => left.date.localeCompare(right.date))
-		.slice(-MAX_PUBLIC_DAYS);
+	await Promise.all(
+		rollups.map((rollup) =>
+			env.ROLLUPS.put(`daily/${rollup.date}.json`, `${JSON.stringify(rollup, null, '\t')}\n`),
+		),
+	);
+	await publishPublicStats(env.ROLLUPS, rollups, today);
+	return rollups;
+}
+
+async function publishPublicStats(
+	rollups: RollupBindings['ROLLUPS'],
+	updatedRollups: DailyRollup[],
+	today: string,
+): Promise<void> {
+	const cutoff = isoDate(Date.parse(`${today}T00:00:00Z`) - MAX_PUBLIC_DAYS * DAY_MS);
+	const dates = Array.from({ length: MAX_PUBLIC_DAYS }, (_, index) =>
+		isoDate(Date.parse(`${cutoff}T00:00:00Z`) + index * DAY_MS),
+	);
+	const keys = dates.map((date) => `daily/${date}.json`);
+	const storedRollups = await rollups.get(keys);
+	const updatedByDate = new Map(updatedRollups.map((rollup) => [rollup.date, rollup]));
+	const days: PublicDailyRollup[] = [];
+	for (const date of dates) {
+		const key = `daily/${date}.json`;
+		const updatedRollup = updatedByDate.get(date);
+		const storedRollup = storedRollups.get(key);
+		if (!updatedRollup && storedRollup == null) continue;
+		const rollup = updatedRollup ?? dailyRollupSchema.parse(JSON.parse(storedRollup ?? ''));
+		if (rollup.date !== date) throw new Error('Daily rollup archive date does not match its key');
+		days.push(toPublicDailyRollup(rollup));
+	}
 	const latestDay = days.at(-1);
-	await env.ROLLUPS.put(`daily/${date}.json`, `${JSON.stringify(rollup, null, '\t')}\n`);
 	if (latestDay) {
 		const snapshot = publicStatsSchema.parse({ generatedAt: latestDay.generatedAt, days });
-		await env.ROLLUPS.put(PUBLIC_STATS_KEY, JSON.stringify(snapshot));
+		await rollups.put(PUBLIC_STATS_KEY, JSON.stringify(snapshot));
 	}
-	return rollup;
 }
 
 function toPublicDailyRollup(rollup: DailyRollup): PublicDailyRollup {
@@ -107,6 +154,7 @@ function toPublicDailyRollup(rollup: DailyRollup): PublicDailyRollup {
 		monthlyActiveUsers: rollup.monthlyActiveUsers,
 		byPlatform: rollup.byPlatform,
 		byVersion: rollup.byVersion,
+		...(rollup.samplingObserved === undefined ? {} : { samplingObserved: rollup.samplingObserved }),
 	};
 }
 
@@ -128,12 +176,20 @@ async function buildDailyRollup(
 	return {
 		date,
 		generatedAt: now.toISOString(),
-		dailyActiveUsers: daily,
-		weeklyActiveUsers: weekly,
-		monthlyActiveUsers: monthly,
-		byPlatform,
-		byVersion,
-		byCommand,
+		dailyActiveUsers: daily.users,
+		weeklyActiveUsers: weekly.users,
+		monthlyActiveUsers: monthly.users,
+		byPlatform: byPlatform.rows,
+		byVersion: byVersion.rows,
+		byCommand: byCommand.rows,
+		samplingObserved: [
+			daily.samplingObserved,
+			weekly.samplingObserved,
+			monthly.samplingObserved,
+			byPlatform.samplingObserved,
+			byVersion.samplingObserved,
+			byCommand.samplingObserved,
+		].some(Boolean),
 	};
 }
 
@@ -147,15 +203,15 @@ function window(endMs: number, days: number): AnalyticsWindow {
 async function distinctUsers(
 	analytics: RollupBindings['ANALYTICS'],
 	{ start, end }: AnalyticsWindow,
-): Promise<number> {
+): Promise<{ users: number; samplingObserved: boolean }> {
 	const result = await analytics.query({
-		query: `SELECT count(DISTINCT index1) AS users FROM ${DATASET} WHERE timestamp >= $start AND timestamp < $end`,
+		query: `SELECT count(DISTINCT index1) AS users, approx_max(sampleInterval) AS maxSampleInterval FROM ${DATASET} WHERE timestamp >= $start AND timestamp < $end`,
 		params: { start, end },
 	});
 	const rows = z.array(countRowSchema).length(1).parse(result.data);
 	const row = rows[0];
 	if (!row) throw new Error('Analytics Engine returned no count row');
-	return row.users;
+	return { users: row.users, samplingObserved: row.maxSampleInterval > 1 };
 }
 
 async function breakdown<Row>(
@@ -164,12 +220,14 @@ async function breakdown<Row>(
 	columns: string,
 	groupBy: string,
 	rowSchema: z.ZodType<Row>,
-): Promise<Row[]> {
+): Promise<{ rows: Row[]; samplingObserved: boolean }> {
 	const result = await analytics.query({
-		query: `SELECT ${columns}, count(DISTINCT index1) AS users FROM ${DATASET} WHERE timestamp >= $start AND timestamp < $end GROUP BY ${groupBy} ORDER BY users DESC`,
+		query: `SELECT ${columns}, count(DISTINCT index1) AS users, approx_max(sampleInterval) AS maxSampleInterval FROM ${DATASET} WHERE timestamp >= $start AND timestamp < $end GROUP BY ${groupBy} ORDER BY users DESC`,
 		params: { start, end },
 	});
-	return z.array(rowSchema).parse(result.data);
+	const samplingRows = z.array(samplingRowSchema).parse(result.data);
+	const rows = z.array(rowSchema).parse(result.data);
+	return { rows, samplingObserved: samplingRows.some((row) => row.maxSampleInterval > 1) };
 }
 
 function isoDate(ms: number): string {

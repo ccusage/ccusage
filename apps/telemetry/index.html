@@ -61,6 +61,7 @@
 			<div id="status" class="notice" role="status" aria-live="polite">
 				Loading public statistics…
 			</div>
+			<div id="quality" class="notice" role="status" aria-live="polite" hidden></div>
 			<section id="statistics" aria-label="Public activity statistics">
 				<p id="updated" class="meta"></p>
 				<div class="cards">
@@ -139,6 +140,11 @@
 					person. Multiple devices, reset IDs, opt-outs, blocked requests and failed sends affect
 					the counts. These are adoption indicators, not an exact population or a guaranteed lower
 					bound.
+				</p>
+				<p>
+					Analytics Engine can sample data, especially over longer windows. Sampling can omit
+					activity, and its interval does not provide an error bound. The dashboard flags observed
+					sampling and inconsistent daily, weekly or monthly counts without changing the figures.
 				</p>
 				<p>
 					The CLI sends at most one ping per UTC day with an installation ID, version, OS,

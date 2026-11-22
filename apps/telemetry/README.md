@@ -15,7 +15,7 @@ The Worker validates the ping and writes its six fields to the `ccusage_telemetr
 
 ## Daily rollups
 
-Raw pings only live as long as Analytics Engine retains them, so a Cron Trigger at 00:15 UTC aggregates the previous UTC day and writes it to the `ccusage-telemetry-rollups` KV namespace as `daily/YYYY-MM-DD.json`. These small files are what keeps the long-term trend; rerunning a day replaces its file.
+Raw pings only live as long as Analytics Engine retains them, so a Cron Trigger at 00:15 UTC recomputes the previous three completed UTC days and writes them to the `ccusage-telemetry-rollups` KV namespace as `daily/YYYY-MM-DD.json`. These archives preserve the long-term trend; rerunning a day replaces its file. The public snapshot is rebuilt from the last 90 archive keys in one bulk KV read, overlaid with the current run's results so publication does not depend on immediate read-after-write consistency. A corrupt public snapshot is never used as an input.
 
 ```json
 {
@@ -24,6 +24,7 @@ Raw pings only live as long as Analytics Engine retains them, so a Cron Trigger 
 	"dailyActiveUsers": 10,
 	"weeklyActiveUsers": 25,
 	"monthlyActiveUsers": 42,
+	"samplingObserved": false,
 	"byPlatform": [{ "os": "macos", "arch": "aarch64", "users": 7 }],
 	"byVersion": [{ "version": "20.0.38", "users": 10 }],
 	"byCommand": [{ "command": "daily", "users": 6 }]
@@ -31,6 +32,10 @@ Raw pings only live as long as Analytics Engine retains them, so a Cron Trigger 
 ```
 
 The weekly and monthly counts are distinct users over the 7 and 30 days ending that date. They are computed at rollup time because they cannot be rebuilt from daily files once the raw pings expire.
+
+Each new rollup records `samplingObserved` from `APPROX_MAX(sampleInterval)` in its six Analytics SQL queries. The installation ID is reused across days and is the dimension being counted; it is not a unique index per event. Sampling intervals are diagnostic metadata, not a multiplier for distinct IDs or an error estimate. Older archives without the metadata remain valid. The dashboard warns about observed sampling and inconsistent nested-window counts without clamping the returned values.
+
+The three-day lookback recovers recent missed runs; longer outages remain visible as gaps. Rejected scheduled promises appear in Cloudflare's Cron Trigger Past Events status. The `Check telemetry rollup` GitHub workflow checks the public snapshot daily at 02:23 UTC, after its one-hour edge cache can refresh, and fails when yesterday's aggregate is missing. It can also be dispatched manually and requires no Cloudflare credentials. Request logging stays disabled.
 
 The rollup reads the dataset through an Analytics SQL binding, so it needs no API token. Keep this account on Workers Free: KV operations fail at their free quota rather than billing for overages. No R2 subscription is required. That binding has no local simulation, which means `cf dev` connects to Cloudflare and requires you to be logged in; the Node tests cover the rollup without it.
 
@@ -85,8 +90,8 @@ ORDER BY users DESC;
 
 ## Public dashboard
 
-`GET /` serves the dashboard. Vite bundles its browser TypeScript, TanStack Charts, and the documentation site's logo and font as same-origin static assets. The page uses no CDN scripts or page analytics. `GET /v1/stats` reads a single cached snapshot of the last 90 completed UTC days from the private KV namespace. It validates the stored data and publishes only dates, aggregation timestamps, daily/weekly/monthly active ID counts, and platform/version aggregates. It never returns installation IDs or command breakdowns.
+`GET /` serves the dashboard. Vite bundles its browser TypeScript, TanStack Charts, and the documentation site's logo and font as same-origin static assets. The page uses no CDN scripts or page analytics. `GET /v1/stats` reads a single cached snapshot of the last 90 completed UTC days from the private KV namespace. It validates the stored data and publishes only dates, aggregation timestamps, daily/weekly/monthly active ID counts, sampling metadata, and platform/version aggregates. It never returns installation IDs or command breakdowns.
 
-Successful API responses are cached with the Workers Cache API for one hour per edge location and in browsers for five minutes. Query strings share one cache key. Missing days remain gaps; invalid data or a KV failure returns an uncacheable 503. Public cache misses read one KV value. The daily job writes a dated archive and refreshes the bounded public snapshot, about two writes per day. The dashboard distinguishes no data, failed loading and stale aggregates, and provides a data table and a JSON download alongside its chart.
+Successful API responses are cached with the Workers Cache API for one hour per edge location and in browsers for five minutes. Query strings share one cache key. Missing days remain gaps; invalid data or a KV failure returns an uncacheable 503. Public cache misses read one KV value. A scheduled run uses 18 SQL queries, three archive writes, one bulk read of 90 archive keys and one public snapshot write. Bulk reads count as one Worker operation but consume one KV read per key. The dashboard distinguishes no data, failed loading, stale aggregates and sampling warnings, and provides a data table and a JSON download alongside its chart.
 
 There is no public KV namespace or SQL endpoint. Do not add identifiers or raw pings to the public schema. Local development shows the empty state until the local KV namespace contains a public snapshot.
