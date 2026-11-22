@@ -1,6 +1,6 @@
 ---
 title: 'ccusage is now 2.5× faster with 2.7× less memory'
-description: 'Two weeks and 175 pull requests later, every ccusage report runs in well under half the time and memory it used to, and the pricing is more accurate. Here is what changed and how we measured it.'
+description: 'Two weeks and 175 pull requests later, ccusage reports run about 2.5× faster on average with 2.7× less peak memory, and the pricing is more accurate. Here is what changed and how we measured it.'
 date: 2026-11-22
 image: /blog/rust-refactor-og.png
 ---
@@ -57,7 +57,7 @@ Speed came first, and it cost some binary size. The npm download for Linux x64 g
 
 | Binary                         | v20.0.51 |     Now |   Change |
 | ------------------------------ | -------: | ------: | -------: |
-| Linux x64                      |  5.32 MB | 7.16 MB |     +34% |
+| Linux x64                      |  5.32 MB | 7.16 MB |   +34.5% |
 | Linux x64, gzip (npm download) |  2.68 MB | 3.57 MB | +0.90 MB |
 | macOS arm64                    |  3.88 MB | 5.71 MB |     +47% |
 | macOS arm64, gzip              |  2.27 MB | 3.18 MB | +0.91 MB |

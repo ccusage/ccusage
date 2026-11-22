@@ -9,4 +9,4 @@ description: News, releases, and deep dives from the ccusage project.
 
 _November 22, 2026_
 
-Two weeks and 175 pull requests later, every ccusage report runs in well under half the time and memory it used to, and the pricing is more accurate. Here is what changed and how we measured it.
+Two weeks and 175 pull requests later, ccusage reports run about 2.5× faster on average with 2.7× less peak memory, and the pricing is more accurate. Here is what changed and how we measured it.
