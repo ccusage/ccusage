@@ -616,12 +616,10 @@ pub(super) fn event_to_loaded(
         speed: None,
         cache_creation: None,
     };
-    let additional =
-        AdditionalTokens::from_total(usage, event.reasoning_tokens, event.total_tokens);
-    let (report_usage, _) = additional.for_report(usage);
-    let extra_total_tokens = event
-        .total_tokens
-        .saturating_sub(ccusage_core::total_usage_tokens(report_usage));
+    let mut additional = AdditionalTokens::from_total(usage, 0, event.total_tokens);
+    additional.reasoning = event.reasoning_tokens.min(additional.report_remainder);
+    additional.report_remainder -= additional.reasoning;
+    let (report_usage, extra_total_tokens) = additional.for_report(usage);
     let names = model_candidates(&event.model);
     let candidates: Vec<_> = names
         .iter()
@@ -851,6 +849,33 @@ mod tests {
         );
         assert_eq!(entry.usage.output_tokens, 654);
         assert_eq!(entry.extra_total_tokens, 0);
+    }
+
+    #[test]
+    fn caps_reported_reasoning_at_tokens_remaining_in_the_total() {
+        for output in [0, 3] {
+            let event = build_usage(
+                Some("gemini-test"),
+                GeminiTokens {
+                    input: 10,
+                    output,
+                    thoughts: 7,
+                    total: Some(14),
+                    ..GeminiTokens::default()
+                },
+                normalize_session_input,
+                None,
+            )
+            .unwrap();
+
+            let entry = event_to_loaded(
+                event.at("session", TimestampMs::UNIX_EPOCH),
+                &JiffTimeZone::UTC,
+                PriceTable::Display,
+            );
+            assert_eq!(entry.usage.output_tokens, output);
+            assert_eq!(entry.extra_total_tokens, 4 - output);
+        }
     }
 
     #[test]
