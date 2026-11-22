@@ -11,7 +11,7 @@ use smallvec::SmallVec;
 
 use crate::{
     CodexGroup, CodexServiceTier, CodexTokenUsageEvent, Result,
-    cli::{AgentReportKind, SharedArgs},
+    cli::{AgentReportKind, SharedArgs, WeekDay},
     fast::FxHashMap,
     merge_codex_service_tiers,
 };
@@ -495,6 +495,7 @@ impl<'a> CodexDedupe<'a> {
         self,
         shared: &SharedArgs,
         kind: AgentReportKind,
+        start_of_week: WeekDay,
     ) -> Result<BTreeMap<String, CodexGroup>> {
         let models = self
             .models
@@ -520,9 +521,13 @@ impl<'a> CodexDedupe<'a> {
                     .values
                     .get(key.model.index())
                     .ok_or_else(|| crate::cli_error("missing interned Codex model"))?;
-                let Some(period) =
-                    codex_period_for(key.timestamp, attribution.session, kind, &window)
-                else {
+                let Some(period) = codex_period_for(
+                    key.timestamp,
+                    attribution.session,
+                    kind,
+                    start_of_week,
+                    &window,
+                ) else {
                     continue;
                 };
                 accumulate_codex_usage_into_group(

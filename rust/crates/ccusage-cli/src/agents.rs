@@ -6,7 +6,6 @@ pub struct AgentSpec {
     pub name: &'static str,
     pub label: &'static str,
     pub report_label: &'static str,
-    pub reports: &'static [AgentReportKind],
     pub extra_commands: &'static [AgentCommandSpec],
 }
 
@@ -143,8 +142,7 @@ impl AgentSpec {
     }
 
     pub fn accepts(&self, command: &str) -> bool {
-        self.extra_command(command).is_some()
-            || AgentReportKind::from_name(command).is_some_and(|kind| self.reports.contains(&kind))
+        self.extra_command(command).is_some() || AgentReportKind::from_name(command).is_some()
     }
 }
 
@@ -189,7 +187,6 @@ macro_rules! agents {
                 name: $own_name,
                 label: $own_label,
                 report_label: agents!(@report_label $own_label $(, $own_report_label)?),
-                reports: AgentId::$own.focused_reports(),
                 extra_commands: $own_extra,
             },
             $(AgentSpec {
@@ -197,7 +194,6 @@ macro_rules! agents {
                 name: $name,
                 label: $label,
                 report_label: agents!(@report_label $label $(, $report_label)?),
-                reports: AgentId::$id.focused_reports(),
                 extra_commands: $extra,
             },)*
         ];
@@ -230,19 +226,6 @@ agents! {
 }
 
 impl AgentId {
-    const fn focused_reports(self) -> &'static [AgentReportKind] {
-        if matches!(self, Self::Codex) {
-            // NOTE(2026-11-22, #2501): The Codex runner hard-codes Monday when grouping weeks. Keep focused weekly unavailable until it can honor the week-start option.
-            &[
-                AgentReportKind::Daily,
-                AgentReportKind::Monthly,
-                AgentReportKind::Session,
-            ]
-        } else {
-            &AgentReportKind::ALL
-        }
-    }
-
     pub fn from_colon_command(command: &str) -> Option<(Self, &str)> {
         let (name, report) = command.split_once(':')?;
         let agent = Self::from_name(name)?;
@@ -296,7 +279,7 @@ mod tests {
         assert!(claude.accepts("blocks"));
         let codex = AgentId::Codex.spec();
         assert!(codex.accepts("session"));
-        assert!(!codex.accepts("weekly"));
+        assert!(codex.accepts("weekly"));
         assert!(!codex.accepts("blocks"));
         assert!(!codex.accepts("yearly"));
     }
@@ -311,7 +294,10 @@ mod tests {
             AgentId::from_colon_command("claude:statusline"),
             Some((AgentId::Claude, "statusline"))
         );
-        assert_eq!(AgentId::from_colon_command("codex:weekly"), None);
+        assert_eq!(
+            AgentId::from_colon_command("codex:weekly"),
+            Some((AgentId::Codex, "weekly"))
+        );
         assert_eq!(AgentId::from_colon_command("unknown:daily"), None);
     }
 }

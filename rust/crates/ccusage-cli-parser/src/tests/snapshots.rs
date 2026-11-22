@@ -293,8 +293,8 @@ fn snapshots_cli_parse_error_guidance() {
             ]),
         }),
         json!({
-            "args": ["ccusage", "codex", "weekly"],
-            "error": parse_error(&["ccusage", "codex", "weekly"]),
+            "args": ["ccusage", "codex", "yearly"],
+            "error": parse_error(&["ccusage", "codex", "yearly"]),
         }),
     ];
 

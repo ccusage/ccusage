@@ -29,6 +29,7 @@
 			"last_options"
 		],
 		"codex_period_options": ["codex_options", "last_options"],
+		"codex_weekly_options": ["codex_options", "all_weekly_options", "last_options"],
 		"codex_session_options": ["codex_options", "session_options"],
 		"opencode_period_options": ["agent_options", "opencode_options", "last_options"],
 		"opencode_weekly_options": [

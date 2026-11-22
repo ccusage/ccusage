@@ -1,6 +1,6 @@
 # Weekly Usage
 
-`ccusage weekly` groups usage by week across every detected source. Use `ccusage <agent> weekly` to focus on one source. For Codex, use `ccusage weekly --by-agent` to see its weekly rows in the unified report.
+`ccusage weekly` groups usage by week across every detected source. Use `ccusage <agent> weekly` to focus on one source.
 
 ## Basic Usage
 
@@ -9,6 +9,7 @@ Show all weekly usage:
 ```bash
 ccusage weekly
 ccusage claude weekly
+ccusage codex weekly
 ccusage opencode weekly
 ```
 

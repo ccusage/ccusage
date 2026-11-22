@@ -1,0 +1,117 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage codex weekly --offline --json --mode display
+---
+exit: 0
+--- stdout ---
+{
+  "totals": {
+    "cacheCreationTokens": 300,
+    "cacheReadTokens": 460950,
+    "costUSD": 0,
+    "inputTokens": 131346,
+    "outputTokens": 5898,
+    "reasoningOutputTokens": 149,
+    "totalTokens": 598494
+  },
+  "weekly": [
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "costUSD": 0,
+      "inputTokens": 100,
+      "models": {
+        "gpt-5": {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "inputTokens": 100,
+          "isFallback": true,
+          "outputTokens": 50,
+          "reasoningOutputTokens": 0,
+          "totalTokens": 150
+        }
+      },
+      "outputTokens": 50,
+      "reasoningOutputTokens": 0,
+      "totalTokens": 150,
+      "week": "2025-12-22"
+    },
+    {
+      "cacheCreationTokens": 300,
+      "cacheReadTokens": 460950,
+      "costUSD": 0,
+      "inputTokens": 131246,
+      "models": {
+        "codex-mystery-1": {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "inputTokens": 300,
+          "isFallback": false,
+          "outputTokens": 30,
+          "reasoningOutputTokens": 0,
+          "totalTokens": 330
+        },
+        "gpt-5": {
+          "cacheCreationTokens": 300,
+          "cacheReadTokens": 2290,
+          "inputTokens": 21226,
+          "isFallback": false,
+          "outputTokens": 2380,
+          "reasoningOutputTokens": 59,
+          "totalTokens": 26196
+        },
+        "gpt-5-codex": {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 5970,
+          "inputTokens": 4100,
+          "isFallback": true,
+          "outputTokens": 1007,
+          "reasoningOutputTokens": 5,
+          "totalTokens": 11077
+        },
+        "gpt-5-mini": {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "inputTokens": 200,
+          "isFallback": false,
+          "outputTokens": 20,
+          "reasoningOutputTokens": 0,
+          "totalTokens": 220
+        },
+        "gpt-5.2-codex": {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 40,
+          "inputTokens": 600,
+          "isFallback": true,
+          "outputTokens": 64,
+          "reasoningOutputTokens": 0,
+          "totalTokens": 704
+        },
+        "gpt-5.5": {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 452600,
+          "inputTokens": 104300,
+          "isFallback": false,
+          "outputTokens": 2290,
+          "reasoningOutputTokens": 80,
+          "totalTokens": 559190
+        },
+        "gpt-6.1-sol": {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 50,
+          "inputTokens": 520,
+          "isFallback": false,
+          "outputTokens": 57,
+          "reasoningOutputTokens": 5,
+          "totalTokens": 627
+        }
+      },
+      "outputTokens": 5848,
+      "reasoningOutputTokens": 149,
+      "totalTokens": 598344,
+      "week": "2025-12-29"
+    }
+  ]
+}
+
+--- stderr ---

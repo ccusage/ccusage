@@ -67,8 +67,8 @@ fn rejects_start_of_week_outside_weekly_reports() {
 }
 
 #[test]
-fn every_agent_except_the_fixed_week_codex_runner_accepts_a_week_start() {
-    for agent in AGENTS.iter().filter(|agent| agent.name != "codex") {
+fn every_agent_accepts_a_week_start() {
+    for agent in AGENTS {
         let command = parse(&["ccusage", agent.name, "weekly", "-w", "friday"]);
         assert_eq!(
             command.period(),
@@ -81,10 +81,7 @@ fn every_agent_except_the_fixed_week_codex_runner_accepts_a_week_start() {
 
 #[test]
 fn focused_week_starts_resolve_config_before_flags_for_every_weekly_agent() {
-    for agent in AGENTS
-        .iter()
-        .filter(|agent| agent.reports.contains(&AgentReportKind::Weekly))
-    {
+    for agent in AGENTS {
         let config = TestConfig {
             weekly_start: Some(WeekDay::Tuesday),
             ..TestConfig::default()

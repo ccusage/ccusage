@@ -48,6 +48,7 @@ fn load_rows(request: &LoadRequest<'_>) -> Result<LoadedRows> {
         &sources,
         shared,
         request.kind.report_kind(),
+        ccusage_core::cli::WeekDay::Monday,
         pricing,
         &diagnostics,
     )?;

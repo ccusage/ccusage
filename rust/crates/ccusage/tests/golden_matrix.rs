@@ -184,9 +184,7 @@ fn codebuff_timestamp_ties_pin_order_and_replay_winner() {
 
 #[test]
 fn focused_week_start_controls_buckets_and_last_together() {
-    for &AgentMatrix { agent, seed, .. } in AGENTS
-        .iter()
-        .filter(|matrix| !matches!(matrix.agent, "claude" | "codex"))
+    for &AgentMatrix { agent, seed, .. } in AGENTS.iter().filter(|matrix| matrix.agent != "claude")
     {
         let fixture = Fixture::new();
         let seeded = seed(fixture.root());

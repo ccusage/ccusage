@@ -23,10 +23,7 @@ fn published_example_uses_valid_config_keys() {
 #[test]
 fn schema_accepts_week_starts_at_each_weekly_config_layer() {
     let schema = generated_schema();
-    for agent in ccusage_cli::AGENTS
-        .iter()
-        .filter(|agent| agent.name != "codex")
-    {
+    for agent in ccusage_cli::AGENTS {
         let config = json!({
             "defaults": { "startOfWeek": "monday" },
             "commands": {
@@ -159,7 +156,7 @@ fn schema_option_sets_expose_expected_keys() {
     assert_schema_properties(
         &schema,
         &["codex", "defaults"],
-        &with_keys(&shared, &["speed"]),
+        &with_keys(&shared, &["speed", "startOfWeek"]),
     );
     assert_schema_properties(
         &schema,

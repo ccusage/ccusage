@@ -79,6 +79,7 @@ pub(super) fn codex_period_for(
     timestamp: crate::TimestampMs,
     session: StringId,
     kind: AgentReportKind,
+    start_of_week: WeekDay,
     window: &ccusage_core::ReportWindow,
 ) -> Option<CodexPeriod> {
     let date = ccusage_core::date_at(timestamp, window.timezone());
@@ -87,7 +88,7 @@ pub(super) fn codex_period_for(
     }
     Some(match kind {
         AgentReportKind::Daily => CodexPeriod::Date(date),
-        AgentReportKind::Weekly => CodexPeriod::Date(date.week_start(WeekDay::Monday)),
+        AgentReportKind::Weekly => CodexPeriod::Date(date.week_start(start_of_week)),
         AgentReportKind::Monthly => CodexPeriod::Date(date.month_start()),
         AgentReportKind::Session => CodexPeriod::Session(session),
     })

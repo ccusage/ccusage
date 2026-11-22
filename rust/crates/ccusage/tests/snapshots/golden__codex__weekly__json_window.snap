@@ -1,0 +1,82 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage codex weekly --offline --json --since 20251231 --until 20260101
+---
+exit: 0
+--- stdout ---
+{
+  "totals": {
+    "cacheCreationTokens": 300,
+    "cacheReadTokens": 9250,
+    "costUSD": 0.038784875,
+    "inputTokens": 8500,
+    "outputTokens": 1805,
+    "reasoningOutputTokens": 94,
+    "totalTokens": 19855,
+    "unpricedModels": [
+      "codex-mystery-1"
+    ]
+  },
+  "weekly": [
+    {
+      "cacheCreationTokens": 300,
+      "cacheReadTokens": 9250,
+      "costUSD": 0.038784875,
+      "inputTokens": 8500,
+      "models": {
+        "codex-mystery-1": {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "inputTokens": 300,
+          "isFallback": false,
+          "missingPricing": true,
+          "outputTokens": 30,
+          "reasoningOutputTokens": 0,
+          "totalTokens": 330
+        },
+        "gpt-5": {
+          "cacheCreationTokens": 300,
+          "cacheReadTokens": 2040,
+          "inputTokens": 1400,
+          "isFallback": false,
+          "outputTokens": 374,
+          "reasoningOutputTokens": 59,
+          "totalTokens": 4114
+        },
+        "gpt-5-codex": {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 5970,
+          "inputTokens": 4100,
+          "isFallback": true,
+          "outputTokens": 1007,
+          "reasoningOutputTokens": 5,
+          "totalTokens": 11077
+        },
+        "gpt-5.2-codex": {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 40,
+          "inputTokens": 600,
+          "isFallback": true,
+          "outputTokens": 64,
+          "reasoningOutputTokens": 0,
+          "totalTokens": 704
+        },
+        "gpt-5.5": {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 1200,
+          "inputTokens": 2100,
+          "isFallback": false,
+          "outputTokens": 330,
+          "reasoningOutputTokens": 30,
+          "totalTokens": 3630
+        }
+      },
+      "outputTokens": 1805,
+      "reasoningOutputTokens": 94,
+      "totalTokens": 19855,
+      "week": "2025-12-29"
+    }
+  ]
+}
+
+--- stderr ---

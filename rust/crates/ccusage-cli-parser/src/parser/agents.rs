@@ -253,9 +253,12 @@ fn parse_codex_command(
     let agent = StandardAgent::Codex;
     let mut options = config.agent_options(agent.spec().name);
     let kind = parse_agent_report_kind(parser, agent)?;
+    let mut start_of_week = weekly_start(config, kind);
     let mut session_id = None;
     while parser.peek().is_some() {
-        if parse_shared_arg_for_command(parser, &mut shared)? {
+        if parse_shared_arg_for_command(parser, &mut shared)?
+            || parse_week_start(parser, kind, &mut start_of_week)?
+        {
             continue;
         }
         match parser.next_flag()?.as_str() {
@@ -270,6 +273,7 @@ fn parse_codex_command(
         StandardAgent::Codex,
         AgentCommandArgs {
             session_id,
+            start_of_week,
             ..agent_command_args(shared, kind).with_options(options)
         },
     ))
@@ -376,9 +380,7 @@ fn parse_agent_report_kind(
         return Ok(AgentReportKind::Daily);
     };
     let spec = agent.spec();
-    if let Some(kind) =
-        AgentReportKind::from_name(command).filter(|kind| spec.reports.contains(kind))
-    {
+    if let Some(kind) = AgentReportKind::from_name(command) {
         parser.next();
         return Ok(kind);
     }

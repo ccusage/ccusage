@@ -53,6 +53,7 @@ pub fn run(args: AgentCommandArgs) -> Result<()> {
         &sources,
         &shared,
         args.kind,
+        args.start_of_week,
         pricing,
         &diagnostics,
     )?;

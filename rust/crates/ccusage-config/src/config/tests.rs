@@ -458,7 +458,7 @@ fn colon_commands_select_only_registered_reports() {
     for (name, agent) in [
         ("codex:daily", Some("codex")),
         ("claude:statusline", Some("claude")),
-        ("codex:weekly", None),
+        ("codex:weekly", Some("codex")),
         ("unknown:daily", None),
     ] {
         let command = super::detect_config_command(&[name.to_string()]);

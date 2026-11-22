@@ -83,11 +83,8 @@ pub fn generate_config_schema_json() -> serde_json::Result<String> {
         })
     };
 
-    let mut root_commands = AgentId::Claude
-        .spec()
-        .reports
-        .iter()
-        .copied()
+    let mut root_commands = AgentReportKind::ALL
+        .into_iter()
         .map(|report| {
             let section = match report {
                 AgentReportKind::Daily => daily_section.clone(),
@@ -127,7 +124,6 @@ pub fn generate_config_schema_json() -> serde_json::Result<String> {
         ),
     ]);
     for agent in AGENTS {
-        let has_focused_weekly = agent.reports.contains(&AgentReportKind::Weekly);
         let defaults = match agent.name {
             "claude" => option_section(&[&shared, &claude, &daily, &weekly, &blocks, &statusline]),
             "codex" => codex_section.clone(),
@@ -135,11 +131,8 @@ pub fn generate_config_schema_json() -> serde_json::Result<String> {
             "openclaw" => option_section(&[&shared, &openclaw]),
             _ => shared_defaults.clone(),
         };
-        let mut commands = AgentId::Claude
-            .spec()
-            .reports
-            .iter()
-            .copied()
+        let mut commands = AgentReportKind::ALL
+            .into_iter()
             .map(|report| {
                 let section = match (agent.name, report) {
                     ("claude", AgentReportKind::Daily) => daily_section.clone(),
@@ -148,7 +141,7 @@ pub fn generate_config_schema_json() -> serde_json::Result<String> {
                         &[("startOfWeek", json!("sunday"))],
                     ),
                     ("claude", _) => claude_defaults.clone(),
-                    (_, AgentReportKind::Weekly) if has_focused_weekly => with_defaults(
+                    (_, AgentReportKind::Weekly) => with_defaults(
                         with_options(defaults.clone(), &weekly),
                         &[("startOfWeek", json!("monday"))],
                     ),
@@ -160,7 +153,7 @@ pub fn generate_config_schema_json() -> serde_json::Result<String> {
         for command in agent.extra_commands {
             commands.insert(command.name.to_string(), extra_section(command.kind)?);
         }
-        let defaults = if has_focused_weekly && agent.name != "claude" {
+        let defaults = if agent.name != "claude" {
             with_options(defaults, &weekly)
         } else {
             defaults

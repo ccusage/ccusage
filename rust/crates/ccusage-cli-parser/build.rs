@@ -4,7 +4,7 @@ use std::{
     path::PathBuf,
 };
 
-use ccusage_cli::AGENTS;
+use ccusage_cli::{AGENTS, AgentReportKind};
 use ccusage_environment::Environment;
 use serde_json::{Value, json};
 
@@ -47,7 +47,7 @@ fn add_focused_weekly_pages(command_spec: &mut Value) -> Result<(), String> {
     let pages = command_spec["pages"]
         .as_array_mut()
         .ok_or_else(|| "CLI command spec has no pages".to_string())?;
-    for agent in AGENTS.iter().filter(|agent| agent.accepts("weekly")) {
+    for agent in AGENTS {
         let name = agent.name;
         if pages
             .iter()
@@ -139,9 +139,8 @@ fn check_agent_pages(command_spec: &Value) -> Result<(), String> {
     let table = AGENTS
         .iter()
         .map(|spec| {
-            let commands = spec
-                .reports
-                .iter()
+            let commands = AgentReportKind::ALL
+                .into_iter()
                 .map(|kind| kind.name())
                 .chain(spec.extra_commands.iter().map(|command| command.name))
                 .collect::<BTreeSet<_>>();

@@ -57,8 +57,8 @@ expression: cases
     "args": [
       "ccusage",
       "codex",
-      "weekly"
+      "yearly"
     ],
-    "error": "The \"weekly\" report is not available for Codex usage.\nUse \"ccusage codex daily\" for Codex usage reports."
+    "error": "The \"yearly\" report is not available for Codex usage.\nUse \"ccusage codex daily\" for Codex usage reports."
   }
 ]

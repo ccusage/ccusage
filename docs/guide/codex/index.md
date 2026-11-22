@@ -14,6 +14,9 @@ Codex logs store no cost, so `--mode display` shows $0. This corrects earlier ve
 # Daily Codex usage
 ccusage codex daily
 
+# Weekly Codex usage with a Sunday start
+ccusage codex weekly --start-of-week sunday
+
 # Monthly Codex usage
 ccusage codex monthly
 
@@ -23,7 +26,7 @@ ccusage codex session
 
 Most users can start with unified reports such as `ccusage daily`. Add the `codex` namespace only when you want to focus the same report shape on Codex usage or pass Codex-specific options such as `--speed`.
 
-Use [`ccusage weekly --by-agent`](/guide/weekly-reports) to see a separate Codex row for each week in the unified report.
+Codex weekly reports start on Monday by default. Set [`startOfWeek`](/guide/config-files#weekly-command) under `codex.commands.weekly` or pass `--start-of-week` to choose a different day.
 
 ## Statusline
 
@@ -59,6 +62,7 @@ CODEX_HOME="$HOME/.codex,$HOME/.codex-work,$HOME/codex-exec-logs" ccusage codex 
 | Focused view            | Description                  | See also                                |
 | ----------------------- | ---------------------------- | --------------------------------------- |
 | `ccusage codex daily`   | Aggregate usage by date      | [Daily Usage](/guide/daily-reports)     |
+| `ccusage codex weekly`  | Aggregate usage by week      | [Weekly Usage](/guide/weekly-reports)   |
 | `ccusage codex monthly` | Aggregate usage by month     | [Monthly Usage](/guide/monthly-reports) |
 | `ccusage codex session` | Group usage by Codex session | [Session Usage](/guide/session-reports) |
 
@@ -87,7 +91,7 @@ These views support `--json`, `--compact`, `--offline`, and `--speed auto|standa
 - **Speed pricing** uses `--speed auto` by default. For rollouts written by Codex CLI 0.144.0 and later, ccusage applies recorded `thread_settings_applied` tier changes chronologically. `priority` and legacy `fast` use Fast pricing, `ultrafast` uses Ultrafast pricing, `flex` uses Flex pricing, and `default` or `standard` uses Standard pricing. Unmarked usage falls back to `config.toml` detection. Pass `--speed standard`, `--speed flex`, or `--speed fast` to override recorded and configured tiers. Ultrafast uses the bundled model-specific rates.
 - **Legacy fallback** – Early September 2025 logs that never recorded `turn_context` metadata are still included; the CLI assumes `gpt-5` for pricing so you can review the tokens even though the model tag is missing (the JSON output also marks these rows with `"isFallback": true`).
 - **Cost formula** – Non-cached input uses the standard input price; cached input uses the cache-read price (falling back to the input price when missing); and output tokens are billed at the output price. All prices are per million tokens. Reasoning tokens may be shown for reference, but they are part of the output charge and are not billed separately.
-- **Totals and reports** – Daily, monthly, and session views display per-model breakdowns, overall totals, and optional JSON for automation.
+- **Totals and reports** – Daily, weekly, monthly, and session views display per-model breakdowns, overall totals, and optional JSON for automation.
 
 Reports are reconstructed from retained local logs. Missing compaction usage records cannot be recovered from their markers alone, and local totals can differ from account-wide Codex usage. Pricing aliases such as `gpt-reserve` affect cost estimates, without changing token totals or revealing an unrecorded backend model.
 
@@ -132,6 +136,7 @@ Codex focused views use the same JSON mode as the shared reports:
 
 ```bash
 ccusage codex daily --json
+ccusage codex weekly --json
 ccusage codex monthly --json
 ccusage codex session --json
 ```
