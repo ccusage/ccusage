@@ -31,7 +31,7 @@ fn main() -> Result<()> {
     });
     pricing::set_json_fetcher(http::fetch_json);
     let cli = cli::parse();
-    let ping = telemetry::start(cli.command.as_ref());
+    let ping = telemetry::start(cli.command.as_ref(), cli.shared.offline);
     let result = match cli.command {
         Some(Command::All(args)) => adapter::all::run(args),
         Some(Command::Daily(args)) => commands::run_daily(args),

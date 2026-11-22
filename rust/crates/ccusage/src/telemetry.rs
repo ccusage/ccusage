@@ -6,7 +6,9 @@
 //! environments, and `ccusage telemetry disable` all turn it off.
 
 use std::{
-    env, fs, io,
+    env, fs,
+    fs::File,
+    io,
     path::{Path, PathBuf},
     sync::mpsc,
     thread,
@@ -81,15 +83,20 @@ struct Plan {
 /// Starts today's ping if one is due, printing the first-run notice when needed.
 ///
 /// Returns `None` whenever nothing was sent, including every disabled case.
-pub(crate) fn start(command: Option<&Command>) -> Option<PendingPing> {
+pub(crate) fn start(command: Option<&Command>, offline: bool) -> Option<PendingPing> {
     if matches!(command, Some(Command::Telemetry(_))) {
+        return None;
+    }
+    if offline || command_offline(command) {
         return None;
     }
     if env_disabled(env_var).is_some() {
         return None;
     }
+    let url = ENDPOINT?;
     let path = state_path()?;
-    let mut state = load_state(&path);
+    let _lock = StateLock::try_acquire(&path).ok()?;
+    let mut state = load_state(&path).ok()?;
     if state.enabled == Some(false) {
         return None;
     }
@@ -97,28 +104,27 @@ pub(crate) fn start(command: Option<&Command>) -> Option<PendingPing> {
         print_debug_payload(&state, command);
         return None;
     }
-    let url = ENDPOINT?;
-
     // Statusline output is read by Claude Code, not a person, so the notice
     // waits for the next interactive command instead of disappearing there.
     let can_notify = !matches!(command, Some(Command::Statusline(_)));
     let now = unix_seconds();
+    // The first interactive invocation is notice-only, giving users a full
+    // run to opt out before any ping leaves the machine.
+    let plan = plan(&mut state, now, can_notify);
+    if !plan.send {
+        if plan.notice {
+            save_state(&path, &state).ok()?;
+            print_notice();
+        }
+        return None;
+    }
     if state.anonymous_id.is_none() {
         state.anonymous_id = Some(new_anonymous_id()?);
-    }
-    let plan = plan(&mut state, now, can_notify);
-    if plan.notice {
-        print_notice();
-    }
-    if !plan.notice && !plan.send {
-        return None;
     }
     // A state that cannot be saved would mint a new ID and ping again on every
     // run, inflating the counts, so an unwritable state never sends.
     save_state(&path, &state).ok()?;
-    if !plan.send {
-        return None;
-    }
+    drop(_lock);
 
     let body = serde_json::to_string(&payload(state.anonymous_id.as_deref()?, command)).ok()?;
     let (done, finished) = mpsc::channel();
@@ -134,7 +140,8 @@ pub(crate) fn run(action: TelemetryAction) -> Result<()> {
     let path = state_path().ok_or_else(|| {
         crate::cli_error("Cannot locate a config directory for the telemetry setting")
     })?;
-    let mut state = load_state(&path);
+    let _lock = StateLock::acquire(&path)?;
+    let mut state = load_state(&path)?;
     match action {
         TelemetryAction::Status => {}
         TelemetryAction::Enable => {
@@ -204,7 +211,7 @@ fn plan(state: &mut State, now: u64, can_notify: bool) -> Plan {
         state.notified_at = Some(now);
     }
     let today = now / SECONDS_PER_DAY;
-    let send = state.last_sent_day != Some(today);
+    let send = !notice && state.notified_at.is_some() && state.last_sent_day != Some(today);
     if send {
         // Recorded before sending: a failed ping is not retried, and parallel
         // statusline runs do not all report the same day.
@@ -270,6 +277,39 @@ fn report_name(kind: AgentReportKind) -> &'static str {
     }
 }
 
+fn command_offline(command: Option<&Command>) -> bool {
+    let shared = match command {
+        Some(
+            Command::All(args)
+            | Command::Codex(args)
+            | Command::OpenCode(args)
+            | Command::Amp(args)
+            | Command::Droid(args)
+            | Command::Codebuff(args)
+            | Command::Hermes(args)
+            | Command::Pi(args)
+            | Command::Goose(args)
+            | Command::Kilo(args)
+            | Command::Copilot(args)
+            | Command::Gemini(args)
+            | Command::Antigravity(args)
+            | Command::Kimi(args)
+            | Command::Qwen(args)
+            | Command::OpenClaw(args)
+            | Command::Grok(args)
+            | Command::ZCode(args),
+        ) => Some(&args.shared),
+        Some(Command::Daily(args)) => Some(&args.shared),
+        Some(Command::Monthly(args)) => Some(args),
+        Some(Command::Weekly(args)) => Some(&args.shared),
+        Some(Command::Session(args)) => Some(&args.shared),
+        Some(Command::Blocks(args)) => Some(&args.shared),
+        Some(Command::Statusline(args)) => return args.offline && !args.no_offline,
+        None | Some(Command::Telemetry(_)) => None,
+    };
+    shared.is_some_and(|args| args.offline && !args.no_offline)
+}
+
 fn effective_disabled(state: &State, lookup: impl Fn(&str) -> Option<String>) -> Option<Disabled> {
     env_disabled(lookup)
         .or_else(|| (state.enabled == Some(false)).then_some(Disabled::Preference))
@@ -314,12 +354,54 @@ fn state_path_under(xdg_config_home: Option<PathBuf>, home: Option<PathBuf>) -> 
         .map(|base| base.join("ccusage").join("telemetry.json"))
 }
 
-/// A missing or unreadable file is the never-configured default.
-fn load_state(path: &Path) -> State {
-    fs::read_to_string(path)
-        .ok()
-        .and_then(|contents| serde_json::from_str(&contents).ok())
-        .unwrap_or_default()
+/// A missing file is the never-configured default; an existing unreadable or
+/// corrupt file fails closed so telemetry cannot silently re-enable itself.
+fn load_state(path: &Path) -> io::Result<State> {
+    match fs::read_to_string(path) {
+        Ok(contents) => serde_json::from_str(&contents)
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error)),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(State::default()),
+        Err(error) => Err(error),
+    }
+}
+
+struct StateLock(File);
+
+impl StateLock {
+    fn acquire(path: &Path) -> io::Result<Self> {
+        Self::open(path, File::lock)
+    }
+
+    fn try_acquire(path: &Path) -> io::Result<Self> {
+        Self::open(path, |file| match file.try_lock() {
+            Ok(()) => Ok(()),
+            Err(std::fs::TryLockError::WouldBlock) => {
+                Err(io::Error::from(io::ErrorKind::WouldBlock))
+            }
+            Err(std::fs::TryLockError::Error(error)) => Err(error),
+        })
+    }
+
+    fn open(path: &Path, lock: fn(&File) -> io::Result<()>) -> io::Result<Self> {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let lock_path = path.with_extension("lock");
+        let file = File::options()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(lock_path)?;
+        lock(&file)?;
+        Ok(Self(file))
+    }
+}
+
+impl Drop for StateLock {
+    fn drop(&mut self) {
+        let _ = self.0.unlock();
+    }
 }
 
 /// Writes through a temporary file so a concurrent reader never sees half a file.
@@ -409,7 +491,7 @@ mod tests {
     }
 
     #[test]
-    fn first_run_notifies_and_sends_then_waits_for_the_next_day() {
+    fn first_run_only_notifies_then_sends_on_the_following_run() {
         let mut state = State::default();
         let day = 20_000 * SECONDS_PER_DAY;
 
@@ -417,7 +499,7 @@ mod tests {
             plan(&mut state, day + 10, true),
             Plan {
                 notice: true,
-                send: true
+                send: false
             }
         );
         assert_eq!(state.notified_at, Some(day + 10));
@@ -425,7 +507,7 @@ mod tests {
             plan(&mut state, day + 3_600, true),
             Plan {
                 notice: false,
-                send: false
+                send: true
             }
         );
         assert_eq!(
@@ -439,14 +521,14 @@ mod tests {
     }
 
     #[test]
-    fn statusline_defers_the_notice_but_still_counts_the_day() {
+    fn statusline_does_not_send_before_a_notice() {
         let mut state = State::default();
 
         assert_eq!(
             plan(&mut state, 0, false),
             Plan {
                 notice: false,
-                send: true
+                send: false
             }
         );
         assert_eq!(state.notified_at, None);
@@ -532,8 +614,56 @@ mod tests {
 
         save_state(&path, &state).unwrap();
 
-        assert_eq!(load_state(&path), state);
-        assert_eq!(load_state(&fixture.path("corrupt.json")), State::default());
-        assert_eq!(load_state(&fixture.path("missing.json")), State::default());
+        assert_eq!(load_state(&path).unwrap(), state);
+        assert_eq!(
+            load_state(&fixture.path("corrupt.json"))
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::InvalidData
+        );
+        assert_eq!(
+            load_state(&fixture.path("missing.json")).unwrap(),
+            State::default()
+        );
+    }
+
+    #[test]
+    fn offline_commands_never_enter_the_send_plan() {
+        let args = crate::cli::AgentCommandArgs {
+            shared: crate::cli::SharedArgs {
+                offline: true,
+                ..crate::cli::SharedArgs::default()
+            },
+            kind: AgentReportKind::Daily,
+            session_id: None,
+            sections: None,
+            by_agent: false,
+            pi_path: None,
+            open_claw_path: None,
+            codex_speed: crate::cli::CodexSpeed::Auto,
+        };
+
+        assert!(command_offline(Some(&Command::Codex(args))));
+    }
+
+    #[test]
+    fn state_lock_serializes_writers() {
+        let fixture = fs_fixture!({});
+        let path = fixture.path("telemetry.json");
+        let first = StateLock::acquire(&path).unwrap();
+        let (attempted, waiting) = std::sync::mpsc::channel();
+        let second_path = path.clone();
+        let second = std::thread::spawn(move || {
+            attempted.send(()).unwrap();
+            StateLock::try_acquire(&second_path)
+        });
+        waiting.recv().unwrap();
+        let error = match second.join().unwrap() {
+            Ok(_) => panic!("a second telemetry state lock was acquired"),
+            Err(error) => error,
+        };
+        assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
+        drop(first);
+        assert!(StateLock::try_acquire(&path).is_ok());
     }
 }
