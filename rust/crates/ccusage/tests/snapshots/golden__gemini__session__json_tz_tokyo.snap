@@ -49,7 +49,7 @@ exit: 0
           "cost": 0.0,
           "inputTokens": 0,
           "modelName": "gemini-mystery-1",
-          "outputTokens": 654
+          "outputTokens": 0
         }
       ],
       "modelsUsed": [
@@ -59,7 +59,7 @@ exit: 0
         "gemini-mystery-1",
         "claude-sonnet-4-20250514"
       ],
-      "outputTokens": 1244,
+      "outputTokens": 590,
       "sessionId": "aaaa1111-session-json",
       "totalCost": 0.00630819,
       "totalTokens": 5364
@@ -319,7 +319,7 @@ exit: 0
     "cacheCreationTokens": 0,
     "cacheReadTokens": 155413,
     "inputTokens": 306499,
-    "outputTokens": 3169,
+    "outputTokens": 2515,
     "totalCost": 0.82304839,
     "totalTokens": 465376,
     "unpricedModels": [

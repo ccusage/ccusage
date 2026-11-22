@@ -355,6 +355,122 @@ impl<'a> FuzzyKeys<'a> {
 }
 
 #[test]
+fn whole_request_catalogue_rows_bill_cache_at_the_long_context_rates() {
+    use crate::pricing::LongContextMode;
+
+    crate::test_support::install_pricing_snapshots();
+    let primary = PricingMap::load_embedded();
+    for catalogue in [&primary, embedded_models_dev_pricing()] {
+        for found in catalogue.rows.matches() {
+            let pricing = found.row.rates();
+            let Some(tier) = pricing
+                .long_context
+                .filter(|tier| tier.mode == LongContextMode::WholeRequest)
+            else {
+                continue;
+            };
+            let model = found.key;
+            let resolved = pricing.whole_request_rates(tier);
+            let [read, write, write_1h] = expected_cache_multipliers(model);
+            for (bucket, actual, published, base, multiplier) in [
+                (
+                    "read",
+                    resolved.cache_read,
+                    tier.rates.cache_read,
+                    pricing.cache_read_rate_at(pricing.input),
+                    read,
+                ),
+                (
+                    "five-minute write",
+                    resolved.cache_create,
+                    tier.rates.cache_create,
+                    pricing.cache_creation_rate(),
+                    write,
+                ),
+                (
+                    "one-hour write",
+                    resolved.cache_create_1h,
+                    tier.rates.cache_create_1h,
+                    pricing.one_hour_cache_creation_rate(),
+                    write_1h,
+                ),
+            ] {
+                let Some(input) = tier.rates.input.filter(|_| published.is_none()) else {
+                    assert_eq!(actual, published, "{model} {bucket}");
+                    continue;
+                };
+                let actual = actual.unwrap_or_else(|| panic!("{model} {bucket} has no rate"));
+                assert!(actual >= base, "{model} {bucket}: {actual} < {base}");
+                if let Some(multiplier) = multiplier {
+                    let expected = (input * multiplier).max(base);
+                    assert!(
+                        (actual - expected).abs() < 1e-15,
+                        "{model} {bucket}: {actual} != {expected}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+fn expected_cache_multipliers(model: &str) -> [Option<f64>; 3] {
+    let model = model.rsplit('/').next().unwrap().to_ascii_lowercase();
+    let model = model
+        .find(".claude-")
+        .map_or(model.as_str(), |start| &model[start + 1..])
+        .replace('.', "-");
+    let model = model.strip_prefix("openai-").unwrap_or(&model);
+    match model {
+        model if model.starts_with("gemini-4") => [Some(0.05), None, None],
+        model if model.starts_with("gemini-") => [Some(0.1), None, None],
+        model if model.starts_with("grok-4-5") => [Some(0.15), None, None],
+        model if model.starts_with("grok-") => [Some(0.25), None, None],
+        model
+            if [
+                "gpt-6-1-sol",
+                "gpt-6-1-terra",
+                "gpt-6-2-sol",
+                "gpt-6-2-astra",
+            ]
+            .iter()
+            .any(|prefix| model.starts_with(prefix)) =>
+        {
+            [Some(0.05), Some(1.25), None]
+        }
+        model
+            if ["gpt-5-6", "gpt-5-7", "gpt-5-8", "gpt-5-9", "gpt-6"]
+                .iter()
+                .any(|prefix| model.starts_with(prefix)) =>
+        {
+            [Some(0.1), Some(1.25), None]
+        }
+        model if model.starts_with("gpt-") => [Some(0.1), Some(1.0), None],
+        model if model.starts_with("claude-") => match model {
+            model
+                if model.starts_with("claude-sonnet-5-5")
+                    || model.starts_with("claude-opus-5-5") =>
+            {
+                [Some(0.05), Some(1.25), Some(2.0)]
+            }
+            model
+                if [
+                    "claude-fable-5-1",
+                    "claude-fable-5-2",
+                    "claude-mythos-5-1",
+                    "claude-mythos-5-2",
+                ]
+                .iter()
+                .any(|prefix| model.starts_with(prefix)) =>
+            {
+                [Some(0.025), Some(1.25), Some(2.0)]
+            }
+            _ => [Some(0.1), Some(1.25), Some(2.0)],
+        },
+        _ => [None; 3],
+    }
+}
+
+#[test]
 fn loads_embedded_claude_pricing() {
     crate::test_support::install_pricing_snapshots();
     let pricing = PricingMap::load_embedded();

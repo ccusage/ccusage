@@ -34,7 +34,7 @@ exit: 0
           "inputTokens": 0,
           "missingPricing": true,
           "modelName": "gemini-mystery-1",
-          "outputTokens": 674
+          "outputTokens": 20
         }
       ],
       "modelsUsed": [
@@ -43,7 +43,7 @@ exit: 0
         "gemini-mystery-1"
       ],
       "month": "2025-12",
-      "outputTokens": 1324,
+      "outputTokens": 670,
       "totalCost": 0.009779,
       "totalTokens": 6167
     },
@@ -111,7 +111,7 @@ exit: 0
     "cacheCreationTokens": 0,
     "cacheReadTokens": 152383,
     "inputTokens": 302955,
-    "outputTokens": 2459,
+    "outputTokens": 1805,
     "totalCost": 0.8134376900000001,
     "totalTokens": 458032,
     "unpricedModels": [

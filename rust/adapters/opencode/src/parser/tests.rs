@@ -529,7 +529,10 @@ fn keeps_opencode_record_when_cache_field_is_not_an_object() {
 }
 
 #[test]
-fn falls_back_to_total_tokens_when_opencode_token_parts_are_missing() {
+fn keeps_total_only_usage_out_of_output_tokens() {
+    ccusage_test_support::install_pricing_snapshots();
+    let mut pricing = PricingMap::default();
+    pricing.load_json(r#"{"gpt-test":{"input_cost_per_token":1,"output_cost_per_token":2}}"#);
     let entry = message_value_to_entry(
         message(json!({
             "id": "message-a",
@@ -544,17 +547,15 @@ fn falls_back_to_total_tokens_when_opencode_token_parts_are_missing() {
         None,
         None,
         &jiff::tz::TimeZone::UTC,
-        CostMode::Auto,
-        ccusage_core::cost::PriceTable::for_map(
-            CostMode::Auto,
-            &ccusage_core::PricingMap::default(),
-        ),
+        CostMode::Calculate,
+        ccusage_core::cost::PriceTable::Calculate(&pricing),
     )
     .unwrap()
     .unwrap();
 
-    assert_eq!(entry.usage.output_tokens, 123);
-    assert_eq!(entry.extra_total_tokens, 0);
+    assert_eq!(entry.usage.output_tokens, 0);
+    assert_eq!(entry.extra_total_tokens, 123);
+    assert_eq!(entry.cost, 0.0);
 }
 
 #[test]

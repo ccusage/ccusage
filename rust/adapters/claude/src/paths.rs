@@ -156,6 +156,29 @@ fn prune_threshold(shared: &SharedArgs, now: TimestampMs) -> Option<i64> {
         .map(|since| since.saturating_sub(MTIME_PRUNE_MARGIN_MS))
 }
 
+pub(super) fn select_usage_files(
+    files: Vec<PathBuf>,
+    shared: &SharedArgs,
+    roots: &[PathBuf],
+) -> (Vec<PathBuf>, Vec<PathBuf>) {
+    let threshold = prune_threshold(shared, shared.clock.now().into());
+    if threshold.is_none() {
+        return (files, Vec::new());
+    }
+    let mut files = files.into_iter();
+    let selected = read_files_since(
+        shared.single_thread,
+        threshold,
+        roots,
+        |visit| files.by_ref().for_each(visit),
+        |_| (),
+    );
+    (
+        selected.kept.into_iter().map(|(file, ())| file).collect(),
+        selected.pruned,
+    )
+}
+
 fn read_files_since<T: Send>(
     single_thread: bool,
     threshold: Option<i64>,

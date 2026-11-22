@@ -216,7 +216,7 @@ exit: 0
           "cost": 0.0,
           "inputTokens": 0,
           "modelName": "[pi] gpt-5",
-          "outputTokens": 500
+          "outputTokens": 0
         },
         {
           "cacheCreationTokens": 0,
@@ -236,7 +236,7 @@ exit: 0
         "[pi] gpt-5",
         "[pi] pi-mystery-1"
       ],
-      "outputTokens": 1188,
+      "outputTokens": 688,
       "period": "2026-01-01",
       "totalCost": 0.04185,
       "totalTokens": 14583
@@ -313,7 +313,7 @@ exit: 0
     "cacheCreationTokens": 2285,
     "cacheReadTokens": 44949,
     "inputTokens": 16957,
-    "outputTokens": 4235,
+    "outputTokens": 3735,
     "totalCost": 9.616624350000002,
     "totalTokens": 68676,
     "unpricedModels": [

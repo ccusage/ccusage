@@ -90,7 +90,7 @@ exit: 0
           "cost": 0.0,
           "inputTokens": 0,
           "modelName": "qwen-mystery-1",
-          "outputTokens": 654
+          "outputTokens": 0
         },
         {
           "cacheCreationTokens": 0,
@@ -111,7 +111,7 @@ exit: 0
         "unknown"
       ],
       "month": "2026-01",
-      "outputTokens": 3292,
+      "outputTokens": 2638,
       "totalCost": 0.24023569999999997,
       "totalTokens": 306313
     }
@@ -120,7 +120,7 @@ exit: 0
     "cacheCreationTokens": 0,
     "cacheReadTokens": 103493,
     "inputTokens": 204601,
-    "outputTokens": 4254,
+    "outputTokens": 3600,
     "totalCost": 0.24988069999999996,
     "totalTokens": 312658,
     "unpricedModels": [

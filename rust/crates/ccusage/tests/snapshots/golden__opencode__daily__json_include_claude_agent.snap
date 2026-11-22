@@ -218,7 +218,7 @@ exit: 0
           "cost": 0.00009999999999999999,
           "inputTokens": 100,
           "modelName": "claude-haiku-4.5",
-          "outputTokens": 245
+          "outputTokens": 0
         }
       ],
       "modelsUsed": [
@@ -226,7 +226,7 @@ exit: 0
         "claude-haiku-4.5",
         "gpt-5"
       ],
-      "outputTokens": 278,
+      "outputTokens": 33,
       "totalCost": 0.0005899999999999999,
       "totalTokens": 686
     }
@@ -235,7 +235,7 @@ exit: 0
     "cacheCreationTokens": 700,
     "cacheReadTokens": 17500,
     "inputTokens": 12250,
-    "outputTokens": 2337,
+    "outputTokens": 2092,
     "totalCost": 2.8064762500000002,
     "totalTokens": 32837,
     "unpricedModels": [

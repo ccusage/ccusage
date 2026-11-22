@@ -89,13 +89,13 @@ exit: 0
           "cost": 0.0064141,
           "inputTokens": 3511,
           "modelName": "kimi-k2-thinking",
-          "outputTokens": 1231
+          "outputTokens": 799
         }
       ],
       "modelsUsed": [
         "kimi-k2-thinking"
       ],
-      "outputTokens": 1231,
+      "outputTokens": 799,
       "sessionId": "session-old-1",
       "totalCost": 0.0064141,
       "totalTokens": 18592
@@ -171,7 +171,7 @@ exit: 0
     "cacheCreationTokens": 1570,
     "cacheReadTokens": 63000,
     "inputTokens": 14761,
-    "outputTokens": 4426,
+    "outputTokens": 3994,
     "totalCost": 0.056991599999999996,
     "totalTokens": 84007,
     "unpricedModels": [

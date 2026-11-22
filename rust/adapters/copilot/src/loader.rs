@@ -170,9 +170,7 @@ fn usage_entry_to_loaded(
         cache_creation: None,
     };
     let cost_usd = entry.nano_aiu.map(nano_aiu_to_usd);
-    // NOTE(2026-11-22, #2492): OTel places the remainder in one of these two buckets. Reconciliation can only reduce the fallback bucket.
-    let recorded_remainder = entry.extra_total_tokens.max(entry.fallback_output_tokens);
-    let reasoning_tokens = entry.reasoning_output_tokens.min(recorded_remainder);
+    let reasoning_tokens = entry.reasoning_output_tokens.min(entry.extra_total_tokens);
     let logged = entry.logged_model.as_deref().unwrap_or(&entry.model);
     let model = (entry.model.as_str(), MatchKind::Fuzzy);
     let with_logged = [(logged, MatchKind::Exact), model];
@@ -189,12 +187,7 @@ fn usage_entry_to_loaded(
             } else {
                 UsageGranularity::Aggregate
             },
-            usage: TokenUsageRaw {
-                output_tokens: usage
-                    .output_tokens
-                    .saturating_sub(entry.fallback_output_tokens),
-                ..usage
-            },
+            usage,
             reasoning_tokens,
             reported_model: Some(&entry.model),
             candidates,

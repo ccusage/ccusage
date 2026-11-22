@@ -214,7 +214,7 @@ exit: 0
           "cost": 0.00009999999999999999,
           "inputTokens": 100,
           "modelName": "claude-haiku-4.5",
-          "outputTokens": 245
+          "outputTokens": 0
         },
         {
           "cacheCreationTokens": 0,
@@ -233,7 +233,7 @@ exit: 0
         "gemini-3-pro-high",
         "claude-haiku-4.5"
       ],
-      "outputTokens": 685,
+      "outputTokens": 440,
       "sessionId": "ses-v1-alpha",
       "totalCost": 0.0122525,
       "totalTokens": 9835
@@ -460,7 +460,7 @@ exit: 0
     "cacheCreationTokens": 800,
     "cacheReadTokens": 18400,
     "inputTokens": 7811,
-    "outputTokens": 1933,
+    "outputTokens": 1688,
     "totalCost": 0.09367125,
     "totalTokens": 29014,
     "unpricedModels": [
