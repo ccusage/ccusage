@@ -182,6 +182,7 @@ in
               nu scripts/check-models-dev-dependencies.test.nu
               nu scripts/check-workspace-dependency-inheritance.test.nu
               nu scripts/check-nushell.test.nu
+              nu apps/ccusage/scripts/verify-native-package.test.nu
               nu .github/scripts/contribution-gate.test.nu
               nu .github/scripts/pricing-lock.test.nu
               nu .github/scripts/upsert-pr-comment.test.nu

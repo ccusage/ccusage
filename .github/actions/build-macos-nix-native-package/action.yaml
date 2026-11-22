@@ -47,6 +47,7 @@ runs:
       env:
         ARCH: ${{ inputs.arch }}
         BINARY: ${{ inputs.binary }}
+        CCUSAGE_TELEMETRY_ENABLED: ${{ inputs.telemetry-enabled }}
       run: apps/ccusage/scripts/stage-native-package.nu --platform darwin --arch "$ARCH" --binary "$BINARY"
 
     - name: Archive native package binary

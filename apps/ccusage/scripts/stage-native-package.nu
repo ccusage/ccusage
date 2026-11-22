@@ -1,7 +1,9 @@
 #!/usr/bin/env nix
 #! nix shell --inputs-from ../../.. nixpkgs#nushell --command nu
 
-def main [--platform: string, --arch: string, --binary: string] {
+use ./native-package-telemetry.nu verify_telemetry_endpoint
+
+def main [--platform: string, --arch: string, --binary: string]: nothing -> nothing {
     if $platform == 'win32' {
         error make {
             msg: 'Windows packages are staged by .github/actions/build-windows-native-package, which runs without Nix'
@@ -21,5 +23,7 @@ def main [--platform: string, --arch: string, --binary: string] {
     mkdir ($target | path dirname)
     cp -f ($binary | path expand) $target
     chmod 755 $target
+    let telemetry_enabled = ($env.CCUSAGE_TELEMETRY_ENABLED? | default 'false') == 'true'
+    verify_telemetry_endpoint $target $telemetry_enabled
     print $target
 }

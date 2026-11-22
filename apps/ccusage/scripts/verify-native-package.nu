@@ -1,14 +1,20 @@
 #!/usr/bin/env nix
 #! nix shell --inputs-from ../../.. nixpkgs#nushell --command nu
-def main [] {
+
+use ./native-package-telemetry.nu verify_telemetry_endpoint
+
+def main []: nothing -> nothing {
     let binary_path = (match (configured_binary_path) {
         null => (error make {msg: 'Native package binary is not configured'})
         $path => $path
     })
-    match (binary_issue $binary_path ($binary_path | path expand)) {
+    let resolved = $binary_path | path expand
+    match (binary_issue $binary_path $resolved) {
         null => null
         $issue => (error make {msg: $"Native package binary is not ready: ($issue)"})
     }
+    let telemetry_enabled = ($env.CCUSAGE_TELEMETRY_ENABLED? | default 'false') == 'true'
+    verify_telemetry_endpoint $resolved $telemetry_enabled
 }
 def configured_binary_path [] {
     open package.json
