@@ -92,6 +92,24 @@ opt-level = 3
 [profile.release.package.serde_json]
 opt-level = 3
 
+[profile.release.package.libmimalloc-sys]
+opt-level = 3
+
+[profile.release.package.mimalloc]
+opt-level = 3
+
+[profile.release.package.simdutf8]
+opt-level = 3
+
+[profile.release.package.sqlite]
+opt-level = 3
+
+[profile.release.package.sqlite3-src]
+opt-level = 3
+
+[profile.release.package.sqlite3-sys]
+opt-level = 3
+
 [profile.release.package.zstd-sys]
 opt-level = 3
 
