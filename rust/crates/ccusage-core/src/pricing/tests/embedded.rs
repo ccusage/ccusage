@@ -331,9 +331,7 @@ impl<'a> FuzzyKeys<'a> {
         }
     }
 
-    // NOTE(2026-11-22, #2465): The fuzzy pass can only match a key inside the
-    // query or the query at the end of a key. Index those possible matches to
-    // bound the work per query without using the embedded membership filter.
+    // NOTE(2026-11-22, #2465): A fuzzy hit contains the candidate key or matches its suffix. Shortlisting both directions bounds test runtime without relying on the embedded filter.
     fn candidates(&self, name: Name<'_>) -> Vec<(usize, &'a str)> {
         let identity = name.identity();
         let mut rows = Vec::new();
