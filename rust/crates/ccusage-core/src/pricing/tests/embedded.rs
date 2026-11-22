@@ -2,14 +2,21 @@ use super::{
     MatchKind, PricingMap, build_time_models_dev_json, build_time_pricing_json,
     embedded_models_dev_pricing, layered,
 };
-use crate::pricing::{PricingRows, rows::FoldedIndexes};
+use crate::{
+    fast::{FxHashMap, FxHashSet},
+    pricing::{
+        Lookup, Name, PricingRows, data,
+        keys::{is_qualifier_end, normalized_pricing_key},
+        rows::{Index, RowMatch, vendor_lookup_id},
+    },
+};
+use std::{sync::OnceLock, thread};
 
 fn sorted_rows(rows: &PricingRows) -> Vec<String> {
     let mut rows: Vec<_> = rows
-        .entries
-        .rows
-        .iter()
-        .map(|row| {
+        .matches()
+        .map(|found| {
+            let row = found.row;
             format!(
                 "{} {:?} {:?} {:?} {:?} {} {} {:?} {:?} {:?}",
                 row.key,
@@ -30,7 +37,70 @@ fn sorted_rows(rows: &PricingRows) -> Vec<String> {
 }
 
 #[test]
+fn lookup_decodes_only_matching_embedded_rows() {
+    use crate::pricing::table::{RecordOffsets, decode_pricing_table};
+
+    crate::test_support::install_pricing_snapshots();
+    let table = PricingMap::from_embedded_rows(decode_pricing_table(
+        ccusage_pricing_snapshots::PRICING_TABLE,
+        RecordOffsets::Absolute,
+    ));
+    let rows = &table.rows;
+    assert_eq!(rows.decode_cache_counts(), (0, 0));
+
+    let ready = std::sync::Barrier::new(4);
+    std::thread::scope(|scope| {
+        for _ in 0..4 {
+            scope.spawn(|| {
+                let identity = OnceLock::new();
+                let name = Name::new("gpt-5.5", &identity);
+                ready.wait();
+                let row = rows.exact(name, Lookup::Pricing, false).unwrap();
+                assert_eq!(row.row.rates().input, 5e-6);
+            });
+        }
+    });
+    let (slots, decoded) = rows.decode_cache_counts();
+    assert_eq!(decoded, 1);
+    assert!(slots < rows.keys().count());
+    assert!(table.find("no-such-model-for-lazy-pricing-test").is_none());
+    assert_eq!(rows.decode_cache_counts(), (slots, 1));
+}
+
+#[test]
+fn a_primary_hit_and_unlisted_synthetic_model_leave_the_secondary_table_cold() {
+    use std::sync::Arc;
+
+    use crate::pricing::embedded::{embedded_models_dev_index, embedded_pricing_table};
+
+    crate::test_support::install_pricing_snapshots();
+    let pricing = PricingMap {
+        rows: Arc::clone(&embedded_pricing_table().rows),
+        models_dev: Some(Arc::new(PricingRows::from_deferred(
+            || panic!("the secondary catalogue should remain cold"),
+            embedded_models_dev_index(),
+        ))),
+        ..PricingMap::default()
+    };
+    assert!(pricing.find("gpt-5.5").is_some());
+    assert!(pricing.find("<synthetic>").is_none());
+}
+
+#[test]
 fn embedded_table_matches_the_rows_loaded_from_its_snapshots() {
+    let [litellm, models_dev] = eager_catalogues();
+    let embedded = PricingMap::load_embedded();
+
+    assert_eq!(sorted_rows(&embedded.rows), sorted_rows(&litellm.rows));
+    assert_eq!(
+        sorted_rows(&embedded_models_dev_pricing().rows),
+        sorted_rows(&models_dev.rows)
+    );
+    assert_lookup_parity(&embedded, &litellm);
+    assert_lookup_parity(embedded_models_dev_pricing(), &models_dev);
+}
+
+fn eager_catalogues() -> [PricingMap; 2] {
     crate::test_support::install_pricing_snapshots();
     let mut models_dev = PricingMap::default();
     models_dev
@@ -39,17 +109,248 @@ fn embedded_table_matches_the_rows_loaded_from_its_snapshots() {
     let mut litellm = PricingMap::default();
     litellm.load_json(build_time_pricing_json());
     litellm.complete_layers(&models_dev);
+    [litellm, models_dev]
+}
 
-    let embedded = PricingMap::load_embedded();
+fn assert_lookup_parity(embedded: &PricingMap, eager: &PricingMap) {
+    let matched_key = |found: RowMatch<'_>| found.key.to_owned();
+    for found in eager.rows.matches() {
+        let key = found.key;
+        let vendor = vendor_lookup_id(found).unwrap_or(key);
+        for fold in [false, true] {
+            let query = if fold {
+                key.to_ascii_lowercase()
+            } else {
+                key.to_owned()
+            };
+            let cached = OnceLock::new();
+            let name = Name::new(&query, &cached);
+            let exact =
+                |rows: &PricingRows| rows.exact(name, Lookup::Pricing, fold).map(matched_key);
+            assert_eq!(
+                exact(&embedded.rows),
+                exact(&eager.rows),
+                "exact {key} fold={fold}"
+            );
+            for (index, query, label) in [
+                (Index::VendorId, vendor, "vendor"),
+                (Index::BareHosted, key, "bare-hosted"),
+            ] {
+                let query = normalized_pricing_key(query);
+                let query = if fold {
+                    query.to_ascii_lowercase()
+                } else {
+                    query.into_owned()
+                };
+                let indexed = |rows: &PricingRows| {
+                    let mut keys: Vec<_> = rows
+                        .indexed_rows(&query, index, fold)
+                        .map(matched_key)
+                        .collect();
+                    keys.sort_unstable();
+                    keys
+                };
+                assert_eq!(
+                    indexed(&embedded.rows),
+                    indexed(&eager.rows),
+                    "{label} {key} fold={fold}"
+                );
+            }
+            for (host, _) in (0u8..).zip(data::HOSTS) {
+                let host_row = |rows: &PricingRows| {
+                    rows.host_row(name, host, Lookup::Pricing, fold)
+                        .map(matched_key)
+                };
+                assert_eq!(
+                    host_row(&embedded.rows),
+                    host_row(&eager.rows),
+                    "host {host} {key} fold={fold}"
+                );
+            }
+        }
+        let identity = normalized_pricing_key(key);
+        let exact_only = |rows: &PricingRows| {
+            (
+                rows.contains_exact_only_identity(key, &identity),
+                rows.exact_only_id(&identity).map(str::to_owned),
+            )
+        };
+        assert_eq!(
+            exact_only(&embedded.rows),
+            exact_only(&eager.rows),
+            "exact-only {key}"
+        );
 
-    assert_eq!(sorted_rows(&embedded.rows), sorted_rows(&litellm.rows));
-    assert_eq!(
-        sorted_rows(&embedded_models_dev_pricing().rows),
-        sorted_rows(&models_dev.rows)
-    );
-    for rows in [&embedded.rows, &embedded_models_dev_pricing().rows] {
-        let stored = rows.folded_indexes.get().unwrap();
-        assert_eq!(stored.0, FoldedIndexes::build(rows.matches()).0);
+        let query = format!("parity-host/{identity}");
+        let cached = OnceLock::new();
+        let name = Name::new(&query, &cached);
+        let fuzzy = |map: &PricingMap| {
+            map.search_fuzzy(name, Lookup::Pricing, None, &|| None)
+                .and_then(|hit| map.rows.at(hit.id()))
+                .map(matched_key)
+        };
+        let expected = fuzzy(eager);
+        assert_eq!(fuzzy(embedded), expected, "fuzzy {key}");
+        assert!(
+            expected.is_none() || embedded.rows.may_match_fuzzy(&query),
+            "secondary index rejected a fuzzy hit for {key}"
+        );
+    }
+}
+
+#[test]
+fn embedded_query_variants_match_eager_exact_and_fuzzy_lookups() {
+    let [eager_primary, eager_secondary] = eager_catalogues();
+    let lazy_primary = PricingMap::load_embedded();
+    let lazy_secondary = embedded_models_dev_pricing();
+    let empty_primary = PricingMap::default();
+    let queries: FxHashSet<_> = lazy_primary
+        .rows
+        .keys()
+        .chain(lazy_secondary.rows.keys())
+        .flat_map(|(_, key)| {
+            [
+                key.to_owned(),
+                key.to_ascii_uppercase(),
+                key.replace('.', "-"),
+                key.replace('-', "."),
+                format!("{key}-20250101"),
+                format!("{key}[1m]"),
+                format!("{key}:free"),
+                format!("{key}@latest"),
+                format!("x/{key}"),
+                format!("openrouter/{key}"),
+                format!("bedrock/{key}-v1:0"),
+            ]
+            .into_iter()
+            .chain(bare_suffixes(key).map(str::to_owned))
+        })
+        .collect();
+    let queries: Vec<_> = queries.into_iter().collect();
+    assert!(!queries.is_empty());
+    let workers = thread::available_parallelism()
+        .map_or(1, usize::from)
+        .min(8);
+    for (eager, lazy, secondary) in [
+        (&eager_primary, &lazy_primary, false),
+        (&eager_secondary, lazy_secondary, true),
+    ] {
+        let eager_keys = FuzzyKeys::new(&eager.rows);
+        let lazy_keys = FuzzyKeys::new(&lazy.rows);
+        let check = |query: &str| {
+            let cached = OnceLock::new();
+            let name = Name::new(query, &cached);
+            for probe in std::iter::once(name).chain(name.suffixes()) {
+                for fold in [false, true] {
+                    let exact = |rows: &PricingRows| {
+                        rows.exact(probe, Lookup::Pricing, fold)
+                            .map(|found| found.key.to_owned())
+                    };
+                    assert_eq!(
+                        exact(&lazy.rows),
+                        exact(&eager.rows),
+                        "exact {:?} from {query:?} (secondary={secondary}, fold={fold})",
+                        probe.raw()
+                    );
+                }
+            }
+            let fuzzy = |map: &PricingMap, keys: &FuzzyKeys<'_>| {
+                let candidates = keys.candidates(name);
+                let (primary, fallback) = if secondary {
+                    (&empty_primary, Some(map.rows.as_ref()))
+                } else {
+                    (map, None)
+                };
+                primary
+                    .search_fuzzy_with_keys(name, Lookup::Pricing, fallback, &|| fallback, |rows| {
+                        let keys = if std::ptr::eq(rows, map.rows.as_ref()) {
+                            candidates.as_slice()
+                        } else {
+                            &[]
+                        };
+                        keys.iter().copied()
+                    })
+                    .map(|hit| {
+                        assert_eq!(hit.is_models_dev(), secondary);
+                        map.rows.at(hit.id()).unwrap().key.to_owned()
+                    })
+            };
+            assert_eq!(
+                fuzzy(lazy, &lazy_keys),
+                fuzzy(eager, &eager_keys),
+                "fuzzy {query:?} (secondary={secondary})"
+            );
+        };
+        thread::scope(|scope| {
+            for chunk in queries.chunks(queries.len().div_ceil(workers)) {
+                scope.spawn(|| chunk.iter().for_each(|query| check(query)));
+            }
+        });
+    }
+}
+
+fn bare_suffixes(key: &str) -> impl Iterator<Item = &str> {
+    boundaries(key)
+        .filter(|&start| start > 0 && is_qualifier_end(key.as_bytes()[start - 1]))
+        .map(|start| &key[start..])
+}
+
+fn boundaries(key: &str) -> impl Iterator<Item = usize> + '_ {
+    key.char_indices()
+        .map(|(index, _)| index)
+        .chain([key.len()])
+}
+
+type FuzzyKeyIndex<'a> = FxHashMap<String, Vec<(usize, &'a str)>>;
+
+struct FuzzyKeys<'a> {
+    by_identity: FuzzyKeyIndex<'a>,
+    by_suffix: FuzzyKeyIndex<'a>,
+}
+
+impl<'a> FuzzyKeys<'a> {
+    fn new(rows: &'a PricingRows) -> Self {
+        let mut by_identity = FuzzyKeyIndex::default();
+        let mut by_suffix = FuzzyKeyIndex::default();
+        for row @ (_, key) in rows.keys() {
+            let identity = normalized_pricing_key(key);
+            for start in boundaries(&identity).skip(1) {
+                by_suffix
+                    .entry(identity[start..].to_owned())
+                    .or_default()
+                    .push(row);
+            }
+            by_identity
+                .entry(identity.into_owned())
+                .or_default()
+                .push(row);
+        }
+        Self {
+            by_identity,
+            by_suffix,
+        }
+    }
+
+    // NOTE(2026-11-22, #2465): A fuzzy hit contains the candidate key or matches its suffix. Shortlisting both directions bounds test runtime without relying on the embedded filter.
+    fn candidates(&self, name: Name<'_>) -> Vec<(usize, &'a str)> {
+        let identity = name.identity();
+        let mut rows = Vec::new();
+        rows.extend(self.by_suffix.get(identity).into_iter().flatten().copied());
+        for raw in std::iter::once(name.raw()).chain(bare_suffixes(name.raw())) {
+            let suffix = &identity[identity.len() - raw.len()..];
+            for end in boundaries(suffix) {
+                rows.extend(
+                    self.by_identity
+                        .get(&suffix[..end])
+                        .into_iter()
+                        .flatten()
+                        .copied(),
+                );
+            }
+        }
+        rows.sort_unstable_by_key(|(id, _)| *id);
+        rows.dedup_by_key(|(id, _)| *id);
+        rows
     }
 }
 
@@ -60,15 +361,15 @@ fn whole_request_catalogue_rows_bill_cache_at_the_long_context_rates() {
     crate::test_support::install_pricing_snapshots();
     let primary = PricingMap::load_embedded();
     for catalogue in [&primary, embedded_models_dev_pricing()] {
-        for row in &catalogue.rows.entries.rows {
-            let pricing = row.rates();
+        for found in catalogue.rows.matches() {
+            let pricing = found.row.rates();
             let Some(tier) = pricing
                 .long_context
                 .filter(|tier| tier.mode == LongContextMode::WholeRequest)
             else {
                 continue;
             };
-            let model = row.key.as_ref();
+            let model = found.key;
             let resolved = pricing.whole_request_rates(tier);
             let [read, write, write_1h] = expected_cache_multipliers(model);
             for (bucket, actual, published, base, multiplier) in [
@@ -170,22 +471,23 @@ fn expected_cache_multipliers(model: &str) -> [Option<f64>; 3] {
 }
 
 #[test]
-fn embedded_pricing_reserves_the_encoded_row_count() {
-    crate::test_support::install_pricing_snapshots();
-    let primary = PricingMap::load_embedded();
-    for table in [&primary, embedded_models_dev_pricing()] {
-        let rows = &table.rows.entries.rows;
-        assert!(!rows.is_empty());
-        assert_eq!(rows.capacity(), rows.len());
-    }
-}
-
-#[test]
 fn loads_embedded_claude_pricing() {
     crate::test_support::install_pricing_snapshots();
     let pricing = PricingMap::load_embedded();
     assert!(pricing.len() > 0);
     assert!(pricing.find("claude-sonnet-4-20250514").is_some());
+}
+
+#[test]
+fn a_models_dev_load_preserves_an_existing_embedded_row() {
+    crate::test_support::install_pricing_snapshots();
+    let mut pricing = PricingMap::load_embedded();
+    let before = pricing.find("gpt-5.5").unwrap();
+    assert_eq!(
+        pricing.load_models_dev_json_missing(r#"{"gpt-5.5":{"cost":{"input":100,"output":200}}}"#),
+        Some(0),
+    );
+    assert_eq!(pricing.find("gpt-5.5"), Some(before));
 }
 
 #[test]
@@ -409,13 +711,11 @@ fn embedded_pricing_preserves_gpt_5_6_generated_sources() {
             pricing.context_limit(model),
             litellm_snapshot
                 .rows
-                .entries
                 .get(model)
                 .and_then(|row| row.context_limit.as_ref())
                 .copied()
                 .or_else(|| models_dev_snapshot
                     .rows
-                    .entries
                     .get(model)
                     .and_then(|row| row.context_limit.as_ref())
                     .copied())
@@ -570,7 +870,6 @@ fn embedded_gpt_5_6_exact_entry_wins_over_the_sol_alias() {
         pricing.context_limit("gpt-5.6"),
         pricing
             .rows
-            .entries
             .get("gpt-5.6")
             .and_then(|row| row.context_limit.as_ref())
             .copied()
