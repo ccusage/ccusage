@@ -64,7 +64,6 @@ enum ModelsDevJson {
 #[derive(Debug, Deserialize)]
 struct ModelsDevModel {
     id: Option<String>,
-    provider: Option<String>,
     cost: Option<ModelsDevCost>,
     limit: Option<ModelsDevLimit>,
     modalities: Option<ModelsDevModalities>,
@@ -282,12 +281,7 @@ impl PricingMap {
                         provider_cache_defaults(None),
                     ),
                     exact_only,
-                    whole_request_tiers: whole_request_threshold(if provider_id.is_empty() {
-                        model.provider.as_deref().unwrap_or_default()
-                    } else {
-                        provider_id
-                    })
-                    .is_some(),
+                    whole_request_tiers: whole_request_threshold(&model_id).is_some(),
                     context_limit,
                     key: Arc::default(),
                     source: Source::ModelsDev,

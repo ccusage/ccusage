@@ -5,9 +5,8 @@ use smallvec::SmallVec;
 
 use super::{
     Candidate, LongContext, LongContextMode, Lookup, Name, Pricing, PricingMap, PricingOverride,
-    PricingRows, Row, RowMatch, Scope, Source, SpeedMultipliers, last_segment,
-    normalized_pricing_key,
-    row::{cache_defaults, whole_request_threshold},
+    PricingRows, Row, RowMatch, Scope, Source, SpeedMultipliers, normalized_pricing_key,
+    row::{cache_defaults, whole_request_override_model},
     unlabeled_model, with_names,
 };
 
@@ -269,8 +268,7 @@ impl PricingMap {
                 whole_request_tiers = whole_request_tiers
                     || catalog_row.is_some_and(|row| row.whole_request_tiers)
                     || with_names(model, |name| {
-                        let (path, _) = name.rsplit_once('/')?;
-                        whole_request_threshold(last_segment(path))
+                        whole_request_override_model(name).then_some(())
                     })
                     .is_some();
                 if whole_request_tiers {

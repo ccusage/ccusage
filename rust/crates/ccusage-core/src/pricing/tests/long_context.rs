@@ -523,24 +523,118 @@ fn a_litellm_gemini_request_above_200k_uses_the_published_tier_for_all_tokens() 
 }
 
 #[test]
+fn litellm_long_context_mode_follows_the_model_on_any_host() {
+    crate::test_support::install_pricing_snapshots();
+    let mut pricing = PricingMap::default();
+    let cases = [
+        (
+            "router/anthropic/claude-sonnet-4-5",
+            Some("router"),
+            200_000,
+            0.905,
+        ),
+        (
+            "vertex_ai/gemini-3-pro-preview",
+            Some("vertex_ai"),
+            200_000,
+            0.905,
+        ),
+        (
+            "databricks/databricks-gemini-3-1-pro",
+            Some("databricks"),
+            200_000,
+            0.905,
+        ),
+        ("router/grok-4-fast", None, 199_999, 0.905),
+        ("gmi/xai/grok4.7", Some("gmi"), 199_999, 0.905),
+        ("router/gpt-5", Some("gemini"), 200_000, 0.502),
+    ];
+    let mut rows = serde_json::Map::new();
+    for (model, provider, _, _) in cases {
+        rows.insert(
+            model.to_owned(),
+            serde_json::json!({
+                "litellm_provider": provider,
+                "input_cost_per_token": 1e-6,
+                "output_cost_per_token": 2e-6,
+                "input_cost_per_token_above_200k_tokens": 3e-6,
+                "output_cost_per_token_above_200k_tokens": 5e-6
+            }),
+        );
+    }
+    assert_eq!(
+        pricing.load_json(&serde_json::Value::Object(rows).to_string()),
+        cases.len()
+    );
+    for (model, _, threshold, expected) in cases {
+        let rates = pricing.find(model).unwrap();
+        assert_eq!(rates.long_context_split_threshold(), threshold, "{model}");
+        let cost = request_cost(&pricing, model, 300_000, None, None);
+        assert!(
+            (cost - expected).abs() < 1e-9,
+            "{model}: {cost} != {expected}"
+        );
+    }
+}
+
+#[test]
+fn regional_bedrock_sonnet_bills_the_whole_request_at_its_own_rates() {
+    use crate::cost::{EntryPricing, PriceTable, UsageGranularity, price_entry};
+
+    crate::test_support::install_pricing_snapshots();
+    let pricing = PricingMap::load_embedded();
+    for (region, expected) in [
+        ("us", 0.38115),
+        ("eu", 0.38115),
+        ("au", 0.38115),
+        ("jp", 0.38115),
+        ("us-gov", 0.4158),
+    ] {
+        let model = format!("{region}.anthropic.claude-sonnet-4-5-20250929-v1:0");
+        let cost = price_entry(
+            EntryPricing {
+                usage: crate::TokenUsageRaw {
+                    input_tokens: 10_000,
+                    cache_read_input_tokens: 290_000,
+                    output_tokens: 5_000,
+                    ..Default::default()
+                },
+                granularity: UsageGranularity::Request,
+                reasoning_tokens: 0,
+                reported_model: Some(&model),
+                candidates: &[(&model, MatchKind::StrictExact)],
+                stored_cost: None,
+                timestamp: None,
+            },
+            PriceTable::Calculate(&pricing),
+        )
+        .cost;
+        assert!(
+            (cost - expected).abs() < 1e-9,
+            "{model}: {cost} != {expected}"
+        );
+    }
+}
+
+#[test]
 fn an_override_tier_uses_its_catalogue_vendors_billing_mode_and_threshold() {
     crate::test_support::install_pricing_snapshots();
     let mut catalogue = PricingMap::default();
     catalogue.load_json(
         r#"{
-            "proxy/flat-whole": {"litellm_provider": "gemini", "input_cost_per_token": 1e-6, "output_cost_per_token": 2e-6},
+            "proxy/gemini-flat": {"litellm_provider": "proxy", "input_cost_per_token": 1e-6, "output_cost_per_token": 2e-6},
             "flat-marginal": {"litellm_provider": "deepseek", "input_cost_per_token": 1e-6, "output_cost_per_token": 2e-6},
             "flat-openai": {"litellm_provider": "openai", "input_cost_per_token": 1e-6, "output_cost_per_token": 2e-6},
-            "proxy/tiered-whole": {"litellm_provider": "gemini", "input_cost_per_token": 1e-6, "output_cost_per_token": 2e-6, "input_cost_per_token_above_200k_tokens": 4e-6},
-            "tiered-whole": {"litellm_provider": "xai", "input_cost_per_token": 1e-6, "output_cost_per_token": 2e-6, "input_cost_per_token_above_200k_tokens": 4e-6},
+            "proxy/gemini-tiered": {"litellm_provider": "proxy", "input_cost_per_token": 1e-6, "output_cost_per_token": 2e-6, "input_cost_per_token_above_200k_tokens": 4e-6},
+            "proxy/grok-tiered": {"litellm_provider": "proxy", "input_cost_per_token": 1e-6, "output_cost_per_token": 2e-6, "input_cost_per_token_above_200k_tokens": 4e-6},
             "tiered-marginal": {"litellm_provider": "deepseek", "input_cost_per_token": 1e-6, "output_cost_per_token": 2e-6, "input_cost_per_token_above_200k_tokens": 4e-6}
         }"#,
     );
     let mut secondary = PricingMap::default();
     secondary.load_models_dev_json_for_tests(
         r#"{
-            "secondary-flat": {"provider": "google", "cost": {"input": 1, "output": 2}},
-            "secondary-tiered": {"provider": "google", "cost": {"input": 1, "output": 2,
+            "gemini-secondary-flat": {"provider": "proxy", "cost": {"input": 1, "output": 2}},
+            "gemini-secondary-tiered": {"provider": "proxy", "cost": {"input": 1, "output": 2,
                 "tiers": [{"input": 4, "tier": {"type": "context", "size": 128000}}]}},
             "secondary-published": {"provider": "minimax", "cost": {"input": 1, "output": 2,
                 "tiers": [{"input": 4, "tier": {"type": "context", "size": 128000}}]}}
@@ -554,14 +648,14 @@ fn an_override_tier_uses_its_catalogue_vendors_billing_mode_and_threshold() {
     };
 
     for (model, threshold, expected) in [
-        ("proxy/flat-whole", 200_000, [0.202, 0.605003]),
+        ("proxy/gemini-flat", 200_000, [0.202, 0.605003]),
         ("flat-marginal", 200_000, [0.202, 0.202003]),
         ("flat-openai", 200_000, [0.202, 0.202003]),
-        ("proxy/tiered-whole", 200_000, [0.202, 0.605003]),
-        ("tiered-whole", 199_999, [0.201999, 0.605]),
+        ("proxy/gemini-tiered", 200_000, [0.202, 0.605003]),
+        ("proxy/grok-tiered", 199_999, [0.201999, 0.605]),
         ("tiered-marginal", 200_000, [0.202, 0.202003]),
-        ("secondary-flat", 200_000, [0.202, 0.605003]),
-        ("secondary-tiered", 128_000, [0.13, 0.389003]),
+        ("gemini-secondary-flat", 200_000, [0.202, 0.605003]),
+        ("gemini-secondary-tiered", 128_000, [0.13, 0.389003]),
         ("secondary-published", 128_000, [0.13, 0.389003]),
     ] {
         let key = model.to_owned();
