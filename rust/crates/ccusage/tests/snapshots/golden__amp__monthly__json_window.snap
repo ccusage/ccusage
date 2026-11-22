@@ -67,7 +67,7 @@ exit: 0
           "cost": 0.0,
           "inputTokens": 0,
           "modelName": "gpt-5",
-          "outputTokens": 345
+          "outputTokens": 0
         }
       ],
       "modelsUsed": [
@@ -76,7 +76,7 @@ exit: 0
         "gpt-5"
       ],
       "month": "2026-01",
-      "outputTokens": 515,
+      "outputTokens": 170,
       "totalCost": 0.0042,
       "totalTokens": 4415
     }
@@ -86,7 +86,7 @@ exit: 0
     "cacheReadTokens": 15000,
     "credits": 3.7,
     "inputTokens": 3200,
-    "outputTokens": 1215,
+    "outputTokens": 870,
     "totalCost": 0.013425,
     "totalTokens": 19615,
     "unpricedModels": [

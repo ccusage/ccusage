@@ -73,7 +73,7 @@ exit: 0
           "cost": 0.000185,
           "inputTokens": 100,
           "modelName": "kimi-k2-thinking",
-          "outputTokens": 482
+          "outputTokens": 50
         },
         {
           "cacheCreationTokens": 0,
@@ -92,7 +92,7 @@ exit: 0
         "kimi-for-coding"
       ],
       "month": "2026-01",
-      "outputTokens": 997,
+      "outputTokens": 565,
       "totalCost": 0.004082499999999999,
       "totalTokens": 9197
     },
@@ -123,7 +123,7 @@ exit: 0
     "cacheCreationTokens": 1570,
     "cacheReadTokens": 63000,
     "inputTokens": 14761,
-    "outputTokens": 4426,
+    "outputTokens": 3994,
     "totalCost": 0.056991599999999996,
     "totalTokens": 84007,
     "unpricedModels": [

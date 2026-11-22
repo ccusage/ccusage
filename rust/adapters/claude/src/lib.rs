@@ -12,6 +12,7 @@ mod daily;
 mod dedupe;
 mod diagnostics;
 mod load;
+mod mirror_claims;
 mod paths;
 mod source;
 mod usage_wire;

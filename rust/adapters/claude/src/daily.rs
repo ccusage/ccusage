@@ -9,8 +9,9 @@ use crate::{
 
 use super::{
     MainThreadSessions, UsageLoadContext, containing_projects_root,
-    dedupe::{DedupEntry, DedupKey, dedupe_files},
+    dedupe::{DedupKey, dedupe_files},
     main_thread_sessions,
+    mirror_claims::read_claiming_files,
     paths::{claude_paths, projects_roots, read_usage_files_since, visit_usage_files},
     read_discovered_paths,
 };
@@ -22,7 +23,9 @@ mod response_chain;
 
 use accumulate::summarize_daily_entries;
 use read::read_daily_usage_file_with_diagnostics;
-pub(super) use read::{has_usage, read_usage_file};
+pub(super) use read::{
+    ClaimEntry, find_mirror_sessions, has_usage, read_claim_entries, read_usage_file,
+};
 pub(super) use record::parse_usage_line;
 use record::{ClaudeEntry, RecordedCost};
 
@@ -81,17 +84,48 @@ pub(super) fn load_daily_entries(
             read,
         )
     };
-    let deduped = (!loaded_files.is_empty()).then(|| {
-        let (entries, copies) = dedupe_files(loaded_files);
+    Ok(finish_daily_files(shared, loaded_files, || {
+        pruned.iter().any(|file| has_usage(file))
+    }))
+}
+
+pub(super) fn load_claiming_daily_entries(
+    shared: &SharedArgs,
+    project: &str,
+    diagnostics: &Diagnostics,
+) -> Result<(DailyEntries, MainThreadSessions)> {
+    let context = UsageLoadContext::new(shared);
+    let loaded = read_claiming_files(shared, project, diagnostics, |file, root| {
+        read_daily_usage_file_with_diagnostics(
+            file,
+            root,
+            context.window().timezone(),
+            context.table(),
+            diagnostics,
+        )
+    })?;
+    Ok((
+        finish_daily_files(shared, loaded.report, || loaded.pruned_usage),
+        loaded.sessions,
+    ))
+}
+
+fn finish_daily_files(
+    shared: &SharedArgs,
+    files: Vec<(PathBuf, Vec<ClaudeEntry>)>,
+    pruned_usage: impl FnOnce() -> bool,
+) -> DailyEntries {
+    let deduped = (!files.is_empty()).then(|| {
+        let (entries, copies) = dedupe_files(files);
         DedupedDailyEntries { entries, copies }
     });
     let mut deduped = deduped.unwrap_or(DedupedDailyEntries {
         entries: Vec::new(),
         copies: Vec::new(),
     });
-    let detected = !deduped.entries.is_empty() || pruned.iter().any(|file| has_usage(file));
+    let detected = !deduped.entries.is_empty() || pruned_usage();
     deduped.retain_entries_in(&ccusage_core::ReportWindow::from_shared(shared));
-    Ok(DailyEntries { deduped, detected })
+    DailyEntries { deduped, detected }
 }
 
 pub(super) struct DedupedDailyEntries {
@@ -108,19 +142,7 @@ impl DedupedDailyEntries {
 }
 
 fn sessions(deduped: &DedupedDailyEntries) -> MainThreadSessions {
-    main_thread_sessions(
-        deduped
-            .entries
-            .iter()
-            .map(|entry| (&entry.key.session_id, entry))
-            .chain(
-                deduped
-                    .copies
-                    .iter()
-                    .map(|(index, session_id)| (session_id, &deduped.entries[*index])),
-            )
-            .map(|(session_id, survivor)| (session_id.as_ref(), survivor.is_sidechain())),
-    )
+    main_thread_sessions(&deduped.entries, &deduped.copies)
 }
 
 pub(super) struct ParsedUsage<'a> {

@@ -253,9 +253,6 @@ fn subtract_usage(current: &CopilotUsageEntry, baseline: &CopilotUsageEntry) -> 
         extra_total_tokens: current
             .extra_total_tokens
             .saturating_sub(baseline.extra_total_tokens),
-        fallback_output_tokens: current
-            .fallback_output_tokens
-            .saturating_sub(baseline.fallback_output_tokens),
         request_count: current.request_count.saturating_sub(baseline.request_count),
         nano_aiu: current
             .nano_aiu

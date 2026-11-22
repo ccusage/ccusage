@@ -50,7 +50,7 @@ expression: "json!({\n    \"calculated\": entry_snapshot(&calculated), \"display
   "displayCost": {
     "cost": 0.02,
     "date": "2026-01-02",
-    "extraTotalTokens": 0,
+    "extraTotalTokens": 123,
     "messageId": "message-b",
     "missingPricingModel": null,
     "model": "gpt-test",
@@ -64,7 +64,7 @@ expression: "json!({\n    \"calculated\": entry_snapshot(&calculated), \"display
       "cacheCreationInputTokens": 0,
       "cacheReadInputTokens": 0,
       "inputTokens": 0,
-      "outputTokens": 123
+      "outputTokens": 0
     },
     "version": null
   },

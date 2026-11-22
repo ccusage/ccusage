@@ -359,13 +359,12 @@ impl AdditionalTokens {
         self.reasoning.saturating_add(self.report_remainder)
     }
 
-    /// Preserves the legacy report fallback that fills a missing output bucket from the recorded total.
-    pub fn for_report(self, mut usage: TokenUsageRaw) -> (TokenUsageRaw, u64) {
-        if usage.output_tokens == 0 {
-            usage.output_tokens = self.report_remainder;
-            (usage, self.reasoning)
+    /// Matches partial logs to complete copies without using the match as billable usage.
+    pub fn replay_counts(self, output_tokens: u64) -> (u64, u64) {
+        if output_tokens == 0 {
+            (self.report_remainder, self.reasoning)
         } else {
-            (usage, self.total())
+            (output_tokens, self.total())
         }
     }
 }
@@ -399,7 +398,7 @@ mod tests {
     }
 
     #[test]
-    fn fills_missing_output_from_the_report_remainder() {
+    fn matches_replays_with_missing_output_tokens() {
         let usage = TokenUsageRaw {
             input_tokens: 100,
             cache_read_input_tokens: 25,
@@ -407,16 +406,11 @@ mod tests {
         };
         let additional = AdditionalTokens::from_total(usage, 0, 175);
         assert_eq!(additional.report_remainder, 50);
-        let (usage, extra_total_tokens) = additional.for_report(usage);
-
-        assert_eq!(usage.input_tokens, 100);
-        assert_eq!(usage.output_tokens, 50);
-        assert_eq!(usage.cache_read_input_tokens, 25);
-        assert_eq!(extra_total_tokens, 0);
+        assert_eq!(additional.replay_counts(usage.output_tokens), (50, 0));
     }
 
     #[test]
-    fn keeps_the_report_remainder_as_extra_when_output_is_known() {
+    fn matches_replays_with_known_output_and_additional_tokens() {
         let usage = TokenUsageRaw {
             input_tokens: 100,
             output_tokens: 50,
@@ -426,10 +420,7 @@ mod tests {
         let additional = AdditionalTokens::from_total(usage, 10, 200);
         assert_eq!(additional.reasoning, 10);
         assert_eq!(additional.report_remainder, 15);
-        let (usage, extra_total_tokens) = additional.for_report(usage);
-
-        assert_eq!(usage.output_tokens, 50);
-        assert_eq!(extra_total_tokens, 25);
+        assert_eq!(additional.replay_counts(usage.output_tokens), (50, 25));
     }
 
     #[test]
@@ -445,10 +436,8 @@ mod tests {
             ..Default::default()
         };
         let additional = AdditionalTokens::from_total(usage, u64::MAX, u64::MAX);
-        let (usage, extra_total_tokens) = additional.for_report(usage);
-
         assert_eq!(total_usage_tokens(usage), u64::MAX);
-        assert_eq!(extra_total_tokens, u64::MAX);
+        assert_eq!(additional.total(), u64::MAX);
     }
 
     #[test]
