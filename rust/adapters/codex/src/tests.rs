@@ -579,6 +579,35 @@ fn bills_long_context_codex_requests_at_long_context_rates() {
 }
 
 #[test]
+fn bills_missing_codex_cache_rates_at_the_long_context_tier() {
+    ccusage_test_support::install_pricing_snapshots();
+    let pricing = PricingMap::load_embedded();
+    let usage = CodexModelUsage::from_buckets(
+        CodexUsageBucket {
+            input_tokens: 300_000,
+            cached_input_tokens: 290_000,
+            cache_creation_tokens: 10_000,
+            output_tokens: 5_000,
+            long_context_input_tokens: 300_000,
+            long_context_cached_input_tokens: 290_000,
+            long_context_cache_creation_tokens: 10_000,
+            long_context_output_tokens: 5_000,
+        },
+        Default::default(),
+    );
+
+    for model in ["gpt-5.4-pro", "gpt-5.5-pro"] {
+        let cost = calculate_codex_model_cost(
+            model,
+            &usage,
+            Some(&pricing),
+            CodexSpeedPolicy::Forced(CodexServiceTier::Standard),
+        );
+        assert!((cost - 3.69).abs() < 1e-12, "{model}: {cost}");
+    }
+}
+
+#[test]
 fn prices_mixed_speed_and_long_context_buckets_independently() {
     ccusage_test_support::install_pricing_snapshots();
     let mut pricing = PricingMap::default();
