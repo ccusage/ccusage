@@ -686,7 +686,15 @@ fn override_tier_metadata_follows_normalized_model_ids_and_uses_the_default_cuto
         ..Default::default()
     };
 
-    for model in ["[agent] custom.gemini.v1", "xai/custom-untiered"] {
+    for model in [
+        "[agent] custom.gemini.v1",
+        "xai/custom-untiered",
+        "anthropic-claude-sonnet-private",
+        "anthropic@claude-sonnet-private",
+        "databricks-claude-sonnet-4-6",
+        "anthropic--claude-4.6-sonnet",
+        "databricks/databricks-grok-4-6",
+    ] {
         let key = model.to_owned();
         let pricing = pricing.with_user_overrides([(&key, &override_value)]);
         for (input_tokens, expected) in [(200_000, 0.202), (300_000, 0.905)] {

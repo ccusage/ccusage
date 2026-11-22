@@ -331,7 +331,12 @@ pub(super) struct WholeRequestVendor {
 // NOTE(2026-11-22, #2495): Bedrock's geographic and global Claude Sonnet 4.5 listings can have different rates (https://aws.amazon.com/blogs/machine-learning/unlock-global-ai-inference-scalability-using-new-global-cross-region-inference-on-amazon-bedrock-with-anthropics-claude-sonnet-4-5/). Match the model family so each listing applies its own tier to the whole request.
 pub(super) static WHOLE_REQUEST_LONG_CONTEXT_VENDORS: &[WholeRequestVendor] = &[
     WholeRequestVendor {
-        model_families: &["claude", "anthropic-claude"],
+        model_families: &[
+            "claude",
+            "anthropic-claude",
+            "anthropic--claude",
+            "databricks-claude",
+        ],
         namespaces: &["anthropic"],
         threshold: DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS,
     },
@@ -341,7 +346,14 @@ pub(super) static WHOLE_REQUEST_LONG_CONTEXT_VENDORS: &[WholeRequestVendor] = &[
         threshold: DEFAULT_LONG_CONTEXT_THRESHOLD_TOKENS,
     },
     WholeRequestVendor {
-        model_families: &["grok", "grok4", "xai-grok", "x-ai-grok", "spacexai-grok"],
+        model_families: &[
+            "grok",
+            "grok4",
+            "xai-grok",
+            "x-ai-grok",
+            "spacexai-grok",
+            "databricks-grok",
+        ],
         namespaces: &["xai"],
         threshold: XAI_LONG_CONTEXT_THRESHOLD,
     },

@@ -266,7 +266,7 @@ pub(super) fn whole_request_threshold(model: &str) -> Option<u64> {
     std::iter::once(model)
         .chain(
             model
-                .match_indices('.')
+                .match_indices(['.', '@'])
                 .map(|(index, _)| &model[index + 1..]),
         )
         .find_map(|part| {
