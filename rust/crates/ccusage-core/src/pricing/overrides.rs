@@ -4,7 +4,7 @@ use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 
 use super::{
-    Candidate, LongContext, LongContextMode, Lookup, Name, Pricing, PricingMap, PricingOverride,
+    Candidate, LongContext, LongContextMode, Name, Pricing, PricingMap, PricingOverride,
     PricingRows, Row, RowMatch, Scope, Source, SpeedMultipliers, normalized_pricing_key,
     row::{cache_defaults, whole_request_override_model},
     rows::{fold_case, has_uppercase, identity_order, matching_folded_ids, sort_folded_ids},
