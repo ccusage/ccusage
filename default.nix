@@ -3,6 +3,7 @@
   inputs,
   pkgs,
   root ? ./.,
+  telemetryEndpoint ? null,
 }:
 pkgs.callPackage ./package.nix {
   inherit
@@ -10,5 +11,6 @@ pkgs.callPackage ./package.nix {
     inputs
     pkgs
     root
+    telemetryEndpoint
     ;
 }

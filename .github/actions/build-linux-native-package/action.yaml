@@ -18,6 +18,9 @@ inputs:
   save-nix-cache:
     description: Whether this job may persist the Nix store; forwarded to setup-nix-cache as `save`.
     default: 'true'
+  telemetry-enabled:
+    description: Whether this official release build should report usage.
+    default: 'false'
 runs:
   using: composite
   steps:
@@ -28,14 +31,21 @@ runs:
         gc-max-store-size-linux: 4G
 
     - name: Build Linux static binary
+      id: build
       shell: bash
       env:
         NIX_GITHUB_TOKEN: ${{ inputs.nix-github-token }}
+        TELEMETRY_ENABLED: ${{ inputs.telemetry-enabled }}
       run: |
+        package=ccusage-static
+        if [ "$TELEMETRY_ENABLED" = "true" ]; then
+          package=ccusage-static-release
+        fi
+        echo "package=$package" >> "$GITHUB_OUTPUT"
         if [ "$NIX_GITHUB_TOKEN" = "false" ]; then
-          NIX_CONFIG="access-tokens =" nix build .#ccusage-static --print-build-logs
+          NIX_CONFIG="access-tokens =" nix build ".#$package" --print-build-logs
         else
-          nix build .#ccusage-static --print-build-logs
+          nix build ".#$package" --print-build-logs
         fi
 
     # The link lives inside the store's own gcroots, so it persists with a
@@ -45,10 +55,12 @@ runs:
     - name: Root current Crane artifacts for cache save
       if: inputs.save-nix-cache == 'true'
       shell: bash
+      env:
+        PACKAGE: ${{ steps.build.outputs.package }}
       run: |
         system="$(nix eval --impure --raw --expr builtins.currentSystem)"
         mkdir -p /nix/var/nix/gcroots/ci
-        nix build ".#packages.$system.ccusage-static.passthru.workspaceArtifacts.cacheRoot" \
+        nix build ".#packages.$system.$PACKAGE.passthru.workspaceArtifacts.cacheRoot" \
           --out-link /nix/var/nix/gcroots/ci/ccusage-cargo-artifacts
 
     - name: Verify Linux binary is static

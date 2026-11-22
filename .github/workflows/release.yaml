@@ -121,6 +121,7 @@ jobs:
           binary: ${{ matrix.binary }}
           cache-scope: ${{ matrix.name }}
           save-nix-cache: false
+          telemetry-enabled: 'true'
       - uses: ./.github/actions/build-macos-nix-native-package
         if: matrix.platform == 'darwin'
         with:
@@ -128,6 +129,7 @@ jobs:
           binary: ${{ matrix.binary }}
           cache-scope: ${{ matrix.name }}
           save-nix-cache: false
+          telemetry-enabled: 'true'
       # CI saves the x64 Cargo cache on pushes to main. Nothing in CI builds
       # Windows arm64, so its leg here is the only writer of its cache; it saves
       # only when the dependency key changes.
@@ -137,6 +139,7 @@ jobs:
           arch: ${{ matrix.arch }}
           binary: ${{ matrix.binary }}
           save-cargo-cache: ${{ matrix.arch == 'arm64' }}
+          telemetry-enabled: 'true'
 
   npm:
     needs:

@@ -8,7 +8,7 @@
 #   * `ccusage-static` (this file) cross-compiles to musl and links fully
 #     statically, producing the portable binary that the release jobs in
 #     `tagpr.yaml` ship to npm. The release matrix runs
-#     `nix build .#ccusage-static` for Linux;
+#     `nix build .#ccusage-static-release` for Linux;
 #     macOS arm64 uses the native Nix build, while macOS x64 and Windows fall
 #     back to `cargo build` because Nix cannot target those runners.
 #
@@ -106,5 +106,8 @@ in
             };
           }
         );
+      packages.ccusage-static-release = config.packages.ccusage-static.overrideAttrs (_: {
+        CCUSAGE_TELEMETRY_ENDPOINT = "https://telemetry.ccusage.com/v1/ping";
+      });
     };
 }

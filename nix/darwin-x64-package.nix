@@ -90,5 +90,8 @@ in
             };
           }
         );
+      packages.ccusage-darwin-x64-release = config.packages.ccusage-darwin-x64.overrideAttrs (_: {
+        CCUSAGE_TELEMETRY_ENDPOINT = "https://telemetry.ccusage.com/v1/ping";
+      });
     };
 }

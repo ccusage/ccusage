@@ -26,6 +26,15 @@ in
           root
           ;
       };
+      ccusageRelease = import ../default.nix {
+        inherit
+          craneLib
+          inputs
+          pkgs
+          root
+          ;
+        telemetryEndpoint = "https://telemetry.ccusage.com/v1/ping";
+      };
       ccusageProgram = pkgs.lib.getExe' ccusage "ccusage";
       # Shared builders for the `nix/tools/*` dependency manifests; see
       # nix/bun-node-modules.nix and nix/bun-cli.nix.
@@ -67,6 +76,7 @@ in
           models-dev-pricing
           publint
           ;
+        ccusage-release = ccusageRelease;
       };
     };
 }

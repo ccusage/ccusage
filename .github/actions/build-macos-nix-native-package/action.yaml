@@ -16,6 +16,9 @@ inputs:
   save-nix-cache:
     description: Whether this job may persist the Nix store; forwarded to setup-nix-cache as `save`.
     default: 'true'
+  telemetry-enabled:
+    description: Whether this official release build should report usage.
+    default: 'false'
 runs:
   using: composite
   steps:
@@ -31,6 +34,7 @@ runs:
       shell: bash
       env:
         ARCH: ${{ inputs.arch }}
+        TELEMETRY_ENABLED: ${{ inputs.telemetry-enabled }}
       run: |
         # arm64 builds natively; x64 cross-compiles on this same arm64 runner
         # (the Apple SDK is multi-arch), so no separate Intel runner is needed.
@@ -46,6 +50,9 @@ runs:
             exit 1
             ;;
         esac
+        if [ "$TELEMETRY_ENABLED" = "true" ]; then
+          package="$package-release"
+        fi
         echo "package=$package" >> "$GITHUB_OUTPUT"
         nix build ".#$package" --print-build-logs
 

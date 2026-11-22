@@ -9,6 +9,7 @@
   root ? ./.,
   stdenv,
   apple-sdk_15,
+  telemetryEndpoint ? null,
 }:
 let
   # The root manifest is the version source of truth: rust/crates/ccusage/build.rs
@@ -47,9 +48,6 @@ let
     cargoExtraArgs = "-p ccusage --bin ccusage";
     CCUSAGE_PRICING_JSON_PATH = "${inputs.litellm}/model_prices_and_context_window.json";
     CCUSAGE_VERSION = version;
-    # Only release builds report usage; plain `cargo build` compiles telemetry
-    # without an endpoint, so development runs never reach the collector.
-    CCUSAGE_TELEMETRY_ENDPOINT = "https://telemetry.ccusage.com/v1/ping";
     RUSTFLAGS =
       # Splitting the runtime into per-adapter crates makes each crate
       # instantiate the shared generic machinery for its own types, and stable
@@ -74,7 +72,10 @@ let
       apple-sdk_15
     ];
   }
-  // cargoConfigEnv;
+  // cargoConfigEnv
+  // lib.optionalAttrs (telemetryEndpoint != null) {
+    CCUSAGE_TELEMETRY_ENDPOINT = telemetryEndpoint;
+  };
   # Keep the dependency artifact keyed only by inputs that affect Cargo deps.
   # Pricing snapshots and the npm release version are embedded by the final
   # package. The Rust workspace packages intentionally stay at 0.0.0, and the

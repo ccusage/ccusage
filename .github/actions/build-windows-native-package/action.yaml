@@ -13,6 +13,9 @@ inputs:
       run on main outside pull requests and a dependency key with no entry yet,
       so pull request code never writes a cache that main and releases read.
     default: 'true'
+  telemetry-enabled:
+    description: Whether this official release build should report usage.
+    default: 'false'
 runs:
   using: composite
   steps:
@@ -48,12 +51,15 @@ runs:
         restore-keys: |
           cargo-${{ runner.os }}-${{ runner.arch }}-
 
+    - name: Configure telemetry for official release
+      if: inputs.telemetry-enabled == 'true'
+      shell: bash
+      run: echo 'CCUSAGE_TELEMETRY_ENDPOINT=https://telemetry.ccusage.com/v1/ping' >> "$GITHUB_ENV"
+
     - name: Build Cargo native binary
       shell: bash
       env:
         RUSTUP_TOOLCHAIN: ${{ steps.toolchain.outputs.channel }}
-        # Mirrors package.nix, which bakes the endpoint into every Nix-built release.
-        CCUSAGE_TELEMETRY_ENDPOINT: https://telemetry.ccusage.com/v1/ping
       # Nix cannot target Windows, so this is the one build that downloads the
       # LiteLLM pricing snapshot instead of reading it from the pinned input.
       run: cargo build --manifest-path rust/Cargo.toml --release --bin ccusage --features fetch-litellm-pricing
