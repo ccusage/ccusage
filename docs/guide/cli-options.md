@@ -181,9 +181,11 @@ ccusage daily --by-agent --json
 
 `--sections` accepts a comma-separated list of `daily`, `weekly`, `monthly`, and `session`. The invoked report section is always included. For table output, each requested section is printed as a separate table. `--by-agent` is JSON-only; session rows are already per-agent.
 
-### Claude Daily Command
+### Claude Project Options
 
-Additional options for `ccusage claude daily`; the unified `ccusage daily` does not accept them:
+`--project <name>` overrides the configured project on Claude daily, weekly, monthly, session, and blocks reports. The top-level `blocks` and `session` commands also accept it. In unified session reports it filters Claude Code usage. A Claude session lookup with `--id` searches across projects.
+
+`--instances` and `--project-aliases` are options for `ccusage claude daily`.
 
 ```bash
 # Group by project
@@ -191,7 +193,7 @@ ccusage claude daily --instances
 ccusage claude daily -i
 
 # Filter to specific project
-ccusage claude daily --project myproject
+ccusage claude weekly --project myproject
 ccusage claude daily -p myproject
 
 # Combine project filtering
@@ -342,7 +344,7 @@ Many options have short aliases for convenience:
 | `--offline`   | `-O`  | Offline mode                              |
 | `--timezone`  | `-z`  | Set timezone                              |
 | `--instances` | `-i`  | Group by project (`ccusage claude daily`) |
-| `--project`   | `-p`  | Filter project (`ccusage claude daily`)   |
+| `--project`   | `-p`  | Filter Claude Code usage by project       |
 | `--id`        | `-i`  | Session lookup (`session`)                |
 | `--active`    | `-a`  | Active block only (`blocks`)              |
 | `--recent`    | `-r`  | Recent blocks (`blocks`)                  |
