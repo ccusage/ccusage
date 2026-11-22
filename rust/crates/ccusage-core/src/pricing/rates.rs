@@ -34,7 +34,7 @@ pub struct LongContextRates {
     pub input: Option<f64>,
     pub output: Option<f64>,
     pub cache_create: Option<f64>,
-    pub(super) cache_create_1h: Option<f64>,
+    pub(crate) cache_create_1h: Option<f64>,
     pub cache_read: Option<f64>,
 }
 
@@ -62,6 +62,10 @@ impl LongContext {
 }
 
 impl LongContextRates {
+    fn cache_rate(self, explicit: Option<f64>, multiplier: f64) -> Option<f64> {
+        explicit.or_else(|| self.input.map(|input| input * multiplier))
+    }
+
     pub(super) fn marginal(self) -> Option<LongContext> {
         [
             self.input,
@@ -106,11 +110,18 @@ impl Pricing {
 
     pub(crate) fn one_hour_cache_creation_rate_above_200k(self) -> Option<f64> {
         let rates = self.long_context?.rates;
-        rates.cache_create_1h.or_else(|| {
-            rates
-                .input
-                .map(|input| input * self.cache_defaults.write_1h_x)
-        })
+        rates.cache_rate(rates.cache_create_1h, self.cache_defaults.write_1h_x)
+    }
+
+    // NOTE(2026-11-22, #2496): Gemini's published cached-input rate doubles with its long input rate (https://ai.google.dev/gemini-api/docs/pricing). Missing cache rates must follow the selected input tier even when cached tokens alone cross the cutoff.
+    pub(crate) fn whole_request_rates(self, rates: LongContextRates) -> LongContextRates {
+        let defaults = self.cache_defaults;
+        LongContextRates {
+            cache_create: rates.cache_rate(rates.cache_create, defaults.write_x),
+            cache_create_1h: rates.cache_rate(rates.cache_create_1h, defaults.write_1h_x),
+            cache_read: rates.cache_rate(rates.cache_read, defaults.read_x),
+            ..rates
+        }
     }
 
     pub fn cache_read_rate_at(self, input_rate: f64) -> f64 {

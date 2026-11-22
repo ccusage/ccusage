@@ -54,6 +54,86 @@ fn embedded_table_matches_the_rows_loaded_from_its_snapshots() {
 }
 
 #[test]
+fn whole_request_catalogue_rows_bill_cache_at_the_long_context_rates() {
+    use crate::{
+        TokenUsageRaw,
+        cost::{EntryPricing, PriceTable, UsageGranularity, price_entry},
+        pricing::LongContextMode,
+    };
+
+    crate::test_support::install_pricing_snapshots();
+    let primary = PricingMap::load_embedded();
+    let mut failures = Vec::new();
+    for catalogue in [&primary, embedded_models_dev_pricing()] {
+        for row in &catalogue.rows.entries.rows {
+            let rates = row.rates();
+            let Some(tier) = rates
+                .long_context
+                .filter(|tier| tier.mode == LongContextMode::WholeRequest)
+            else {
+                continue;
+            };
+            let model = row.key.as_ref();
+            let mut pricing = PricingMap::default();
+            pricing.insert_test_pricing(model.to_owned(), rates);
+            let tokens = tier.threshold + 1;
+            let cache_rates = [
+                (
+                    "read",
+                    TokenUsageRaw {
+                        cache_read_input_tokens: tokens,
+                        ..Default::default()
+                    },
+                    tier.rates
+                        .cache_read
+                        .or_else(|| {
+                            tier.rates
+                                .input
+                                .map(|input| input * rates.cache_defaults.read_x)
+                        })
+                        .unwrap_or_else(|| rates.cache_read_rate_at(rates.input)),
+                ),
+                (
+                    "five-minute write",
+                    TokenUsageRaw {
+                        cache_creation_input_tokens: tokens,
+                        ..Default::default()
+                    },
+                    tier.rates
+                        .cache_create
+                        .or_else(|| {
+                            tier.rates
+                                .input
+                                .map(|input| input * rates.cache_defaults.write_x)
+                        })
+                        .unwrap_or_else(|| rates.cache_creation_rate()),
+                ),
+            ];
+            for (bucket, usage, expected_rate) in cache_rates {
+                let cost = price_entry(
+                    EntryPricing {
+                        usage,
+                        granularity: UsageGranularity::Request,
+                        reasoning_tokens: 0,
+                        reported_model: Some(model),
+                        candidates: &[(model, MatchKind::StrictExact)],
+                        stored_cost: None,
+                        timestamp: None,
+                    },
+                    PriceTable::Calculate(&pricing),
+                )
+                .cost;
+                let expected = expected_rate * tokens as f64;
+                if (cost - expected).abs() > 1e-12 {
+                    failures.push(format!("{model} {bucket}: {cost} != {expected}"));
+                }
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
 fn embedded_pricing_reserves_the_encoded_row_count() {
     crate::test_support::install_pricing_snapshots();
     let primary = PricingMap::load_embedded();

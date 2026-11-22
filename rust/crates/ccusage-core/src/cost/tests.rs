@@ -477,6 +477,29 @@ fn prices_two_stage_model_as_whole_request_at_long_context_rates() {
 }
 
 #[test]
+fn gemini_pro_previews_bill_the_same_long_context_cache_reads() {
+    crate::test_support::install_pricing_snapshots();
+    let pricing = PricingMap::load_embedded();
+    let usage = TokenUsageRaw {
+        input_tokens: 10_000,
+        output_tokens: 5_000,
+        cache_read_input_tokens: 290_000,
+        ..TokenUsageRaw::default()
+    };
+
+    for model in ["gemini-3-pro-preview", "gemini-3.1-pro-preview"] {
+        let cost = calculate_cost_for_usage(
+            Some(model),
+            usage,
+            None,
+            CostMode::Calculate,
+            Some(&pricing),
+        );
+        assert!((cost - 0.246).abs() < 1e-12, "{model}: {cost}");
+    }
+}
+
+#[test]
 fn cached_context_selects_the_long_context_tier() {
     crate::test_support::install_pricing_snapshots();
     let pricing = PricingMap::load_embedded();

@@ -1,6 +1,8 @@
 use crate::{
     cli::CostMode,
-    pricing::{BillingRoute, Pricing, PricingHandle, PricingMap},
+    pricing::{
+        BillingRoute, LongContextMode, LongContextRates, Pricing, PricingHandle, PricingMap,
+    },
     types::Speed,
 };
 
@@ -179,38 +181,33 @@ fn calculate_cost_from_pricing(usage: crate::TokenUsageRaw, pricing: &Pricing) -
     let cache_create_1h_cost = pricing.one_hour_cache_creation_rate();
     let cache_create = pricing.cache_creation_rate();
     let cache_read = pricing.cache_read_rate_at(pricing.input);
-    let cache_create_1h_cost_above_200k = pricing.one_hour_cache_creation_rate_above_200k();
-
-    let rates = pricing
-        .long_context
-        .map(|context| context.rates)
-        .unwrap_or_default();
     if let Some(context) = pricing
         .long_context
-        .filter(|context| context.mode == crate::pricing::LongContextMode::WholeRequest)
+        .filter(|context| context.mode == LongContextMode::WholeRequest)
     {
-        let threshold = context.threshold;
         let context_tokens = usage
             .input_tokens
             .saturating_add(usage.cache_read_input_tokens)
             .saturating_add(cache_create_5m_tokens)
             .saturating_add(cache_create_1h_tokens);
-        let long_context = context_tokens > threshold;
-        let rate = |base: f64, above: Option<f64>| {
-            if long_context {
-                above.unwrap_or(base)
-            } else {
-                base
-            }
+        let rates = if context_tokens > context.threshold {
+            pricing.whole_request_rates(context.rates)
+        } else {
+            LongContextRates::default()
         };
-        return usage.input_tokens as f64 * rate(pricing.input, rates.input)
-            + usage.output_tokens as f64 * rate(pricing.output, rates.output)
-            + cache_create_5m_tokens as f64 * rate(cache_create, rates.cache_create)
+        return usage.input_tokens as f64 * rates.input.unwrap_or(pricing.input)
+            + usage.output_tokens as f64 * rates.output.unwrap_or(pricing.output)
+            + cache_create_5m_tokens as f64 * rates.cache_create.unwrap_or(cache_create)
             + cache_create_1h_tokens as f64
-                * rate(cache_create_1h_cost, cache_create_1h_cost_above_200k)
-            + usage.cache_read_input_tokens as f64 * rate(cache_read, rates.cache_read);
+                * rates.cache_create_1h.unwrap_or(cache_create_1h_cost)
+            + usage.cache_read_input_tokens as f64 * rates.cache_read.unwrap_or(cache_read);
     }
 
+    let rates = pricing
+        .long_context
+        .map(|context| context.rates)
+        .unwrap_or_default();
+    let cache_create_1h_cost_above_200k = pricing.one_hour_cache_creation_rate_above_200k();
     let threshold = pricing.long_context_split_threshold();
     tiered_cost(usage.input_tokens, pricing.input, rates.input, threshold)
         + tiered_cost(usage.output_tokens, pricing.output, rates.output, threshold)
