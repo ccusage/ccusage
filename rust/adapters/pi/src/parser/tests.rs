@@ -247,7 +247,7 @@ fn diagnoses_assistant_usage_without_a_valid_timestamp() {
 }
 
 #[test]
-fn falls_back_to_total_tokens_when_pi_parts_are_missing() {
+fn keeps_total_only_usage_out_of_output_tokens() {
     let fixture = fs_fixture!({
         "sessions/project-a/agent_session-a.jsonl": r#"{"type":"message","timestamp":"2026-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"totalTokens":333}}}"#,
     });
@@ -262,8 +262,8 @@ fn falls_back_to_total_tokens_when_pi_parts_are_missing() {
     .unwrap();
 
     assert_eq!(entries.len(), 1);
-    assert_eq!(entries[0].usage.output_tokens, 333);
-    assert_eq!(entries[0].extra_total_tokens, 0);
+    assert_eq!(entries[0].usage.output_tokens, 0);
+    assert_eq!(entries[0].extra_total_tokens, 333);
 }
 
 #[test]

@@ -216,7 +216,7 @@ exit: 0
           "cost": 0.0,
           "inputTokens": 0,
           "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 567
+          "outputTokens": 0
         }
       ],
       "modelsUsed": [
@@ -225,7 +225,7 @@ exit: 0
         "claude-opus-4-20250514",
         "claude-sonnet-4-20250514"
       ],
-      "outputTokens": 856,
+      "outputTokens": 289,
       "totalCost": 0.1,
       "totalTokens": 3496
     }
@@ -234,7 +234,7 @@ exit: 0
     "cacheCreationTokens": 600,
     "cacheReadTokens": 3800,
     "inputTokens": 11090,
-    "outputTokens": 2878,
+    "outputTokens": 2311,
     "totalCost": 1.35,
     "totalTokens": 18388
   }

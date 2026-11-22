@@ -673,10 +673,12 @@ ccusage claude daily --project my-frontend-app --json
 - `outputTokens`: Number of output tokens generated
 - `cacheCreationTokens`: Tokens used for cache creation
 - `cacheReadTokens`: Tokens read from cache
-- `totalTokens`: Sum of all token types
+- `totalTokens`: All tokens, including any unexplained remainder in the source's recorded total
 - `totalCost`: Estimated cost in US dollars
 - `modelsUsed`: Names of the models used
 - `modelBreakdowns`: One entry per model with `modelName`, the four token counts, and `cost`, plus [`storedCost`](#stored-costs), [`cacheCreation1hTokens`](#cache-write-ttl-split), [`missingPricing`](#unpriced-models), and [`estimatedPricing`](#estimated-prices) when they apply
+
+An unexplained remainder appears only in `totalTokens` and is excluded from [token-based cost calculations](/guide/cost-modes#token-based-calculation). The total can therefore exceed the sum of the displayed token categories.
 
 ### Report-Specific Fields
 

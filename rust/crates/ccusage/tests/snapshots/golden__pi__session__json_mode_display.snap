@@ -715,7 +715,7 @@ exit: 0
           "cost": 0.0,
           "inputTokens": 0,
           "modelName": "[pi] gpt-5",
-          "outputTokens": 500
+          "outputTokens": 0
         },
         {
           "cacheCreationTokens": 0,
@@ -740,7 +740,7 @@ exit: 0
         "[pi] gpt-5",
         "[pi] claude-opus-4-20250514"
       ],
-      "outputTokens": 2126,
+      "outputTokens": 1626,
       "projectPath": "--Users-dev-beta--",
       "sessionId": "sess-beta-legacy",
       "totalCost": 2.75,
@@ -835,7 +835,7 @@ exit: 0
     "cacheCreationTokens": 2235,
     "cacheReadTokens": 44449,
     "inputTokens": 14567,
-    "outputTokens": 3996,
+    "outputTokens": 3496,
     "totalCost": 7.845,
     "totalTokens": 65497
   }

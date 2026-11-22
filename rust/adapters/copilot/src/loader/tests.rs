@@ -674,7 +674,10 @@ fn splits_otel_input_tokens_like_session_state() {
 }
 
 #[test]
-fn falls_back_to_total_tokens_when_copilot_parts_are_missing() {
+fn keeps_total_only_otel_usage_out_of_output_tokens() {
+    ccusage_test_support::install_pricing_snapshots();
+    let mut pricing = ccusage_core::PricingMap::default();
+    pricing.load_json(r#"{"test-model":{"output_cost_per_token":2}}"#);
     let fixture = fs_fixture!({
         "copilot.jsonl":
         format!(
@@ -697,12 +700,18 @@ fn falls_back_to_total_tokens_when_copilot_parts_are_missing() {
     });
     let file = fixture.path("copilot.jsonl");
 
-    let entries = parse_otel_file(&file, &Diagnostics::new("copilot")).unwrap();
+    let mut entries = parse_otel_file(&file, &Diagnostics::new("copilot")).unwrap();
 
     assert_eq!(entries.len(), 1);
-    assert_eq!(entries[0].output_tokens, 567);
-    assert_eq!(entries[0].reasoning_output_tokens, 5);
-    assert_eq!(entries[0].extra_total_tokens, 0);
+    let loaded = usage_entry_to_loaded(
+        entries.pop().unwrap(),
+        &jiff::tz::TimeZone::UTC,
+        CostMode::Calculate,
+        PriceTable::Calculate(&pricing),
+    );
+    assert_eq!(loaded.usage.output_tokens, 0);
+    assert_eq!(loaded.extra_total_tokens, 567);
+    assert_eq!(loaded.cost, 10.0);
 }
 
 #[test]

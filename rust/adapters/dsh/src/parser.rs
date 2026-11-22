@@ -451,7 +451,7 @@ fn session_id_from_path(path: &Path) -> String {
 }
 
 pub(super) fn dsh_entry_key(entry: &DshUsageEntry) -> String {
-    let (usage, _) = entry.reported_usage();
+    let usage = entry.usage;
     match entry.seq {
         Some(seq) => format!("{}:{seq}", entry.session_id),
         None => format!(
@@ -460,7 +460,12 @@ pub(super) fn dsh_entry_key(entry: &DshUsageEntry) -> String {
             entry.timestamp.as_millis(),
             entry.model,
             usage.input_tokens,
-            usage.output_tokens,
+            ccusage_core::AdditionalTokens {
+                reasoning: 0,
+                report_remainder: entry.report_remainder,
+            }
+            .replay_counts(usage.output_tokens)
+            .0,
             usage.cache_creation_input_tokens,
             usage.cache_read_input_tokens,
         ),
@@ -491,14 +496,6 @@ impl DshUsageEntry {
             + u128::from(cache_write)
             + u128::from(usage.cache_read_input_tokens);
         (total, usage.output_tokens, usage.input_tokens, cache_write)
-    }
-
-    fn reported_usage(&self) -> (TokenUsageRaw, u64) {
-        ccusage_core::AdditionalTokens {
-            reasoning: 0,
-            report_remainder: self.report_remainder,
-        }
-        .for_report(self.usage)
     }
 }
 
@@ -534,7 +531,6 @@ pub(super) fn dsh_entry_to_loaded(
     let missing_pricing_model = priced
         .missing_pricing
         .then(|| ccusage_core::model_aliases::resolve_model_name(&entry.model).into_owned());
-    let (usage, extra_total_tokens) = entry.reported_usage();
     LoadedEntry {
         date: date_at(entry.timestamp, tz),
         timestamp: entry.timestamp,
@@ -542,14 +538,14 @@ pub(super) fn dsh_entry_to_loaded(
         session_id: Arc::from(entry.session_id),
         project_path: entry.cwd.unwrap_or_else(|| Arc::from("DeepSeek Harness")),
         cost,
-        extra_total_tokens,
+        extra_total_tokens: entry.report_remainder,
         credits: None,
         message_count: None,
         model: Some(entry.model),
         usage_limit_reset_time: None,
         missing_pricing_model,
         estimated_pricing,
-        usage,
+        usage: entry.usage,
         message_id: None,
         version: None,
         recorded_cost: None,
@@ -783,7 +779,13 @@ mod tests {
         assert_eq!(entries[0].session_id, "fallback");
         assert_eq!(entries[0].model, UNKNOWN_MODEL);
         assert_eq!(entries[0].timestamp.as_millis(), 1_700_000_000_000);
-        assert_eq!(entries[0].reported_usage().0.output_tokens, 7);
+        let entry = dsh_entry_to_loaded(
+            entries.into_iter().next().unwrap(),
+            &JiffTimeZone::UTC,
+            PriceTable::Display,
+        );
+        assert_eq!(entry.usage.output_tokens, 0);
+        assert_eq!(entry.extra_total_tokens, 7);
     }
 
     #[test]

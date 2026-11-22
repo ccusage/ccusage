@@ -9,7 +9,7 @@ exit: 0
     "cacheCreationTokens": 820,
     "cacheReadTokens": 2360,
     "inputTokens": 8831,
-    "outputTokens": 2877,
+    "outputTokens": 2412,
     "totalCost": 0.0,
     "totalTokens": 15038
   },
@@ -134,7 +134,7 @@ exit: 0
           "cost": 0.0,
           "inputTokens": 650,
           "modelName": "gpt-5",
-          "outputTokens": 485
+          "outputTokens": 140
         },
         {
           "cacheCreationTokens": 0,
@@ -142,7 +142,7 @@ exit: 0
           "cost": 0.0,
           "inputTokens": 250,
           "modelName": "claude-opus-4-20250514",
-          "outputTokens": 120
+          "outputTokens": 0
         }
       ],
       "modelsUsed": [
@@ -156,7 +156,7 @@ exit: 0
         "gpt-5",
         "claude-opus-4-20250514"
       ],
-      "outputTokens": 2795,
+      "outputTokens": 2330,
       "totalCost": 0.0,
       "totalTokens": 14615,
       "week": "2025-12-29"

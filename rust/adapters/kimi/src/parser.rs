@@ -339,18 +339,22 @@ impl KimiUsageEntry {
     }
 
     pub(super) fn dedupe_key(&self) -> KimiEntryKey {
-        let (usage, extra_total_tokens) = self.additional().for_report(self.usage());
+        let (output_tokens, remainder) = ccusage_core::AdditionalTokens {
+            reasoning: 0,
+            report_remainder: self.report_remainder,
+        }
+        .replay_counts(self.output_tokens);
         KimiEntryKey {
             session_id: self.session_id.clone(),
             message_id: self.message_id.clone(),
             timestamp: self.timestamp,
             model: self.model.clone(),
             tokens: [
-                usage.input_tokens,
-                usage.output_tokens,
-                usage.cache_creation_input_tokens,
-                usage.cache_read_input_tokens,
-                extra_total_tokens,
+                self.input_tokens,
+                output_tokens,
+                self.cache_creation_tokens,
+                self.cache_read_tokens,
+                remainder,
             ],
         }
     }
@@ -365,13 +369,6 @@ impl KimiUsageEntry {
             cache_creation: None,
         }
     }
-
-    fn additional(&self) -> ccusage_core::AdditionalTokens {
-        ccusage_core::AdditionalTokens {
-            reasoning: 0,
-            report_remainder: self.report_remainder,
-        }
-    }
 }
 
 pub(super) fn kimi_entry_to_loaded(
@@ -381,7 +378,6 @@ pub(super) fn kimi_entry_to_loaded(
 ) -> LoadedEntry {
     let usage = entry.usage();
     let (cost, missing_pricing_model, estimated_pricing) = price_kimi_usage(&entry, pricing, usage);
-    let (usage, extra_total_tokens) = entry.additional().for_report(usage);
     LoadedEntry {
         date: date_at(entry.timestamp, tz),
         timestamp: entry.timestamp,
@@ -389,7 +385,7 @@ pub(super) fn kimi_entry_to_loaded(
         session_id: Arc::from(entry.session_id),
         project_path: Arc::from("Kimi"),
         cost,
-        extra_total_tokens,
+        extra_total_tokens: entry.report_remainder,
         credits: None,
         message_count: None,
         model: Some(entry.model),
@@ -593,7 +589,7 @@ mod tests {
     }
 
     #[test]
-    fn falls_back_to_total_tokens_when_kimi_parts_are_missing() {
+    fn keeps_total_only_usage_out_of_output_tokens() {
         let fixture = fs_fixture!({
             "sessions/group/session-a/wire.jsonl": "",
         });
@@ -620,8 +616,8 @@ mod tests {
         .unwrap();
 
         let entry = kimi_entry_to_loaded(entry, &JiffTimeZone::UTC, PriceTable::Display);
-        assert_eq!(entry.usage.output_tokens, 432);
-        assert_eq!(entry.extra_total_tokens, 0);
+        assert_eq!(entry.usage.output_tokens, 0);
+        assert_eq!(entry.extra_total_tokens, 432);
     }
 
     #[test]

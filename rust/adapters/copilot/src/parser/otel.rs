@@ -289,12 +289,11 @@ pub(crate) fn reconcile_otel_calls(files: Vec<OtelFileCalls>) -> Vec<CopilotUsag
             model: candidate.model,
             logged_model: candidate.logged_model,
             input_tokens: candidate.input_tokens,
-            output_tokens: candidate.output_tokens,
+            output_tokens: candidate.output_tokens - candidate.fallback_output_tokens,
             cache_creation_tokens: candidate.cache_creation_tokens,
             cache_read_tokens: candidate.cache_read_tokens,
             reasoning_output_tokens: candidate.reasoning_output_tokens,
-            extra_total_tokens: candidate.extra_total_tokens,
-            fallback_output_tokens: candidate.fallback_output_tokens,
+            extra_total_tokens: candidate.extra_total_tokens + candidate.fallback_output_tokens,
             request_count: 1,
             nano_aiu: None,
             dedup_key: candidate.dedup_key,
@@ -399,11 +398,12 @@ fn to_call(
         speed: None,
         cache_creation: None,
     };
-    let (report_usage, extra_total_tokens) =
-        AdditionalTokens::from_total(usage, 0, total).for_report(usage);
-    let fallback_output_tokens = report_usage.output_tokens - usage.output_tokens;
+    let additional = AdditionalTokens::from_total(usage, 0, total);
+    // Match repeated spans with and without explicit output before deciding which tokens are classified.
+    let (matching_output, extra_total_tokens) = additional.replay_counts(usage.output_tokens);
+    let fallback_output_tokens = matching_output - usage.output_tokens;
     let Some(counted_tokens) =
-        ccusage_core::checked_total_usage_tokens(report_usage, extra_total_tokens)
+        ccusage_core::checked_total_usage_tokens(usage, additional.report_remainder)
     else {
         diagnostics.record(ccusage_core::Skip::record(
             path,
@@ -436,7 +436,10 @@ fn to_call(
         logged_model: first_non_empty_model_attr(attributes),
         session: best_session_attr(attributes).map(|(session_id, _)| session_id),
         timestamp,
-        usage: report_usage,
+        usage: TokenUsageRaw {
+            output_tokens: matching_output,
+            ..usage
+        },
         reasoning_output_tokens: reasoning,
         extra_total_tokens,
         fallback_output_tokens,

@@ -14,7 +14,6 @@ use serde::{
 use serde_json::{Map, Value};
 
 use crate::{LoadedEntry, TimestampMs, TokenUsageRaw, date_at};
-use ccusage_core::AdditionalTokens;
 
 const DEFAULT_MODEL: &str = "unknown";
 const PROVIDER_PREFIXES: [&str; 4] = ["google", "gemini", "vertex_ai", "openrouter/google"];
@@ -616,12 +615,9 @@ pub(super) fn event_to_loaded(
         speed: None,
         cache_creation: None,
     };
-    let additional =
-        AdditionalTokens::from_total(usage, event.reasoning_tokens, event.total_tokens);
-    let (report_usage, _) = additional.for_report(usage);
     let extra_total_tokens = event
         .total_tokens
-        .saturating_sub(ccusage_core::total_usage_tokens(report_usage));
+        .saturating_sub(ccusage_core::total_usage_tokens(usage));
     let names = model_candidates(&event.model);
     let candidates: Vec<_> = names
         .iter()
@@ -658,7 +654,7 @@ pub(super) fn event_to_loaded(
         usage_limit_reset_time: None,
         missing_pricing_model,
         estimated_pricing,
-        usage: report_usage,
+        usage,
         message_id: event.message_id,
         version: None,
         recorded_cost: None,
@@ -832,7 +828,7 @@ mod tests {
     }
 
     #[test]
-    fn falls_back_to_total_tokens_when_gemini_parts_are_missing() {
+    fn keeps_total_only_usage_out_of_output_tokens() {
         let event = build_usage(
             Some("gemini-test"),
             GeminiTokens {
@@ -849,8 +845,8 @@ mod tests {
             &JiffTimeZone::UTC,
             PriceTable::Display,
         );
-        assert_eq!(entry.usage.output_tokens, 654);
-        assert_eq!(entry.extra_total_tokens, 0);
+        assert_eq!(entry.usage.output_tokens, 0);
+        assert_eq!(entry.extra_total_tokens, 654);
     }
 
     #[test]

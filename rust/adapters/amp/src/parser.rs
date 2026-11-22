@@ -399,7 +399,6 @@ fn amp_entry(
     let missing_pricing_model = priced
         .missing_pricing
         .then(|| crate::model_aliases::resolve_model_name(&record.model).into_owned());
-    let (usage, extra_total_tokens) = record.additional.for_report(record.usage);
     LoadedEntry {
         date: date_at(record.timestamp, tz),
         timestamp: record.timestamp,
@@ -407,14 +406,14 @@ fn amp_entry(
         session_id: Arc::from(thread_id),
         project_path: Arc::from("Amp"),
         cost,
-        extra_total_tokens,
+        extra_total_tokens: record.additional.total(),
         credits: record.credits,
         message_count: None,
         model: Some(record.model),
         usage_limit_reset_time: None,
         missing_pricing_model,
         estimated_pricing,
-        usage,
+        usage: record.usage,
         message_id: record.id,
         version: None,
         recorded_cost: None,
@@ -633,7 +632,7 @@ mod tests {
     }
 
     #[test]
-    fn falls_back_to_total_tokens_when_amp_parts_are_missing() {
+    fn keeps_total_only_usage_out_of_output_tokens() {
         let fixture = fs_fixture!({
             "thread.json": r#"{"id":"thread-a","usageLedger":{"events":[{"id":"event-a","timestamp":"2026-01-02T00:00:00.000Z","model":"gpt-5","tokens":{"total":345}}]}}"#,
         });
@@ -651,8 +650,8 @@ mod tests {
         .unwrap();
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].usage.output_tokens, 345);
-        assert_eq!(entries[0].extra_total_tokens, 0);
+        assert_eq!(entries[0].usage.output_tokens, 0);
+        assert_eq!(entries[0].extra_total_tokens, 345);
     }
 
     #[test]
@@ -781,7 +780,7 @@ mod tests {
     }
 
     #[test]
-    fn falls_back_to_total_tokens_in_messages_path() {
+    fn keeps_total_only_message_usage_out_of_output_tokens() {
         let fixture = fs_fixture!({
             "thread.json": r#"{
                 "id":"T-thread-a",
@@ -808,8 +807,8 @@ mod tests {
         .unwrap();
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].usage.output_tokens, 345);
-        assert_eq!(entries[0].extra_total_tokens, 0);
+        assert_eq!(entries[0].usage.output_tokens, 0);
+        assert_eq!(entries[0].extra_total_tokens, 345);
     }
 
     #[test]

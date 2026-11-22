@@ -95,7 +95,7 @@ exit: 0
           "cost": 0.000475,
           "inputTokens": 140,
           "modelName": "gpt-5",
-          "outputTokens": 375
+          "outputTokens": 30
         }
       ],
       "modelsUsed": [
@@ -106,7 +106,7 @@ exit: 0
         "anthropic/claude-sonnet-4"
       ],
       "month": "2026-01",
-      "outputTokens": 952,
+      "outputTokens": 607,
       "totalCost": 1.457675,
       "totalTokens": 12452
     }
@@ -115,7 +115,7 @@ exit: 0
     "cacheCreationTokens": 550,
     "cacheReadTokens": 22500,
     "inputTokens": 5363,
-    "outputTokens": 1819,
+    "outputTokens": 1474,
     "totalCost": 4.0008605,
     "totalTokens": 30362,
     "unpricedModels": [
