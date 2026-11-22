@@ -22700,6 +22700,18 @@
 		},
 		"provider": "nano-gpt"
 	},
+	"longcat-2.5": {
+		"cost": {
+			"cache_read": 0.006,
+			"cache_write": 0,
+			"input": 0.3,
+			"output": 1.2
+		},
+		"limit": {
+			"context": 1000000
+		},
+		"provider": "opencode-go"
+	},
 	"lucidnova-rf1-100b": {
 		"cost": {
 			"input": 2,
