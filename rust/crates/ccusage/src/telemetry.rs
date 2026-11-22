@@ -538,13 +538,16 @@ mod tests {
 
     #[test]
     fn state_path_prefers_absolute_xdg_then_home() {
+        let fixture = fs_fixture!({});
+        let xdg = fixture.path("xdg");
+        let home = fixture.path("home");
         assert_eq!(
-            state_path_under(Some("/xdg".into()), Some("/home/me".into())),
-            Some(PathBuf::from("/xdg/ccusage/telemetry.json"))
+            state_path_under(Some(xdg.clone()), Some(home.clone())),
+            Some(xdg.join("ccusage").join("telemetry.json"))
         );
         assert_eq!(
-            state_path_under(Some("relative".into()), Some("/home/me".into())),
-            Some(PathBuf::from("/home/me/.config/ccusage/telemetry.json"))
+            state_path_under(Some("relative".into()), Some(home.clone())),
+            Some(home.join(".config").join("ccusage").join("telemetry.json"))
         );
         assert_eq!(state_path_under(None, None), None);
     }
