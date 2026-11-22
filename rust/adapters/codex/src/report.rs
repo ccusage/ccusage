@@ -3,8 +3,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde_json::{Value, json};
 
 use crate::{
-    CodexGroup, CodexModelUsage, CodexTimestampedUsage, PricingMap, Result, SimpleTable,
-    attach_estimated_models, attach_unpriced_models,
+    CodexGroup, CodexModelUsage, PricingMap, Result, SimpleTable, attach_estimated_models,
+    attach_unpriced_models,
     cli::{AgentReportKind, CostMode, SharedArgs},
     print_box_title, print_estimated_pricing_notes_for_models,
     print_missing_pricing_warnings_for_models, sum_costs,
@@ -92,19 +92,26 @@ pub(super) fn calculate_codex_model_cost(
                 .timestamped_usage
                 .iter()
                 .map(|(timestamp, timestamped_usage)| {
-                    handle
-                        .with_rates_at(Some(crate::TimestampMs::from_millis(*timestamp)), |rates| {
-                            calculate_codex_usage_cost(*timestamped_usage, rates, speed)
-                        })
+                    handle.with_rates_at(
+                        Some(crate::TimestampMs::from_millis(*timestamp)),
+                        |rates| {
+                            calculate_codex_usage_cost(
+                                &timestamped_usage.usage,
+                                &timestamped_usage.tier_usage,
+                                &timestamped_usage.configured_copy_usage,
+                                rates,
+                                speed,
+                            )
+                        },
+                    )
                 }),
         );
     }
     handle.with_rates_at(None, |rates| {
         calculate_codex_usage_cost(
-            CodexTimestampedUsage {
-                usage: usage.usage,
-                tier_usage: usage.tier_usage,
-            },
+            &usage.usage,
+            &usage.tier_usage,
+            &usage.configured_copy_usage,
             rates,
             speed,
         )

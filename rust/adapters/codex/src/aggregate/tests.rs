@@ -1,7 +1,7 @@
 use super::accumulate::codex_period_for;
 use super::intern::StringInterner;
 use super::*;
-use crate::parse_ts_timestamp;
+use crate::{parse_ts_timestamp, types::ConfiguredTiers};
 use compact_str::CompactString;
 
 use ccusage_test_support::fs_fixture;
@@ -442,18 +442,17 @@ fn usage_attribution_uses_file_order_when_workers_finish_in_reverse() {
         ..SharedArgs::default()
     };
     let pricing = PricingMap::load_embedded();
-    for (first_tier, copied_tier, expected) in [
+    let mut configured_tiers = ConfiguredTiers::from(Some(CodexServiceTier::Fast));
+    configured_tiers.merge(Some(CodexServiceTier::Flex).into());
+    for (first_tier, copied_tier, recorded_input, configured_input) in [
         (
             Some(CodexServiceTier::Standard),
             Some(CodexServiceTier::Fast),
-            CodexServiceTier::Standard,
-        ),
-        (None, None, CodexServiceTier::Fast),
-        (
+            300,
             None,
-            Some(CodexServiceTier::Standard),
-            CodexServiceTier::Standard,
         ),
+        (None, None, 0, Some(300)),
+        (None, Some(CodexServiceTier::Standard), 300, None),
     ] {
         let mut first = first.clone();
         first.service_tier = first_tier;
@@ -476,8 +475,25 @@ fn usage_attribution_uses_file_order_when_workers_finish_in_reverse() {
         let group = &groups["session"];
         assert_eq!(group.total_tokens, 320);
         assert_eq!(group.last_activity.as_deref(), Some("2026-09-01T00:00:01Z"));
-        assert!(!group.models["gpt-5"].is_fallback);
-        assert_eq!(group.models["gpt-5"].tier_usage[expected].input_tokens, 300);
+        let model = &group.models["gpt-5"];
+        assert!(!model.is_fallback);
+        assert_eq!(
+            [
+                CodexServiceTier::Standard,
+                CodexServiceTier::Fast,
+                CodexServiceTier::Flex,
+                CodexServiceTier::Ultrafast,
+            ]
+            .map(|tier| model.tier_usage[tier].input_tokens),
+            [recorded_input, 0, 0, 0]
+        );
+        assert_eq!(
+            model
+                .configured_copy_usage
+                .get(&configured_tiers)
+                .map(|usage| usage.input_tokens),
+            configured_input
+        );
     }
 }
 

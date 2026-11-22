@@ -93,6 +93,40 @@ impl CodexServiceTier {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct ConfiguredTiers(u8);
+
+impl ConfiguredTiers {
+    const TIERS: [CodexServiceTier; 4] = [
+        CodexServiceTier::Standard,
+        CodexServiceTier::Fast,
+        CodexServiceTier::Flex,
+        CodexServiceTier::Ultrafast,
+    ];
+
+    pub(crate) fn single(self) -> Option<CodexServiceTier> {
+        (self.0.count_ones() == 1).then(|| Self::TIERS[self.0.trailing_zeros() as usize])
+    }
+
+    pub(crate) const fn is_mixed(self) -> bool {
+        self.0.count_ones() > 1
+    }
+
+    pub(crate) const fn contains(self, tier: CodexServiceTier) -> bool {
+        self.0 & (1 << tier.index()) != 0
+    }
+
+    pub(crate) fn merge(&mut self, other: Self) {
+        self.0 |= other.0;
+    }
+}
+
+impl From<Option<CodexServiceTier>> for ConfiguredTiers {
+    fn from(tier: Option<CodexServiceTier>) -> Self {
+        Self(tier.map_or(0, |tier| 1 << tier.index()))
+    }
+}
+
 impl Index<CodexServiceTier> for TierBuckets {
     type Output = CodexUsageBucket;
 
