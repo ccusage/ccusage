@@ -231,6 +231,20 @@ pub(super) struct DedupKey {
     pub(super) request: Request,
 }
 
+impl DedupKey {
+    pub(super) fn advisor(&self, index: usize) -> Self {
+        Self {
+            timestamp: self.timestamp,
+            session_id: Arc::clone(&self.session_id),
+            message_id: self
+                .message_id
+                .as_ref()
+                .map(|id| format!("{id}:advisor:{index}").into_boxed_str()),
+            request: self.request.clone(),
+        }
+    }
+}
+
 pub(super) trait DedupEntry {
     fn timestamp(&self) -> TimestampMs;
     fn session_id(&self) -> &str;

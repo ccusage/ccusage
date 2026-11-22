@@ -1,13 +1,21 @@
 use std::borrow::Cow;
 
 use ccusage_adapter_common::{
-    claims::{ClaudeClaimsTx, ClaudeCounted},
+    claims::{ClaudeClaimsTx, ClaudeCounted, NativeSessions},
     rows::{summarize_entry_sessions, summary_rows},
     source::{LoadKind, LoadRequest, LoadedRows, UsageSource},
 };
 use ccusage_core::{Diagnostics, ReportWindow, Result, cli::SharedArgs};
 
-use crate::load_daily_summaries_with_detection_progress;
+use crate::{
+    MainThreadSessions, UsageLoadContext,
+    daily::load_claiming_daily_entries,
+    dedupe::dedupe_files,
+    load::{DedupedEntries, read_usage_file_with_diagnostics},
+    load_daily_summaries_with_detection_progress,
+    mirror_claims::{find_unbounded_sessions, read_claiming_files, scan_windowed_sessions},
+    retain_copied_entries,
+};
 
 pub struct Claude;
 
@@ -16,21 +24,16 @@ pub static SOURCE: Claude = Claude;
 impl Claude {
     pub fn counted(
         &self,
-        shared: &ccusage_core::cli::SharedArgs,
-        project_filter: Option<&str>,
+        shared: &SharedArgs,
+        wanted: NativeSessions,
         diagnostics: &Diagnostics,
     ) -> Result<ClaudeCounted> {
-        let load_shared = claim_load_options(shared);
-        let deduped = crate::load_windowed_entries(
-            &load_shared,
-            project_filter,
-            diagnostics,
-            ccusage_core::cli::CostMode::Display,
-        )?;
-        Ok(ClaudeCounted::sessions(
-            deduped.main_thread_sessions(),
+        mirror_claims(
             shared,
-        ))
+            MainThreadSessions::new(),
+            Some((wanted, None)),
+            diagnostics,
+        )
     }
 
     pub fn load_with_claims(
@@ -38,21 +41,29 @@ impl Claude {
         request: &LoadRequest<'_>,
         claims: ClaudeClaimsTx,
     ) -> Result<LoadedRows> {
-        let (rows, counted) = self.load(request, true)?;
-        // NOTE(2026-11-22, #2498): Project filters hide Claude rows. Checking every project prevents excluded sessions from reappearing under OpenCode.
-        let counted = if request.options.claude_project.is_some() {
-            match request.kind {
-                LoadKind::Day => {
-                    let shared = claim_load_options(request.shared);
-                    let daily = crate::daily::load_daily_entries(&shared, None, &rows.diagnostics)?;
-                    ClaudeCounted::sessions(daily.sessions(), request.shared)
-                }
-                LoadKind::Session => self.counted(request.shared, None, &rows.diagnostics)?,
+        let project = request.options.claude_project;
+        let bounded_project =
+            project.filter(|_| !ReportWindow::from_shared(request.shared).is_unbounded());
+        let mut wanted = bounded_project.and_then(|_| claims.requested());
+        let joint_project = bounded_project.filter(|_| wanted.is_some());
+        let requested = || {
+            if bounded_project.is_none() {
+                wanted = claims.requested();
             }
-        } else {
-            counted
+            wanted.is_some()
         };
-        claims.publish(counted);
+        let (rows, sessions) = self.load(request, true, joint_project, requested)?;
+        if let Some(wanted) = wanted {
+            let missing = project
+                .filter(|_| joint_project.is_none())
+                .map(|project| (wanted, Some(project)));
+            claims.publish(mirror_claims(
+                request.shared,
+                sessions,
+                missing,
+                &rows.diagnostics,
+            )?);
+        }
         Ok(rows)
     }
 
@@ -60,7 +71,9 @@ impl Claude {
         &self,
         request: &LoadRequest<'_>,
         with_claims: bool,
-    ) -> Result<(LoadedRows, ClaudeCounted)> {
+        joint_project: Option<&str>,
+        requested: impl FnOnce() -> bool,
+    ) -> Result<(LoadedRows, MainThreadSessions)> {
         let shared = request.shared;
         let load_shared = if with_claims {
             claim_load_options(shared)
@@ -72,20 +85,57 @@ impl Claude {
         let project_filter = request.options.claude_project;
         let diagnostics = Diagnostics::new("claude");
         if request.kind == LoadKind::Session {
-            let mut deduped = request.progress.run(
+            let (mut deduped, mut sessions) = request.progress.run(
                 ccusage_core::progress::UsageLoadAgent("Claude"),
                 shared.json,
                 || {
-                    crate::load_windowed_entries(
-                        &load_shared,
-                        project_filter,
-                        &diagnostics,
-                        shared.mode,
-                    )
+                    if let Some(project) = joint_project {
+                        let context = UsageLoadContext::new(&load_shared);
+                        let loaded = read_claiming_files(
+                            &load_shared,
+                            project,
+                            &diagnostics,
+                            |file, root| {
+                                read_usage_file_with_diagnostics(
+                                    file,
+                                    root,
+                                    context.window().timezone(),
+                                    context.table(),
+                                    &diagnostics,
+                                )
+                            },
+                        )?;
+                        let (mut entries, mut copies) = dedupe_files(loaded.report);
+                        let detected = !entries.is_empty() || loaded.pruned_usage;
+                        retain_copied_entries(
+                            &mut entries,
+                            &mut copies,
+                            context.window(),
+                            |entry| entry.date,
+                        );
+                        Ok((
+                            DedupedEntries {
+                                entries,
+                                copies,
+                                detected,
+                            },
+                            loaded.sessions,
+                        ))
+                    } else {
+                        crate::load_windowed_entries(
+                            &load_shared,
+                            project_filter,
+                            &diagnostics,
+                            shared.mode,
+                        )
+                        .map(|rows| (rows, MainThreadSessions::new()))
+                    }
                 },
             )?;
             let detected = deduped.detected;
-            let sessions = deduped.main_thread_sessions();
+            if requested() {
+                sessions.extend(deduped.main_thread_sessions());
+            }
             if let Some(window) = report_window.as_ref() {
                 crate::retain_copied_entries(
                     &mut deduped.entries,
@@ -106,7 +156,27 @@ impl Claude {
                     detected,
                     diagnostics,
                 },
-                ClaudeCounted::sessions(sessions, shared),
+                sessions,
+            ));
+        }
+        if let Some(project) = joint_project {
+            let (loaded, mut sessions) = request.progress.run(
+                ccusage_core::progress::UsageLoadAgent("Claude"),
+                shared.json,
+                || load_claiming_daily_entries(&load_shared, project, &diagnostics),
+            )?;
+            sessions.extend(loaded.sessions());
+            return Ok((
+                LoadedRows {
+                    rows: summary_rows(
+                        "claude",
+                        loaded.summaries(false, report_window.as_ref()),
+                        false,
+                    ),
+                    detected: loaded.detected,
+                    diagnostics,
+                },
+                sessions,
             ));
         }
         let loaded = load_daily_summaries_with_detection_progress(
@@ -115,6 +185,7 @@ impl Claude {
             report_window.as_ref(),
             request.progress,
             &diagnostics,
+            requested,
         )?;
         let sessions = loaded.sessions;
         Ok((
@@ -123,9 +194,30 @@ impl Claude {
                 detected: loaded.detected,
                 diagnostics,
             },
-            ClaudeCounted::sessions(sessions, shared),
+            sessions,
         ))
     }
+}
+
+fn mirror_claims(
+    shared: &SharedArgs,
+    mut sessions: MainThreadSessions,
+    missing: Option<(NativeSessions, Option<&str>)>,
+    diagnostics: &Diagnostics,
+) -> Result<ClaudeCounted> {
+    if let Some((mut wanted, project)) = missing {
+        let window = ReportWindow::from_shared(shared);
+        if window.is_unbounded() {
+            wanted.retain(|id| !sessions.contains(id));
+            find_unbounded_sessions(project, &mut wanted, &mut sessions, diagnostics)?;
+        } else {
+            sessions.extend(scan_windowed_sessions(
+                &claim_load_options(shared),
+                diagnostics,
+            )?);
+        }
+    }
+    Ok(ClaudeCounted::sessions(sessions, shared))
 }
 
 fn claim_load_options(shared: &SharedArgs) -> Cow<'_, SharedArgs> {
@@ -152,7 +244,8 @@ impl UsageSource for Claude {
     }
 
     fn load_rows(&self, request: &LoadRequest<'_>) -> Result<LoadedRows> {
-        self.load(request, false).map(|(rows, _)| rows)
+        self.load(request, false, None, || false)
+            .map(|(rows, _)| rows)
     }
 }
 
@@ -182,7 +275,7 @@ mod diagnostic_tests {
             };
             assert!(
                 SOURCE
-                    .counted(&shared, None, &Diagnostics::new("claude"))
+                    .counted(&shared, NativeSessions::new(), &Diagnostics::new("claude"))
                     .is_ok()
             );
         })
@@ -224,7 +317,9 @@ mod diagnostic_tests {
                 ..Default::default()
             };
             let diagnostics = Diagnostics::new("claude");
-            let counted = SOURCE.counted(&shared, None, &diagnostics).unwrap();
+            let counted = SOURCE
+                .counted(&shared, NativeSessions::new(), &diagnostics)
+                .unwrap();
             let projects_root = fixture.root().join("projects");
             let probe = crate::load::read_usage_file_with_diagnostics(
                 &main,

@@ -108,6 +108,107 @@ fn unified_project_filter_does_not_restore_opencode_mirrors() {
     })
 }
 
+#[test]
+fn unified_project_filter_keeps_claims_for_selected_rows_with_later_copies() {
+    ccusage_test_support::install_pricing_snapshots();
+    let fixture = fs_fixture!({});
+    for (project, session, timestamp, input) in [
+        ("selected", "native", "2099-01-02T00:00:00Z", 100),
+        ("other", "copy", "2099-01-05T00:00:00Z", 200),
+    ] {
+        fixture.write_file(
+            format!("claude/projects/{project}/{session}.jsonl"),
+            claude_usage_line(session, timestamp, "same-message", input),
+        );
+    }
+    write_opencode_rows(
+        &fixture.create_dir_all("opencode").join("opencode.db"),
+        &[(
+            "m-mirror",
+            "ses-agent",
+            CLAUDE_AGENT_DAY_ONE,
+            claude_agent_row("native", CLAUDE_AGENT_DAY_ONE, 100),
+        )],
+    );
+    claude_opencode_env(&fixture, fixture.path("claude").into_os_string()).run(|| {
+        let shared = claude_agent_shared("20990101", "20990103");
+        let sources = BTreeMap::from([(
+            "claude".to_string(),
+            SourceArgs {
+                options: ccusage_core::cli::AgentOptions {
+                    claude_project: Some("selected".to_string()),
+                    ..Default::default()
+                },
+                shared: shared.clone(),
+            },
+        )]);
+        for kind in [AgentReportKind::Daily, AgentReportKind::Session] {
+            assert_eq!(
+                unified_totals(kind, &shared, &sources)["inputTokens"],
+                100,
+                "{kind:?}"
+            );
+        }
+    });
+}
+
+#[test]
+fn unbounded_claims_follow_recorded_ids_even_when_the_file_stem_differs() {
+    ccusage_test_support::install_pricing_snapshots();
+    let fixture = fs_fixture!({});
+    fixture.write_file(
+        "claude/projects/selected/own.jsonl",
+        claude_usage_line("own", "2099-01-02T00:00:00Z", "msg-own", 10),
+    );
+    fixture.write_file(
+        "claude/projects/other/stem.jsonl",
+        claude_usage_line("native", "2099-01-02T00:00:00Z", "msg-native", 100),
+    );
+    write_opencode_rows(
+        &fixture.create_dir_all("opencode").join("opencode.db"),
+        &[
+            (
+                "m-native",
+                "ses-native",
+                CLAUDE_AGENT_DAY_ONE,
+                claude_agent_row("native", CLAUDE_AGENT_DAY_ONE, 100),
+            ),
+            (
+                "m-stem",
+                "ses-stem",
+                CLAUDE_AGENT_DAY_ONE,
+                claude_agent_row("stem", CLAUDE_AGENT_DAY_ONE, 7),
+            ),
+        ],
+    );
+    claude_opencode_env(&fixture, fixture.path("claude").into_os_string()).run(|| {
+        let shared = SharedArgs {
+            since: None,
+            until: None,
+            ..claude_agent_shared("20990101", "20990103")
+        };
+        let source = SourceArgs {
+            options: ccusage_core::cli::AgentOptions {
+                claude_project: Some("selected".to_string()),
+                ..Default::default()
+            },
+            shared: shared.clone(),
+        };
+        let sources = BTreeMap::from([("claude".to_string(), source.clone())]);
+        for kind in [AgentReportKind::Daily, AgentReportKind::Session] {
+            let (focused, _) =
+                loader::load_opencode_entries(&shared, kind, false, Some(&source)).unwrap();
+            assert_eq!(focused.len(), 1, "{kind:?}");
+            assert_eq!(focused[0].usage.input_tokens, 7, "{kind:?}");
+            assert_eq!(
+                unified_totals(kind, &shared, &sources)["inputTokens"],
+                17,
+                "{kind:?}"
+            );
+        }
+    });
+}
+
 fn focused_opencode_input(
     shared: &SharedArgs,
     kind: AgentReportKind,
@@ -175,38 +276,47 @@ fn focused_opencode_reports_leave_claude_agent_turns_to_claude() {
 }
 
 #[test]
-fn focused_opencode_claims_use_claude_source_window_and_project() {
+fn focused_opencode_claims_respect_the_claude_window_across_projects() {
     let fixture = fs_fixture!({});
     write_claude_agent_fixture(&fixture);
     claude_opencode_env(&fixture, fixture.path("claude").into_os_string()).run(|| {
         let shared = claude_agent_shared("20990101", "20990103");
-        for source in [
-            SourceArgs {
-                shared: claude_agent_shared("20990103", "20990103"),
-                ..Default::default()
-            },
-            SourceArgs {
-                options: ccusage_core::cli::AgentOptions {
-                    claude_project: Some("another-project".to_string()),
+        for (source, expected) in [
+            (
+                SourceArgs {
+                    shared: claude_agent_shared("20990103", "20990103"),
                     ..Default::default()
                 },
-                shared: shared.clone(),
-            },
+                127,
+            ),
+            (
+                SourceArgs {
+                    options: ccusage_core::cli::AgentOptions {
+                        claude_project: Some("another-project".to_string()),
+                        ..Default::default()
+                    },
+                    shared: shared.clone(),
+                },
+                27,
+            ),
         ] {
-            let (entries, _) = loader::load_opencode_entries(
-                &shared,
+            for kind in [
                 AgentReportKind::Daily,
-                false,
-                Some(&source),
-            )
-            .unwrap();
-            assert_eq!(
-                entries
-                    .iter()
-                    .map(|entry| entry.usage.input_tokens)
-                    .sum::<u64>(),
-                127
-            );
+                AgentReportKind::Weekly,
+                AgentReportKind::Monthly,
+                AgentReportKind::Session,
+            ] {
+                let (entries, _) =
+                    loader::load_opencode_entries(&shared, kind, false, Some(&source)).unwrap();
+                assert_eq!(
+                    entries
+                        .iter()
+                        .map(|entry| entry.usage.input_tokens)
+                        .sum::<u64>(),
+                    expected,
+                    "{kind:?}"
+                );
+            }
         }
     })
 }

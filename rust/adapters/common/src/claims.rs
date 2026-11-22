@@ -5,23 +5,54 @@ use std::{
 
 use ccusage_core::{LoadedEntry, ReportWindow, TimestampMs, cli::SharedArgs};
 
-pub struct ClaudeClaimsTx(mpsc::SyncSender<ClaudeCounted>);
-pub struct ClaudeClaimsRx(mpsc::Receiver<ClaudeCounted>);
+pub type NativeSessions = HashSet<Arc<str>>;
+
+pub fn native_sessions(entries: &[(LoadedEntry, Option<Arc<str>>)]) -> NativeSessions {
+    entries
+        .iter()
+        .filter_map(|(_, session)| session.clone())
+        .collect()
+}
+
+pub struct ClaudeClaimsTx {
+    claims: mpsc::SyncSender<ClaudeCounted>,
+    requested: mpsc::Receiver<NativeSessions>,
+}
+
+pub struct ClaudeClaimsRx {
+    claims: mpsc::Receiver<ClaudeCounted>,
+    request: mpsc::Sender<NativeSessions>,
+}
 
 pub fn channel() -> (ClaudeClaimsTx, ClaudeClaimsRx) {
     let (sender, receiver) = mpsc::sync_channel(1);
-    (ClaudeClaimsTx(sender), ClaudeClaimsRx(receiver))
+    let (request, requested) = mpsc::channel();
+    (
+        ClaudeClaimsTx {
+            claims: sender,
+            requested,
+        },
+        ClaudeClaimsRx {
+            claims: receiver,
+            request,
+        },
+    )
 }
 
 impl ClaudeClaimsTx {
+    pub fn requested(&self) -> Option<NativeSessions> {
+        self.requested.recv().ok()
+    }
+
     pub fn publish(self, counted: ClaudeCounted) {
-        let _ = self.0.send(counted);
+        let _ = self.claims.send(counted);
     }
 }
 
 impl ClaudeClaimsRx {
-    pub fn receive(self) -> ccusage_core::Result<ClaudeCounted> {
-        self.0
+    pub fn receive(self, sessions: NativeSessions) -> ccusage_core::Result<ClaudeCounted> {
+        let _ = self.request.send(sessions);
+        self.claims
             .recv()
             .map_err(|_| ccusage_core::cli_error("Claude claims producer did not finish"))
     }
@@ -73,14 +104,26 @@ mod channel_tests {
     #[test]
     fn publication_reaches_the_receiver() {
         let (sender, receiver) = super::channel();
-        sender.publish(super::ClaudeCounted::nothing());
-        assert!(receiver.receive().is_ok());
+        std::thread::scope(|scope| {
+            scope.spawn(move || {
+                assert!(sender.requested().is_some());
+                sender.publish(super::ClaudeCounted::nothing());
+            });
+            assert!(receiver.receive(super::NativeSessions::new()).is_ok());
+        });
+    }
+
+    #[test]
+    fn dropping_the_receiver_skips_loading_claims() {
+        let (sender, receiver) = super::channel();
+        drop(receiver);
+        assert!(sender.requested().is_none());
     }
 
     #[test]
     fn a_failed_producer_unblocks_the_consumer_with_an_error() {
         let (sender, receiver) = super::channel();
         drop(sender);
-        assert!(receiver.receive().is_err());
+        assert!(receiver.receive(super::NativeSessions::new()).is_err());
     }
 }
