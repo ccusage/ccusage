@@ -424,7 +424,7 @@ mod tests {
     }
 
     #[test]
-    fn saturates_total_token_fallback_for_huge_counters() {
+    fn saturates_report_token_counts_for_large_counters() {
         let usage = TokenUsageRaw {
             input_tokens: u64::MAX,
             output_tokens: u64::MAX,

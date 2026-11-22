@@ -22,6 +22,9 @@ use crate::{
 
 use super::reader::{is_rollout_file, uncompressed_rollout_path};
 
+#[cfg(test)]
+mod test_support;
+
 pub(super) fn codex_usage_sources() -> Result<Vec<CodexUsageSource>> {
     Ok(codex_usage_sources_from_homes(codex_home_paths()?))
 }
@@ -66,15 +69,6 @@ pub(super) struct CodexUsageSource {
 }
 
 impl CodexUsageSource {
-    #[cfg(test)]
-    pub(super) fn new(dir: PathBuf, dedupe_scope: PathBuf) -> Self {
-        Self {
-            dir,
-            dedupe_scope,
-            configured_tier: None,
-        }
-    }
-
     pub(super) fn dir(&self) -> &Path {
         &self.dir
     }

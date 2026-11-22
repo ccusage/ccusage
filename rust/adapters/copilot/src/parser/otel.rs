@@ -295,9 +295,10 @@ pub(crate) fn reconcile_otel_calls(files: Vec<OtelFileCalls>) -> Vec<CopilotUsag
             cache_creation_tokens: candidate.cache_creation_tokens,
             cache_read_tokens: candidate.cache_read_tokens,
             reasoning_output_tokens: candidate.reasoning_output_tokens,
+            // NOTE(2026-11-22, #2492): OTel places the remainder in one of these two buckets. Reconciliation can only reduce the fallback bucket.
             extra_total_tokens: candidate
                 .extra_total_tokens
-                .saturating_add(candidate.fallback_output_tokens),
+                .max(candidate.fallback_output_tokens),
             request_count: 1,
             nano_aiu: None,
             dedup_key: candidate.dedup_key,
