@@ -147,7 +147,7 @@ fn codebuff_fixture_keeps_distinct_messages_at_the_same_instant() {
         let day = |date: &str| days.iter().find(|day| day["date"] == date).unwrap();
         assert_eq!(day("2025-12-31")["credits"], 2.75);
         assert_eq!(day("2026-01-01")["inputTokens"], 1500);
-        assert_eq!(day("2026-01-01")["totalCost"], 0.01185);
+        assert_eq!(day("2026-01-01")["totalCost"], 0.0084);
     }
 }
 
@@ -185,9 +185,13 @@ fn codebuff_timestamp_ties_pin_order_and_replay_winner() {
 #[test]
 fn focused_week_start_controls_buckets_and_last_together() {
     for (agent, seed) in [
-        ("cline", golden::cline::seed as golden::Seed),
+        ("antigravity", golden::antigravity::seed as golden::Seed),
+        ("cline", golden::cline::seed),
+        ("copilot", golden::copilot::seed),
         ("dsh", golden::dsh::seed),
+        ("kimi", golden::kimi::seed),
         ("opencode", golden::opencode::seed),
+        ("zcode", golden::zcode::seed),
     ] {
         let fixture = Fixture::new();
         let seeded = seed(fixture.root());
@@ -207,6 +211,8 @@ fn focused_week_start_controls_buckets_and_last_together() {
                 "UTC",
                 "--since",
                 "20251231",
+                "--until",
+                "20260106",
             ],
         );
         let expected: serde_json::Value =
@@ -232,7 +238,7 @@ fn focused_week_start_controls_buckets_and_last_together() {
             .env("CCUSAGE_TEST_NOW", "2026-01-01T12:00:00Z");
             weekly.args.extend(flags);
             let output = run_case(fixture.root(), &seeded, &weekly);
-            assert_eq!(output.exit, "0", "{}", output.stderr);
+            assert_eq!(output.exit, "0", "{agent}: {}", output.stderr);
             let report: serde_json::Value = serde_json::from_str(&output.stdout).unwrap();
             assert_eq!(
                 report["weekly"].as_array().unwrap().len(),

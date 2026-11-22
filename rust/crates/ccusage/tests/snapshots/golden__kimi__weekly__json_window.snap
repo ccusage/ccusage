@@ -1,0 +1,82 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage kimi weekly --offline --json --since 20251231 --until 20260101
+---
+exit: 0
+--- stdout ---
+{
+  "totals": {
+    "cacheCreationTokens": 620,
+    "cacheReadTokens": 29000,
+    "inputTokens": 6861,
+    "outputTokens": 2886,
+    "totalCost": 0.042414099999999996,
+    "totalTokens": 39617,
+    "unpricedModels": [
+      "kimi-mystery-1"
+    ]
+  },
+  "weekly": [
+    {
+      "cacheCreationTokens": 620,
+      "cacheReadTokens": 29000,
+      "inputTokens": 6861,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 600,
+          "cacheReadTokens": 21000,
+          "cost": 0.03465,
+          "inputTokens": 2700,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 1200
+        },
+        {
+          "cacheCreationTokens": 20,
+          "cacheReadTokens": 3000,
+          "cost": 0.00351,
+          "inputTokens": 1850,
+          "modelName": "kimi-for-coding",
+          "outputTokens": 695
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 5000,
+          "cost": 0.0026291,
+          "inputTokens": 1511,
+          "modelName": "kimi-k2-thinking",
+          "outputTokens": 821
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0016250000000000001,
+          "inputTokens": 500,
+          "modelName": "gpt-5",
+          "outputTokens": 100
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 300,
+          "missingPricing": true,
+          "modelName": "kimi-mystery-1",
+          "outputTokens": 70
+        }
+      ],
+      "modelsUsed": [
+        "kimi-k2-thinking",
+        "kimi-for-coding",
+        "claude-sonnet-4-20250514",
+        "gpt-5",
+        "kimi-mystery-1"
+      ],
+      "outputTokens": 2886,
+      "totalCost": 0.042414099999999996,
+      "totalTokens": 39617,
+      "week": "2025-12-29"
+    }
+  ]
+}
+
+--- stderr ---

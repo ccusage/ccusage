@@ -87,21 +87,26 @@ pub fn is_shared_flag(arg: &str) -> bool {
 }
 
 pub fn command_tokens(args: &[String]) -> Vec<String> {
-    let mut tokens = Vec::new();
-    let mut index = 0;
-    while let Some(arg) = args.get(index) {
-        if arg.starts_with('-') {
-            if option_takes_value(arg) && !arg.contains('=') {
-                index += 2;
-            } else {
-                index += 1;
-            }
-            continue;
+    invocation_arguments(args)
+        .filter(|arg| !arg.starts_with('-'))
+        .map(str::to_owned)
+        .collect()
+}
+
+pub fn command_has_flag(args: &[String], names: &[&str]) -> bool {
+    invocation_arguments(args)
+        .any(|arg| names.contains(&arg.split_once('=').map_or(arg, |(name, _)| name)))
+}
+
+fn invocation_arguments(args: &[String]) -> impl Iterator<Item = &str> {
+    let mut args = args.iter().map(String::as_str);
+    std::iter::from_fn(move || {
+        let arg = args.next()?;
+        if option_takes_value(arg) && !arg.contains('=') {
+            args.next();
         }
-        tokens.push(arg.clone());
-        index += 1;
-    }
-    tokens
+        Some(arg)
+    })
 }
 
 #[cfg(test)]

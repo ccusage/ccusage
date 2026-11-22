@@ -55,7 +55,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 100100,
-          "cost": 0.231316,
+          "cost": 0.23101599999999997,
           "inputTokens": 200431,
           "modelName": "qwen3-coder-plus",
           "outputTokens": 2113
@@ -89,7 +89,6 @@ exit: 0
           "cacheReadTokens": 0,
           "cost": 0.0,
           "inputTokens": 0,
-          "missingPricing": true,
           "modelName": "qwen-mystery-1",
           "outputTokens": 654
         },
@@ -113,7 +112,7 @@ exit: 0
       ],
       "month": "2026-01",
       "outputTokens": 3292,
-      "totalCost": 0.24053569999999996,
+      "totalCost": 0.24023569999999997,
       "totalTokens": 306313
     }
   ],
@@ -122,7 +121,7 @@ exit: 0
     "cacheReadTokens": 103493,
     "inputTokens": 204601,
     "outputTokens": 4254,
-    "totalCost": 0.2501807,
+    "totalCost": 0.24988069999999996,
     "totalTokens": 312658,
     "unpricedModels": [
       "qwen-mystery-1",

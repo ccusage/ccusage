@@ -687,6 +687,7 @@ ccusage claude daily --project my-frontend-app --json
 - `metadata.agents`: Sources that contributed to a daily, weekly, or monthly row
 - `metadata.lastActivity`: RFC 3339 timestamp of a session's last entry
 - `agents`: Per-source rows, added by `--by-agent`
+- Top-level `notes`: A list of messages about report scope. When a Claude project filter is active, the note explains that it applies only to Claude Code usage.
 
 #### Claude Code Reports
 

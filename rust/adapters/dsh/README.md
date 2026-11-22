@@ -58,6 +58,9 @@ They map directly to input, output, cache read and cache write. A `totalTokens` 
 the sum of those buckets is preserved through the shared extra-token fallback, so the report
 total matches the harness total.
 
+When uncached input is recorded and output is absent, the exact full-call total can recover
+output after subtracting uncached input and both cache buckets.
+
 Assistant messages and attempts use the route from the most recent `request/header` or
 `request/context`; compaction summaries use the provider and model they name. A request without a
 model is reported as `unknown`, and a missing session ID falls back to the session directory name.
@@ -77,7 +80,8 @@ pricing, the entry stays visible with the resolved model in the missing-pricing 
   inherited marker, the log is read as its parent's usage and dropped with a debug note; a log
   without `isSeeded` keeps its entries.
 - Entries are deduplicated by session ID and `seq`. Events without `seq` fall back to the full
-  timestamp, model and token tuple.
+  timestamp, model and token tuple. Conflicting copies are ranked by billable token total,
+  then by output tokens, then by their recorded fields to keep selection deterministic.
 - Session rows use the session ID from the log header. The project path is the header `cwd`, or
   `DeepSeek Harness` when absent.
 

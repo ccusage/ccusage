@@ -47,7 +47,11 @@ fn parses_last_periods_on_period_reports() {
     assert_eq!(args.shared.last.map(NonZeroU32::get), Some(1));
 
     let cli = parse(&["ccusage", "claude", "weekly", "--last", "2"]);
-    let Command::Weekly(args) = cli else {
+    let Command::Claude {
+        report: ClaudeReport::Weekly(args),
+        ..
+    } = cli
+    else {
         panic!("expected weekly command");
     };
     assert_eq!(args.shared.last.map(NonZeroU32::get), Some(2));
@@ -158,7 +162,11 @@ fn accepts_a_since_date_equal_to_the_until_date() {
         "--until",
         "20260914",
     ]);
-    let Command::Daily(args) = cli else {
+    let Command::Claude {
+        report: ClaudeReport::Daily(args),
+        ..
+    } = cli
+    else {
         panic!("expected claude daily command");
     };
     assert_eq!(

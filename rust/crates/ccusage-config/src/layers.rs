@@ -8,9 +8,9 @@ use serde::{
 use serde_json::{Map, Value};
 
 use crate::config_schema::{
-    BlocksSpecificOptions, CodexOptions, ConfigPricingOverride, DailySpecificOptions,
-    OpenClawOptions, PiOptions, PiStoreConfig, SharedOptions, StatuslineSpecificOptions,
-    WeeklySpecificOptions,
+    BlocksSpecificOptions, ClaudeOptions, CodexOptions, ConfigPricingOverride,
+    DailySpecificOptions, OpenClawOptions, PiOptions, PiStoreConfig, SharedOptions,
+    StatuslineSpecificOptions, WeeklySpecificOptions,
 };
 
 #[derive(Clone, Debug, Default)]
@@ -21,6 +21,7 @@ pub(crate) struct Layer {
     pub(crate) weekly: WeeklySpecificOptions,
     pub(crate) blocks: BlocksSpecificOptions,
     pub(crate) statusline: StatuslineSpecificOptions,
+    pub(crate) claude: ClaudeOptions,
     pub(crate) codex: CodexOptions,
     pub(crate) pi: PiOptions,
     pub(crate) openclaw: OpenClawOptions,
@@ -197,6 +198,7 @@ fn layer(
         weekly: decode_options(&mut retained, path, strict, warnings)?,
         blocks: decode_options(&mut retained, path, strict, warnings)?,
         statusline: decode_options(&mut retained, path, strict, warnings)?,
+        claude: decode_options(&mut retained, path, strict, warnings)?,
         codex: decode_options(&mut retained, path, strict, warnings)?,
         pi: decode_options(&mut retained, path, strict, warnings)?,
         openclaw: decode_options(&mut retained, path, strict, warnings)?,
@@ -313,13 +315,14 @@ fn failing_path(value: &Value, path: &str, rejects: &dyn Fn(&Value) -> bool) -> 
 }
 
 fn warn_unknown_layer_fields(fields: &Map<String, Value>, path: &str, warnings: &mut Vec<String>) {
-    static LAYER_FIELDS: LazyLock<[&[&str]; 9]> = LazyLock::new(|| {
+    static LAYER_FIELDS: LazyLock<[&[&str]; 10]> = LazyLock::new(|| {
         [
             struct_fields::<SharedOptions>(),
             struct_fields::<DailySpecificOptions>(),
             struct_fields::<WeeklySpecificOptions>(),
             struct_fields::<BlocksSpecificOptions>(),
             struct_fields::<StatuslineSpecificOptions>(),
+            struct_fields::<ClaudeOptions>(),
             struct_fields::<CodexOptions>(),
             struct_fields::<PiOptions>(),
             struct_fields::<OpenClawOptions>(),

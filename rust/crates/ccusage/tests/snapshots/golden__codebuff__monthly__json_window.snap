@@ -55,19 +55,19 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.0034500000000000004,
-          "inputTokens": 0,
-          "modelName": "gpt-5",
-          "outputTokens": 345
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
           "cost": 0.0,
           "inputTokens": 300,
           "missingPricing": true,
           "modelName": "codebuff-mystery-1",
           "outputTokens": 70
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 0,
+          "modelName": "gpt-5",
+          "outputTokens": 345
         }
       ],
       "modelsUsed": [
@@ -77,7 +77,7 @@ exit: 0
       ],
       "month": "2026-01",
       "outputTokens": 615,
-      "totalCost": 0.01185,
+      "totalCost": 0.0084,
       "totalTokens": 8115
     }
   ],
@@ -87,7 +87,7 @@ exit: 0
     "credits": 2.95,
     "inputTokens": 3100,
     "outputTokens": 1165,
-    "totalCost": 0.0183875,
+    "totalCost": 0.0149375,
     "totalTokens": 19965,
     "unpricedModels": [
       "codebuff-mystery-1"

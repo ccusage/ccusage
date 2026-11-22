@@ -103,7 +103,7 @@ pub(super) fn calculate_codex_model_cost(
         calculate_codex_usage_cost(
             CodexTimestampedUsage {
                 usage: usage.usage,
-                recorded_usage: usage.recorded_usage,
+                tier_usage: usage.tier_usage,
             },
             rates,
             speed,

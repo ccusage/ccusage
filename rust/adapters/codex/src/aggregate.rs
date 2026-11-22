@@ -23,7 +23,7 @@ mod intern;
 use dedupe::{CodexDedupe, CodexEventProvenance};
 
 struct CodexAggregateRun<'a> {
-    sessions_dir: &'a Path,
+    source: &'a paths::CodexUsageSource,
     files: &'a [PathBuf],
     shared: &'a SharedArgs,
     replay: &'a CodexReplayPlan,
@@ -53,14 +53,18 @@ pub(super) fn load_groups_from_sources_with_diagnostics(
     pricing: Option<&PricingMap>,
     diagnostics: &Diagnostics,
 ) -> Result<(BTreeMap<String, CodexGroup>, bool)> {
-    let dirs = sources
-        .iter()
-        .map(paths::CodexUsageSource::dir)
-        .collect::<Vec<_>>();
+    let source_refs = sources.iter().collect::<Vec<_>>();
     let mut discover = |emit: &mut dyn FnMut(usize, PathBuf)| {
         paths::visit_deduped_codex_usage_files(sources, diagnostics, emit);
     };
-    aggregate_discovered(&dirs, shared, kind, pricing, diagnostics, &mut discover)
+    aggregate_discovered(
+        &source_refs,
+        shared,
+        kind,
+        pricing,
+        diagnostics,
+        &mut discover,
+    )
 }
 
 pub(super) fn select_session_files(
@@ -90,7 +94,7 @@ pub(super) fn select_session_files(
                     identity(path).is_some_and(|(owned, _)| owned)
                         || (!logical_session
                             && super::session_id_matches(
-                                &parser::codex_session_id(&group.dir, path),
+                                &parser::codex_session_id(group.source.dir(), path),
                                 requested,
                             ))
                 })
@@ -110,12 +114,12 @@ pub(super) fn load_groups_from_file_selection(
 ) -> Result<BTreeMap<String, CodexGroup>> {
     let all_files = file_groups
         .iter()
-        .map(|group| (group.dir.as_path(), group.files.as_slice()))
+        .map(|group| (group.source.dir(), group.files.as_slice()))
         .collect::<Vec<_>>();
     let selected_files = file_groups
         .iter()
         .zip(files_by_group)
-        .map(|(group, files)| (group.dir.as_path(), files.as_slice()))
+        .map(|(group, files)| (&group.source, files.as_slice()))
         .collect::<Vec<_>>();
     aggregate_file_groups(
         &selected_files,
@@ -128,7 +132,7 @@ pub(super) fn load_groups_from_file_selection(
 }
 
 fn aggregate_file_groups(
-    selected: &[(&Path, &[PathBuf])],
+    selected: &[(&paths::CodexUsageSource, &[PathBuf])],
     available: &[(&Path, &[PathBuf])],
     shared: &SharedArgs,
     kind: AgentReportKind,
@@ -140,8 +144,11 @@ fn aggregate_file_groups(
         .zip(available)
         .any(|((_, files), (_, all_files))| files.len() != all_files.len());
     if !filtered && !has_date_bounds(shared) {
-        let dirs = selected.iter().map(|(dir, _)| *dir).collect::<Vec<_>>();
-        return aggregate_discovered(&dirs, shared, kind, pricing, diagnostics, &mut |emit| {
+        let sources = selected
+            .iter()
+            .map(|(source, _)| *source)
+            .collect::<Vec<_>>();
+        return aggregate_discovered(&sources, shared, kind, pricing, diagnostics, &mut |emit| {
             for (group, (_, files)) in selected.iter().enumerate() {
                 for file in *files {
                     emit(group, file.clone());
@@ -151,8 +158,12 @@ fn aggregate_file_groups(
         .map(|(groups, _)| groups);
     }
 
+    let selected_paths = selected
+        .iter()
+        .map(|(source, files)| (source.dir(), *files))
+        .collect::<Vec<_>>();
     let replay = CodexReplayPlan::for_selection(
-        selected,
+        &selected_paths,
         available.iter().copied(),
         shared.single_thread,
         diagnostics,
@@ -161,7 +172,7 @@ fn aggregate_file_groups(
 }
 
 fn aggregate_planned(
-    selected: &[(&Path, &[PathBuf])],
+    selected: &[(&paths::CodexUsageSource, &[PathBuf])],
     shared: &SharedArgs,
     kind: AgentReportKind,
     pricing: Option<&PricingMap>,
@@ -171,9 +182,9 @@ fn aggregate_planned(
     let seen = CodexDedupe::new(selected.iter().map(|(_, files)| files.len()).sum(), pricing);
     seen.record_lineage_edges(replay.lineage_edges())?;
     let mut file_offset = 0;
-    for &(sessions_dir, files) in selected {
+    for &(source, files) in selected {
         let run = CodexAggregateRun {
-            sessions_dir,
+            source,
             files,
             shared,
             replay,
@@ -187,7 +198,7 @@ fn aggregate_planned(
 }
 
 fn aggregate_discovered(
-    dirs: &[&Path],
+    sources: &[&paths::CodexUsageSource],
     shared: &SharedArgs,
     kind: AgentReportKind,
     pricing: Option<&PricingMap>,
@@ -197,10 +208,10 @@ fn aggregate_discovered(
     let seen = CodexDedupe::new(usize::MAX, pricing);
     let eligibility = paths::CodexFileEligibility::from_shared(shared);
     let mut loaded = read_discovered_files(shared.single_thread, discover, |file| {
-        let dir = dirs[file.group];
+        let source = sources[file.group];
         eligibility
-            .is_none_or(|filter| filter.contains_file(dir, &file.path))
-            .then(|| fold_rollout(&seen, None, dir, &file.path, file.index, diagnostics))
+            .is_none_or(|filter| filter.contains_file(source.dir(), &file.path))
+            .then(|| fold_rollout(&seen, None, source, &file.path, file.index, diagnostics))
             .transpose()
     });
     let detected = !loaded.is_empty();
@@ -215,13 +226,13 @@ fn aggregate_discovered(
     if has_forks {
         loaded.sort_unstable_by_key(|(file, _)| file.index);
         let bounded = has_date_bounds(shared);
-        let mut available = vec![Vec::new(); dirs.len()];
+        let mut available = vec![Vec::new(); sources.len()];
         let mut probes = Vec::new();
         let mut replay_files = Vec::new();
         let mut forks = Vec::new();
         for (file, result) in loaded {
             let metadata = result?;
-            let dir = dirs[file.group];
+            let dir = sources[file.group].dir();
             if metadata
                 .as_ref()
                 .and_then(Option::as_ref)
@@ -248,8 +259,9 @@ fn aggregate_discovered(
         let replay = if bounded {
             CodexReplayPlan::for_probes(
                 probes,
-                dirs.iter()
-                    .copied()
+                sources
+                    .iter()
+                    .map(|source| source.dir())
                     .zip(available.iter().map(Vec::as_slice)),
                 shared.single_thread,
                 diagnostics,
@@ -266,7 +278,7 @@ fn aggregate_discovered(
                 fold_rollout(
                     &seen,
                     Some(&replay),
-                    dirs[file.group],
+                    sources[file.group],
                     &file.path,
                     file.index,
                     diagnostics,
@@ -281,7 +293,7 @@ fn aggregate_discovered(
         let mut has_lineage = false;
         for (file, result) in loaded {
             match result? {
-                None => excluded.push((file.path, dirs[file.group])),
+                None => excluded.push((file.path, sources[file.group].dir())),
                 Some(metadata) => {
                     has_lineage |= metadata
                         .as_ref()
@@ -315,7 +327,7 @@ fn aggregate_files_with_dedupe(run: &CodexAggregateRun<'_>, seen: &CodexDedupe<'
                 fold_rollout(
                     seen,
                     Some(run.replay),
-                    run.sessions_dir,
+                    run.source,
                     &run.files[index],
                     run.file_offset + index,
                     run.diagnostics,
@@ -331,12 +343,12 @@ fn aggregate_files_with_dedupe(run: &CodexAggregateRun<'_>, seen: &CodexDedupe<'
 fn fold_rollout(
     seen: &CodexDedupe<'_>,
     replay: Option<&CodexReplayPlan>,
-    sessions_dir: &Path,
+    source: &paths::CodexUsageSource,
     path: &Path,
     index: usize,
     diagnostics: &Diagnostics,
 ) -> Result<Option<CodexSessionMetadata>> {
-    let mut provenance = CodexEventProvenance::new(index);
+    let mut provenance = CodexEventProvenance::new(index, source.configured_tier);
     let mut result = Ok(());
     let mut visit = |event: CodexTokenUsageEvent| {
         if result.is_ok()
@@ -349,14 +361,14 @@ fn fold_rollout(
     };
     let metadata = if let Some(replay) = replay {
         parser::visit_codex_session_file_with_metadata(
-            sessions_dir,
+            source.dir(),
             path,
             replay.fork_replay(path),
             &mut visit,
             diagnostics,
         )
     } else {
-        parser::visit_codex_session_file_unless_fork(sessions_dir, path, &mut visit, diagnostics)
+        parser::visit_codex_session_file_unless_fork(source.dir(), path, &mut visit, diagnostics)
     };
     result?;
     if let Some(metadata) = &metadata {

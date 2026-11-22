@@ -87,7 +87,7 @@ exit: 0
         {
           "cacheCreationTokens": 200,
           "cacheReadTokens": 800,
-          "cost": 0.158505,
+          "cost": 0.150075,
           "inputTokens": 1000,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 1067,
@@ -138,7 +138,7 @@ exit: 0
       ],
       "month": "2026-01",
       "outputTokens": 1764,
-      "totalCost": 0.6606799999999999,
+      "totalCost": 0.65225,
       "totalTokens": 9414
     }
   ],
@@ -147,7 +147,7 @@ exit: 0
     "cacheReadTokens": 3800,
     "inputTokens": 11090,
     "outputTokens": 2878,
-    "totalCost": 1.4074025,
+    "totalCost": 1.3989725000000002,
     "totalTokens": 18388,
     "unpricedModels": [
       "copilot-mystery-1",

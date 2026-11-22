@@ -4,8 +4,8 @@ use crate::arg_parser::ArgParser;
 use crate::help::help_text_for_args;
 use ccusage_cli::{
     AgentCommand, AgentCommandArgs, AgentCommandKind, AgentId, AgentReportKind, BlocksArgs,
-    BlocksOption, ClaudeStatuslineOption, CliConfig, Command, ReportTimezone, SessionArgs,
-    SessionLength, SharedArgs, StandardAgent, StatuslineArgs, WeekDay, WeeklyArgs,
+    BlocksOption, ClaudeReport, ClaudeStatuslineOption, CliConfig, Command, ReportTimezone,
+    SessionArgs, SessionLength, SharedArgs, StandardAgent, StatuslineArgs, WeekDay, WeeklyArgs,
 };
 
 mod agents;
@@ -141,6 +141,11 @@ fn parse_invocation(
     replace_configured_window_with_last(&mut command);
     validate_date_window(&mut command, parser, config)?;
     resolve_timezone(&mut command, parser, config, known_timezone)?;
+    if let Command::Claude { project, .. } = &mut command
+        && project.is_none()
+    {
+        *project = config.agent_options("claude").claude_project;
+    }
     Ok(command)
 }
 
@@ -300,7 +305,7 @@ fn parse_blocks_command(
             }
         }
     }
-    Ok(Command::Blocks(args))
+    Ok(Command::claude_report(ClaudeReport::Blocks(args)))
 }
 
 fn parse_statusline_command(
@@ -467,7 +472,7 @@ fn parse_top_level_session_command(
                     .to_string(),
             );
         }
-        return Ok(Command::Session(args));
+        return Ok(Command::claude_report(ClaudeReport::Session(args)));
     }
 
     Ok(Command::All(AgentCommandArgs {

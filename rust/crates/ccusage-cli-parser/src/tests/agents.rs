@@ -18,13 +18,17 @@ fn parses_claude_daily_options() {
         "--project",
         "repo",
     ]);
-    let Command::Daily(args) = cli else {
+    let Command::Claude {
+        report: ClaudeReport::Daily(args),
+        project,
+    } = cli
+    else {
         panic!("expected daily command");
     };
     assert!(args.shared.json);
     assert_eq!(args.shared.mode, CostMode::Display);
     assert!(args.instances);
-    assert_eq!(args.project.as_deref(), Some("repo"));
+    assert_eq!(project.as_deref(), Some("repo"));
 }
 
 #[test]
@@ -48,7 +52,11 @@ fn parses_blocks_defaults_and_values() {
         "--session-length",
         "6",
     ]);
-    let Command::Blocks(args) = cli else {
+    let Command::Claude {
+        report: ClaudeReport::Blocks(args),
+        ..
+    } = cli
+    else {
         panic!("expected blocks command");
     };
     assert!(args.active);
@@ -59,7 +67,11 @@ fn parses_blocks_defaults_and_values() {
 #[test]
 fn parses_claude_blocks_short_active_option() {
     let cli = parse(&["ccusage", "claude", "blocks", "-a"]);
-    let Command::Blocks(args) = cli else {
+    let Command::Claude {
+        report: ClaudeReport::Blocks(args),
+        ..
+    } = cli
+    else {
         panic!("expected blocks command");
     };
     assert!(args.active);
@@ -207,7 +219,11 @@ fn rejects_unsupported_agent_reports_with_guidance() {
 #[test]
 fn parses_claude_namespace_session_options() {
     let cli = parse(&["ccusage", "claude", "session", "--json", "--id", "abc"]);
-    let Command::Session(args) = cli else {
+    let Command::Claude {
+        report: ClaudeReport::Session(args),
+        ..
+    } = cli
+    else {
         panic!("expected claude session command");
     };
     assert!(args.shared.json);
@@ -217,7 +233,11 @@ fn parses_claude_namespace_session_options() {
 #[test]
 fn parses_top_level_session_id_lookup() {
     let cli = parse(&["ccusage", "session", "--json", "--id", "abc"]);
-    let Command::Session(args) = cli else {
+    let Command::Claude {
+        report: ClaudeReport::Session(args),
+        ..
+    } = cli
+    else {
         panic!("expected session command");
     };
     assert!(args.shared.json);

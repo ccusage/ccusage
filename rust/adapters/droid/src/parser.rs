@@ -12,9 +12,8 @@ use ccusage_adapter_common::{
 };
 use serde_json::Value;
 
-use crate::{
-    Result, TokenUsageRaw, apply_total_token_fallback, json_value_u64, parse_ts_timestamp,
-};
+use crate::{Result, TokenUsageRaw, json_value_u64, parse_ts_timestamp};
+use ccusage_core::AdditionalTokens;
 
 #[derive(Clone)]
 pub(super) struct DroidEntry {
@@ -27,16 +26,13 @@ pub(super) struct DroidEntry {
     provider: String,
     provider_locked: bool,
     pub(super) usage: TokenUsageRaw,
-    pub(super) reasoning_tokens: u64,
+    pub(super) additional: AdditionalTokens,
 }
 
 #[derive(Default)]
 pub(super) struct DroidTokenUsage {
-    input_tokens: u64,
-    pub(super) output_tokens: u64,
-    cache_creation_tokens: u64,
-    cache_read_tokens: u64,
-    pub(super) thinking_tokens: u64,
+    pub(super) usage: TokenUsageRaw,
+    pub(super) additional: AdditionalTokens,
 }
 
 pub(super) fn load_settings_file(
@@ -91,15 +87,8 @@ pub(super) fn load_settings_file(
         logged_model,
         provider,
         provider_locked,
-        usage: TokenUsageRaw {
-            input_tokens: usage.input_tokens,
-            output_tokens: usage.output_tokens,
-            cache_creation_input_tokens: usage.cache_creation_tokens,
-            cache_read_input_tokens: usage.cache_read_tokens,
-            speed: None,
-            cache_creation: None,
-        },
-        reasoning_tokens: usage.thinking_tokens,
+        usage: usage.usage,
+        additional: usage.additional,
     }))
 }
 
@@ -119,23 +108,19 @@ pub(super) fn parse_token_usage(
     };
     let thinking_tokens = json_value_u64(usage.get("thinkingTokens"));
     let total_tokens = json_value_u64(usage.get("totalTokens"));
-    let (raw_usage, thinking_tokens) =
-        apply_total_token_fallback(raw_usage, thinking_tokens, total_tokens);
-    let tokens = DroidTokenUsage {
-        input_tokens: raw_usage.input_tokens,
-        output_tokens: raw_usage.output_tokens,
-        cache_creation_tokens: raw_usage.cache_creation_input_tokens,
-        cache_read_tokens: raw_usage.cache_read_input_tokens,
-        thinking_tokens,
-    };
-    let Some(counted_tokens) = ccusage_core::checked_total_usage_tokens(raw_usage, thinking_tokens)
+    let additional = AdditionalTokens::from_total(raw_usage, thinking_tokens, total_tokens);
+    let Some(counted_tokens) =
+        ccusage_core::checked_total_usage_tokens(raw_usage, additional.total())
     else {
         return Err(UnitError::new(
             ccusage_core::SkipKind::InvalidData,
             "Droid token counts exceed the u64 range",
         ));
     };
-    Ok((counted_tokens > 0).then_some(tokens))
+    Ok((counted_tokens > 0).then_some(DroidTokenUsage {
+        usage: raw_usage,
+        additional,
+    }))
 }
 
 fn settings_timestamp(
@@ -193,8 +178,7 @@ pub(super) fn price_droid(
     let entry_pricing = EntryPricing {
         granularity: UsageGranularity::Aggregate,
         usage: entry.usage,
-        reasoning_tokens: 0,
-        residual_tokens: entry.reasoning_tokens,
+        reasoning_tokens: entry.additional.reasoning,
         reported_model: Some(&entry.model),
         candidates: &candidates,
         stored_cost: None,
@@ -383,7 +367,7 @@ mod tests {
                 input_tokens: 100,
                 ..TokenUsageRaw::default()
             },
-            reasoning_tokens: 0,
+            additional: AdditionalTokens::default(),
         };
         let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(r#"{"sample":{"litellm_provider": "openai", "input_cost_per_token":0,"output_cost_per_token":0},"vendor/sample":{"input_cost_per_token":1,"output_cost_per_token":1}}"#);
@@ -450,7 +434,7 @@ mod tests {
                 input_tokens: 1_000_000,
                 ..TokenUsageRaw::default()
             },
-            reasoning_tokens: 0,
+            additional: AdditionalTokens::default(),
         };
 
         assert_eq!(

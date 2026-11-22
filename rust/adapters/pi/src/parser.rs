@@ -13,8 +13,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
-    LoadedEntry, TokenUsageRaw, apply_total_token_fallback, cli::CostMode, date_at,
-    fast::LinePrefilter, stored_cost_for_mode,
+    LoadedEntry, TokenUsageRaw, cli::CostMode, date_at, fast::LinePrefilter, stored_cost_for_mode,
 };
 use ccusage_adapter_common::{json, jsonl, units::UnitError};
 use ccusage_core::{Diagnostics, Skip, SkipKind};
@@ -271,9 +270,9 @@ fn read_session_file_data_with_context(
             speed: None,
             cache_creation: None,
         };
-        let (usage, extra_total_tokens) = apply_total_token_fallback(usage, 0, total);
+        let additional = ccusage_core::AdditionalTokens::from_total(usage, 0, total);
         let Some(counted_tokens) =
-            ccusage_core::checked_total_usage_tokens(usage, extra_total_tokens)
+            ccusage_core::checked_total_usage_tokens(usage, additional.report_remainder)
         else {
             diagnostics.record(Skip::record(
                 path,
@@ -315,7 +314,6 @@ fn read_session_file_data_with_context(
                 granularity: UsageGranularity::Request,
                 usage,
                 reasoning_tokens: 0,
-                residual_tokens: 0,
                 reported_model: identity.as_ref().map(AgentModel::display),
                 candidates: &candidates,
                 stored_cost: source_cost,
@@ -325,6 +323,7 @@ fn read_session_file_data_with_context(
         );
         let cost = priced.cost;
         let estimated_pricing = priced.estimated;
+        let (usage, extra_total_tokens) = additional.for_report(usage);
         usage_records.push(PiUsageRecord {
             signature: PiUsageSignature {
                 timestamp,
@@ -339,16 +338,14 @@ fn read_session_file_data_with_context(
             },
             entry_id: record.id.clone(),
         });
-        let missing_pricing_model = (mode != CostMode::Display
-            && !(mode == CostMode::Auto && source_cost.is_some())
-            && crate::total_usage_tokens(usage) != 0
-            && priced.matched.is_none())
-        .then(|| {
-            raw_model
-                .as_deref()
-                .map(|model| crate::model_aliases::resolve_model_name(model).into_owned())
-        })
-        .flatten();
+        let missing_pricing_model = priced
+            .missing_pricing
+            .then(|| {
+                raw_model
+                    .as_deref()
+                    .map(|model| crate::model_aliases::resolve_model_name(model).into_owned())
+            })
+            .flatten();
         let stored_cost = stored_cost_for_mode(source_cost, mode);
         let model = identity.map(AgentModel::into_display);
         entries.push(PiLoadedEntry {

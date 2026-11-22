@@ -16,7 +16,7 @@ mod paths;
 mod source;
 mod usage_wire;
 
-pub use commands::{run_blocks, run_bucket, run_daily, run_session, run_statusline};
+pub use commands::{run_report, run_statusline};
 pub use load::load_entries;
 pub use source::SOURCE;
 

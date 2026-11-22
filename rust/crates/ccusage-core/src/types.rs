@@ -339,22 +339,35 @@ pub fn checked_total_usage_tokens(usage: TokenUsageRaw, extra_total_tokens: u64)
         .checked_add(extra_total_tokens)
 }
 
-pub fn apply_total_token_fallback(
-    mut usage: TokenUsageRaw,
-    mut extra_total_tokens: u64,
-    total_tokens: u64,
-) -> (TokenUsageRaw, u64) {
-    let known_tokens = total_usage_tokens(usage).saturating_add(extra_total_tokens);
-    let missing_tokens = total_tokens.saturating_sub(known_tokens);
-    if missing_tokens == 0 {
-        return (usage, extra_total_tokens);
+#[derive(Debug, Clone, Copy, Default)]
+pub struct AdditionalTokens {
+    pub reasoning: u64,
+    /// Unclassified tokens included in the reported usage total.
+    pub report_remainder: u64,
+}
+
+impl AdditionalTokens {
+    pub fn from_total(usage: TokenUsageRaw, reasoning: u64, total: u64) -> Self {
+        Self {
+            reasoning,
+            report_remainder: total
+                .saturating_sub(total_usage_tokens(usage).saturating_add(reasoning)),
+        }
     }
-    if usage.output_tokens == 0 {
-        usage.output_tokens = missing_tokens;
-    } else {
-        extra_total_tokens = extra_total_tokens.saturating_add(missing_tokens);
+
+    pub fn total(self) -> u64 {
+        self.reasoning.saturating_add(self.report_remainder)
     }
-    (usage, extra_total_tokens)
+
+    /// Preserves the legacy report fallback that fills a missing output bucket from the recorded total.
+    pub fn for_report(self, mut usage: TokenUsageRaw) -> (TokenUsageRaw, u64) {
+        if usage.output_tokens == 0 {
+            usage.output_tokens = self.report_remainder;
+            (usage, self.reasoning)
+        } else {
+            (usage, self.total())
+        }
+    }
 }
 
 #[cfg(test)]
@@ -387,18 +400,14 @@ mod tests {
 
     #[test]
     fn applies_total_token_fallback_to_missing_output_tokens() {
-        let (usage, extra_total_tokens) = apply_total_token_fallback(
-            TokenUsageRaw {
-                input_tokens: 100,
-                output_tokens: 0,
-                cache_creation_input_tokens: 0,
-                cache_read_input_tokens: 25,
-                speed: None,
-                cache_creation: None,
-            },
-            0,
-            175,
-        );
+        let usage = TokenUsageRaw {
+            input_tokens: 100,
+            cache_read_input_tokens: 25,
+            ..Default::default()
+        };
+        let additional = AdditionalTokens::from_total(usage, 0, 175);
+        assert_eq!(additional.report_remainder, 50);
+        let (usage, extra_total_tokens) = additional.for_report(usage);
 
         assert_eq!(usage.input_tokens, 100);
         assert_eq!(usage.output_tokens, 50);
@@ -408,18 +417,16 @@ mod tests {
 
     #[test]
     fn keeps_total_fallback_as_extra_when_output_is_known() {
-        let (usage, extra_total_tokens) = apply_total_token_fallback(
-            TokenUsageRaw {
-                input_tokens: 100,
-                output_tokens: 50,
-                cache_creation_input_tokens: 0,
-                cache_read_input_tokens: 25,
-                speed: None,
-                cache_creation: None,
-            },
-            0,
-            200,
-        );
+        let usage = TokenUsageRaw {
+            input_tokens: 100,
+            output_tokens: 50,
+            cache_read_input_tokens: 25,
+            ..Default::default()
+        };
+        let additional = AdditionalTokens::from_total(usage, 10, 200);
+        assert_eq!(additional.reasoning, 10);
+        assert_eq!(additional.report_remainder, 15);
+        let (usage, extra_total_tokens) = additional.for_report(usage);
 
         assert_eq!(usage.output_tokens, 50);
         assert_eq!(extra_total_tokens, 25);
@@ -427,21 +434,18 @@ mod tests {
 
     #[test]
     fn saturates_total_token_fallback_for_huge_counters() {
-        let (usage, extra_total_tokens) = apply_total_token_fallback(
-            TokenUsageRaw {
-                input_tokens: u64::MAX,
-                output_tokens: u64::MAX,
-                cache_creation_input_tokens: 0,
-                cache_read_input_tokens: u64::MAX,
-                speed: None,
-                cache_creation: Some(crate::CacheCreationRaw {
-                    ephemeral_5m_input_tokens: u64::MAX,
-                    ephemeral_1h_input_tokens: u64::MAX,
-                }),
-            },
-            u64::MAX,
-            u64::MAX,
-        );
+        let usage = TokenUsageRaw {
+            input_tokens: u64::MAX,
+            output_tokens: u64::MAX,
+            cache_read_input_tokens: u64::MAX,
+            cache_creation: Some(crate::CacheCreationRaw {
+                ephemeral_5m_input_tokens: u64::MAX,
+                ephemeral_1h_input_tokens: u64::MAX,
+            }),
+            ..Default::default()
+        };
+        let additional = AdditionalTokens::from_total(usage, u64::MAX, u64::MAX);
+        let (usage, extra_total_tokens) = additional.for_report(usage);
 
         assert_eq!(total_usage_tokens(usage), u64::MAX);
         assert_eq!(extra_total_tokens, u64::MAX);

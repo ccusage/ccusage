@@ -186,14 +186,6 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.0013250000000000002,
-          "inputTokens": 100,
-          "modelName": "claude-haiku-4.5",
-          "outputTokens": 245
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
           "cost": 0.0003375,
           "inputTokens": 250,
           "modelName": "k2p6",
@@ -206,6 +198,14 @@ exit: 0
           "inputTokens": 58,
           "modelName": "gpt-5",
           "outputTokens": 8
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00009999999999999999,
+          "inputTokens": 100,
+          "modelName": "claude-haiku-4.5",
+          "outputTokens": 245
         }
       ],
       "modelsUsed": [
@@ -214,7 +214,7 @@ exit: 0
         "gpt-5"
       ],
       "outputTokens": 278,
-      "totalCost": 0.0018150000000000004,
+      "totalCost": 0.0005899999999999999,
       "totalTokens": 686
     }
   ],
@@ -223,7 +223,7 @@ exit: 0
     "cacheReadTokens": 17500,
     "inputTokens": 7186,
     "outputTokens": 1831,
-    "totalCost": 0.09012624999999999,
+    "totalCost": 0.08890124999999999,
     "totalTokens": 27267,
     "unpricedModels": [
       "opencode-mystery-1",

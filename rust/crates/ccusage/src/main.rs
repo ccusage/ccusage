@@ -5,7 +5,7 @@ mod http;
 use std::process::ExitCode;
 
 use ccusage_cli::Command;
-use ccusage_core::{Result, pricing, summary::Bucket};
+use ccusage_core::{Result, pricing};
 
 #[cfg(any(target_os = "macos", all(target_os = "linux", target_env = "musl")))]
 #[global_allocator]
@@ -30,13 +30,9 @@ fn main() -> Result<ExitCode> {
     };
     match command {
         Command::All(args) => adapter::all::run(args),
-        Command::Daily(args) => adapter::claude::run_daily(args),
-        Command::Monthly(shared) => adapter::claude::run_bucket(shared, Bucket::Monthly),
-        Command::Weekly(args) => {
-            adapter::claude::run_bucket(args.shared, Bucket::Weekly(args.start_of_week))
+        Command::Claude { report, project } => {
+            adapter::claude::run_report(report, project.as_deref())
         }
-        Command::Session(args) => adapter::claude::run_session(args),
-        Command::Blocks(args) => adapter::claude::run_blocks(args),
         Command::Statusline(args) => adapter::claude::run_statusline(args),
         Command::Agent(agent, args) => adapter::all::runner(agent, args),
     }?;

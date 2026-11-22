@@ -49,15 +49,17 @@ impl CodexFileOccurrences {
 
 pub(super) struct CodexEventProvenance {
     file_index: u32,
+    configured_tier: Option<CodexServiceTier>,
     occurrences: FxHashMap<CodexUsageKey, CodexFileOccurrences>,
     models: FxHashMap<CompactString, StringId>,
     session: Option<StringId>,
 }
 
 impl CodexEventProvenance {
-    pub(super) fn new(file_index: usize) -> Self {
+    pub(super) fn new(file_index: usize, configured_tier: Option<CodexServiceTier>) -> Self {
         Self {
             file_index: u32::try_from(file_index).unwrap_or(u32::MAX),
+            configured_tier,
             occurrences: FxHashMap::default(),
             models: FxHashMap::default(),
             session: None,
@@ -71,19 +73,29 @@ pub(super) struct CodexAttribution {
     session: StringId,
     pub(super) last_activity: CompactString,
     pub(super) is_fallback: bool,
-    pub(super) service_tier: Option<CodexServiceTier>,
+    service_tier: Option<CodexServiceTier>,
+    configured_tier: Option<CodexServiceTier>,
 }
 
 impl CodexAttribution {
-    fn new(event: &CodexTokenUsageEvent, file_index: u32, session: StringId) -> Self {
+    fn new(
+        event: &CodexTokenUsageEvent,
+        provenance: &CodexEventProvenance,
+        session: StringId,
+    ) -> Self {
         Self {
-            file_index,
+            file_index: provenance.file_index,
             rollout_count: 0,
             session,
             last_activity: CompactString::new(&event.last_activity),
             is_fallback: event.is_fallback_model,
             service_tier: event.service_tier,
+            configured_tier: provenance.configured_tier,
         }
+    }
+
+    pub(super) fn pricing_tier(&self) -> Option<CodexServiceTier> {
+        self.service_tier.or(self.configured_tier)
     }
 
     fn merge(&mut self, mut incoming: Self) -> bool {
@@ -383,7 +395,7 @@ impl<'a> CodexDedupe<'a> {
             usage: event.raw_usage(),
             occurrence: 0,
         };
-        let mut attribution = CodexAttribution::new(event, provenance.file_index, session);
+        let mut attribution = CodexAttribution::new(event, provenance, session);
         if let Some(response) = &event.response_id {
             let mut shard = self
                 .shard(response)?

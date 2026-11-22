@@ -127,7 +127,6 @@ fn check_cases(base: &PricingMap, cases: &str) {
                         ..Default::default()
                     },
                     reasoning_tokens: 0,
-                    residual_tokens: 0,
                     reported_model: Some(label),
                     candidates: &candidates,
                     stored_cost: None,

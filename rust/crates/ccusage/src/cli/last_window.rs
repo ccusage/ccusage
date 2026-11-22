@@ -79,7 +79,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use ccusage_cli::{
-        AgentCommandArgs, AgentReportKind, SharedArgs, SortOrder, WeekDay, WeeklyArgs,
+        AgentCommandArgs, AgentReportKind, ClaudeReport, SharedArgs, SortOrder, WeekDay, WeeklyArgs,
     };
 
     use super::*;
@@ -169,10 +169,10 @@ mod tests {
 
     #[test]
     fn keeps_the_claude_weekly_start_of_week() {
-        let since = resolved_since(Command::Weekly(WeeklyArgs {
+        let since = resolved_since(Command::claude_report(ClaudeReport::Weekly(WeeklyArgs {
             shared: shared_with_last(1),
             start_of_week: WeekDay::Sunday,
-        }));
+        })));
 
         let today = date_at(utc_now(), ccusage_core::cli::ReportTimezone::UTC.zone());
         assert_eq!(
@@ -249,10 +249,10 @@ mod tests {
 
     #[test]
     fn leaves_commands_without_last_untouched() {
-        let mut command = Command::Monthly(SharedArgs {
+        let mut command = Command::claude_report(ClaudeReport::Monthly(SharedArgs {
             order: Some(SortOrder::Desc),
             ..SharedArgs::with_defaults()
-        });
+        }));
         resolve(&mut command).unwrap();
         assert!(command.shared().unwrap().since.is_none());
     }

@@ -26,11 +26,12 @@ mod lenient;
 
 pub use lenient::{
     FieldName, FirstField, LenientSeq, LenientString, lenient_array, lenient_f64, lenient_i64,
-    lenient_object, lenient_u64, lenient_vec, non_empty_string,
+    lenient_object, lenient_optional_u64, lenient_u64, lenient_vec, non_empty_string,
 };
 
 const DEFAULT_BUFFER_SIZE: usize = 8 * 1024;
-const RECYCLED_BUFFER_MAX: usize = 16 << 20;
+// NOTE(2026-11-21, #2487): Codex starts with 128 KiB and doubles the buffer, so 1 MiB covers three doublings. Budget roughly one extra oversized allocation per file with a line over the cap to avoid retaining the largest buffer across every worker.
+const RECYCLED_BUFFER_MAX: usize = 1 << 20;
 
 thread_local! {
     static LINE_BUFFER: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
@@ -624,6 +625,51 @@ mod tests {
         lenient_i64, lenient_object, lenient_u64, lenient_vec, non_empty_string, read,
     };
     use ccusage_core::fast::LinePrefilter;
+
+    #[test]
+    fn reading_plain_files_reuses_a_buffer_at_the_cache_limit() {
+        let fixture = Fixture::new();
+        let limit = 1 << 20;
+        let large =
+            fixture.write_file("at-limit.jsonl", format!("\"{}\"\n", "x".repeat(limit - 3)));
+        let small = fixture.write_file("small.jsonl", "{}\n");
+        let policy = ReadPolicy {
+            capacity: 128 * 1024,
+            ..ReadPolicy::PLAIN
+        };
+        let read_buffer_address = |path: &Path| {
+            read(path, None, policy, |line, _, _| {
+                ControlFlow::Break(line.bytes().as_ptr())
+            })
+            .unwrap()
+            .unwrap()
+        };
+
+        let buffer_address = read_buffer_address(&large);
+
+        assert_eq!(super::LINE_BUFFER.with_borrow(Vec::capacity), limit);
+        assert_eq!(read_buffer_address(&small), buffer_address);
+        assert_eq!(super::LINE_BUFFER.take().capacity(), limit);
+    }
+
+    #[test]
+    fn reading_an_oversized_plain_line_releases_its_buffer() {
+        let fixture = Fixture::new();
+        let output = "x".repeat(2 << 20);
+        let record = format!(r#"{{"output":"{output}"}}"#);
+        let path = fixture.write_file("large.jsonl", format!("{record}\n"));
+        let mut lines = 0;
+
+        read(&path, None, ReadPolicy::PLAIN, |line, _, _| {
+            assert_eq!(line.bytes(), record.as_bytes());
+            lines += 1;
+            ControlFlow::<()>::Continue(())
+        })
+        .unwrap();
+
+        assert_eq!(lines, 1);
+        assert!(super::LINE_BUFFER.take().capacity() <= 1 << 20);
+    }
 
     fn decode_fixture<T: DeserializeOwned>(
         bytes: &[u8],

@@ -229,18 +229,18 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.0013250000000000002,
-          "inputTokens": 100,
-          "modelName": "claude-haiku-4.5",
-          "outputTokens": 245
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
           "cost": 0.0006399999999999999,
           "inputTokens": 200,
           "modelName": "gemini-3-pro-high",
           "outputTokens": 20
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00009999999999999999,
+          "inputTokens": 100,
+          "modelName": "claude-haiku-4.5",
+          "outputTokens": 245
         },
         {
           "cacheCreationTokens": 0,
@@ -261,7 +261,7 @@ exit: 0
       ],
       "outputTokens": 685,
       "sessionId": "ses-v1-alpha",
-      "totalCost": 0.5051525,
+      "totalCost": 0.5039275,
       "totalTokens": 9835
     },
     {
@@ -489,7 +489,7 @@ exit: 0
     "cacheReadTokens": 18400,
     "inputTokens": 7811,
     "outputTokens": 1933,
-    "totalCost": 3.58792625,
+    "totalCost": 3.5867012500000004,
     "totalTokens": 29014,
     "unpricedModels": [
       "opencode-mystery-1",

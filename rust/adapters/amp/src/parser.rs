@@ -13,10 +13,8 @@ use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::{
-    Diagnostics, LoadedEntry, Skip, SkipKind, TimestampMs, TokenUsageRaw,
-    apply_total_token_fallback, date_at,
-};
+use crate::{Diagnostics, LoadedEntry, Skip, SkipKind, TimestampMs, TokenUsageRaw, date_at};
+use ccusage_core::AdditionalTokens;
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -143,21 +141,24 @@ where
 
 struct AmpUsage {
     usage: TokenUsageRaw,
-    extra_total_tokens: u64,
+    additional: AdditionalTokens,
     model: String,
     timestamp: TimestampMs,
     id: Option<String>,
     credits: Option<f64>,
 }
 
-fn counted_usage(usage: TokenUsageRaw, total_tokens: u64) -> Option<(TokenUsageRaw, u64)> {
-    let (usage, extra_total_tokens) = apply_total_token_fallback(usage, 0, total_tokens);
+fn counted_usage(
+    usage: TokenUsageRaw,
+    total_tokens: u64,
+) -> Option<(TokenUsageRaw, AdditionalTokens)> {
+    let additional = AdditionalTokens::from_total(usage, 0, total_tokens);
     let counts_tokens = usage.input_tokens != 0
         || usage.output_tokens != 0
         || usage.cache_creation_input_tokens != 0
         || usage.cache_read_input_tokens != 0
-        || extra_total_tokens != 0;
-    counts_tokens.then_some((usage, extra_total_tokens))
+        || additional.report_remainder != 0;
+    counts_tokens.then_some((usage, additional))
 }
 
 struct ThreadUnit<'a> {
@@ -246,7 +247,7 @@ fn parse_thread(
 fn ledger_event_usage(
     event: &AmpLedgerEvent,
     cache_tokens: &HashMap<i64, (u64, u64)>,
-) -> Option<(TokenUsageRaw, u64)> {
+) -> Option<(TokenUsageRaw, AdditionalTokens)> {
     let tokens = event.tokens.as_ref()?;
     let (cache_creation, cache_read) = event
         .to_message_id
@@ -263,7 +264,9 @@ fn ledger_event_usage(
     counted_usage(usage, tokens.total)
 }
 
-fn message_usage(message: &AmpMessage) -> Option<(&AmpMessageUsage, TokenUsageRaw, u64)> {
+fn message_usage(
+    message: &AmpMessage,
+) -> Option<(&AmpMessageUsage, TokenUsageRaw, AdditionalTokens)> {
     if !message.from_assistant {
         return None;
     }
@@ -276,8 +279,8 @@ fn message_usage(message: &AmpMessage) -> Option<(&AmpMessageUsage, TokenUsageRa
         speed: None,
         cache_creation: None,
     };
-    let (usage, extra_total_tokens) = counted_usage(usage, record.total_tokens)?;
-    Some((record, usage, extra_total_tokens))
+    let (usage, additional) = counted_usage(usage, record.total_tokens)?;
+    Some((record, usage, additional))
 }
 
 fn parse_ledger_events(
@@ -290,7 +293,7 @@ fn parse_ledger_events(
 ) -> Vec<LoadedEntry> {
     let mut entries = Vec::new();
     for (index, event) in events.iter().enumerate() {
-        let Some((usage, extra_total_tokens)) = ledger_event_usage(event, cache_tokens) else {
+        let Some((usage, additional)) = ledger_event_usage(event, cache_tokens) else {
             continue;
         };
         let Some(model) = event.model.clone() else {
@@ -308,7 +311,7 @@ fn parse_ledger_events(
         entries.push(amp_entry(
             AmpUsage {
                 usage,
-                extra_total_tokens,
+                additional,
                 model,
                 timestamp,
                 id: event.id.clone(),
@@ -331,7 +334,7 @@ fn parse_message_usage(
 ) -> Vec<LoadedEntry> {
     let mut entries = Vec::new();
     for (index, message) in messages.iter().enumerate() {
-        let Some((record, usage, extra_total_tokens)) = message_usage(message) else {
+        let Some((record, usage, additional)) = message_usage(message) else {
             continue;
         };
         let Some(model) = record.model.clone().or_else(|| message.model.clone()) else {
@@ -355,7 +358,7 @@ fn parse_message_usage(
         entries.push(amp_entry(
             AmpUsage {
                 usage,
-                extra_total_tokens,
+                additional,
                 model,
                 timestamp,
                 id: message.message_id.as_ref().map(AmpMessageId::to_text),
@@ -384,7 +387,6 @@ fn amp_entry(
                 ..record.usage
             },
             reasoning_tokens: 0,
-            residual_tokens: record.extra_total_tokens,
             reported_model: Some(&record.model),
             candidates: &candidates,
             stored_cost: None,
@@ -397,6 +399,7 @@ fn amp_entry(
     let missing_pricing_model = priced
         .missing_pricing
         .then(|| crate::model_aliases::resolve_model_name(&record.model).into_owned());
+    let (usage, extra_total_tokens) = record.additional.for_report(record.usage);
     LoadedEntry {
         date: date_at(record.timestamp, tz),
         timestamp: record.timestamp,
@@ -404,14 +407,14 @@ fn amp_entry(
         session_id: Arc::from(thread_id),
         project_path: Arc::from("Amp"),
         cost,
-        extra_total_tokens: record.extra_total_tokens,
+        extra_total_tokens,
         credits: record.credits,
         message_count: None,
         model: Some(record.model),
         usage_limit_reset_time: None,
         missing_pricing_model,
         estimated_pricing,
-        usage: record.usage,
+        usage,
         message_id: record.id,
         version: None,
         recorded_cost: None,

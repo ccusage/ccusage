@@ -6,8 +6,8 @@ use schemars::{
 use serde_json::{Map, Value, json};
 
 use super::{
-    BlocksSpecificOptions, CodexOptions, DailySpecificOptions, OpenClawOptions, PiOptions,
-    PiStoreConfig, SharedOptions, StatuslineSpecificOptions, WeeklySpecificOptions,
+    BlocksSpecificOptions, ClaudeOptions, CodexOptions, DailySpecificOptions, OpenClawOptions,
+    PiOptions, PiStoreConfig, SharedOptions, StatuslineSpecificOptions, WeeklySpecificOptions,
 };
 
 pub fn generate_config_schema_json() -> serde_json::Result<String> {
@@ -20,33 +20,33 @@ pub fn generate_config_schema_json() -> serde_json::Result<String> {
     let weekly = option_properties::<WeeklySpecificOptions>(&mut generator)?;
     let blocks = option_properties::<BlocksSpecificOptions>(&mut generator)?;
     let statusline = option_properties::<StatuslineSpecificOptions>(&mut generator)?;
+    let claude = option_properties::<ClaudeOptions>(&mut generator)?;
     let codex = option_properties::<CodexOptions>(&mut generator)?;
     let pi = option_properties::<PiOptions>(&mut generator)?;
     let openclaw = option_properties::<OpenClawOptions>(&mut generator)?;
     let pi_stores = serde_json::to_value(Vec::<PiStoreConfig>::json_schema(&mut generator))?;
 
-    let shared_defaults = with_defaults(
-        option_section(&[&shared]),
-        &[
-            ("json", json!(false)),
-            ("mode", json!("auto")),
-            ("debug", json!(false)),
-            ("debugSamples", json!(5)),
-            ("order", json!("asc")),
-            ("breakdown", json!(false)),
-            ("offline", json!(false)),
-            ("noOffline", json!(false)),
-            ("color", json!(false)),
-            ("noColor", json!(false)),
-            ("all", json!(false)),
-            ("compact", json!(false)),
-            ("singleThread", json!(false)),
-            ("noCost", json!(false)),
-        ],
-    );
-    let daily_section = option_section(&[&shared, &daily]);
+    let default_values = [
+        ("json", json!(false)),
+        ("mode", json!("auto")),
+        ("debug", json!(false)),
+        ("debugSamples", json!(5)),
+        ("order", json!("asc")),
+        ("breakdown", json!(false)),
+        ("offline", json!(false)),
+        ("noOffline", json!(false)),
+        ("color", json!(false)),
+        ("noColor", json!(false)),
+        ("all", json!(false)),
+        ("compact", json!(false)),
+        ("singleThread", json!(false)),
+        ("noCost", json!(false)),
+    ];
+    let shared_defaults = with_defaults(option_section(&[&shared]), &default_values);
+    let claude_defaults = with_defaults(option_section(&[&shared, &claude]), &default_values);
+    let daily_section = option_section(&[&shared, &claude, &daily]);
     let blocks_section = with_defaults(
-        option_section(&[&shared, &blocks]),
+        option_section(&[&shared, &claude, &blocks]),
         &[("sessionLength", json!(5.0))],
     );
     let statusline_section = with_defaults(
@@ -92,10 +92,10 @@ pub fn generate_config_schema_json() -> serde_json::Result<String> {
             let section = match report {
                 AgentReportKind::Daily => daily_section.clone(),
                 AgentReportKind::Weekly => with_defaults(
-                    option_section(&[&shared, &weekly]),
+                    option_section(&[&shared, &claude, &weekly]),
                     &[("startOfWeek", json!("monday"))],
                 ),
-                AgentReportKind::Monthly | AgentReportKind::Session => shared_defaults.clone(),
+                AgentReportKind::Monthly | AgentReportKind::Session => claude_defaults.clone(),
             };
             (report.name().to_string(), section)
         })
@@ -114,7 +114,7 @@ pub fn generate_config_schema_json() -> serde_json::Result<String> {
         (
             "defaults".to_string(),
             described(
-                shared_defaults.clone(),
+                claude_defaults.clone(),
                 "Default values for all-agent reports and legacy Claude commands.",
             ),
         ),
@@ -128,7 +128,7 @@ pub fn generate_config_schema_json() -> serde_json::Result<String> {
     ]);
     for agent in AGENTS {
         let defaults = match agent.name {
-            "claude" => option_section(&[&shared, &daily, &weekly, &blocks, &statusline]),
+            "claude" => option_section(&[&shared, &claude, &daily, &weekly, &blocks, &statusline]),
             "codex" => codex_section.clone(),
             "pi" => option_section(&[&shared, &pi]),
             "openclaw" => option_section(&[&shared, &openclaw]),
@@ -143,10 +143,10 @@ pub fn generate_config_schema_json() -> serde_json::Result<String> {
                 let section = match (agent.name, report) {
                     ("claude", AgentReportKind::Daily) => daily_section.clone(),
                     ("claude", AgentReportKind::Weekly) => with_defaults(
-                        option_section(&[&shared, &weekly]),
+                        option_section(&[&shared, &claude, &weekly]),
                         &[("startOfWeek", json!("sunday"))],
                     ),
-                    ("claude", _) => shared_defaults.clone(),
+                    ("claude", _) => claude_defaults.clone(),
                     _ => defaults.clone(),
                 };
                 (report.name().to_string(), section)

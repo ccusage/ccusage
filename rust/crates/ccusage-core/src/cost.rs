@@ -17,8 +17,8 @@ pub enum UsageGranularity {
 pub struct EntryPricing<'a> {
     pub usage: crate::TokenUsageRaw,
     pub granularity: UsageGranularity,
+    /// Explicit reasoning tokens outside the recorded output bucket.
     pub reasoning_tokens: u64,
-    pub residual_tokens: u64,
     pub reported_model: Option<&'a str>,
     pub candidates: &'a [(&'a str, crate::pricing::MatchKind)],
     pub stored_cost: Option<f64>,
@@ -105,8 +105,7 @@ fn price_entry_with<'a>(
         output_tokens: entry
             .usage
             .output_tokens
-            .saturating_add(entry.reasoning_tokens)
-            .saturating_add(entry.residual_tokens),
+            .saturating_add(entry.reasoning_tokens),
         ..entry.usage
     };
     match resolve(map, &entry) {

@@ -214,19 +214,19 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.008505,
-          "inputTokens": 0,
-          "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 567
-        },
-        {
-          "cacheCreationTokens": 0,
           "cacheReadTokens": 400,
           "cost": 0.003265,
           "inputTokens": 1140,
           "modelName": "gpt-5",
           "outputTokens": 179
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00007500000000000001,
+          "inputTokens": 0,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 567
         }
       ],
       "modelsUsed": [
@@ -236,7 +236,7 @@ exit: 0
         "claude-sonnet-4-20250514"
       ],
       "outputTokens": 856,
-      "totalCost": 0.13652,
+      "totalCost": 0.12809,
       "totalTokens": 3496
     }
   ],
@@ -245,7 +245,7 @@ exit: 0
     "cacheReadTokens": 3800,
     "inputTokens": 11090,
     "outputTokens": 2878,
-    "totalCost": 1.4074025,
+    "totalCost": 1.3989725,
     "totalTokens": 18388,
     "unpricedModels": [
       "copilot-mystery-1",

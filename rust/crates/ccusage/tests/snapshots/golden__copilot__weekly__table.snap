@@ -1,0 +1,24 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage copilot weekly --offline
+---
+exit: 0
+--- stdout ---
+┌────────────┬─────────────────────┬───────────┬───────────┬───────────────┬─────────────┬───────────────┬─────────────┐
+│ Week       │ Models              │     Input │    Output │  Cache Create │  Cache Read │  Total Tokens │  Cost (USD) │
+├────────────┼─────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2025-12-22 │ - opus-4            │       300 │       150 │           100 │         200 │           750 │       $0.40 │
+├────────────┼─────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2025-12-29 │ - copilot-mystery-1 │    10,790 │     2,728 │           500 │       3,600 │        17,638 │       $1.00 │
+│            │ - gpt-5             │           │           │               │             │               │             │
+│            │ - haiku-4-5         │           │           │               │             │               │             │
+│            │ - opus-4            │           │           │               │             │               │             │
+│            │ - sonnet-4          │           │           │               │             │               │             │
+│            │ - unknown           │           │           │               │             │               │             │
+├────────────┼─────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ Total      │                     │    11,090 │     2,878 │           600 │       3,800 │        18,388 │       $1.40 │
+└────────────┴─────────────────────┴───────────┴───────────┴───────────────┴─────────────┴───────────────┴─────────────┘
+
+--- stderr ---
+WARN  Missing embedded pricing for copilot-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for unknown; cost excludes this model. Run without --offline or update ccusage after pricing is added.

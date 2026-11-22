@@ -207,14 +207,6 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.008505,
-          "inputTokens": 0,
-          "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 567
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
           "cost": 0.0045,
           "inputTokens": 200,
           "modelName": "claude-opus-4-20250514",
@@ -227,6 +219,14 @@ exit: 0
           "inputTokens": 1540,
           "modelName": "gpt-5",
           "outputTokens": 239
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00007500000000000001,
+          "inputTokens": 0,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 567
         },
         {
           "cacheCreationTokens": 0,
@@ -245,7 +245,7 @@ exit: 0
         "claude-sonnet-4-20250514"
       ],
       "outputTokens": 831,
-      "totalCost": 0.11747,
+      "totalCost": 0.10904000000000001,
       "totalTokens": 3221
     },
     {
@@ -277,7 +277,7 @@ exit: 0
     "cacheReadTokens": 3800,
     "inputTokens": 11090,
     "outputTokens": 2878,
-    "totalCost": 1.4074025000000001,
+    "totalCost": 1.3989725000000002,
     "totalTokens": 18388,
     "unpricedModels": [
       "copilot-mystery-1",

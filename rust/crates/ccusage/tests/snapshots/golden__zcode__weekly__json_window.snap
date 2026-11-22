@@ -1,0 +1,104 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage zcode weekly --offline --json --since 20251231 --until 20260101
+---
+exit: 0
+--- stdout ---
+{
+  "totals": {
+    "cacheCreationTokens": 650,
+    "cacheReadTokens": 1600,
+    "inputTokens": 6700,
+    "outputTokens": 1880,
+    "totalCost": 0.013410499999999999,
+    "totalTokens": 10830,
+    "unpricedModels": [
+      "GLM-5.3",
+      "claude-sonnet-4-20250514",
+      "zcode-mystery-1"
+    ]
+  },
+  "weekly": [
+    {
+      "cacheCreationTokens": 650,
+      "cacheReadTokens": 1600,
+      "inputTokens": 6700,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 400,
+          "cacheReadTokens": 1200,
+          "cost": 0.006872,
+          "inputTokens": 2600,
+          "missingPricing": true,
+          "modelName": "GLM-5.3",
+          "outputTokens": 620
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 100,
+          "cost": 0.0027300000000000002,
+          "inputTokens": 1000,
+          "missingPricing": true,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 130
+        },
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 100,
+          "cost": 0.00131,
+          "inputTokens": 500,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 120
+        },
+        {
+          "cacheCreationTokens": 50,
+          "cacheReadTokens": 0,
+          "cost": 0.00114,
+          "inputTokens": 450,
+          "modelName": "glm-5.3",
+          "outputTokens": 100
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0007125,
+          "inputTokens": 250,
+          "modelName": "gpt-5",
+          "outputTokens": 40
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 200,
+          "cost": 0.000646,
+          "inputTokens": 1600,
+          "modelName": "GLM-5.3-Flash",
+          "outputTokens": 800
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 300,
+          "missingPricing": true,
+          "modelName": "zcode-mystery-1",
+          "outputTokens": 70
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514",
+        "GLM-5.3",
+        "GLM-5.3-Flash",
+        "zcode-mystery-1",
+        "glm-5.3",
+        "claude-haiku-4-5-20251001",
+        "gpt-5"
+      ],
+      "outputTokens": 1880,
+      "totalCost": 0.013410499999999999,
+      "totalTokens": 10830,
+      "week": "2025-12-29"
+    }
+  ]
+}
+
+--- stderr ---

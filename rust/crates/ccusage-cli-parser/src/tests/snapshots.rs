@@ -28,28 +28,43 @@ fn cli_snapshot(cli: Command) -> Value {
 fn command_snapshot(command: Command) -> Value {
     match command {
         Command::All(args) => agent_command_snapshot("all", args),
-        Command::Daily(args) => json!({
+        Command::Claude {
+            report: ClaudeReport::Daily(args),
+            project,
+        } => json!({
             "type": "daily",
             "shared": shared_snapshot(&args.shared),
             "instances": args.instances,
-            "project": args.project,
+            "project": project,
             "projectAliases": args.project_aliases,
         }),
-        Command::Monthly(shared) => json!({
+        Command::Claude {
+            report: ClaudeReport::Monthly(shared),
+            ..
+        } => json!({
             "type": "monthly",
             "shared": shared_snapshot(&shared),
         }),
-        Command::Weekly(args) => json!({
+        Command::Claude {
+            report: ClaudeReport::Weekly(args),
+            ..
+        } => json!({
             "type": "weekly",
             "shared": shared_snapshot(&args.shared),
             "startOfWeek": format!("{:?}", args.start_of_week),
         }),
-        Command::Session(args) => json!({
+        Command::Claude {
+            report: ClaudeReport::Session(args),
+            ..
+        } => json!({
             "type": "session",
             "shared": shared_snapshot(&args.shared),
             "id": args.id,
         }),
-        Command::Blocks(args) => json!({
+        Command::Claude {
+            report: ClaudeReport::Blocks(args),
+            ..
+        } => json!({
             "type": "blocks",
             "shared": shared_snapshot(&args.shared),
             "active": args.active,

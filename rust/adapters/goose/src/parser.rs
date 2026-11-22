@@ -78,7 +78,7 @@ pub(super) fn row_to_entry(
         .and_then(|created_at| parse_goose_timestamp(&created_at))
         .ok_or(RowRejection::InvalidTimestamp)?;
 
-    let reasoning_tokens = total_tokens.saturating_sub(input_tokens.saturating_add(output_tokens));
+    let report_remainder = total_tokens.saturating_sub(input_tokens.saturating_add(output_tokens));
     let provider_name = provider_name
         .as_deref()
         .map(str::trim)
@@ -109,8 +109,7 @@ pub(super) fn row_to_entry(
     let entry_pricing = EntryPricing {
         granularity: UsageGranularity::Aggregate,
         usage,
-        reasoning_tokens,
-        residual_tokens: 0,
+        reasoning_tokens: 0,
         reported_model: Some(&model),
         candidates: &candidates,
         stored_cost: None,
@@ -135,7 +134,7 @@ pub(super) fn row_to_entry(
         usage_limit_reset_time: None,
         missing_pricing_model,
         estimated_pricing,
-        extra_total_tokens: reasoning_tokens,
+        extra_total_tokens: report_remainder,
         message_count: None,
         usage,
         message_id: Some(id.clone()),

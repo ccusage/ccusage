@@ -15,7 +15,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.0675,
+          "cost": 0.052500000000000005,
           "inputTokens": 2000,
           "modelName": "claude-opus-4-20250514",
           "outputTokens": 300
@@ -34,7 +34,7 @@ exit: 0
         "claude-haiku-4-5-20251001"
       ],
       "outputTokens": 700,
-      "totalCost": 0.0704,
+      "totalCost": 0.055400000000000005,
       "totalTokens": 3800
     },
     {
@@ -46,7 +46,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.00315,
+          "cost": 0.0029,
           "inputTokens": 900,
           "modelName": "claude-haiku-4-5-20251001",
           "outputTokens": 400
@@ -75,7 +75,7 @@ exit: 0
         "goose-mystery-1"
       ],
       "outputTokens": 570,
-      "totalCost": 0.0034000000000000002,
+      "totalCost": 0.00315,
       "totalTokens": 2320
     }
   ],
@@ -84,7 +84,7 @@ exit: 0
     "cacheReadTokens": 0,
     "inputTokens": 4600,
     "outputTokens": 1270,
-    "totalCost": 0.0738,
+    "totalCost": 0.058550000000000005,
     "totalTokens": 6120,
     "unpricedModels": [
       "goose-mystery-1"

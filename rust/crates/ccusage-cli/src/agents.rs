@@ -231,13 +231,13 @@ agents! {
     Goose => "goose", "Goose", STANDARD_REPORTS, &[];
     OpenClaw => "openclaw", "OpenClaw", STANDARD_REPORTS, &[];
     Kilo => "kilo", "Kilo", STANDARD_REPORTS, &[];
-    Copilot => "copilot", "GitHub Copilot CLI", STANDARD_REPORTS, &[];
+    Copilot => "copilot", "GitHub Copilot CLI", ALL_REPORTS, &[];
     Gemini => "gemini", "Gemini CLI", STANDARD_REPORTS, &[];
-    Antigravity => "antigravity", "Antigravity", STANDARD_REPORTS, &[];
-    Kimi => "kimi", "Kimi", STANDARD_REPORTS, &[];
+    Antigravity => "antigravity", "Antigravity", ALL_REPORTS, &[];
+    Kimi => "kimi", "Kimi", ALL_REPORTS, &[];
     Qwen => "qwen", "Qwen", STANDARD_REPORTS, &[];
     Grok => "grok", "Grok", STANDARD_REPORTS, &[];
-    ZCode => "zcode", "ZCode", STANDARD_REPORTS, &[];
+    ZCode => "zcode", "ZCode", ALL_REPORTS, &[];
     Cline => "cline", "Cline", ALL_REPORTS, &[];
     Dsh => "dsh", "DeepSeek Harness", ALL_REPORTS, &[];
 }

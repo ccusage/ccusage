@@ -34,6 +34,7 @@ pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<Load
 
 fn to_loaded_entry(entry: DroidEntry, tz: &JiffTimeZone, pricing: PriceTable<'_>) -> LoadedEntry {
     let (cost, missing_pricing_model, estimated_pricing) = price_droid(&entry, pricing);
+    let (usage, extra_total_tokens) = entry.additional.for_report(entry.usage);
     LoadedEntry {
         date: date_at(entry.timestamp, tz),
         timestamp: entry.timestamp,
@@ -42,13 +43,13 @@ fn to_loaded_entry(entry: DroidEntry, tz: &JiffTimeZone, pricing: PriceTable<'_>
         project_path: Arc::from("Droid"),
         cost,
         credits: None,
-        extra_total_tokens: entry.reasoning_tokens,
+        extra_total_tokens,
         model: Some(entry.model),
         usage_limit_reset_time: None,
         missing_pricing_model,
         estimated_pricing,
         message_count: None,
-        usage: entry.usage,
+        usage,
         message_id: Some(format!("droid:{}", entry.session_id)),
         version: None,
         recorded_cost: None,
@@ -131,8 +132,9 @@ mod tests {
         .unwrap()
         .unwrap();
 
+        let (usage, extra_total_tokens) = usage.additional.for_report(usage.usage);
         assert_eq!(usage.output_tokens, 456);
-        assert_eq!(usage.thinking_tokens, 0);
+        assert_eq!(extra_total_tokens, 0);
     }
 
     #[test]

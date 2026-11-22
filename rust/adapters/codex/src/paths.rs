@@ -13,7 +13,7 @@ use ccusage_core::Diagnostics;
 use jiff::{civil::Date, tz::TimeZone as JiffTimeZone};
 
 use crate::{
-    Result,
+    CodexServiceTier, Result,
     cli::{SharedArgs, home},
     date_range_bounds_ms,
     fast::FxHashSet,
@@ -30,23 +30,29 @@ fn codex_usage_sources_from_homes(homes: Vec<PathBuf>) -> Vec<CodexUsageSource> 
     let mut paths = Vec::new();
     let mut seen = FxHashSet::default();
     for path in homes {
+        let configured_tier = super::speed::configured_tier(&path);
+        let source = |dir| CodexUsageSource {
+            dir,
+            dedupe_scope: path.clone(),
+            configured_tier,
+        };
         let sessions = path.join("sessions");
         let archived_sessions = path.join("archived_sessions");
         let mut found_usage_dir = false;
         if sessions.is_dir() {
             if seen.insert(sessions.clone()) {
-                paths.push(CodexUsageSource::new(sessions, path.clone()));
+                paths.push(source(sessions));
             }
             found_usage_dir = true;
         }
         if archived_sessions.is_dir() {
             if seen.insert(archived_sessions.clone()) {
-                paths.push(CodexUsageSource::new(archived_sessions, path.clone()));
+                paths.push(source(archived_sessions));
             }
             found_usage_dir = true;
         }
         if !found_usage_dir && seen.insert(path.clone()) {
-            paths.push(CodexUsageSource::new(path.clone(), path));
+            paths.push(source(path.clone()));
         }
     }
     paths
@@ -56,11 +62,17 @@ fn codex_usage_sources_from_homes(homes: Vec<PathBuf>) -> Vec<CodexUsageSource> 
 pub(super) struct CodexUsageSource {
     dir: PathBuf,
     dedupe_scope: PathBuf,
+    pub(super) configured_tier: Option<CodexServiceTier>,
 }
 
 impl CodexUsageSource {
+    #[cfg(test)]
     pub(super) fn new(dir: PathBuf, dedupe_scope: PathBuf) -> Self {
-        Self { dir, dedupe_scope }
+        Self {
+            dir,
+            dedupe_scope,
+            configured_tier: None,
+        }
     }
 
     pub(super) fn dir(&self) -> &Path {
@@ -70,7 +82,7 @@ impl CodexUsageSource {
 
 #[derive(Debug, Eq, PartialEq)]
 pub(super) struct CodexUsageFileGroup {
-    pub(super) dir: PathBuf,
+    pub(super) source: CodexUsageSource,
     pub(super) files: Vec<PathBuf>,
 }
 
@@ -103,7 +115,7 @@ pub(super) fn collect_deduped_codex_usage_files(
     let mut groups = sources
         .iter()
         .map(|source| CodexUsageFileGroup {
-            dir: source.dir.clone(),
+            source: source.clone(),
             files: Vec::new(),
         })
         .collect::<Vec<_>>();
@@ -225,7 +237,7 @@ fn codex_usage_file_key(source: &CodexUsageSource, file: &Path) -> (PathBuf, Pat
     )
 }
 
-pub(super) fn codex_home_paths() -> Result<Vec<PathBuf>> {
+fn codex_home_paths() -> Result<Vec<PathBuf>> {
     Ok(roots::resolve(RootsEnv::List("CODEX_HOME"), || {
         home::home_dir()
             .map(|home| home.join(".codex"))
@@ -352,11 +364,17 @@ mod tests {
             groups,
             vec![
                 CodexUsageFileGroup {
-                    dir: fixture.path("codex/sessions"),
+                    source: CodexUsageSource::new(
+                        fixture.path("codex/sessions"),
+                        fixture.path("codex")
+                    ),
                     files: vec![fixture.path("codex/sessions/session.jsonl")],
                 },
                 CodexUsageFileGroup {
-                    dir: fixture.path("codex/archived_sessions"),
+                    source: CodexUsageSource::new(
+                        fixture.path("codex/archived_sessions"),
+                        fixture.path("codex")
+                    ),
                     files: vec![fixture.path("codex/archived_sessions/archive-only.jsonl")],
                 },
             ]
@@ -382,7 +400,10 @@ mod tests {
         assert_eq!(
             groups,
             vec![CodexUsageFileGroup {
-                dir: fixture.path("codex/sessions"),
+                source: CodexUsageSource::new(
+                    fixture.path("codex/sessions"),
+                    fixture.path("codex")
+                ),
                 files: vec![kept],
             }]
         );
@@ -407,14 +428,20 @@ mod tests {
             groups,
             vec![
                 CodexUsageFileGroup {
-                    dir: fixture.path("codex/sessions"),
+                    source: CodexUsageSource::new(
+                        fixture.path("codex/sessions"),
+                        fixture.path("codex")
+                    ),
                     files: vec![
                         fixture.path("codex/sessions/both.jsonl"),
                         fixture.path("codex/sessions/compressed.jsonl.zst"),
                     ],
                 },
                 CodexUsageFileGroup {
-                    dir: fixture.path("codex/archived_sessions"),
+                    source: CodexUsageSource::new(
+                        fixture.path("codex/archived_sessions"),
+                        fixture.path("codex")
+                    ),
                     files: vec![fixture.path("codex/archived_sessions/archived.jsonl.zst")],
                 },
             ]
@@ -437,11 +464,17 @@ mod tests {
             groups,
             vec![
                 CodexUsageFileGroup {
-                    dir: fixture.path("work/sessions"),
+                    source: CodexUsageSource::new(
+                        fixture.path("work/sessions"),
+                        fixture.path("work")
+                    ),
                     files: vec![fixture.path("work/sessions/session.jsonl")],
                 },
                 CodexUsageFileGroup {
-                    dir: fixture.path("personal/sessions"),
+                    source: CodexUsageSource::new(
+                        fixture.path("personal/sessions"),
+                        fixture.path("personal")
+                    ),
                     files: vec![fixture.path("personal/sessions/session.jsonl")],
                 },
             ]

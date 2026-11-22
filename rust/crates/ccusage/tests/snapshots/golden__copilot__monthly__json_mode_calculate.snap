@@ -92,14 +92,6 @@ exit: 0
         },
         {
           "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.008505,
-          "inputTokens": 0,
-          "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 567
-        },
-        {
-          "cacheCreationTokens": 0,
           "cacheReadTokens": 600,
           "cost": 0.00439,
           "inputTokens": 1540,
@@ -113,6 +105,14 @@ exit: 0
           "inputTokens": 580,
           "modelName": "claude-haiku-4-5-20251001",
           "outputTokens": 77
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00007500000000000001,
+          "inputTokens": 0,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 567
         },
         {
           "cacheCreationTokens": 0,
@@ -142,7 +142,7 @@ exit: 0
       ],
       "month": "2026-01",
       "outputTokens": 1053,
-      "totalCost": 0.03861,
+      "totalCost": 0.03018,
       "totalTokens": 5473
     }
   ],
@@ -151,7 +151,7 @@ exit: 0
     "cacheReadTokens": 3800,
     "inputTokens": 11090,
     "outputTokens": 2878,
-    "totalCost": 0.0950375,
+    "totalCost": 0.0866075,
     "totalTokens": 18388,
     "unpricedModels": [
       "copilot-mystery-1",
