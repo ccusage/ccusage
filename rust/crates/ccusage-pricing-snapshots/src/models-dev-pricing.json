@@ -11667,6 +11667,17 @@
 		},
 		"provider": "edenai"
 	},
+	"deepinfra/tencent/Hy4": {
+		"cost": {
+			"cache_read": 0.042,
+			"input": 0.834,
+			"output": 2.501
+		},
+		"limit": {
+			"context": 1048576
+		},
+		"provider": "edenai"
+	},
 	"deepinfra/tencent/Hy4-preview": {
 		"cost": {
 			"cache_read": 0.042,
@@ -14730,17 +14741,6 @@
 		},
 		"provider": "edenai"
 	},
-	"fireworks_ai/accounts/fireworks/models/gpt-oss-120b": {
-		"cost": {
-			"cache_read": 0.015,
-			"input": 0.15,
-			"output": 0.6
-		},
-		"limit": {
-			"context": 131072
-		},
-		"provider": "edenai"
-	},
 	"fireworks_ai/accounts/fireworks/models/inkling": {
 		"cost": {
 			"cache_read": 0.17,
@@ -14762,17 +14762,6 @@
 		"exactOnly": true,
 		"limit": {
 			"context": 1048576
-		},
-		"provider": "edenai"
-	},
-	"fireworks_ai/gpt-oss-120b": {
-		"cost": {
-			"cache_read": 0.014,
-			"input": 0.15,
-			"output": 0.6
-		},
-		"limit": {
-			"context": 131072
 		},
 		"provider": "edenai"
 	},
@@ -31602,7 +31591,7 @@
 	},
 	"particle-ai/particle-1": {
 		"cost": {
-			"cache_read": 0.003,
+			"cache_read": 0.015,
 			"input": 0.035,
 			"output": 0.25
 		},
