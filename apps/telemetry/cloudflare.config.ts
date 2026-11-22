@@ -3,6 +3,7 @@ import { bindings, defineConfig, triggers } from 'cf/config';
 import * as entrypoint from './src/index.ts' with { type: 'cf-worker' };
 
 export default defineConfig({
+	accountId: 'e721638321cf56dac84472ad22a161ed',
 	worker: {
 		name: 'ccusage-telemetry',
 		compatibilityDate: '2026-10-01',
@@ -11,8 +12,7 @@ export default defineConfig({
 		// 00:15 UTC leaves a margin for pings still in flight at midnight before
 		// the previous day is aggregated.
 		triggers: [triggers.scheduled({ schedule: '15 0 * * *' })],
-		// Workers Logs would keep request metadata such as the client IP, which the
-		// telemetry guide promises is never stored.
+		// Request logs would retain metadata outside the documented ping fields.
 		observability: { enabled: false },
 		env: {
 			PINGS: bindings.analyticsEngineDataset({ name: 'ccusage_telemetry' }),

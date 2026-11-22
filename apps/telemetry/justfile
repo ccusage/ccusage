@@ -20,4 +20,4 @@ generate-schema:
 
 # Run the Worker's Node tests
 test:
-    TZ=UTC node --test src/v1/ping.test.ts src/rollup.test.ts
+    TZ=UTC node --test src/v1/ping.test.ts src/rollup.test.ts src/stats.test.ts

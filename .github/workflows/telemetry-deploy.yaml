@@ -1,0 +1,51 @@
+name: Deploy telemetry Worker
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - apps/telemetry/**
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - flake.nix
+      - flake.lock
+      - nix/**
+      - .github/actions/setup-nix-cache/**
+      - .github/workflows/telemetry-deploy.yaml
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: telemetry-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: blacksmith-32vcpu-ubuntu-2404
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    environment:
+      name: telemetry-production
+      url: https://telemetry.ccusage.com
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-nix-cache
+      - name: Install pinned validation tools
+        run: nix profile install --inputs-from . nixpkgs#nodejs nixpkgs#just nixpkgs#oxlint .#pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Test telemetry Worker
+        run: just telemetry::test
+      - name: Check TypeScript
+        run: just typecheck
+      - name: Build telemetry Worker
+        run: pnpm --filter @ccusage/telemetry build
+      - name: Deploy telemetry Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: pnpm --filter @ccusage/telemetry deploy

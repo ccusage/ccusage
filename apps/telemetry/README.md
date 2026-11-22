@@ -44,6 +44,19 @@ just telemetry::test    # Node tests
 just telemetry::deploy  # deploy to Cloudflare
 ```
 
+## Automated deployment
+
+The `Deploy telemetry Worker` GitHub Actions workflow tests, builds, and deploys the Worker when changes to `apps/telemetry/` or its workspace lockfiles reach `main`. It can also be run manually from `main` with **Actions → Deploy telemetry Worker → Run workflow**. Runs are serialized so two deployments cannot race.
+
+Before the first run, create a GitHub environment named `telemetry-production`, allow deployments from `main` only, and add these environment secrets:
+
+- `CLOUDFLARE_API_TOKEN` — an API token scoped to the Cloudflare account and zone used by this Worker, with permissions to deploy Workers and manage the configured bindings and custom domain.
+- `CLOUDFLARE_ACCOUNT_ID` — the target Cloudflare account ID.
+
+Actions reads GitHub environment secrets directly. A 1Password account or service account is not required. Rotate the deployment token by replacing the GitHub environment secret.
+
+The first deployment needs the `ccusage.com` zone available to that account. `cf deploy` provisions supported bindings from `cloudflare.config.ts`; check the Cloudflare deployment output for any account resources that require one-time setup.
+
 ## Querying
 
 Analytics Engine is queried with SQL over its [HTTP API](https://developers.cloudflare.com/analytics/analytics-engine/sql-api/). Each anonymous ID sends at most one ping per UTC day, so distinct IDs per day are daily active users:
@@ -69,3 +82,11 @@ WHERE timestamp > NOW() - INTERVAL '30' DAY
 GROUP BY os, arch
 ORDER BY users DESC;
 ```
+
+## Public dashboard
+
+`GET /` serves the dashboard and `GET /dashboard.js` serves its script without third-party dependencies or page analytics. `GET /v1/stats` reads the last 90 completed UTC days from the private R2 bucket. It validates the stored data and publishes only dates, aggregation timestamps, daily/weekly/monthly active ID counts, and platform/version aggregates. It never returns installation IDs or command breakdowns.
+
+Successful API responses are cached with the Workers Cache API for one hour per edge location and in browsers for five minutes. Query strings share one cache key. Missing files remain gaps; invalid data or an R2 failure returns an uncacheable 503. Cache misses read at most 90 objects in batches of six. The dashboard distinguishes no data, failed loading and stale aggregates, and provides a data table and a JSON download alongside its chart.
+
+There is no public R2 bucket or SQL endpoint. Do not add identifiers or raw pings to the public schema. Local development shows the empty state until the local R2 bucket contains daily aggregate files.

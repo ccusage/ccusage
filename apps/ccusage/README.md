@@ -181,11 +181,7 @@ bunx ccusage monthly --compact  # Compact monthly report
 
 ## Telemetry
 
-Official releases send one anonymous ping per day (version, OS, CPU architecture, command name, and a random ID) so we can count users. Nothing from your usage logs is ever sent. The client, the collector, and the release pipeline are all open source, and npm packages are published from GitHub Actions with provenance. Opt out with `ccusage telemetry disable` or `DO_NOT_TRACK=1`. See [Telemetry](https://ccusage.com/guide/telemetry) for details.
-
-## Telemetry
-
-Official releases send one anonymous ping per day (version, OS, CPU architecture, command name, and a random ID) so we can count users. Nothing from your usage logs is ever sent. The client, the collector, and the release pipeline are all open source, and npm packages are published from GitHub Actions with provenance. Opt out with `ccusage telemetry disable` or `DO_NOT_TRACK=1`. See [Telemetry](https://ccusage.com/guide/telemetry) for details.
+After a first-run notice, official releases send at most one usage ping per UTC day (version, OS, CPU architecture, first command name, and a random installation ID) to understand adoption. Nothing from your agent logs is sent. Collection is off with `--offline` and in CI. Opt out with `ccusage telemetry disable` or `DO_NOT_TRACK=1`. The client, collector, release pipeline and [aggregate dashboard](https://telemetry.ccusage.com/) are public. See [Telemetry](https://ccusage.com/guide/telemetry) for details.
 
 ## Documentation
 

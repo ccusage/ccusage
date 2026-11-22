@@ -1,7 +1,7 @@
 import * as z from 'zod';
 
 /** Analytics Engine table that `PINGS` writes to; see `cloudflare.config.ts`. */
-const DATASET = 'ccusage_telemetry';
+const DATASET = 'events.analyticsEngine.ccusage_telemetry';
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 // Analytics Engine returns 64-bit counts as JSON strings, so they are coerced.

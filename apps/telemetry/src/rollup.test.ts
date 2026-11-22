@@ -99,7 +99,7 @@ void describe('writeDailyRollup', () => {
 
 		assert.equal(queries.length, 6);
 		for (const query of queries) {
-			assert.match(query, /FROM ccusage_telemetry WHERE/);
+			assert.match(query, /FROM events\.analyticsEngine\.ccusage_telemetry WHERE/);
 			assert.match(query, /timestamp < toDateTime\('2026-10-22 00:00:00'\)/);
 			assert.match(query, /count\(DISTINCT index1\) AS users/);
 		}
