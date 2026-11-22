@@ -83,17 +83,14 @@ opt-level = 3
 panic = "abort"
 strip = "symbols"
 
-[profile.release.package."*"]
+[profile.release.package.sqlite]
 opt-level = "s"
 
-[profile.release.package.memchr]
-opt-level = 3
+[profile.release.package.sqlite3-src]
+opt-level = "s"
 
-[profile.release.package.serde_json]
-opt-level = 3
-
-[profile.release.package.zstd-sys]
-opt-level = 3
+[profile.release.package.sqlite3-sys]
+opt-level = "s"
 
 [workspace.lints.cargo]
 unused_dependencies = "deny"
