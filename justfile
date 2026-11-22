@@ -1,5 +1,5 @@
 mod ccusage 'apps/ccusage'
-mod telemetry
+mod telemetry 'apps/telemetry'
 mod docs
 mod rust
 

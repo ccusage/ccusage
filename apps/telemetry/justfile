@@ -1,11 +1,8 @@
-# Recipes for the telemetry collector Worker. Run from the repo root as
-# `just telemetry::<recipe>`, or from this directory as `just <recipe>`.
-
 [private]
 default:
     @just --list
 
-# Run the Worker locally with a simulated Analytics Engine binding
+# Run the collector locally
 dev:
     pnpm run dev
 

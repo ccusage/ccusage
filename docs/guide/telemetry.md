@@ -50,7 +50,7 @@ The collector writes only the six fields above to its dataset. It does not write
 
 ## Public Usage Dashboard
 
-The [public dashboard](https://telemetry.ccusage.com/) shows up to 90 completed UTC days of daily, weekly and monthly active environments, plus platform and version breakdowns for the latest available day. The Worker reads stored R2 aggregates; viewing the dashboard does not query individual pings or trigger telemetry. It uses no third-party scripts or page analytics.
+The [public dashboard](https://telemetry.ccusage.com/) shows up to 90 completed UTC days of daily, weekly and monthly active environments, plus platform and version breakdowns for the latest available day. The Worker reads stored KV aggregates; viewing the dashboard does not query individual pings or trigger telemetry. It uses no third-party scripts or page analytics.
 
 An active environment means a distinct random installation ID observed in the relevant window, not a verified person. Multiple devices and reset IDs can increase counts; opt-outs, blocked requests and failed sends can reduce them. These are adoption indicators, not an exact population or a guaranteed lower bound. Command breakdowns are omitted because only the first command of each UTC day is reported.
 

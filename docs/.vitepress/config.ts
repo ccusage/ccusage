@@ -59,6 +59,7 @@ export default defineConfig({
 		nav: [
 			{ text: 'Guide', link: '/guide/' },
 			{ text: 'Blog', link: '/blog/' },
+			{ text: 'Statistics', link: 'https://telemetry.ccusage.com/' },
 			{
 				text: 'Links',
 				items: [

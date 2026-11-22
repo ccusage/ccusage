@@ -13,6 +13,7 @@
 		"@cloudflare/vite-plugin": "catalog:telemetry",
 		"@cloudflare/workers-types": "catalog:telemetry",
 		"@hono/zod-validator": "catalog:telemetry",
+		"@tanstack/charts": "catalog:telemetry",
 		"@types/node": "catalog:types",
 		"cf": "catalog:telemetry",
 		"hono": "catalog:telemetry",

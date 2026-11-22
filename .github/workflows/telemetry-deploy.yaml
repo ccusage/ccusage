@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - apps/telemetry/**
+      - docs/public/logo.svg
+      - docs/public/favicon.svg
       - pnpm-lock.yaml
       - pnpm-workspace.yaml
       - flake.nix
@@ -36,7 +38,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-nix-cache
       - name: Install pinned validation tools
-        run: nix profile install --inputs-from . nixpkgs#nodejs nixpkgs#just nixpkgs#oxlint .#pnpm
+        run: nix profile install --inputs-from . nixpkgs#nodejs nixpkgs#just .#oxlint .#pnpm
       - run: pnpm install --frozen-lockfile
       - name: Test telemetry Worker
         run: just telemetry::test

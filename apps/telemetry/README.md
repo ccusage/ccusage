@@ -15,7 +15,7 @@ The Worker validates the ping and writes its six fields to the `ccusage_telemetr
 
 ## Daily rollups
 
-Raw pings only live as long as Analytics Engine retains them, so a Cron Trigger at 00:15 UTC aggregates the previous UTC day and writes it to the `ccusage-telemetry-rollups` R2 bucket as `daily/YYYY-MM-DD.json`. These small files are what keeps the long-term trend; rerunning a day replaces its file.
+Raw pings only live as long as Analytics Engine retains them, so a Cron Trigger at 00:15 UTC aggregates the previous UTC day and writes it to the `ccusage-telemetry-rollups` KV namespace as `daily/YYYY-MM-DD.json`. These small files are what keeps the long-term trend; rerunning a day replaces its file.
 
 ```json
 {
@@ -32,7 +32,7 @@ Raw pings only live as long as Analytics Engine retains them, so a Cron Trigger 
 
 The weekly and monthly counts are distinct users over the 7 and 30 days ending that date. They are computed at rollup time because they cannot be rebuilt from daily files once the raw pings expire.
 
-The rollup reads the dataset through an Analytics SQL binding, so it needs no API token. That binding has no local simulation, which means `cf dev` connects to Cloudflare and requires you to be logged in; the Node tests cover the rollup without it.
+The rollup reads the dataset through an Analytics SQL binding, so it needs no API token. Keep this account on Workers Free: KV operations fail at their free quota rather than billing for overages. No R2 subscription is required. That binding has no local simulation, which means `cf dev` connects to Cloudflare and requires you to be logged in; the Node tests cover the rollup without it.
 
 ## Recipes
 
@@ -55,7 +55,7 @@ Before the first run, create a GitHub environment named `telemetry-production`, 
 
 Actions reads GitHub environment secrets directly. A 1Password account or service account is not required. Rotate the deployment token by replacing the GitHub environment secret.
 
-The first deployment needs the `ccusage.com` zone available to that account. `cf deploy` provisions supported bindings from `cloudflare.config.ts`; check the Cloudflare deployment output for any account resources that require one-time setup.
+The first deployment needs the `ccusage.com` zone and the KV namespace referenced in `cloudflare.config.ts` in that account. Enable Analytics Engine and create the KV namespace before deploying. No R2 subscription is needed.
 
 ## Querying
 
@@ -85,8 +85,8 @@ ORDER BY users DESC;
 
 ## Public dashboard
 
-`GET /` serves the dashboard and `GET /dashboard.js` serves its script without third-party dependencies or page analytics. `GET /v1/stats` reads the last 90 completed UTC days from the private R2 bucket. It validates the stored data and publishes only dates, aggregation timestamps, daily/weekly/monthly active ID counts, and platform/version aggregates. It never returns installation IDs or command breakdowns.
+`GET /` serves the dashboard. Vite bundles its browser TypeScript, TanStack Charts, and the documentation site's logo and font as same-origin static assets. The page uses no CDN scripts or page analytics. `GET /v1/stats` reads a single cached snapshot of the last 90 completed UTC days from the private KV namespace. It validates the stored data and publishes only dates, aggregation timestamps, daily/weekly/monthly active ID counts, and platform/version aggregates. It never returns installation IDs or command breakdowns.
 
-Successful API responses are cached with the Workers Cache API for one hour per edge location and in browsers for five minutes. Query strings share one cache key. Missing files remain gaps; invalid data or an R2 failure returns an uncacheable 503. Cache misses read at most 90 objects in batches of six. The dashboard distinguishes no data, failed loading and stale aggregates, and provides a data table and a JSON download alongside its chart.
+Successful API responses are cached with the Workers Cache API for one hour per edge location and in browsers for five minutes. Query strings share one cache key. Missing days remain gaps; invalid data or a KV failure returns an uncacheable 503. Public cache misses read one KV value. The daily job writes a dated archive and refreshes the bounded public snapshot, about two writes per day. The dashboard distinguishes no data, failed loading and stale aggregates, and provides a data table and a JSON download alongside its chart.
 
-There is no public R2 bucket or SQL endpoint. Do not add identifiers or raw pings to the public schema. Local development shows the empty state until the local R2 bucket contains daily aggregate files.
+There is no public KV namespace or SQL endpoint. Do not add identifiers or raw pings to the public schema. Local development shows the empty state until the local KV namespace contains a public snapshot.
