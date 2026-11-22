@@ -118,7 +118,7 @@ exit: 0
           "cost": 0.0,
           "inputTokens": 0,
           "modelName": "gpt-unknown",
-          "outputTokens": 345
+          "outputTokens": 0
         }
       ],
       "modelsUsed": [
@@ -128,7 +128,7 @@ exit: 0
         "gemini-2-5-pro",
         "gpt-5"
       ],
-      "outputTokens": 1010,
+      "outputTokens": 665,
       "totalCost": 0.008175,
       "totalTokens": 12850
     },
@@ -159,7 +159,7 @@ exit: 0
     "cacheCreationTokens": 520,
     "cacheReadTokens": 20000,
     "inputTokens": 5410,
-    "outputTokens": 1850,
+    "outputTokens": 1505,
     "totalCost": 0.07065,
     "totalTokens": 27880,
     "unpricedModels": [

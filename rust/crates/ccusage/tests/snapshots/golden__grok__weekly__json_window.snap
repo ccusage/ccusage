@@ -1,0 +1,95 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage grok weekly --offline --json --since 20251231 --until 20260101
+---
+exit: 0
+--- stdout ---
+{
+  "totals": {
+    "cacheCreationTokens": 50,
+    "cacheReadTokens": 52300,
+    "inputTokens": 203695,
+    "outputTokens": 2375,
+    "totalCost": 0.6033850000000001,
+    "totalTokens": 258420,
+    "unpricedModels": [
+      "grok-mystery-1",
+      "unknown"
+    ]
+  },
+  "weekly": [
+    {
+      "cacheCreationTokens": 50,
+      "cacheReadTokens": 52300,
+      "inputTokens": 203695,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 51000,
+          "cost": 0.6000000000000001,
+          "inputTokens": 202000,
+          "modelName": "grok-4.5-build",
+          "outputTokens": 1500,
+          "storedCost": 0.6000000000000001
+        },
+        {
+          "cacheCreationTokens": 50,
+          "cacheReadTokens": 700,
+          "cost": 0.0030600000000000002,
+          "inputTokens": 150,
+          "modelName": "grok-code-fast-1",
+          "outputTokens": 440,
+          "storedCost": 0.003
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 600,
+          "cost": 0.000325,
+          "inputTokens": 0,
+          "modelName": "grok-4.3-build",
+          "outputTokens": 100
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 1200,
+          "missingPricing": true,
+          "modelName": "grok-mystery-1",
+          "outputTokens": 280
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 0,
+          "modelName": "grok-4.7-build",
+          "outputTokens": 0
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 345,
+          "missingPricing": true,
+          "modelName": "unknown",
+          "outputTokens": 55
+        }
+      ],
+      "modelsUsed": [
+        "grok-4.5-build",
+        "grok-mystery-1",
+        "grok-4.7-build",
+        "grok-code-fast-1",
+        "grok-4.3-build",
+        "unknown"
+      ],
+      "outputTokens": 2375,
+      "totalCost": 0.6033850000000001,
+      "totalTokens": 258420,
+      "week": "2025-12-29"
+    }
+  ]
+}
+
+--- stderr ---

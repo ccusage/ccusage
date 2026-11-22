@@ -6,6 +6,7 @@ Goose support is experimental. ccusage can read Goose session usage from its loc
 
 ```bash
 ccusage goose daily
+ccusage goose weekly
 ccusage goose monthly
 ccusage goose session
 ```

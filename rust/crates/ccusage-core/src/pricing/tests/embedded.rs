@@ -87,6 +87,38 @@ fn a_primary_hit_and_unlisted_synthetic_model_leave_the_secondary_table_cold() {
 }
 
 #[test]
+fn unknown_override_keeps_embedded_catalogues_cold() {
+    use std::sync::Arc;
+
+    use crate::pricing::{
+        embedded::embedded_models_dev_index,
+        table::{RecordOffsets, decode_pricing_table},
+    };
+
+    crate::test_support::install_pricing_snapshots();
+    let mut pricing = PricingMap::from_embedded_rows(decode_pricing_table(
+        ccusage_pricing_snapshots::PRICING_TABLE,
+        RecordOffsets::Absolute,
+    ));
+    pricing.models_dev = Some(Arc::new(PricingRows::from_deferred(
+        || panic!("an unknown override should leave the secondary catalogue cold"),
+        embedded_models_dev_index(),
+    )));
+    let key = "brand-new-model".to_owned();
+    let rates = ccusage_cli::PricingOverride {
+        input_cost_per_token: Some(1e-6),
+        output_cost_per_token: Some(2e-6),
+        ..Default::default()
+    };
+
+    let pricing = pricing.with_user_overrides([(&key, &rates)]);
+    let entry = pricing.find(&key).unwrap();
+    assert_eq!((entry.input, entry.output), (1e-6, 2e-6));
+    assert!(pricing.rows.folded_indexes.get().is_none());
+    assert_eq!(pricing.rows.decode_cache_counts(), (0, 0));
+}
+
+#[test]
 fn embedded_table_matches_the_rows_loaded_from_its_snapshots() {
     let [litellm, models_dev] = eager_catalogues();
     let embedded = PricingMap::load_embedded();
@@ -351,6 +383,122 @@ impl<'a> FuzzyKeys<'a> {
         rows.sort_unstable_by_key(|(id, _)| *id);
         rows.dedup_by_key(|(id, _)| *id);
         rows
+    }
+}
+
+#[test]
+fn whole_request_catalogue_rows_bill_cache_at_the_long_context_rates() {
+    use crate::pricing::LongContextMode;
+
+    crate::test_support::install_pricing_snapshots();
+    let primary = PricingMap::load_embedded();
+    for catalogue in [&primary, embedded_models_dev_pricing()] {
+        for found in catalogue.rows.matches() {
+            let pricing = found.row.rates();
+            let Some(tier) = pricing
+                .long_context
+                .filter(|tier| tier.mode == LongContextMode::WholeRequest)
+            else {
+                continue;
+            };
+            let model = found.key;
+            let resolved = pricing.whole_request_rates(tier);
+            let [read, write, write_1h] = expected_cache_multipliers(model);
+            for (bucket, actual, published, base, multiplier) in [
+                (
+                    "read",
+                    resolved.cache_read,
+                    tier.rates.cache_read,
+                    pricing.cache_read_rate_at(pricing.input),
+                    read,
+                ),
+                (
+                    "five-minute write",
+                    resolved.cache_create,
+                    tier.rates.cache_create,
+                    pricing.cache_creation_rate(),
+                    write,
+                ),
+                (
+                    "one-hour write",
+                    resolved.cache_create_1h,
+                    tier.rates.cache_create_1h,
+                    pricing.one_hour_cache_creation_rate(),
+                    write_1h,
+                ),
+            ] {
+                let Some(input) = tier.rates.input.filter(|_| published.is_none()) else {
+                    assert_eq!(actual, published, "{model} {bucket}");
+                    continue;
+                };
+                let actual = actual.unwrap_or_else(|| panic!("{model} {bucket} has no rate"));
+                assert!(actual >= base, "{model} {bucket}: {actual} < {base}");
+                if let Some(multiplier) = multiplier {
+                    let expected = (input * multiplier).max(base);
+                    assert!(
+                        (actual - expected).abs() < 1e-15,
+                        "{model} {bucket}: {actual} != {expected}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+fn expected_cache_multipliers(model: &str) -> [Option<f64>; 3] {
+    let model = model.rsplit('/').next().unwrap().to_ascii_lowercase();
+    let model = model
+        .find(".claude-")
+        .map_or(model.as_str(), |start| &model[start + 1..])
+        .replace('.', "-");
+    let model = model.strip_prefix("openai-").unwrap_or(&model);
+    match model {
+        model if model.starts_with("gemini-4") => [Some(0.05), None, None],
+        model if model.starts_with("gemini-") => [Some(0.1), None, None],
+        model if model.starts_with("grok-4-5") => [Some(0.15), None, None],
+        model if model.starts_with("grok-") => [Some(0.25), None, None],
+        model
+            if [
+                "gpt-6-1-sol",
+                "gpt-6-1-terra",
+                "gpt-6-2-sol",
+                "gpt-6-2-astra",
+            ]
+            .iter()
+            .any(|prefix| model.starts_with(prefix)) =>
+        {
+            [Some(0.05), Some(1.25), None]
+        }
+        model
+            if ["gpt-5-6", "gpt-5-7", "gpt-5-8", "gpt-5-9", "gpt-6"]
+                .iter()
+                .any(|prefix| model.starts_with(prefix)) =>
+        {
+            [Some(0.1), Some(1.25), None]
+        }
+        model if model.starts_with("gpt-") => [Some(0.1), Some(1.0), None],
+        model if model.starts_with("claude-") => match model {
+            model
+                if model.starts_with("claude-sonnet-5-5")
+                    || model.starts_with("claude-opus-5-5") =>
+            {
+                [Some(0.05), Some(1.25), Some(2.0)]
+            }
+            model
+                if [
+                    "claude-fable-5-1",
+                    "claude-fable-5-2",
+                    "claude-mythos-5-1",
+                    "claude-mythos-5-2",
+                ]
+                .iter()
+                .any(|prefix| model.starts_with(prefix)) =>
+            {
+                [Some(0.025), Some(1.25), Some(2.0)]
+            }
+            _ => [Some(0.1), Some(1.25), Some(2.0)],
+        },
+        _ => [None; 3],
     }
 }
 

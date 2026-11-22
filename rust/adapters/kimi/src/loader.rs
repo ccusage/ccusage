@@ -32,6 +32,37 @@ mod tests {
     use ccusage_test_support::{Environment, fs_fixture};
 
     #[test]
+    fn unexplained_kimi_tokens_count_only_towards_total_usage() {
+        ccusage_test_support::install_pricing_snapshots();
+        let mut pricing = PricingMap::default();
+        pricing.load_json(r#"{"sample":{"input_cost_per_token":1,"output_cost_per_token":2}}"#);
+        let fixture = fs_fixture!({
+            "config.json": r#"{"model":"sample"}"#,
+            "sessions/group/session-a/wire.jsonl":
+                r#"{"timestamp":1770983427,"message":{"type":"StatusUpdate","payload":{"token_usage":{"input_other":100,"total":150}}}}"#,
+        });
+        Environment::with_var(KIMI_DATA_DIR_ENV, fixture.root()).run(|| {
+            let entries = ccusage_adapter_common::testing::entries(
+                &crate::SOURCE,
+                &SharedArgs::default(),
+                Default::default(),
+                Some(&pricing),
+            )
+            .unwrap();
+            assert_eq!(entries.len(), 1);
+            let entry = &entries[0];
+            assert_eq!(entry.usage.input_tokens, 100);
+            assert_eq!(entry.cost, 100.0);
+            assert_eq!(entry.usage.output_tokens, 0);
+            assert_eq!(entry.extra_total_tokens, 50);
+            assert_eq!(
+                ccusage_core::checked_total_usage_tokens(entry.usage, entry.extra_total_tokens),
+                Some(150)
+            );
+        });
+    }
+
+    #[test]
     fn duplicate_kimi_reports_prefer_the_copy_with_recorded_output() {
         ccusage_test_support::install_pricing_snapshots();
         let mut pricing = PricingMap::default();

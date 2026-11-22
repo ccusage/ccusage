@@ -34,7 +34,6 @@ pub use source::unified_row_from_group;
 pub use speed::CodexSpeedPolicy;
 use speed::resolve_codex_speed;
 pub use statusline::run_statusline;
-pub(crate) use types::CodexTimestampedUsage;
 pub use types::{CodexGroup, CodexModelUsage, CodexServiceTier, CodexUsageBucket, TierBuckets};
 use types::{CodexRawUsage, CodexTokenUsageEvent, merge_codex_service_tiers};
 
@@ -53,6 +52,7 @@ pub fn run(args: AgentCommandArgs) -> Result<()> {
         &sources,
         &shared,
         args.kind,
+        args.start_of_week,
         pricing,
         &diagnostics,
     )?;

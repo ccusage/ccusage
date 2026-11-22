@@ -189,7 +189,7 @@ impl PricingMap {
                 pricing: pricing.into(),
                 context_limit,
                 source: Source::Curated,
-                whole_request_tiers: row::whole_request_threshold(provider).is_some(),
+                whole_request_tiers: row::whole_request_threshold(model).is_some(),
                 scope: Scope::Direct,
                 vendor_start: vendor_start(model, vendor_id(model, provider)),
                 schedule: schedule_for(vendor_id(model, provider)),
@@ -279,7 +279,6 @@ impl PricingMap {
             if (row.pricing.input - curated.input).abs() < f64::EPSILON
                 && (row.pricing.output - curated.output).abs() < f64::EPSILON
             {
-                row.whole_request_tiers = row::whole_request_threshold("anthropic").is_some();
                 row.pricing.long_context = curated.long_context.map(Arc::new);
                 if let Some(schedule) = curated.schedule.and_then(schedule_for) {
                     row.schedule = Some(schedule);

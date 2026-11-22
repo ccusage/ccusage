@@ -51,6 +51,7 @@ struct QwenUsageMetadata {
 pub(super) struct QwenEntry {
     pub(super) entry: LoadedEntry,
     source_timestamp: String,
+    replay_counts: (u64, u64),
 }
 
 impl std::ops::Deref for QwenEntry {
@@ -142,16 +143,19 @@ fn parse_line(
     } else {
         usage.thoughts_token_count.min(remainder.report_remainder)
     };
-    let (display_usage, extra_total_tokens) = if thoughts_only {
-        (raw_usage, reasoning_tokens)
-    } else if usage.candidates_token_count.is_some() {
-        (raw_usage, remainder.report_remainder)
+    let extra_total_tokens = if thoughts_only {
+        reasoning_tokens
     } else {
-        remainder.for_report(raw_usage)
+        remainder.report_remainder
     };
-    if display_usage.input_tokens == 0
-        && display_usage.output_tokens == 0
-        && display_usage.cache_read_input_tokens == 0
+    let replay_counts = if thoughts_only || usage.candidates_token_count.is_some() {
+        (output_tokens, extra_total_tokens)
+    } else {
+        remainder.replay_counts(output_tokens)
+    };
+    if raw_usage.input_tokens == 0
+        && raw_usage.output_tokens == 0
+        && raw_usage.cache_read_input_tokens == 0
         && extra_total_tokens == 0
     {
         return Ok(None);
@@ -175,8 +179,9 @@ fn parse_line(
         price_qwen(&model, raw_usage, reasoning_tokens, timestamp, pricing);
     Ok(Some(QwenEntry {
         source_timestamp: timestamp_text.clone(),
+        replay_counts,
         entry: LoadedEntry {
-            usage: display_usage,
+            usage: raw_usage,
             message_id: None,
             version: None,
             recorded_cost: None,
@@ -246,9 +251,9 @@ pub(super) fn entry_id(entry: &QwenEntry) -> String {
         entry.source_timestamp.as_str(),
         entry.model.as_deref().unwrap_or_default(),
         usage.input_tokens,
-        usage.output_tokens,
+        entry.replay_counts.0,
         usage.cache_read_input_tokens,
-        entry.extra_total_tokens
+        entry.replay_counts.1
     ])
     .to_string()
 }
@@ -316,7 +321,11 @@ mod tests {
     }
 
     #[test]
-    fn falls_back_to_total_token_count_when_qwen_parts_are_missing() {
+    fn keeps_total_only_usage_out_of_output_tokens() {
+        ccusage_test_support::install_pricing_snapshots();
+        let mut pricing = ccusage_core::PricingMap::default();
+        pricing
+            .load_json(r#"{"qwen3-coder":{"input_cost_per_token":1,"output_cost_per_token":2}}"#);
         let record = serde_json::from_value::<QwenLine>(serde_json::json!({
             "type": "assistant",
             "timestamp": "2026-01-02T00:00:00.000Z",
@@ -331,16 +340,14 @@ mod tests {
             Path::new("/tmp/project/chat.jsonl"),
             &record,
             &jiff::tz::TimeZone::UTC,
-            PriceTable::for_map(
-                ccusage_core::cli::CostMode::Auto,
-                &ccusage_core::PricingMap::default(),
-            ),
+            PriceTable::Calculate(&pricing),
         )
         .unwrap()
         .unwrap();
 
-        assert_eq!(entry.usage.output_tokens, 321);
-        assert_eq!(entry.extra_total_tokens, 0);
+        assert_eq!(entry.usage.output_tokens, 0);
+        assert_eq!(entry.extra_total_tokens, 321);
+        assert_eq!(entry.cost, 0.0);
     }
 
     #[test]
@@ -369,6 +376,8 @@ mod tests {
             PriceTable::Calculate(&pricing),
         );
         assert_eq!(total_only.cost, 0.0);
+        assert_eq!(total_only.usage.output_tokens, 0);
+        assert_eq!(total_only.extra_total_tokens, 1500);
     }
 
     #[test]
@@ -530,6 +539,7 @@ mod tests {
     #[test]
     fn entry_id_is_unambiguous_for_colon_fields() {
         let entry = QwenEntry {
+            replay_counts: (2, 4),
             source_timestamp: "2026-01-02T00:00:00.000Z".to_string(),
             entry: LoadedEntry {
                 usage: TokenUsageRaw {

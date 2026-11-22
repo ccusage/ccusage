@@ -54,6 +54,8 @@ Expected files are discovered under:
 - **Cache read tokens** - `token_usage.input_cache_read` (or `usage.inputCacheRead`)
 - **Cache creation tokens** - `token_usage.input_cache_creation` (or `usage.inputCacheCreation`)
 
+Any unexplained remainder in the legacy `token_usage.total` contributes only to the reported total and is excluded from the cost estimate.
+
 Only `StatusUpdate` messages with non-zero token usage are included. Kimi Code logs instead emit `usage.record` lines; only turn-scoped records are counted, since session-scoped records are cumulative totals.
 
 ## Cost Calculation

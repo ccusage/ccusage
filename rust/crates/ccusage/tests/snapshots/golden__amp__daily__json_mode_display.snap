@@ -112,7 +112,7 @@ exit: 0
           "cost": 0.0,
           "inputTokens": 0,
           "modelName": "gpt-5",
-          "outputTokens": 345
+          "outputTokens": 0
         }
       ],
       "modelsUsed": [
@@ -120,7 +120,7 @@ exit: 0
         "amp-mystery-1",
         "gpt-5"
       ],
-      "outputTokens": 515,
+      "outputTokens": 170,
       "totalCost": 0.0,
       "totalTokens": 4415
     },
@@ -144,14 +144,14 @@ exit: 0
           "cost": 0.0,
           "inputTokens": 0,
           "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 500
+          "outputTokens": 0
         }
       ],
       "modelsUsed": [
         "amp-mystery-1",
         "claude-sonnet-4-20250514"
       ],
-      "outputTokens": 800,
+      "outputTokens": 300,
       "totalCost": 0.0,
       "totalTokens": 7650
     }
@@ -161,7 +161,7 @@ exit: 0
     "cacheReadTokens": 25000,
     "credits": 5.2,
     "inputTokens": 5100,
-    "outputTokens": 2265,
+    "outputTokens": 1420,
     "totalCost": 0.0,
     "totalTokens": 32915
   }

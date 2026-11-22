@@ -273,6 +273,41 @@ fn native_resource_refreshes_cached_usage_after_a_new_revert_rollout() {
 }
 
 #[test]
+fn native_resource_refreshes_cached_cost_after_the_configured_tier_changes() {
+    let timestamp = "2000-01-01T12:00:00Z";
+    let event = json!({
+        "timestamp": timestamp,
+        "type": "event_msg",
+        "payload": {
+            "type": "token_count",
+            "info": {
+                "model": "gpt-5.6-sol",
+                "last_token_usage": { "input_tokens": 10_000, "total_tokens": 10_000 },
+            },
+        },
+    })
+    .to_string();
+    let fixture = fs_fixture!({ "codex/config.toml": "service_tier = 'standard'" });
+    fixture.write_file(
+        format!("codex/sessions/rollout-2000-01-01T12-00-00-{THREAD_UUID}.jsonl"),
+        rollout(THREAD_UUID, timestamp, &[event]),
+    );
+    let mut process = McpProcess::start(&fixture, &[]);
+    assert_eq!(
+        process.read_resource_line(1, THREAD_UUID),
+        "Codex | Est. $0.04 session / $0.00 today | 10,000 tokens"
+    );
+
+    fixture.write_file("codex/config.toml", "service_tier = 'fast'");
+    process.read_resource_line_until(
+        2,
+        THREAD_UUID,
+        "Codex | Est. $0.08 session / $0.00 today | 10,000 tokens",
+    );
+    process.finish();
+}
+
+#[test]
 fn native_resources_support_no_cost_and_empty_usage() {
     let fixture = native_usage_fixture();
     let mut process = McpProcess::start(&fixture, &["--no-cost"]);

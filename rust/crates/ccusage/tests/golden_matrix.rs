@@ -184,21 +184,15 @@ fn codebuff_timestamp_ties_pin_order_and_replay_winner() {
 
 #[test]
 fn focused_week_start_controls_buckets_and_last_together() {
-    for (agent, seed) in [
-        ("antigravity", golden::antigravity::seed as golden::Seed),
-        ("cline", golden::cline::seed),
-        ("copilot", golden::copilot::seed),
-        ("dsh", golden::dsh::seed),
-        ("kimi", golden::kimi::seed),
-        ("opencode", golden::opencode::seed),
-        ("zcode", golden::zcode::seed),
-    ] {
+    for &AgentMatrix { agent, seed, .. } in AGENTS.iter().filter(|matrix| matrix.agent != "claude")
+    {
         let fixture = Fixture::new();
         let seeded = seed(fixture.root());
-        let config = fixture.write_file(
-            "week.json",
-            r#"{"commands":{"weekly":{"startOfWeek":"wednesday"}}}"#,
-        );
+        let config_json = serde_json::json!({
+            "commands": { "weekly": { "startOfWeek": "monday" } },
+            (agent): { "commands": { "weekly": { "startOfWeek": "wednesday" } } },
+        });
+        let config = fixture.write_file("week.json", config_json.to_string());
         let daily = Case::new(
             "daily",
             "",

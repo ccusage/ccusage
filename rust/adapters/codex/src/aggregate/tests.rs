@@ -1,7 +1,7 @@
 use super::accumulate::codex_period_for;
 use super::intern::StringInterner;
 use super::*;
-use crate::parse_ts_timestamp;
+use crate::{parse_ts_timestamp, types::ConfiguredTiers};
 use compact_str::CompactString;
 
 use ccusage_test_support::fs_fixture;
@@ -50,7 +50,11 @@ fn prices_the_configured_alias_target_when_both_models_have_rates() {
     event.model = "alias-model".into();
     seen.record(&event, &mut provenance).unwrap();
     let groups = seen
-        .fold(&SharedArgs::default(), AgentReportKind::Session)
+        .fold(
+            &SharedArgs::default(),
+            AgentReportKind::Session,
+            WeekDay::Monday,
+        )
         .unwrap();
     let group = &groups["session"];
     assert_eq!(
@@ -99,7 +103,11 @@ fn applies_a_chained_alias_once_like_every_other_adapter() {
     let mut provenance = CodexEventProvenance::new(0, None);
     seen.record(&event, &mut provenance).unwrap();
     let groups = seen
-        .fold(&SharedArgs::default(), AgentReportKind::Session)
+        .fold(
+            &SharedArgs::default(),
+            AgentReportKind::Session,
+            WeekDay::Monday,
+        )
         .unwrap();
     let group = &groups["session"];
     assert_eq!(
@@ -146,7 +154,11 @@ fn does_not_price_an_unpriced_alias_target_through_its_own_alias() {
     let mut provenance = CodexEventProvenance::new(0, None);
     seen.record(&event, &mut provenance).unwrap();
     let groups = seen
-        .fold(&SharedArgs::default(), AgentReportKind::Session)
+        .fold(
+            &SharedArgs::default(),
+            AgentReportKind::Session,
+            WeekDay::Monday,
+        )
         .unwrap();
     let group = &groups["session"];
     assert_eq!(
@@ -188,7 +200,11 @@ fn groups_under_the_alias_target_whose_fuzzy_row_priced_the_usage() {
     let mut provenance = CodexEventProvenance::new(0, None);
     seen.record(&event, &mut provenance).unwrap();
     let groups = seen
-        .fold(&SharedArgs::default(), AgentReportKind::Session)
+        .fold(
+            &SharedArgs::default(),
+            AgentReportKind::Session,
+            WeekDay::Monday,
+        )
         .unwrap();
     let group = &groups["session"];
     assert_eq!(
@@ -236,7 +252,11 @@ fn bills_a_fuzzy_priced_alias_target_once_even_when_it_has_its_own_alias() {
     let mut provenance = CodexEventProvenance::new(0, None);
     seen.record(&event, &mut provenance).unwrap();
     let groups = seen
-        .fold(&SharedArgs::default(), AgentReportKind::Session)
+        .fold(
+            &SharedArgs::default(),
+            AgentReportKind::Session,
+            WeekDay::Monday,
+        )
         .unwrap();
     let group = &groups["session"];
     assert_eq!(
@@ -291,7 +311,11 @@ fn keeps_differently_priced_requests_in_separate_groups() {
             seen.record(&event, &mut provenance).unwrap();
         }
         let groups = seen
-            .fold(&SharedArgs::default(), AgentReportKind::Session)
+            .fold(
+                &SharedArgs::default(),
+                AgentReportKind::Session,
+                WeekDay::Monday,
+            )
             .unwrap();
         let group = &groups["session"];
         assert_eq!(group.models.len(), 2, "{order:?}");
@@ -328,7 +352,11 @@ fn tier_split_uses_the_supplied_pricing_entry_instead_of_embedded_rates() {
     seen.record(&event, &mut CodexEventProvenance::new(0, None))
         .unwrap();
     let groups = seen
-        .fold(&SharedArgs::default(), AgentReportKind::Session)
+        .fold(
+            &SharedArgs::default(),
+            AgentReportKind::Session,
+            WeekDay::Monday,
+        )
         .unwrap();
     assert_eq!(
         groups["session"].models["gpt-5.5"]
@@ -442,18 +470,17 @@ fn usage_attribution_uses_file_order_when_workers_finish_in_reverse() {
         ..SharedArgs::default()
     };
     let pricing = PricingMap::load_embedded();
-    for (first_tier, copied_tier, expected) in [
+    let mut configured_tiers = ConfiguredTiers::from(Some(CodexServiceTier::Fast));
+    configured_tiers.merge(Some(CodexServiceTier::Flex).into());
+    for (first_tier, copied_tier, recorded_input, configured_input) in [
         (
             Some(CodexServiceTier::Standard),
             Some(CodexServiceTier::Fast),
-            CodexServiceTier::Standard,
-        ),
-        (None, None, CodexServiceTier::Fast),
-        (
+            300,
             None,
-            Some(CodexServiceTier::Standard),
-            CodexServiceTier::Standard,
         ),
+        (None, None, 0, Some(300)),
+        (None, Some(CodexServiceTier::Standard), 300, None),
     ] {
         let mut first = first.clone();
         first.service_tier = first_tier;
@@ -470,14 +497,37 @@ fn usage_attribution_uses_file_order_when_workers_finish_in_reverse() {
             )
             .unwrap();
         }
-        let groups = seen.fold(&shared, AgentReportKind::Session).unwrap();
+        let groups = seen
+            .fold(
+                &shared,
+                AgentReportKind::Session,
+                ccusage_core::cli::WeekDay::Monday,
+            )
+            .unwrap();
 
         assert_eq!(groups.len(), 1);
         let group = &groups["session"];
         assert_eq!(group.total_tokens, 320);
         assert_eq!(group.last_activity.as_deref(), Some("2026-09-01T00:00:01Z"));
-        assert!(!group.models["gpt-5"].is_fallback);
-        assert_eq!(group.models["gpt-5"].tier_usage[expected].input_tokens, 300);
+        let model = &group.models["gpt-5"];
+        assert!(!model.is_fallback);
+        assert_eq!(
+            [
+                CodexServiceTier::Standard,
+                CodexServiceTier::Fast,
+                CodexServiceTier::Flex,
+                CodexServiceTier::Ultrafast,
+            ]
+            .map(|tier| model.tier_usage[tier].input_tokens),
+            [recorded_input, 0, 0, 0]
+        );
+        assert_eq!(
+            model
+                .configured_copy_usage
+                .get(&configured_tiers)
+                .map(|usage| usage.input_tokens),
+            configured_input
+        );
     }
 }
 
@@ -518,7 +568,13 @@ fn compaction_attribution_uses_file_order_when_workers_finish_in_reverse() {
         seen.record(event, &mut CodexEventProvenance::new(file_index, None))
             .unwrap();
     }
-    let groups = seen.fold(&shared, AgentReportKind::Session).unwrap();
+    let groups = seen
+        .fold(
+            &shared,
+            AgentReportKind::Session,
+            ccusage_core::cli::WeekDay::Monday,
+        )
+        .unwrap();
 
     assert_eq!(groups.len(), 1);
     let group = &groups["first-session"];
@@ -555,6 +611,7 @@ fn selects_codex_period_for_each_report_kind() {
                 timestamp,
                 session,
                 kind,
+                ccusage_core::cli::WeekDay::Monday,
                 &ccusage_core::ReportWindow::from_shared(&shared),
             )
             .map(|period| period.label(kind, &sessions))
@@ -642,6 +699,7 @@ fn keys_every_day_of_a_month_to_one_monthly_period() {
             parse_ts_timestamp(timestamp).unwrap(),
             session,
             AgentReportKind::Monthly,
+            ccusage_core::cli::WeekDay::Monday,
             &window,
         )
     };
@@ -676,6 +734,7 @@ fn omits_codex_period_outside_date_bounds() {
                 parse_ts_timestamp(timestamp).unwrap(),
                 session,
                 AgentReportKind::Daily,
+                ccusage_core::cli::WeekDay::Monday,
                 &ccusage_core::ReportWindow::from_shared(&shared),
             ),
             None,
@@ -754,6 +813,7 @@ fn skips_historical_files_before_parsing_but_keeps_long_running_sessions() {
             &[directory_source(&fixture.path("sessions"))],
             shared,
             AgentReportKind::Daily,
+            ccusage_core::cli::WeekDay::Monday,
             Some(&PricingMap::load_embedded()),
             &diagnostics,
         )
@@ -2214,6 +2274,7 @@ fn credits_a_replaced_stand_in_to_the_recording_session() {
                 &[directory_source(&sessions)],
                 &shared,
                 AgentReportKind::Session,
+                ccusage_core::cli::WeekDay::Monday,
                 None,
                 &Diagnostics::new("codex"),
             )
@@ -2272,7 +2333,11 @@ fn replaces_the_stand_in_attribution_regardless_of_arrival_order() {
             .unwrap();
         }
         let groups = seen
-            .fold(&SharedArgs::default(), AgentReportKind::Session)
+            .fold(
+                &SharedArgs::default(),
+                AgentReportKind::Session,
+                WeekDay::Monday,
+            )
             .unwrap();
         assert_eq!(
             groups.keys().map(String::as_str).collect::<Vec<_>>(),

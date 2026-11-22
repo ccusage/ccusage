@@ -18,6 +18,7 @@ fn load_daily(shared: &SharedArgs, diagnostics: &Diagnostics) -> crate::load::Da
         None,
         ccusage_adapter_common::source::ProgressOwner::Caller,
         diagnostics,
+        || true,
     )
     .unwrap()
 }

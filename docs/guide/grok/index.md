@@ -8,6 +8,9 @@ ccusage can read local Grok Build CLI session logs as a supported data source. G
 # Daily Grok usage
 ccusage grok daily
 
+# Weekly Grok usage
+ccusage grok weekly
+
 # Monthly Grok usage
 ccusage grok monthly
 
@@ -46,6 +49,7 @@ Only rows with `sessionUpdate == "turn_completed"` and a usable usage breakdown 
 | Focused view           | Description                 | See also                                |
 | ---------------------- | --------------------------- | --------------------------------------- |
 | `ccusage grok daily`   | Aggregate usage by date     | [Daily Usage](/guide/daily-reports)     |
+| `ccusage grok weekly`  | Aggregate usage by week     | [Weekly Usage](/guide/weekly-reports)   |
 | `ccusage grok monthly` | Aggregate usage by month    | [Monthly Usage](/guide/monthly-reports) |
 | `ccusage grok session` | Group usage by Grok session | [Session Usage](/guide/session-reports) |
 

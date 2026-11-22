@@ -356,6 +356,8 @@ Set `claude.commands.<report>.project` or `commands.<report>.project` to configu
 
 ### Weekly Command
 
+Set `startOfWeek` in `defaults` to share a week start across unified and focused reports, or in `commands.weekly` to override the default for weekly reports. Use a source's `defaults` or `commands.weekly` to set the week start for its focused report. The usual [source configuration precedence](#source-specific-configuration) applies, with `--start-of-week` taking priority.
+
 ```json
 {
 	"commands": {
@@ -466,7 +468,7 @@ When a catalogue lacks your model or its price differs from your contract, set `
 
 ### Raw Model Names
 
-Use the model label shown in the report, including any adapter prefix. The override also applies to separator respellings of that label and to every label that ends in it after a provider or host path, such as `zai/glm-4.7` or `azure/gpt-5.5` for a `glm-4.7` or `gpt-5.5` key, even when that host has its own catalog rate. A key for the full label, such as `azure/gpt-5.5`, wins over the bare key for that label. A bare override also applies when the source records an explicit provider, such as a Droid `providerLock` or a Hermes provider.
+Use the model label shown in the report, including any adapter prefix. The override also applies to separator respellings of that label and to every label that ends in it after a provider or host path, such as `zai/glm-4.7` or `azure/gpt-5.5` for a `glm-4.7` or `gpt-5.5` key, even when that host has its own catalog rate. A bare override also applies when the source records an explicit provider, such as a Droid `providerLock` or a Hermes provider.
 
 | Adapter                                | Prefix    | Example key                    |
 | -------------------------------------- | --------- | ------------------------------ |
@@ -474,9 +476,11 @@ Use the model label shown in the report, including any adapter prefix. The overr
 | Named Pi store                         | `[name] ` | `[omp] gpt-5.4`                |
 | Others (Claude, Codex, OpenCode, etc.) | none      | `claude-sonnet-4-5`, `gpt-5.5` |
 
+ccusage tries override keys with the reported case first, then ignores ASCII case. In each pass, a key for the full label, such as `azure/gpt-5.5`, wins over the bare key for that label. A case-insensitive override still takes precedence over a catalogue price with the exact case.
+
 To find the exact name, run `ccusage <agent> daily --json` and look at the `modelName` field in each row's `modelBreakdowns`.
 Pi also accepts a bare model name as an override key; that key applies to the default store and any named Pi store using the same model. Use the prefixed label to price one store separately.
-A model alias can inherit unspecified fields from its target. An override that sets a token rate (`inputCostPerToken`, `outputCostPerToken`, or a cache rate) is the price at every context size: the model's published long-context tier is dropped, and requests above its threshold use the long-context rates only when the override sets its own `*Above200kTokens` fields, at the model's published threshold (200K tokens when it has none). Above-threshold rates the override leaves out fall back to its base rates. An override that builds on another override, such as one keyed by a model alias, keeps the `*Above200kTokens` rates that the other override sets. An override that sets only `*Above200kTokens` fields changes those rates and keeps the rest of the published tier; one that sets no rates, such as `maxInputTokens` alone, keeps the whole tier. A models.dev base supplies its flat rates and context limit. If no catalog row matches, ccusage uses the model family's cache defaults for any omitted cache-write rates. For an OpenAI-family model such as `gpt-5.5-private`, cache writes default to the input rate.
+A model alias can inherit unspecified fields from its target. An override that sets a token rate (`inputCostPerToken`, `outputCostPerToken`, or a cache rate) is the price at every context size: the model's published long-context tier is dropped, and requests above its threshold use the long-context rates only when the override sets its own `*Above200kTokens` fields, at the model's published threshold (200K tokens when it has none). In a whole-request tier with a long-context input rate, ccusage derives omitted cache-read, five-minute write, and one-hour write rates from that input rate and the model vendor's cache multipliers, with the base-tier cache rates as a minimum. Omitted above-threshold input and output rates fall back to the base rates. An override that builds on another override, such as one keyed by a model alias, keeps the `*Above200kTokens` rates that the other override sets. An override that sets only `*Above200kTokens` fields changes those rates and keeps the rest of the published tier; one that sets no rates, such as `maxInputTokens` alone, keeps the whole tier. A models.dev base supplies its flat rates and context limit. If no catalog row matches, ccusage uses the model family's cache defaults for any omitted cache-write rates. For an OpenAI-family model such as `gpt-5.5-private`, cache writes default to the input rate.
 
 For Anthropic, Google Gemini and xAI models, the override's `*Above200kTokens` rates apply to the entire request once the prompt crosses the threshold. The prompt includes cached input and cache writes. A published xAI tier for prompts of at least 200,000 tokens applies at exactly 200,000. Published whole-request tiers from other vendors keep their billing mode. Otherwise, the rates apply marginally to the tokens in each category that exceed the threshold. If the model has no published threshold, the rates apply above 200,000 tokens. This includes an xAI model that only appears in `pricingOverrides`.
 

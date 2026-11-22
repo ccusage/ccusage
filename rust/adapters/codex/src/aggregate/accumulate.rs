@@ -79,6 +79,7 @@ pub(super) fn codex_period_for(
     timestamp: crate::TimestampMs,
     session: StringId,
     kind: AgentReportKind,
+    start_of_week: WeekDay,
     window: &ccusage_core::ReportWindow,
 ) -> Option<CodexPeriod> {
     let date = ccusage_core::date_at(timestamp, window.timezone());
@@ -87,7 +88,7 @@ pub(super) fn codex_period_for(
     }
     Some(match kind {
         AgentReportKind::Daily => CodexPeriod::Date(date),
-        AgentReportKind::Weekly => CodexPeriod::Date(date.week_start(WeekDay::Monday)),
+        AgentReportKind::Weekly => CodexPeriod::Date(date.week_start(start_of_week)),
         AgentReportKind::Monthly => CodexPeriod::Date(date.month_start()),
         AgentReportKind::Session => CodexPeriod::Session(session),
     })
@@ -147,8 +148,11 @@ fn accumulate_codex_usage_into_model_usage(
     // NOTE(2026-07-09, #1414): OpenAI applies long-context rates to every token in a request once its input exceeds that model's threshold. The split has to happen before requests are summed.
     let is_long_context = event.input_tokens > model.long_context_threshold;
     let usage = CodexUsageBucket::from_usage(event, is_long_context);
-    let tier = attribution.pricing_tier();
+    let (tier, configured_copy_tiers) = attribution.pricing_tiers();
     model_usage.add_usage(usage, tier);
+    if let Some(tiers) = configured_copy_tiers {
+        *model_usage.configured_copy_usage.entry(tiers).or_default() += usage;
+    }
     if model.time_dependent {
         let timestamped_usage = model_usage
             .timestamped_usage
@@ -157,6 +161,12 @@ fn accumulate_codex_usage_into_model_usage(
         timestamped_usage.usage += usage;
         if let Some(tier) = tier {
             timestamped_usage.tier_usage[tier] += usage;
+        }
+        if let Some(tiers) = configured_copy_tiers {
+            *timestamped_usage
+                .configured_copy_usage
+                .entry(tiers)
+                .or_default() += usage;
         }
     }
     model_usage.is_fallback |= attribution.is_fallback;

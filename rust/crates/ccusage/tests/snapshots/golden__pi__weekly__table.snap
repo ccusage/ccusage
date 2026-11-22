@@ -1,0 +1,25 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage pi weekly --offline
+---
+exit: 0
+--- stdout ---
+┌────────────┬─────────────────────────┬───────────┬───────────┬───────────────┬─────────────┬───────────────┬─────────────┐
+│ Week       │ Models                  │     Input │    Output │  Cache Create │  Cache Read │  Total Tokens │  Cost (USD) │
+├────────────┼─────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2025-12-22 │ - [pi] gpt-5            │     5,412 │       542 │         1,134 │         443 │         7,531 │       $3.38 │
+│            │ - [pi] pi-mystery-1     │           │           │               │             │               │             │
+│            │ - [pi] pi-mystery-2     │           │           │               │             │               │             │
+├────────────┼─────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2025-12-29 │ - [pi] claude-haiku-4-5 │    10,155 │     3,054 │         1,101 │      44,006 │        59,066 │       $5.74 │
+│            │ - [pi] claude-opus-4    │           │           │               │             │               │             │
+│            │ - [pi] claude-sonnet-4  │           │           │               │             │               │             │
+│            │ - [pi] gpt-5            │           │           │               │             │               │             │
+│            │ - [pi] pi-mystery-1     │           │           │               │             │               │             │
+├────────────┼─────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ Total      │                         │    15,567 │     3,596 │         2,235 │      44,449 │        66,597 │       $9.11 │
+└────────────┴─────────────────────────┴───────────┴───────────┴───────────────┴─────────────┴───────────────┴─────────────┘
+
+--- stderr ---
+WARN  Missing embedded pricing for [pi] pi-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for [pi] pi-mystery-2; cost excludes this model. Run without --offline or update ccusage after pricing is added.

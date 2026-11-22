@@ -1,0 +1,119 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage kilo weekly --offline --json
+---
+exit: 0
+--- stdout ---
+{
+  "totals": {
+    "cacheCreationTokens": 550,
+    "cacheReadTokens": 22500,
+    "inputTokens": 5363,
+    "outputTokens": 1474,
+    "totalCost": 4.0008605,
+    "totalTokens": 30362,
+    "unpricedModels": [
+      "kilo-mystery-1"
+    ]
+  },
+  "weekly": [
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 100,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.01,
+          "inputTokens": 100,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 50,
+          "storedCost": 0.01
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514"
+      ],
+      "outputTokens": 50,
+      "totalCost": 0.01,
+      "totalTokens": 150,
+      "week": "2025-12-22"
+    },
+    {
+      "cacheCreationTokens": 550,
+      "cacheReadTokens": 22500,
+      "inputTokens": 5263,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 7000,
+          "cost": 2.000093,
+          "inputTokens": 933,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 412,
+          "storedCost": 2.0
+        },
+        {
+          "cacheCreationTokens": 50,
+          "cacheReadTokens": 6000,
+          "cost": 1.25,
+          "inputTokens": 800,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 300,
+          "storedCost": 1.25
+        },
+        {
+          "cacheCreationTokens": 300,
+          "cacheReadTokens": 7000,
+          "cost": 0.504605,
+          "inputTokens": 1660,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 315,
+          "storedCost": 0.5
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.2,
+          "inputTokens": 330,
+          "missingPricing": true,
+          "modelName": "kilo-mystery-1",
+          "outputTokens": 77,
+          "storedCost": 0.2
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 2500,
+          "cost": 0.0331625,
+          "inputTokens": 1040,
+          "modelName": "gpt-5",
+          "outputTokens": 220,
+          "storedCost": 0.03
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.003,
+          "inputTokens": 500,
+          "modelName": "anthropic/claude-sonnet-4",
+          "outputTokens": 100
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514",
+        "claude-haiku-4-5-20251001",
+        "gpt-5",
+        "kilo-mystery-1",
+        "claude-opus-4-20250514",
+        "anthropic/claude-sonnet-4"
+      ],
+      "outputTokens": 1424,
+      "totalCost": 3.9908605,
+      "totalTokens": 30212,
+      "week": "2025-12-29"
+    }
+  ]
+}
+
+--- stderr ---

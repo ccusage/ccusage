@@ -57,8 +57,8 @@ pub(crate) fn report_kinds(agent: &str) -> Vec<&'static str> {
         .iter()
         .find(|spec| spec.name == agent)
         .expect("matrix agent is registered");
-    spec.reports
-        .iter()
+    ccusage_cli::AgentReportKind::ALL
+        .into_iter()
         .map(|kind| kind.name())
         .chain(spec.extra_commands.iter().map(|command| command.name))
         .collect()

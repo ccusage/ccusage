@@ -87,7 +87,6 @@ fn parse_claude_daily_command(
 fn parse_claude_monthly_command(
     parser: &mut ArgParser,
     mut shared: SharedArgs,
-    _config: &dyn CliConfig,
 ) -> Result<Command, String> {
     let mut project = None;
     while parser.peek().is_some() {
@@ -132,7 +131,6 @@ fn parse_claude_weekly_command(
 fn parse_claude_session_command(
     parser: &mut ArgParser,
     shared: SharedArgs,
-    _config: &dyn CliConfig,
 ) -> Result<Command, String> {
     let mut args = SessionArgs { shared, id: None };
     let mut project = None;
@@ -166,9 +164,9 @@ fn parse_claude_command(
     };
     match command.as_str() {
         "daily" => parse_claude_daily_command(parser, shared, config),
-        "monthly" => parse_claude_monthly_command(parser, shared, config),
+        "monthly" => parse_claude_monthly_command(parser, shared),
         "weekly" => parse_claude_weekly_command(parser, shared, config),
-        "session" => parse_claude_session_command(parser, shared, config),
+        "session" => parse_claude_session_command(parser, shared),
         command => Err(format!("Unknown claude command '{command}'")),
     }
 }
@@ -184,6 +182,21 @@ fn weekly_start(config: &dyn CliConfig, kind: AgentReportKind) -> WeekDay {
     weekly.start_of_week
 }
 
+fn parse_week_start(
+    parser: &mut ArgParser,
+    kind: AgentReportKind,
+    start_of_week: &mut WeekDay,
+) -> Result<bool, String> {
+    if kind != AgentReportKind::Weekly
+        || !matches!(parser.peek_name(), Some("-w" | "--start-of-week"))
+    {
+        return Ok(false);
+    }
+    parser.next_flag()?;
+    *start_of_week = parse_week_day(&parser.value_for("--start-of-week")?)?;
+    Ok(true)
+}
+
 fn parse_basic_agent_command(
     parser: &mut ArgParser,
     shared: SharedArgs,
@@ -194,12 +207,7 @@ fn parse_basic_agent_command(
     let mut args = agent_command_args(shared, kind);
     args.start_of_week = weekly_start(config, kind);
     while parser.peek().is_some() {
-        if kind == AgentReportKind::Weekly
-            && matches!(parser.peek_name(), Some("-w" | "--start-of-week"))
-        {
-            parser.next_flag()?;
-            args.start_of_week = parse_week_day(&parser.value_for("--start-of-week")?)?;
-        } else {
+        if !parse_week_start(parser, kind, &mut args.start_of_week)? {
             parse_shared_arg(parser, &mut args.shared)?;
         }
     }
@@ -215,14 +223,13 @@ fn parse_opencode_command(
     let mut include_claude_agent = false;
     let mut start_of_week = weekly_start(config, kind);
     while parser.peek().is_some() {
-        if parse_shared_arg_for_command(parser, &mut shared)? {
+        if parse_shared_arg_for_command(parser, &mut shared)?
+            || parse_week_start(parser, kind, &mut start_of_week)?
+        {
             continue;
         }
         match parser.next_flag()?.as_str() {
             "--include-claude-agent" => include_claude_agent = true,
-            "-w" | "--start-of-week" if kind == AgentReportKind::Weekly => {
-                start_of_week = parse_week_day(&parser.value_for("--start-of-week")?)?;
-            }
             flag => return Err(format!("Unknown opencode option '{flag}'")),
         }
     }
@@ -244,9 +251,12 @@ fn parse_codex_command(
     let agent = StandardAgent::Codex;
     let mut options = config.agent_options(agent.spec().name);
     let kind = parse_agent_report_kind(parser, agent)?;
+    let mut start_of_week = weekly_start(config, kind);
     let mut session_id = None;
     while parser.peek().is_some() {
-        if parse_shared_arg_for_command(parser, &mut shared)? {
+        if parse_shared_arg_for_command(parser, &mut shared)?
+            || parse_week_start(parser, kind, &mut start_of_week)?
+        {
             continue;
         }
         match parser.next_flag()?.as_str() {
@@ -261,6 +271,7 @@ fn parse_codex_command(
         StandardAgent::Codex,
         AgentCommandArgs {
             session_id,
+            start_of_week,
             ..agent_command_args(shared, kind).with_options(options)
         },
     ))
@@ -305,8 +316,11 @@ fn parse_pi_command(
 ) -> Result<Command, String> {
     let kind = parse_agent_report_kind(parser, StandardAgent::Pi)?;
     let mut options = config.agent_options("pi");
+    let mut start_of_week = weekly_start(config, kind);
     while parser.peek().is_some() {
-        if parse_shared_arg_for_command(parser, &mut shared)? {
+        if parse_shared_arg_for_command(parser, &mut shared)?
+            || parse_week_start(parser, kind, &mut start_of_week)?
+        {
             continue;
         }
         match parser.next_flag()?.as_str() {
@@ -319,7 +333,10 @@ fn parse_pi_command(
     }
     Ok(Command::agent_report(
         StandardAgent::Pi,
-        agent_command_args(shared, kind).with_options(options),
+        AgentCommandArgs {
+            start_of_week,
+            ..agent_command_args(shared, kind).with_options(options)
+        },
     ))
 }
 
@@ -330,8 +347,11 @@ fn parse_openclaw_command(
 ) -> Result<Command, String> {
     let kind = parse_agent_report_kind(parser, StandardAgent::OpenClaw)?;
     let mut options = config.agent_options("openclaw");
+    let mut start_of_week = weekly_start(config, kind);
     while parser.peek().is_some() {
-        if parse_shared_arg_for_command(parser, &mut shared)? {
+        if parse_shared_arg_for_command(parser, &mut shared)?
+            || parse_week_start(parser, kind, &mut start_of_week)?
+        {
             continue;
         }
         match parser.next_flag()?.as_str() {
@@ -343,7 +363,10 @@ fn parse_openclaw_command(
     }
     Ok(Command::agent_report(
         StandardAgent::OpenClaw,
-        agent_command_args(shared, kind).with_options(options),
+        AgentCommandArgs {
+            start_of_week,
+            ..agent_command_args(shared, kind).with_options(options)
+        },
     ))
 }
 
@@ -355,9 +378,7 @@ fn parse_agent_report_kind(
         return Ok(AgentReportKind::Daily);
     };
     let spec = agent.spec();
-    if let Some(kind) =
-        AgentReportKind::from_name(command).filter(|kind| spec.reports.contains(kind))
-    {
+    if let Some(kind) = AgentReportKind::from_name(command) {
         parser.next();
         return Ok(kind);
     }

@@ -502,7 +502,7 @@ exit: 0
           "cacheReadTokens": 5000,
           "inputTokens": 1400,
           "modelName": "[openclaw] gpt-5",
-          "outputTokens": 645
+          "outputTokens": 300
         },
         {
           "cacheCreationTokens": 0,
@@ -668,7 +668,7 @@ exit: 0
           "inputTokens": 0,
           "missingPricing": true,
           "modelName": "gemini-mystery-1",
-          "outputTokens": 674
+          "outputTokens": 20
         },
         {
           "cacheCreationTokens": 0,
@@ -690,7 +690,7 @@ exit: 0
           "cacheReadTokens": 0,
           "inputTokens": 0,
           "modelName": "qwen-mystery-1",
-          "outputTokens": 654
+          "outputTokens": 0
         }
       ],
       "modelsUsed": [
@@ -731,7 +731,7 @@ exit: 0
         "qwen3-coder-plus",
         "unknown"
       ],
-      "outputTokens": 19837,
+      "outputTokens": 18184,
       "period": "2025-12-31",
       "totalTokens": 277798
     },
@@ -800,7 +800,7 @@ exit: 0
           "cacheReadTokens": 12355,
           "inputTokens": 5160,
           "modelName": "gpt-5",
-          "outputTokens": 2206
+          "outputTokens": 1171
         },
         {
           "cacheCreationTokens": 0,
@@ -900,7 +900,7 @@ exit: 0
           "cacheReadTokens": 0,
           "inputTokens": 400,
           "modelName": "anthropic/claude-sonnet-4.5",
-          "outputTokens": 562
+          "outputTokens": 130
         },
         {
           "cacheCreationTokens": 0,
@@ -977,7 +977,7 @@ exit: 0
           "cacheReadTokens": 0,
           "inputTokens": 100,
           "modelName": "kimi-k2-thinking",
-          "outputTokens": 482
+          "outputTokens": 50
         },
         {
           "cacheCreationTokens": 0,
@@ -1061,7 +1061,7 @@ exit: 0
           "cacheReadTokens": 0,
           "inputTokens": 0,
           "modelName": "gpt-unknown",
-          "outputTokens": 345
+          "outputTokens": 0
         },
         {
           "cacheCreationTokens": 0,
@@ -1124,7 +1124,7 @@ exit: 0
           "cacheReadTokens": 0,
           "inputTokens": 0,
           "modelName": "[pi] gpt-5",
-          "outputTokens": 500
+          "outputTokens": 0
         },
         {
           "cacheCreationTokens": 0,
@@ -1196,7 +1196,7 @@ exit: 0
         "unknown",
         "zcode-mystery-1"
       ],
-      "outputTokens": 17537,
+      "outputTokens": 14793,
       "period": "2026-01-01",
       "totalTokens": 1508705
     },
@@ -1235,7 +1235,7 @@ exit: 0
           "cacheReadTokens": 8550,
           "inputTokens": 2300,
           "modelName": "claude-opus-4-20250514",
-          "outputTokens": 1130
+          "outputTokens": 1010
         },
         {
           "cacheCreationTokens": 0,
@@ -1263,7 +1263,7 @@ exit: 0
           "cacheReadTokens": 600,
           "inputTokens": 3388,
           "modelName": "gpt-5",
-          "outputTokens": 837
+          "outputTokens": 492
         },
         {
           "cacheCreationTokens": 0,
@@ -1278,7 +1278,7 @@ exit: 0
           "cacheReadTokens": 18760,
           "inputTokens": 4200,
           "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 2747
+          "outputTokens": 1680
         },
         {
           "cacheCreationTokens": 60,
@@ -1397,7 +1397,7 @@ exit: 0
           "cacheReadTokens": 0,
           "inputTokens": 100,
           "modelName": "claude-haiku-4.5",
-          "outputTokens": 245
+          "outputTokens": 0
         },
         {
           "cacheCreationTokens": 0,
@@ -1502,7 +1502,7 @@ exit: 0
         "openai/gpt-5",
         "unknown"
       ],
-      "outputTokens": 10755,
+      "outputTokens": 8978,
       "period": "2026-01-02",
       "totalTokens": 668978
     },
@@ -1537,7 +1537,7 @@ exit: 0
     "cacheCreationTokens": 17765,
     "cacheReadTokens": 1308300,
     "inputTokens": 1262107,
-    "outputTokens": 60566,
+    "outputTokens": 54392,
     "totalTokens": 2652038,
     "unpricedModels": [
       "GLM-5.3",

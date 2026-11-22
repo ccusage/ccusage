@@ -90,7 +90,7 @@ exit: 0
           "cost": 0.150075,
           "inputTokens": 1000,
           "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 1067,
+          "outputTokens": 500,
           "storedCost": 0.15
         },
         {
@@ -137,7 +137,7 @@ exit: 0
         "claude-opus-4-20250514"
       ],
       "month": "2026-01",
-      "outputTokens": 1764,
+      "outputTokens": 1197,
       "totalCost": 0.65225,
       "totalTokens": 9414
     }
@@ -146,7 +146,7 @@ exit: 0
     "cacheCreationTokens": 600,
     "cacheReadTokens": 3800,
     "inputTokens": 11090,
-    "outputTokens": 2878,
+    "outputTokens": 2311,
     "totalCost": 1.3989725000000002,
     "totalTokens": 18388,
     "unpricedModels": [

@@ -40,6 +40,7 @@ HERMES_HOME="$HOME/.hermes" ccusage hermes daily
 | Focused view             | Description                      | See also                                |
 | ------------------------ | -------------------------------- | --------------------------------------- |
 | `ccusage hermes daily`   | Aggregate usage by date          | [Daily Usage](/guide/daily-reports)     |
+| `ccusage hermes weekly`  | Aggregate usage by week          | [Weekly Usage](/guide/weekly-reports)   |
 | `ccusage hermes monthly` | Aggregate usage by month         | [Monthly Usage](/guide/monthly-reports) |
 | `ccusage hermes session` | Group usage by Hermes session ID | [Session Usage](/guide/session-reports) |
 

@@ -1,5 +1,6 @@
 use ccusage_core::cost::PriceTable;
 use ccusage_core::{
+    AdditionalTokens,
     cost::{EntryPricing, UsageGranularity, price_entry},
     pricing::MatchKind,
 };
@@ -14,7 +15,6 @@ use serde::{
 use serde_json::{Map, Value};
 
 use crate::{LoadedEntry, TimestampMs, TokenUsageRaw, date_at};
-use ccusage_core::AdditionalTokens;
 
 const DEFAULT_MODEL: &str = "unknown";
 const PROVIDER_PREFIXES: [&str; 4] = ["google", "gemini", "vertex_ai", "openrouter/google"];
@@ -616,12 +616,7 @@ pub(super) fn event_to_loaded(
         speed: None,
         cache_creation: None,
     };
-    let additional =
-        AdditionalTokens::from_total(usage, event.reasoning_tokens, event.total_tokens);
-    let (report_usage, _) = additional.for_report(usage);
-    let extra_total_tokens = event
-        .total_tokens
-        .saturating_sub(ccusage_core::total_usage_tokens(report_usage));
+    let extra_total_tokens = AdditionalTokens::from_total(usage, 0, event.total_tokens).total();
     let names = model_candidates(&event.model);
     let candidates: Vec<_> = names
         .iter()
@@ -658,7 +653,7 @@ pub(super) fn event_to_loaded(
         usage_limit_reset_time: None,
         missing_pricing_model,
         estimated_pricing,
-        usage: report_usage,
+        usage,
         message_id: event.message_id,
         version: None,
         recorded_cost: None,
@@ -832,9 +827,11 @@ mod tests {
     }
 
     #[test]
-    fn falls_back_to_total_tokens_when_gemini_parts_are_missing() {
+    fn keeps_total_only_usage_out_of_output_tokens() {
+        ccusage_test_support::install_pricing_snapshots();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         let event = build_usage(
-            Some("gemini-test"),
+            Some("gemini-2.5-pro"),
             GeminiTokens {
                 total: Some(654),
                 ..GeminiTokens::default()
@@ -847,10 +844,38 @@ mod tests {
         let entry = event_to_loaded(
             event.at("session", TimestampMs::UNIX_EPOCH),
             &JiffTimeZone::UTC,
-            PriceTable::Display,
+            PriceTable::Calculate(&pricing),
         );
-        assert_eq!(entry.usage.output_tokens, 654);
-        assert_eq!(entry.extra_total_tokens, 0);
+        assert_eq!(entry.usage.output_tokens, 0);
+        assert_eq!(entry.extra_total_tokens, 654);
+        assert_eq!(entry.cost, 0.0);
+    }
+
+    #[test]
+    fn bounds_extra_report_tokens_by_the_recorded_total() {
+        for output in [0, 3] {
+            let event = build_usage(
+                Some("gemini-test"),
+                GeminiTokens {
+                    input: 10,
+                    output,
+                    thoughts: 7,
+                    total: Some(14),
+                    ..GeminiTokens::default()
+                },
+                normalize_session_input,
+                None,
+            )
+            .unwrap();
+
+            let entry = event_to_loaded(
+                event.at("session", TimestampMs::UNIX_EPOCH),
+                &JiffTimeZone::UTC,
+                PriceTable::Display,
+            );
+            assert_eq!(entry.usage.output_tokens, output);
+            assert_eq!(entry.extra_total_tokens, 4 - output);
+        }
     }
 
     #[test]

@@ -28,7 +28,7 @@ exit: 0
           "cost": 0.0038250000000000003,
           "inputTokens": 250,
           "modelName": "claude-opus-4-20250514",
-          "outputTokens": 120
+          "outputTokens": 0
         },
         {
           "cacheCreationTokens": 0,
@@ -72,7 +72,7 @@ exit: 0
         "gpt-5",
         "claude-opus-4-20250514"
       ],
-      "outputTokens": 920,
+      "outputTokens": 800,
       "projectPath": "/work/project-alpha",
       "sessionId": "s-alpha",
       "totalCost": 0.014741,
@@ -116,7 +116,7 @@ exit: 0
           "cost": 0.00008375,
           "inputTokens": 11,
           "modelName": "gpt-5",
-          "outputTokens": 352
+          "outputTokens": 7
         }
       ],
       "modelsUsed": [
@@ -125,7 +125,7 @@ exit: 0
         "GLM-5.3-Flash",
         "claude-sonnet-4-20250514"
       ],
-      "outputTokens": 1502,
+      "outputTokens": 1157,
       "projectPath": "/work/project-beta",
       "sessionId": "s-beta",
       "totalCost": 0.0048137499999999995,
@@ -254,7 +254,7 @@ exit: 0
     "cacheCreationTokens": 820,
     "cacheReadTokens": 2360,
     "inputTokens": 8831,
-    "outputTokens": 2877,
+    "outputTokens": 2412,
     "totalCost": 0.030720249999999994,
     "totalTokens": 15038,
     "unpricedModels": [

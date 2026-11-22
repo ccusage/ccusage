@@ -4,9 +4,9 @@ use std::{
     path::PathBuf,
 };
 
-use ccusage_cli::AGENTS;
+use ccusage_cli::{AGENTS, AgentReportKind};
 use ccusage_environment::Environment;
-use serde_json::Value;
+use serde_json::{Value, json};
 
 #[path = "src/help/codegen.rs"]
 mod help_codegen;
@@ -34,12 +34,62 @@ fn generate_cli_help_rs() -> Result<(), String> {
         .map_err(|error| format!("read CLI command spec: {error}"))?;
     let option_sets = serde_json::from_str::<Value>(&option_source)
         .map_err(|error| format!("parse CLI help spec: {error}"))?;
-    let command_spec = serde_json::from_str::<Value>(&command_source)
+    let mut command_spec = serde_json::from_str::<Value>(&command_source)
         .map_err(|error| format!("parse CLI command spec: {error}"))?;
+    add_focused_weekly_pages(&mut command_spec)?;
     check_agent_pages(&command_spec)?;
     let output = help_codegen::generate_cli_help_source(&option_sets, &command_spec)?;
     fs::write(out_dir_path("cli-help.rs")?, output)
         .map_err(|error| format!("write generated CLI help: {error}"))
+}
+
+fn add_focused_weekly_pages(command_spec: &mut Value) -> Result<(), String> {
+    let pages = command_spec["pages"]
+        .as_array_mut()
+        .ok_or_else(|| "CLI command spec has no pages".to_string())?;
+    for agent in AGENTS {
+        let name = agent.name;
+        if pages
+            .iter()
+            .any(|page| page["path"] == json!([name, "weekly"]))
+        {
+            continue;
+        }
+        let monthly = pages
+            .iter()
+            .find(|page| page["path"] == json!([name, "monthly"]))
+            .ok_or_else(|| format!("missing monthly help for {name}"))?;
+        let description = monthly["description"]
+            .as_str()
+            .and_then(|text| text.strip_suffix(" by month"))
+            .ok_or_else(|| format!("missing month grouping description for {name}"))?;
+        let description = format!("{description} by week");
+        let options = monthly["options"]
+            .as_str()
+            .and_then(|name| name.strip_suffix("_period_options"))
+            .ok_or_else(|| format!("missing period options for {name}"))?;
+        let page = json!({
+            "path": [name, "weekly"],
+            "description": description,
+            "usage": format!("ccusage {name} weekly <OPTIONS>"),
+            "options": format!("{options}_weekly_options"),
+        });
+        let commands = pages
+            .iter_mut()
+            .find(|page| page["path"] == json!([name]))
+            .and_then(|page| page["commands"].as_array_mut())
+            .ok_or_else(|| format!("missing help commands for {name}"))?;
+        let monthly_index = commands
+            .iter()
+            .position(|command| command["name"] == "monthly")
+            .ok_or_else(|| format!("missing monthly command in help for {name}"))?;
+        commands.insert(
+            monthly_index,
+            json!({ "name": "weekly", "description": description }),
+        );
+        pages.push(page);
+    }
+    Ok(())
 }
 
 fn page_path(page: &Value) -> Result<Vec<&str>, String> {
@@ -89,9 +139,8 @@ fn check_agent_pages(command_spec: &Value) -> Result<(), String> {
     let table = AGENTS
         .iter()
         .map(|spec| {
-            let commands = spec
-                .reports
-                .iter()
+            let commands = AgentReportKind::ALL
+                .into_iter()
                 .map(|kind| kind.name())
                 .chain(spec.extra_commands.iter().map(|command| command.name))
                 .collect::<BTreeSet<_>>();

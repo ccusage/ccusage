@@ -51,10 +51,7 @@ fn to_loaded_entry(
         missing_pricing_model,
         estimated_pricing,
         message_count: None,
-        usage: ccusage_core::TokenUsageRaw {
-            output_tokens: entry.reported_output_tokens,
-            ..entry.usage
-        },
+        usage: entry.usage,
         message_id: Some(entry.dedup_key.clone()),
         version: None,
         recorded_cost: None,
@@ -405,11 +402,14 @@ mod tests {
     }
 
     #[test]
-    fn falls_back_to_total_tokens_when_codebuff_parts_are_missing() {
+    fn keeps_total_only_codebuff_usage_out_of_output_tokens() {
+        ccusage_test_support::install_pricing_snapshots();
+        let mut pricing = ccusage_core::PricingMap::default();
+        pricing.load_json(r#"{"sample":{"input_cost_per_token":1,"output_cost_per_token":2}}"#);
         let fixture = fs_fixture!({
             "projects/p/chats/2026-01-02T03-04-05.000Z/chat-messages.json": r#"[
-                {"role":"assistant","metadata":{"usage":{"totalTokens":789}}},
-                {"role":"assistant","metadata":{"usage":{"totalTokens":789,"outputTokens":0}}}
+                {"role":"assistant","metadata":{"model":"sample","usage":{"totalTokens":789}}},
+                {"role":"assistant","metadata":{"model":"sample","usage":{"totalTokens":789,"outputTokens":0}}}
             ]"#,
         });
         let mut entries = super::super::parser::load_chat_file(
@@ -418,13 +418,15 @@ mod tests {
         )
         .unwrap()
         .into_iter()
-        .map(|entry| to_loaded_entry(entry, &JiffTimeZone::UTC, PriceTable::Display));
+        .map(|entry| to_loaded_entry(entry, &JiffTimeZone::UTC, PriceTable::Calculate(&pricing)));
         let missing_output = entries.next().unwrap();
-        assert_eq!(missing_output.usage.output_tokens, 789);
-        assert_eq!(missing_output.extra_total_tokens, 0);
+        assert_eq!(missing_output.usage.output_tokens, 0);
+        assert_eq!(missing_output.extra_total_tokens, 789);
+        assert_eq!(missing_output.cost, 0.0);
         let explicit_zero = entries.next().unwrap();
         assert_eq!(explicit_zero.usage.output_tokens, 0);
         assert_eq!(explicit_zero.extra_total_tokens, 789);
+        assert_eq!(explicit_zero.cost, 0.0);
     }
 
     #[test]

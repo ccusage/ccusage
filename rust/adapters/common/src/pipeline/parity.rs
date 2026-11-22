@@ -55,7 +55,7 @@ pub fn assert_focused_matches_unified<S: EntrySource>(
         agent.spec().name,
         "the source is not the agent whose reports it is checked for"
     );
-    for kind in agent.spec().reports.iter().copied() {
+    for kind in AgentReportKind::ALL {
         let focused = focused_totals(source, kind, shared);
         let unified = unified_totals(source, kind, shared);
         assert!(

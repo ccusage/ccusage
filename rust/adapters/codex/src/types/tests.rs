@@ -12,7 +12,16 @@ fn tier_addition_saturates_and_keeps_each_tier_separate() {
     assert_eq!(first[CodexServiceTier::Fast].input_tokens, u64::MAX);
     assert_eq!(first[CodexServiceTier::Flex].input_tokens, 5);
     assert_eq!(first[CodexServiceTier::Ultrafast].input_tokens, 0);
-    assert_eq!(first.total().input_tokens, u64::MAX);
+    let total = [
+        CodexServiceTier::Standard,
+        CodexServiceTier::Fast,
+        CodexServiceTier::Flex,
+        CodexServiceTier::Ultrafast,
+    ]
+    .into_iter()
+    .map(|tier| first[tier])
+    .fold(CodexUsageBucket::default(), std::ops::Add::add);
+    assert_eq!(total.input_tokens, u64::MAX);
 }
 
 #[test]

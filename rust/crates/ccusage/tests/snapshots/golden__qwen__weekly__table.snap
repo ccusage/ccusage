@@ -1,0 +1,24 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage qwen weekly --offline
+---
+exit: 0
+--- stdout ---
+┌────────────┬────────────────────┬───────────┬───────────┬───────────────┬─────────────┬───────────────┬─────────────┐
+│ Week       │ Models             │     Input │    Output │  Cache Create │  Cache Read │  Total Tokens │  Cost (USD) │
+├────────────┼────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2025-12-22 │ - sonnet-4         │       100 │        50 │             0 │           0 │           150 │       $0.00 │
+├────────────┼────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2025-12-29 │ - qwen-2.5-72b     │   204,501 │     3,550 │             0 │     103,493 │       312,508 │       $0.25 │
+│            │ - qwen-3-30b       │           │           │               │             │               │             │
+│            │ - qwen-mystery-1   │           │           │               │             │               │             │
+│            │ - qwen3-coder-plus │           │           │               │             │               │             │
+│            │ - sonnet-4         │           │           │               │             │               │             │
+│            │ - unknown          │           │           │               │             │               │             │
+├────────────┼────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ Total      │                    │   204,601 │     3,600 │             0 │     103,493 │       312,658 │       $0.25 │
+└────────────┴────────────────────┴───────────┴───────────┴───────────────┴─────────────┴───────────────┴─────────────┘
+
+--- stderr ---
+WARN  Missing embedded pricing for qwen-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for unknown; cost excludes this model. Run without --offline or update ccusage after pricing is added.

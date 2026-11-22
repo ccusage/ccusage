@@ -903,11 +903,8 @@ fn snapshots_production_reports_for_focused_periods() {
         assert!(entry.cost > 0.0);
         assert!(entry.missing_pricing_model.is_none());
     }
-    let reports = crate::cli::AgentId::Antigravity
-        .spec()
-        .reports
-        .iter()
-        .copied()
+    let reports = crate::cli::AgentReportKind::ALL
+        .into_iter()
         .map(|kind| {
             let rows = ccusage_adapter_common::source::EntrySource::summarize(&crate::SOURCE, &entries, ccusage_adapter_common::source::SummaryKind::for_report(kind, ccusage_core::cli::WeekDay::Monday)).unwrap();
             (

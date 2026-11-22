@@ -99,7 +99,7 @@ exit: 0
           "cost": 0.0038250000000000003,
           "inputTokens": 250,
           "modelName": "claude-opus-4-20250514",
-          "outputTokens": 120
+          "outputTokens": 0
         },
         {
           "cacheCreationTokens": 0,
@@ -115,7 +115,7 @@ exit: 0
           "cost": 0.0022125,
           "inputTokens": 650,
           "modelName": "gpt-5",
-          "outputTokens": 485
+          "outputTokens": 140
         },
         {
           "cacheCreationTokens": 200,
@@ -170,7 +170,7 @@ exit: 0
         "claude-sonnet-4-20250514"
       ],
       "month": "2026-01",
-      "outputTokens": 1625,
+      "outputTokens": 1160,
       "totalCost": 0.012894499999999998,
       "totalTokens": 7425
     }
@@ -179,7 +179,7 @@ exit: 0
     "cacheCreationTokens": 820,
     "cacheReadTokens": 2360,
     "inputTokens": 8831,
-    "outputTokens": 2877,
+    "outputTokens": 2412,
     "totalCost": 0.030720249999999998,
     "totalTokens": 15038,
     "unpricedModels": [
