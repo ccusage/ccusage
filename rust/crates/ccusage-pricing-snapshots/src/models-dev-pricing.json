@@ -21734,6 +21734,16 @@
 		},
 		"provider": "opencode"
 	},
+	"jev-1.14": {
+		"cost": {
+			"input": 0.042,
+			"output": 0
+		},
+		"limit": {
+			"context": 64000
+		},
+		"provider": "opencode"
+	},
 	"jiunsong/supergemma4-26b-uncensored": {
 		"cost": {
 			"cache_read": 0.1625,
