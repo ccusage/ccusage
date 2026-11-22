@@ -43,8 +43,10 @@ Relevant speed-setting event in Codex CLI 0.144.0 and later:
 - Token usage inherits the latest recognized setting in the rollout. A settings event without a `service_tier` key leaves the previous tier in place (auto-review threads emit these); a tier that is present but unrecognized clears it so a stale value is not inherited.
 - `thread_settings_applied` is not emitted per turn, so short rollouts carry no tier at all and stay unclassified for report policy to resolve.
 
-Unclassified usage uses the `service_tier` from the retained rollout's Codex
-home. Read the top-level value in `config.toml`, with an override from a legacy
+Unclassified usage uses the `service_tier` from the rollout's Codex home.
+When attributions merge across homes, the precedence for configured and
+recorded tiers is Standard, then Ultrafast, Fast, and Flex.
+Read the top-level value in `config.toml`, with an override from a legacy
 named profile when the top-level `profile` selects it. Missing tiers and tiers
 without a model-specific rate use Standard pricing. Profile selections made
 through CLI flags or separate profile files require an explicit `--speed`

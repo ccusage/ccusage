@@ -100,11 +100,14 @@ impl CodexAttribution {
 
     fn merge(&mut self, mut incoming: Self) -> bool {
         self.service_tier = merge_codex_service_tiers(self.service_tier, incoming.service_tier);
+        self.configured_tier =
+            merge_codex_service_tiers(self.configured_tier, incoming.configured_tier);
         self.rollout_count = self.rollout_count.max(incoming.rollout_count);
         if incoming.file_index >= self.file_index {
             return false;
         }
         incoming.service_tier = self.service_tier;
+        incoming.configured_tier = self.configured_tier;
         incoming.rollout_count = self.rollout_count;
         *self = incoming;
         true

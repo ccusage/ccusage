@@ -914,6 +914,45 @@ fn prices_recorded_and_configured_ultrafast_usage() {
 }
 
 #[test]
+fn prices_a_cross_home_rollout_copy_at_its_configured_fast_tier() {
+    let rollout = json!({
+        "timestamp": "2026-10-24T10:00:00Z",
+        "type": "event_msg",
+        "payload": {
+            "type": "token_count",
+            "info": {
+                "model": "gpt-5.6-sol",
+                "last_token_usage": { "input_tokens": 1000, "total_tokens": 1000 },
+            },
+        },
+    })
+    .to_string();
+    let fixture = fs_fixture!({
+        "codex/sessions/copied.jsonl": &rollout,
+        "other/archived_sessions/copied.jsonl": &rollout,
+        "other/config.toml": "service_tier = 'fast'",
+    });
+    let homes = format!(
+        "{},{}",
+        fixture.path("codex").display(),
+        fixture.path("other").display()
+    );
+    let output = codex_command(support::hermetic_command(fixture.root()), &fixture)
+        .env("CODEX_HOME", homes)
+        .args(["codex", "daily", "--json"])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["totals"]["totalTokens"], 1000);
+    assert_eq!(report["totals"]["costUSD"], 0.008);
+}
+
+#[test]
 fn prices_an_unsupported_ultrafast_home_at_standard_even_next_to_flex() {
     assert_codex_home_costs(
         ("ultrafast", "flex"),
