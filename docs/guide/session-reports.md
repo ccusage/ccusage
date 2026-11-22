@@ -13,6 +13,8 @@ ccusage pi session
 ccusage qwen session
 ```
 
+Use `ccusage claude session --project <name>` to list sessions from one Claude project. The same flag on `ccusage session` filters the Claude Code rows in the unified report.
+
 ## Specific Session Lookup
 
 Query individual session details by providing a session ID:
@@ -21,6 +23,8 @@ Query individual session details by providing a session ID:
 ccusage claude session --id <session-id>
 ccusage codex session --id <session-id>
 ```
+
+Claude session lookups with `--id` search across projects even when a project filter is set.
 
 This is particularly useful for:
 
