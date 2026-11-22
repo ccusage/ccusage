@@ -20,6 +20,8 @@ ccusage claude session
 
 Most users can start with unified reports such as `ccusage daily`. Add the `claude` namespace only when you want to focus the same report shape on Claude Code usage or pass Claude-specific options.
 
+Use `--project <name>` with Claude daily, weekly, monthly, session, or blocks reports to override the configured project.
+
 ## Data Source
 
 ccusage reads Claude Code project logs from the standard Claude data directories:

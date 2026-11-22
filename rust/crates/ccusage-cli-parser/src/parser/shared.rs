@@ -19,6 +19,19 @@ pub(super) fn parse_shared_arg_for_command(
     Ok(false)
 }
 
+pub(super) fn parse_claude_report_arg(
+    parser: &mut ArgParser,
+    shared: &mut SharedArgs,
+    project: &mut Option<String>,
+) -> Result<bool, String> {
+    if matches!(parser.peek_name(), Some("-p" | "--project")) {
+        parser.next_flag()?;
+        *project = Some(parser.value_for("--project")?);
+        return Ok(true);
+    }
+    parse_shared_arg_for_command(parser, shared)
+}
+
 pub(super) enum SharedFlag {
     Since(DateBound),
     Until(DateBound),

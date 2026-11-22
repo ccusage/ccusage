@@ -294,12 +294,14 @@
 			"default": "false"
 		},
 		{
-			"flags": "-p, --project <project>",
-			"description": "Filter to specific project name"
-		},
-		{
 			"flags": "--project-aliases <project-aliases>",
 			"description": "Comma-separated project aliases (e.g., 'ccusage=Usage Tracker,myproject=My Project')"
+		}
+	],
+	"claude_project_options": [
+		{
+			"flags": "-p, --project <project>",
+			"description": "Filter Claude Code usage by project (ignored with session --id)"
 		}
 	],
 	"pi_options": [
