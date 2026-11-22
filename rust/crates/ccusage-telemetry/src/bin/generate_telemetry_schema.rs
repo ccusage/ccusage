@@ -1,16 +1,18 @@
-use std::{env, fs, process};
+use std::{env, fs, io};
 
-fn main() {
+fn main() -> io::Result<()> {
     let module = ccusage_telemetry::generate_schema_module();
     let paths = env::args().skip(1).collect::<Vec<_>>();
     if paths.is_empty() {
-        print!("{module}");
-        return;
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "expected at least one output path",
+        ));
     }
     for path in paths {
-        if let Err(error) = fs::write(&path, &module) {
-            eprintln!("failed to write {path}: {error}");
-            process::exit(1);
-        }
+        fs::write(&path, &module).map_err(|error| {
+            io::Error::new(error.kind(), format!("failed to write {path}: {error}"))
+        })?;
     }
+    Ok(())
 }

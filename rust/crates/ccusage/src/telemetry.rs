@@ -4,11 +4,12 @@ use std::{
     io,
     path::{Path, PathBuf},
     sync::mpsc,
-    thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use ccusage_cli::{AgentCommand, AgentReportKind, ClaudeReport, Command, TelemetryAction};
+use ccusage_cli::{
+    AgentCommand, AgentReportKind, ClaudeReport, Command, TelemetryAction, environment::Environment,
+};
 use ccusage_telemetry::{Ping, PingEvent};
 use ring::rand::{SecureRandom, SystemRandom};
 use serde::{Deserialize, Serialize};
@@ -98,7 +99,7 @@ pub(crate) fn start(command: Option<&Command>, offline: bool) -> Option<PendingP
 
     let body = serde_json::to_string(&payload(state.anonymous_id.as_deref()?, command)).ok()?;
     let (done, finished) = mpsc::channel();
-    thread::spawn(move || {
+    ccusage_core::parallel::spawn_worker(move || {
         let _ = http::post_json(url, &body, SEND_TIMEOUT);
         let _ = done.send(());
     });
@@ -117,39 +118,42 @@ pub(crate) fn run(action: TelemetryAction) -> Result<()> {
             state.enabled = Some(true);
             state.notified_at.get_or_insert_with(unix_seconds);
             save_state(&path, &state)?;
-            println!("Telemetry enabled.");
+            ccusage_core::outln!("Telemetry enabled.")?;
         }
         TelemetryAction::Disable => {
             state.enabled = Some(false);
             state.anonymous_id = None;
             state.last_sent_day = None;
             save_state(&path, &state)?;
-            println!("Telemetry disabled.");
+            ccusage_core::outln!("Telemetry disabled.")?;
         }
     }
-    print_status(&state, &path);
+    print_status(&state, &path)?;
     Ok(())
 }
 
-fn print_status(state: &State, path: &Path) {
+fn print_status(state: &State, path: &Path) -> Result<()> {
     match effective_disabled(state, env_var) {
-        None => println!("Status: enabled"),
-        Some(Disabled::EnvVar(name)) => println!("Status: disabled by {name}"),
-        Some(Disabled::Ci) => println!("Status: disabled in CI"),
-        Some(Disabled::Preference) => println!("Status: disabled by `ccusage telemetry disable`"),
-        Some(Disabled::NotConfigured) => {
-            println!("Status: off (this build has no telemetry endpoint and never sends data)")
+        None => ccusage_core::outln!("Status: enabled")?,
+        Some(Disabled::EnvVar(name)) => ccusage_core::outln!("Status: disabled by {name}")?,
+        Some(Disabled::Ci) => ccusage_core::outln!("Status: disabled in CI")?,
+        Some(Disabled::Preference) => {
+            ccusage_core::outln!("Status: disabled by `ccusage telemetry disable`")?
         }
+        Some(Disabled::NotConfigured) => ccusage_core::outln!(
+            "Status: off (this build has no telemetry endpoint and never sends data)"
+        )?,
     }
     if let Some(id) = &state.anonymous_id {
-        println!("Anonymous ID: {id}");
+        ccusage_core::outln!("Anonymous ID: {id}")?;
     }
-    println!("Settings file: {}", path.display());
-    println!("Learn more: {DOCS_URL}");
+    ccusage_core::outln!("Settings file: {}", path.display())?;
+    ccusage_core::outln!("Learn more: {DOCS_URL}")?;
+    Ok(())
 }
 
 fn print_notice() {
-    eprintln!(
+    ccusage_core::errln!(
         "ccusage will send minimal usage statistics on a later run: at most one ping per UTC day with \
          version, OS, CPU architecture, first command name, and a random installation ID. \
          Nothing from your agent logs is sent.\n\
@@ -164,11 +168,11 @@ fn print_debug_payload(state: &State, command: Option<&Command>) {
         .as_deref()
         .unwrap_or("<generated on first send>");
     if let Ok(body) = serde_json::to_string_pretty(&payload(id, command)) {
-        eprintln!(
+        ccusage_core::errln!(
             "[telemetry] would send to {}:",
             ENDPOINT.unwrap_or("<no endpoint>")
         );
-        eprintln!("{body}");
+        ccusage_core::errln!("{body}");
     }
 }
 
@@ -272,12 +276,14 @@ fn truthy(value: Option<&str>) -> bool {
 }
 
 fn env_var(name: &str) -> Option<String> {
-    env::var(name).ok()
+    Environment::current().var(name).ok()
 }
 
 fn state_path() -> Option<PathBuf> {
     state_path_under(
-        env::var_os("XDG_CONFIG_HOME").map(PathBuf::from),
+        Environment::current()
+            .var_os("XDG_CONFIG_HOME")
+            .map(PathBuf::from),
         ccusage_cli::home::home_dir(),
     )
 }
@@ -599,7 +605,7 @@ mod tests {
         let first = StateLock::acquire(&path).unwrap();
         let (attempted, waiting) = std::sync::mpsc::channel();
         let second_path = path.clone();
-        let second = std::thread::spawn(move || {
+        let second = ccusage_core::parallel::spawn_worker(move || {
             attempted.send(()).unwrap();
             StateLock::try_acquire(&second_path)
         });
