@@ -9,7 +9,7 @@ exit: 0
     "cacheCreationTokens": 0,
     "cacheReadTokens": 155413,
     "inputTokens": 306499,
-    "outputTokens": 3169,
+    "outputTokens": 2515,
     "totalCost": 0.0,
     "totalTokens": 465376
   },
@@ -79,7 +79,7 @@ exit: 0
           "cost": 0.0,
           "inputTokens": 250,
           "modelName": "gemini-mystery-1",
-          "outputTokens": 724
+          "outputTokens": 70
         },
         {
           "cacheCreationTokens": 0,
@@ -98,7 +98,7 @@ exit: 0
         "gemini-mystery-1",
         "claude-sonnet-4-20250514"
       ],
-      "outputTokens": 3119,
+      "outputTokens": 2465,
       "totalCost": 0.0,
       "totalTokens": 465226,
       "week": "2025-12-29"

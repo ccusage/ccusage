@@ -9,7 +9,7 @@ exit: 0
     "cacheCreationTokens": 0,
     "cacheReadTokens": 103493,
     "inputTokens": 204601,
-    "outputTokens": 4254,
+    "outputTokens": 3600,
     "totalCost": 0.24988069999999996,
     "totalTokens": 312658,
     "unpricedModels": [
@@ -84,7 +84,7 @@ exit: 0
           "inputTokens": 0,
           "missingPricing": true,
           "modelName": "qwen-mystery-1",
-          "outputTokens": 665
+          "outputTokens": 11
         },
         {
           "cacheCreationTokens": 0,
@@ -104,7 +104,7 @@ exit: 0
         "qwen-2.5-72b-instruct",
         "unknown"
       ],
-      "outputTokens": 4204,
+      "outputTokens": 3550,
       "totalCost": 0.24883069999999996,
       "totalTokens": 312508,
       "week": "2025-12-29"

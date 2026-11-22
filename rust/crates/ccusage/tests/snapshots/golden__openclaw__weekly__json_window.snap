@@ -9,7 +9,7 @@ exit: 0
     "cacheCreationTokens": 1200,
     "cacheReadTokens": 26500,
     "inputTokens": 6153,
-    "outputTokens": 2079,
+    "outputTokens": 1734,
     "totalCost": 0.38231875,
     "totalTokens": 35932,
     "unpricedModels": [
@@ -47,7 +47,7 @@ exit: 0
           "cost": 0.06336875,
           "inputTokens": 1913,
           "modelName": "[openclaw] gpt-5",
-          "outputTokens": 899,
+          "outputTokens": 554,
           "storedCost": 0.06
         },
         {
@@ -65,7 +65,7 @@ exit: 0
         "[openclaw] openclaw-mystery-1",
         "[openclaw] claude-sonnet-4-20250514"
       ],
-      "outputTokens": 2079,
+      "outputTokens": 1734,
       "totalCost": 0.38231875,
       "totalTokens": 35932,
       "week": "2025-12-29"

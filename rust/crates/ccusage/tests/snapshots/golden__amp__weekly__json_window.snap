@@ -10,7 +10,7 @@ exit: 0
     "cacheReadTokens": 15000,
     "credits": 3.7,
     "inputTokens": 3200,
-    "outputTokens": 1215,
+    "outputTokens": 870,
     "totalCost": 0.013425,
     "totalTokens": 19615,
     "unpricedModels": [
@@ -30,7 +30,7 @@ exit: 0
           "cost": 0.005375,
           "inputTokens": 1400,
           "modelName": "gpt-5",
-          "outputTokens": 645
+          "outputTokens": 300
         },
         {
           "cacheCreationTokens": 0,
@@ -64,7 +64,7 @@ exit: 0
         "claude-sonnet-4-20250514",
         "amp-mystery-1"
       ],
-      "outputTokens": 1215,
+      "outputTokens": 870,
       "totalCost": 0.013425,
       "totalTokens": 19615,
       "week": "2025-12-29"

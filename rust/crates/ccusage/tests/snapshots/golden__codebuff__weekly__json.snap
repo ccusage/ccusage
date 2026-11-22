@@ -10,7 +10,7 @@ exit: 0
     "cacheReadTokens": 25540,
     "credits": 8.2,
     "inputTokens": 5651,
-    "outputTokens": 1912,
+    "outputTokens": 1567,
     "totalCost": 0.0320255,
     "totalTokens": 34063,
     "unpricedModels": [
@@ -68,7 +68,7 @@ exit: 0
           "cost": 0.0026875,
           "inputTokens": 700,
           "modelName": "gpt-5",
-          "outputTokens": 495
+          "outputTokens": 150
         },
         {
           "cacheCreationTokens": 60,
@@ -113,7 +113,7 @@ exit: 0
         "codebuff-unknown",
         "grok-4"
       ],
-      "outputTokens": 1862,
+      "outputTokens": 1517,
       "totalCost": 0.026775499999999997,
       "totalTokens": 33913,
       "week": "2025-12-29"

@@ -9,7 +9,7 @@ exit: 0
     "cacheCreationTokens": 2195,
     "cacheReadTokens": 44419,
     "inputTokens": 14557,
-    "outputTokens": 3976,
+    "outputTokens": 3476,
     "totalCost": 0.13438685,
     "totalTokens": 65397,
     "unpricedModels": [
@@ -95,7 +95,7 @@ exit: 0
           "cost": 0.0048175,
           "inputTokens": 830,
           "modelName": "[pi] gpt-5",
-          "outputTokens": 803
+          "outputTokens": 303
         },
         {
           "cacheCreationTokens": 0,
@@ -114,7 +114,7 @@ exit: 0
         "[pi] gpt-5",
         "[pi] pi-mystery-1"
       ],
-      "outputTokens": 3554,
+      "outputTokens": 3054,
       "totalCost": 0.13211435,
       "totalTokens": 59066,
       "week": "2025-12-29"

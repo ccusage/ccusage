@@ -9,7 +9,7 @@ exit: 0
     "cacheCreationTokens": 0,
     "cacheReadTokens": 101760,
     "inputTokens": 202631,
-    "outputTokens": 3482,
+    "outputTokens": 2828,
     "totalCost": 0.24168569999999998,
     "totalTokens": 308033
   },
@@ -57,7 +57,7 @@ exit: 0
           "cost": 0.0,
           "inputTokens": 0,
           "modelName": "qwen-mystery-1",
-          "outputTokens": 654
+          "outputTokens": 0
         }
       ],
       "modelsUsed": [
@@ -67,7 +67,7 @@ exit: 0
         "qwen-2.5-72b-instruct",
         "qwen-mystery-1"
       ],
-      "outputTokens": 3482,
+      "outputTokens": 2828,
       "totalCost": 0.24168569999999998,
       "totalTokens": 308033,
       "week": "2025-12-29"

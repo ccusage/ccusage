@@ -9,7 +9,7 @@ exit: 0
     "cacheCreationTokens": 220,
     "cacheReadTokens": 10000,
     "inputTokens": 3010,
-    "outputTokens": 1180,
+    "outputTokens": 835,
     "totalCost": 0.011474999999999999,
     "totalTokens": 14450,
     "unpricedModels": [
@@ -79,7 +79,7 @@ exit: 0
           "cost": 0.0,
           "inputTokens": 0,
           "modelName": "gpt-unknown",
-          "outputTokens": 345
+          "outputTokens": 0
         }
       ],
       "modelsUsed": [
@@ -91,7 +91,7 @@ exit: 0
         "gpt-unknown",
         "claude-haiku-4-5-20251001"
       ],
-      "outputTokens": 1180,
+      "outputTokens": 835,
       "totalCost": 0.011474999999999999,
       "totalTokens": 14450,
       "week": "2025-12-29"
