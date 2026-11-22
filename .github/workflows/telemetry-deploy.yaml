@@ -18,6 +18,10 @@ on:
 
 permissions: {}
 
+defaults:
+  run:
+    shell: bash
+
 concurrency:
   group: telemetry-production
   cancel-in-progress: false
