@@ -87,12 +87,12 @@ impl PricingMap {
             let host = provider
                 .filter(|_| scope == Scope::Hosted)
                 .and_then(|provider| bare_host(&model, provider));
+            let whole_request_threshold = whole_request_threshold(&model);
             let Some(row) = self.rows_mut().entries.get_or_insert(model, Row::default) else {
                 continue;
             };
             row.source = Source::LiteLlm;
             row.scope = scope;
-            let whole_request_threshold = provider.and_then(whole_request_threshold);
             row.whole_request_tiers = whole_request_threshold.is_some();
             row.schedule = schedule;
             row.vendor_start = vendor_start;

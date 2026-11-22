@@ -399,7 +399,7 @@ mod tests {
     }
 
     #[test]
-    fn applies_total_token_fallback_to_missing_output_tokens() {
+    fn fills_missing_output_from_the_report_remainder() {
         let usage = TokenUsageRaw {
             input_tokens: 100,
             cache_read_input_tokens: 25,
@@ -416,7 +416,7 @@ mod tests {
     }
 
     #[test]
-    fn keeps_total_fallback_as_extra_when_output_is_known() {
+    fn keeps_the_report_remainder_as_extra_when_output_is_known() {
         let usage = TokenUsageRaw {
             input_tokens: 100,
             output_tokens: 50,
@@ -433,7 +433,7 @@ mod tests {
     }
 
     #[test]
-    fn saturates_total_token_fallback_for_huge_counters() {
+    fn saturates_report_token_counts_for_large_counters() {
         let usage = TokenUsageRaw {
             input_tokens: u64::MAX,
             output_tokens: u64::MAX,
