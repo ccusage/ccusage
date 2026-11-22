@@ -114,9 +114,14 @@ fn parse_invocation(
     config: &dyn CliConfig,
     known_timezone: Option<&ReportTimezone>,
 ) -> Result<Command, String> {
-    if let Some(message) = config.config_error() {
+    let is_telemetry_command = ccusage_cli::command_tokens(&parser.args)
+        .first()
+        .map(String::as_str)
+        == Some("telemetry");
+    if !is_telemetry_command && let Some(message) = config.config_error() {
         return Err(message.to_string());
     }
+
     let mut root_options = RootOptions::default();
     while let Some(arg) = parser.peek() {
         if !arg.starts_with('-') {
@@ -128,7 +133,14 @@ fn parse_invocation(
         root_options.shared_flags.push(read_shared_flag(parser)?);
     }
 
-    let mut command = match parser.next() {
+    let command = parser.next();
+    if command.as_deref() == Some("telemetry") {
+        let command = parse_telemetry_command(parser)?;
+        parser.finish()?;
+        return Ok(command);
+    }
+
+    let mut command = match command {
         None => {
             let shared = root_options.shared(config, false);
             Command::All(root_options.into_agent_args(shared, AgentReportKind::Daily))
@@ -216,7 +228,6 @@ fn parse_command(
             root_options,
         ),
         "session" => parse_top_level_session_command(parser, shared, config, root_options),
-        "telemetry" => parse_telemetry_command(parser),
         _ => Err(format!("Unknown command '{command}'")),
     }
 }

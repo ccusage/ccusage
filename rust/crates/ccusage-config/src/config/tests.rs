@@ -454,6 +454,25 @@ fn explicit_config_rejects_broken_and_missing_files() {
 }
 
 #[test]
+fn telemetry_preferences_skip_explicit_config_loading() {
+    let fixture = fs_fixture!({ "broken.json": "{" });
+    let path = fixture.path("broken.json").display().to_string();
+    let preferences = ConfigContext::from_args(&[
+        "--config".into(),
+        path.clone(),
+        "telemetry".into(),
+        "disable".into(),
+    ]);
+    assert!(preferences.config_error().is_none());
+
+    let report = ConfigContext::from_args(&["--config".into(), path, "daily".into()]);
+    let error = report
+        .config_error()
+        .expect("reports must still reject an invalid explicit config");
+    assert!(error.contains("broken.json"), "{error}");
+}
+
+#[test]
 fn colon_commands_select_only_registered_reports() {
     for (name, agent) in [
         ("codex:daily", Some("codex")),

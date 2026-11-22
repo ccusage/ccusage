@@ -35,6 +35,13 @@ impl ConfigContext {
         {
             return Self::empty(command);
         }
+        if ccusage_cli::command_tokens(args)
+            .first()
+            .map(String::as_str)
+            == Some("telemetry")
+        {
+            return Self::empty(command);
+        }
         let explicit_path = scan_config_path(args);
         let (file, error, warnings) = load_config_value(explicit_path.as_deref());
         let mut context = Self::empty(command);
