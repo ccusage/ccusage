@@ -8,37 +8,18 @@ globs: '*.nu'
 
 # ccusage Nushell
 
-Nushell is a functional, structured-data language that happens to be a shell.
-Write it that way: pipelines of transformations over records and tables, not bash
-with different syntax. Root `AGENTS.md` says when to pick Nushell over Babashka,
-Rust, or TypeScript.
+## Script boundaries
 
-Scripts live in `.github/scripts/`, `apps/ccusage/scripts/`, and `scripts/`.
+Executable Nushell scripts need a pinned Nix shebang and `def main`. List only
+tools the script invokes. Resolve `--inputs-from` relative to the script's
+directory. Imported modules have neither a shebang nor `main`.
 
-## Runtime Shape
-
-Every executable script is a `.nu` file with a Nix shebang and a `def main`; that
-shebang is how CI gets an interpreter, rather than a `nushell` profile install in
-the workflow. List only the tools the script directly invokes; `--inputs-from` is relative to
-the script's own directory, so its depth differs per directory — copy the header
-from a neighbor, such as `.github/scripts/upsert-pr-comment.nu` or
-`apps/ccusage/scripts/stage-native-package.nu`.
-
-Files that exist only to be imported as modules carry no shebang and no `main`:
-`.github/scripts/pricing-lock.nu`, `apps/ccusage/scripts/native-binary.nu`.
-
-Workflows run these scripts through the shebang, but the commit-msg hook in
-`nix/git-hooks.nix` invokes `scripts/validate-commit-scope.nu` as an argument to
-`nushell` instead, so that script only ever gets `nu` itself.
-
-Calling external tools such as `gh`, `jq`, `git`, `hyperfine`, `pnpm`, `node`, or
-`bun` is fine when they are the right boundary — pin them through the shebang
-shell rather than a global install.
+Scripts invoked directly through `nu` by the gate workflows, commit hook, or
+infra fixture suites must run with the caller's toolchain and cannot depend on
+packages provided only by the script's Nix shebang. Use `$"#!($nu.current-exe)"`
+for mock executables in the Linux build sandbox.
 
 ## Docs
-
-Read before writing. The sidebar on any of these reaches the rest of the book,
-plus `/commands/` and `/cookbook/`.
 
 https://www.nushell.sh/book/thinking_in_nu.html
 
@@ -66,14 +47,14 @@ Also:
 
 ## Validation
 
-Nushell renames and breaks things between minor releases, so check constructs
-against the pinned interpreter instead of trusting memory:
+Validate with the pinned interpreter:
 
 ```sh
 direnv exec . nu --ide-check 10 path/to/script.nu
 direnv exec . nu -c 'help <command>'
 ```
 
-`just fmt` runs `nufmt` over `*.nu` through treefmt. For behavior changes, invoke
+`nix flake check` fails on any `--ide-check` diagnostic in a `.nu` file
+(`scripts/check-nushell.nu`). `just fmt` runs `nufmt` over `*.nu` through treefmt. For behavior changes, invoke
 the script through its shebang as a smoke check and run the repo check that owns
 the caller.

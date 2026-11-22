@@ -1,32 +1,23 @@
 # Rust Profiling
 
-## Before Optimizing
-
-For non-trivial work, read the Rust Performance Book chapters that apply
-(`profiling`, `io`, `heap-allocations`, `parallelism`, `type-sizes`). A local
-clone is faster to grep than the site; locate it instead of assuming a path:
-
-```fish
-set perf_book_dir (ghq list --full-path nnethercote/perf-book | head -n 1)
-rg --files "$perf_book_dir/src"
-```
+## Before optimizing
 
 https://nnethercote.github.io/perf-book/
 
 ## Measuring
 
-Time release builds only:
+Time release builds only, on CI or a testbox (see the skill's "Where to
+measure"); the commands below are what runs there:
 
 ```sh
 direnv exec . cargo build --manifest-path rust/Cargo.toml --release --bin ccusage
 ```
 
-Build main in a separate worktree so the checkout you are editing stays put
-(`git wt`, or `git worktree add /tmp/ccusage-main origin/main`) and build it the
-same way; the binaries land at `<worktree>/rust/target/release/ccusage`.
+Build the baseline and candidate the same way in separate worktrees. Use main
+as the baseline for a branch comparison and run each worktree's own
+`rust/target/release/ccusage`.
 
-Every measured command carries the same prefix. Without it, progress output,
-terminal width, color, and timezone all move the numbers:
+Use the same environment for both measured commands:
 
 ```sh
 env LOG_LEVEL=0 COLUMNS=200 NO_COLOR=1 TZ=UTC rust/target/release/ccusage daily --offline --json
@@ -45,10 +36,24 @@ affect rendering — before believing a speedup.
 - Parallelism only when it improves end-to-end time on real fixture shapes.
 - Binary size when adding a dependency or feature (`rust-binary-size` skill).
 
-## Reproducing The CI Performance Comment
+## Comparing Refs And Reproducing The CI Comment
 
-`apps/ccusage/scripts/compare-pr-performance.bb --help` lists the options; the
-`compare-pr-performance.bb` step in `.github/workflows/ci.yaml` is the reference
-for a realistic argument set. Locally, point `--base-dir` at the main worktree
-and `--head-dir` at `$PWD`, and cut `--runs`/`--warmup` down to keep iteration
-fast.
+`just bench-history <ref|binary>...` builds each ref in release mode, runs every
+report command over the generated realistic fixture in interleaved rounds, and
+judges each ref against the previous one the same way the CI comment judges a
+PR against its merge base. Run it on a `testbox-bench.yaml` box, or
+`testbox-bench-macos.yaml` for macOS timing. For the final local real-log
+confirmation, do not use `--real`: it also builds refs and runs the synthetic
+section. Build both macOS binaries on a `testbox-bench-macos.yaml` box and fetch
+them with `blacksmith testbox download`, then run them over APFS clones with
+`hyperfine --export-json` (wall `mean`, and `user` + `system` for CPU) and
+`/usr/bin/time -l` (peak RSS), and report the wall, CPU and peak-RSS ratios
+only.
+
+When a regression slips past the comparison, fix the fixture generator
+(`apps/ccusage/scripts/generate-large-fixture.ts`) so its lines carry the shape
+that triggered it; do not add a special-case benchmark.
+
+When real histories outgrow the fixture, refresh its per-agent size profiles
+from `apps/ccusage/scripts/profile-log-sizes.nu`. Commit only the file counts,
+totals, and quantiles it prints, never real log content.

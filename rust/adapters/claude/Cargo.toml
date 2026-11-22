@@ -14,5 +14,14 @@ serde.workspace = true
 serde_json.workspace = true
 smallvec.workspace = true
 
+[target.'cfg(unix)'.dependencies]
+rustix.workspace = true
+
 [dev-dependencies]
+ccusage-cli-parser.workspace = true
+ccusage-config.workspace = true
 ccusage-test-support.workspace = true
+insta.workspace = true
+
+[lints]
+workspace = true

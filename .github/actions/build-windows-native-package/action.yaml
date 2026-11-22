@@ -19,11 +19,6 @@ inputs:
 runs:
   using: composite
   steps:
-    # rust-toolchain.toml also lists clippy, rustfmt, and llvm-tools for local
-    # development, which rustup would otherwise download on the first cargo call
-    # (~50 MB of the ~150 MB of xz archives). The release build only needs the
-    # minimal profile of the same channel; RUSTUP_TOOLCHAIN takes precedence
-    # over the toolchain file, so cargo does not install the rest.
     - name: Install Rust toolchain
       id: toolchain
       shell: bash
@@ -36,10 +31,6 @@ runs:
         rustup toolchain install "$channel" --profile minimal --no-self-update
         echo "channel=$channel" >> "$GITHUB_OUTPUT"
 
-    # Keyed on everything that decides the dependency build (toolchain, Cargo
-    # config, lockfile, and manifests) rather than the commit: workspace crates
-    # recompile on every run anyway because checkout gives their sources fresh
-    # mtimes, so only dependency changes make a new entry worth saving.
     - name: Restore Cargo cache
       id: cargo-cache
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -60,9 +51,22 @@ runs:
       shell: bash
       env:
         RUSTUP_TOOLCHAIN: ${{ steps.toolchain.outputs.channel }}
-      # Nix cannot target Windows, so this is the one build that downloads the
-      # LiteLLM pricing snapshot instead of reading it from the pinned input.
       run: cargo build --manifest-path rust/Cargo.toml --release --bin ccusage --features fetch-litellm-pricing
+
+    - name: Check Windows under the unsafe_code forbid
+      shell: bash
+      env:
+        RUSTUP_TOOLCHAIN: ${{ steps.toolchain.outputs.channel }}
+      run: |
+        wrapper="$RUNNER_TEMP/forbid-unsafe-rustc.exe"
+        rustc --edition 2024 -O scripts/forbid-unsafe-rustc.rs -o "$wrapper"
+        RUSTC_WORKSPACE_WRAPPER="$wrapper" cargo check \
+          --manifest-path rust/Cargo.toml \
+          --workspace \
+          --all-targets \
+          --all-features \
+          --locked \
+          --target-dir "$RUNNER_TEMP/unsafe-code"
 
     - name: Stage native package
       shell: bash
@@ -85,9 +89,6 @@ runs:
         path: ccusage-native-win32-${{ inputs.arch }}.tar
         if-no-files-found: error
 
-    # Workspace crates rebuild on every run (see the restore step), so their
-    # outputs, about a quarter of rust/target, would only slow every restore.
-    # Every workspace crate name starts with ccusage and no dependency's does.
     - name: Drop workspace outputs from the Cargo cache
       id: cargo-cache-prune
       if: >-

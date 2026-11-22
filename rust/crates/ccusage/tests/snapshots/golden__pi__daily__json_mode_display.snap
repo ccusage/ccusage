@@ -1,0 +1,229 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage pi daily --offline --json --mode display
+---
+exit: 0
+--- stdout ---
+{
+  "daily": [
+    {
+      "cacheCreationTokens": 1134,
+      "cacheReadTokens": 443,
+      "date": "2025-12-27",
+      "inputTokens": 4412,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 127,
+          "cacheReadTokens": 353,
+          "cost": 3.25,
+          "inputTokens": 2802,
+          "modelName": "[pi] pi-mystery-1",
+          "outputTokens": 281
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.125,
+          "inputTokens": 1010,
+          "modelName": "[pi] gpt-5",
+          "outputTokens": 101
+        },
+        {
+          "cacheCreationTokens": 1007,
+          "cacheReadTokens": 90,
+          "cost": 0.0,
+          "inputTokens": 600,
+          "modelName": "[pi] pi-mystery-2",
+          "outputTokens": 60
+        }
+      ],
+      "modelsUsed": [
+        "[pi] pi-mystery-1",
+        "[pi] pi-mystery-2",
+        "[pi] gpt-5"
+      ],
+      "outputTokens": 442,
+      "totalCost": 3.375,
+      "totalTokens": 6431
+    },
+    {
+      "cacheCreationTokens": 400,
+      "cacheReadTokens": 8000,
+      "date": "2025-12-30",
+      "inputTokens": 2070,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 1.1,
+          "inputTokens": 270,
+          "modelName": "[pi] claude-opus-4-20250514",
+          "outputTokens": 90
+        },
+        {
+          "cacheCreationTokens": 400,
+          "cacheReadTokens": 8000,
+          "cost": 0.07,
+          "inputTokens": 1800,
+          "modelName": "[pi] claude-sonnet-4-20250514",
+          "outputTokens": 360
+        }
+      ],
+      "modelsUsed": [
+        "[pi] claude-sonnet-4-20250514",
+        "[pi] claude-opus-4-20250514"
+      ],
+      "outputTokens": 450,
+      "totalCost": 1.17,
+      "totalTokens": 10920
+    },
+    {
+      "cacheCreationTokens": 501,
+      "cacheReadTokens": 19006,
+      "date": "2025-12-31",
+      "inputTokens": 2550,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 401,
+          "cacheReadTokens": 14006,
+          "cost": 4.0,
+          "inputTokens": 1850,
+          "modelName": "[pi] claude-haiku-4-5-20251001",
+          "outputTokens": 806
+        },
+        {
+          "cacheCreationTokens": 100,
+          "cacheReadTokens": 5000,
+          "cost": 0.02,
+          "inputTokens": 700,
+          "modelName": "[pi] claude-sonnet-4-20250514",
+          "outputTokens": 150
+        }
+      ],
+      "modelsUsed": [
+        "[pi] claude-sonnet-4-20250514",
+        "[pi] claude-haiku-4-5-20251001"
+      ],
+      "outputTokens": 956,
+      "totalCost": 4.02,
+      "totalTokens": 23013
+    },
+    {
+      "cacheCreationTokens": 200,
+      "cacheReadTokens": 11000,
+      "date": "2026-01-01",
+      "inputTokens": 1915,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 7000,
+          "cost": 0.03,
+          "inputTokens": 900,
+          "modelName": "[pi] claude-haiku-4-5-20251001",
+          "outputTokens": 400
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 3000,
+          "cost": 0.0,
+          "inputTokens": 600,
+          "modelName": "[pi] claude-sonnet-4-20250514",
+          "outputTokens": 160
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 0,
+          "modelName": "[pi] gpt-5",
+          "outputTokens": 0
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 1000,
+          "cost": 0.0,
+          "inputTokens": 100,
+          "modelName": "[pi] claude-opus-4-20250514",
+          "outputTokens": 50
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 300,
+          "modelName": "[pi] pi-mystery-1",
+          "outputTokens": 70
+        }
+      ],
+      "modelsUsed": [
+        "[pi] claude-sonnet-4-20250514",
+        "[pi] gpt-5",
+        "[pi] claude-opus-4-20250514",
+        "[pi] pi-mystery-1",
+        "[pi] claude-haiku-4-5-20251001"
+      ],
+      "outputTokens": 685,
+      "totalCost": 0.03,
+      "totalTokens": 14550
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 6000,
+      "date": "2026-01-02",
+      "inputTokens": 3620,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 6000,
+          "cost": 0.5,
+          "inputTokens": 830,
+          "modelName": "[pi] gpt-5",
+          "outputTokens": 303
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 40,
+          "modelName": "[pi] claude-haiku-4-5-20251001",
+          "outputTokens": 10
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 2000,
+          "modelName": "[pi] claude-opus-4-20250514",
+          "outputTokens": 500
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": -1.25,
+          "inputTokens": 750,
+          "modelName": "[pi] claude-sonnet-4-20250514",
+          "outputTokens": 150
+        }
+      ],
+      "modelsUsed": [
+        "[pi] gpt-5",
+        "[pi] claude-sonnet-4-20250514",
+        "[pi] claude-haiku-4-5-20251001",
+        "[pi] claude-opus-4-20250514"
+      ],
+      "outputTokens": 963,
+      "totalCost": -0.75,
+      "totalTokens": 10583
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 2235,
+    "cacheReadTokens": 44449,
+    "inputTokens": 14567,
+    "outputTokens": 3496,
+    "totalCost": 7.844999999999999,
+    "totalTokens": 65497
+  }
+}
+
+--- stderr ---

@@ -1,0 +1,31 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage antigravity monthly --offline
+---
+exit: 0
+--- stdout ---
+┌──────────┬──────────────────────────┬───────────┬───────────┬───────────────┬─────────────┬───────────────┬─────────────┐
+│ Month    │ Models                   │     Input │    Output │  Cache Create │  Cache Read │  Total Tokens │  Cost (USD) │
+├──────────┼──────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2025-12  │ - antigravity-model-77   │     3,075 │       466 │            50 │       6,500 │        10,211 │       $0.01 │
+│          │ - gemini-3-pro           │           │           │               │             │               │             │
+│          │ - gemini-3.5-flash-high  │           │           │               │             │               │             │
+│          │ - gpt-5                  │           │           │               │             │               │             │
+│          │ - haiku-4-5              │           │           │               │             │               │             │
+│          │ - sonnet-4               │           │           │               │             │               │             │
+├──────────┼──────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2026-01  │ - antigravity-mystery-1  │   254,341 │     2,214 │           400 │     121,000 │       378,005 │       $0.69 │
+│          │ - gemini-2.5-pro         │           │           │               │             │               │             │
+│          │ - gemini-3.6-flash-high  │           │           │               │             │               │             │
+│          │ - gpt-5                  │           │           │               │             │               │             │
+│          │ - haiku-4-5              │           │           │               │             │               │             │
+│          │ - model_placeholder_m499 │           │           │               │             │               │             │
+│          │ - sonnet-4               │           │           │               │             │               │             │
+├──────────┼──────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ Total    │                          │   257,416 │     2,680 │           450 │     127,500 │       388,216 │       $0.70 │
+└──────────┴──────────────────────────┴───────────┴───────────┴───────────────┴─────────────┴───────────────┴─────────────┘
+
+--- stderr ---
+WARN  Missing embedded pricing for antigravity-model-77; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for antigravity-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for model_placeholder_m499; cost excludes this model. Run without --offline or update ccusage after pricing is added.

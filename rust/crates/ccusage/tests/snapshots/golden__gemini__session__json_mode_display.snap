@@ -1,0 +1,325 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage gemini session --offline --json --mode display
+---
+exit: 0
+--- stdout ---
+{
+  "sessions": [
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 1083,
+      "inputTokens": 2897,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 400,
+          "cost": 0.0,
+          "inputTokens": 680,
+          "modelName": "gemini-2.5-pro",
+          "outputTokens": 230
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 603,
+          "cost": 0.0,
+          "inputTokens": 1612,
+          "modelName": "gemini-2.5-flash",
+          "outputTokens": 200
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 80,
+          "cost": 0.0,
+          "inputTokens": 505,
+          "modelName": "gemini-3-flash-preview",
+          "outputTokens": 120
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 0,
+          "modelName": "gemini-mystery-1",
+          "outputTokens": 0
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 100,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 40
+        }
+      ],
+      "modelsUsed": [
+        "gemini-2.5-pro",
+        "gemini-2.5-flash",
+        "gemini-3-flash-preview",
+        "gemini-mystery-1",
+        "claude-sonnet-4-20250514"
+      ],
+      "outputTokens": 590,
+      "sessionId": "aaaa1111-session-json",
+      "totalCost": 0.0,
+      "totalTokens": 5364
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 30,
+      "inputTokens": 210,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 30,
+          "cost": 0.0,
+          "inputTokens": 210,
+          "modelName": "gemini-2.5-flash",
+          "outputTokens": 45
+        }
+      ],
+      "modelsUsed": [
+        "gemini-2.5-flash"
+      ],
+      "outputTokens": 45,
+      "sessionId": "bbbb2222-renamed",
+      "totalCost": 0.0,
+      "totalTokens": 285
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 1500,
+      "inputTokens": 1130,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 1500,
+          "cost": 0.0,
+          "inputTokens": 800,
+          "modelName": "gemini-2.5-pro",
+          "outputTokens": 360
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 80,
+          "modelName": "gemini-3-flash-preview",
+          "outputTokens": 20
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 250,
+          "modelName": "gemini-mystery-1",
+          "outputTokens": 50
+        }
+      ],
+      "modelsUsed": [
+        "gemini-2.5-pro",
+        "gemini-3-flash-preview",
+        "gemini-mystery-1"
+      ],
+      "outputTokens": 430,
+      "sessionId": "bbbb2222-session-jsonl",
+      "totalCost": 0.0,
+      "totalTokens": 3160
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 150000,
+      "inputTokens": 300000,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 150000,
+          "cost": 0.0,
+          "inputTokens": 300000,
+          "modelName": "gemini-2.5-pro",
+          "outputTokens": 1000
+        }
+      ],
+      "modelsUsed": [
+        "gemini-2.5-pro"
+      ],
+      "outputTokens": 1000,
+      "sessionId": "cccc3333",
+      "totalCost": 0.0,
+      "totalTokens": 451000
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 2000,
+      "inputTokens": 500,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 2000,
+          "cost": 0.0,
+          "inputTokens": 500,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 80
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514"
+      ],
+      "outputTokens": 80,
+      "sessionId": "cccc3333-snake",
+      "totalCost": 0.0,
+      "totalTokens": 2580
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 400,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 400,
+          "modelName": "gemini-2.5-flash",
+          "outputTokens": 90
+        }
+      ],
+      "modelsUsed": [
+        "gemini-2.5-flash"
+      ],
+      "outputTokens": 90,
+      "sessionId": "dddd4444-camel",
+      "totalCost": 0.0,
+      "totalTokens": 500
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 700,
+      "inputTokens": 1008,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 200,
+          "cost": 0.0,
+          "inputTokens": 1008,
+          "modelName": "gemini-2.5-pro",
+          "outputTokens": 150
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 500,
+          "cost": 0.0,
+          "inputTokens": 0,
+          "modelName": "gemini-mystery-1",
+          "outputTokens": 20
+        }
+      ],
+      "modelsUsed": [
+        "gemini-2.5-pro",
+        "gemini-mystery-1"
+      ],
+      "outputTokens": 170,
+      "sessionId": "eeee5555-headless",
+      "totalCost": 0.0,
+      "totalTokens": 1918
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 33,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 33,
+          "modelName": "unknown",
+          "outputTokens": 11
+        }
+      ],
+      "modelsUsed": [
+        "unknown"
+      ],
+      "outputTokens": 11,
+      "sessionId": "fallback-gggg7777",
+      "totalCost": 0.0,
+      "totalTokens": 44
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 100,
+      "inputTokens": 200,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 100,
+          "cost": 0.0,
+          "inputTokens": 200,
+          "modelName": "gemini-3-flash-preview",
+          "outputTokens": 45
+        }
+      ],
+      "modelsUsed": [
+        "gemini-3-flash-preview"
+      ],
+      "outputTokens": 45,
+      "sessionId": "result-ffff6666",
+      "totalCost": 0.0,
+      "totalTokens": 350
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 100,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 100,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 50
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514"
+      ],
+      "outputTokens": 50,
+      "sessionId": "session-hhhh8888",
+      "totalCost": 0.0,
+      "totalTokens": 150
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 21,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 21,
+          "modelName": "gemini-2.5-flash",
+          "outputTokens": 4
+        }
+      ],
+      "modelsUsed": [
+        "gemini-2.5-flash"
+      ],
+      "outputTokens": 4,
+      "sessionId": "shadow-outside-chats",
+      "totalCost": 0.0,
+      "totalTokens": 25
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 0,
+    "cacheReadTokens": 155413,
+    "inputTokens": 306499,
+    "outputTokens": 2515,
+    "totalCost": 0.0,
+    "totalTokens": 465376
+  }
+}
+
+--- stderr ---

@@ -1,0 +1,7 @@
+# yaml-language-server: $schema=schema.json
+# NOTE(2026-11-19): A null key is an empty name. Preserve the explicit key.
+literal: |
+  # data, not YAML syntax
+thing: "# string" # trailing
+steps:
+  - uses: actions/checkout@0123456789abcdef0123456789abcdef01234567 # v1.2.3

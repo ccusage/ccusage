@@ -1,0 +1,23 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage dsh weekly --offline
+---
+exit: 0
+--- stdout ---
+┌────────────┬───────────────────┬───────────┬───────────┬───────────────┬─────────────┬───────────────┬─────────────┐
+│ Week       │ Models            │     Input │    Output │  Cache Create │  Cache Read │  Total Tokens │  Cost (USD) │
+├────────────┼───────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2025-12-22 │ - unknown         │       500 │        81 │             0 │           0 │           581 │       $0.00 │
+├────────────┼───────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2025-12-29 │ - deepseek-flash  │    30,320 │     3,343 │         1,740 │      39,000 │        75,085 │       $0.02 │
+│            │ - deepseek-v4-pro │           │           │               │             │               │             │
+│            │ - dsh-mystery-1   │           │           │               │             │               │             │
+│            │ - sonnet-4.5      │           │           │               │             │               │             │
+│            │ - unknown         │           │           │               │             │               │             │
+├────────────┼───────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ Total      │                   │    30,820 │     3,424 │         1,740 │      39,000 │        75,666 │       $0.02 │
+└────────────┴───────────────────┴───────────┴───────────┴───────────────┴─────────────┴───────────────┴─────────────┘
+
+--- stderr ---
+WARN  Missing embedded pricing for dsh-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for unknown; cost excludes this model. Run without --offline or update ccusage after pricing is added.

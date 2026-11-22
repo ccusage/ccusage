@@ -1,0 +1,88 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage copilot weekly --offline --json --since 20251231 --until 20260101
+---
+exit: 0
+--- stdout ---
+{
+  "totals": {
+    "cacheCreationTokens": 300,
+    "cacheReadTokens": 2900,
+    "inputTokens": 6550,
+    "outputTokens": 1482,
+    "totalCost": 0.5616599999999999,
+    "totalTokens": 11232,
+    "unpricedModels": [
+      "copilot-mystery-1",
+      "unknown"
+    ]
+  },
+  "weekly": [
+    {
+      "cacheCreationTokens": 300,
+      "cacheReadTokens": 2900,
+      "inputTokens": 6550,
+      "messageCount": 18,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.32,
+          "inputTokens": 40,
+          "missingPricing": true,
+          "modelName": "unknown",
+          "outputTokens": 4,
+          "storedCost": 0.32
+        },
+        {
+          "cacheCreationTokens": 300,
+          "cacheReadTokens": 1800,
+          "cost": 0.18,
+          "inputTokens": 1400,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 590,
+          "storedCost": 0.18
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.05,
+          "inputTokens": 900,
+          "missingPricing": true,
+          "modelName": "copilot-mystery-1",
+          "outputTokens": 130,
+          "storedCost": 0.05
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 1000,
+          "cost": 0.00935,
+          "inputTokens": 2900,
+          "modelName": "gpt-5",
+          "outputTokens": 560
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 100,
+          "cost": 0.00231,
+          "inputTokens": 1310,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 198
+        }
+      ],
+      "modelsUsed": [
+        "claude-haiku-4-5-20251001",
+        "gpt-5",
+        "claude-sonnet-4-20250514",
+        "unknown",
+        "copilot-mystery-1"
+      ],
+      "outputTokens": 1482,
+      "totalCost": 0.5616599999999999,
+      "totalTokens": 11232,
+      "week": "2025-12-29"
+    }
+  ]
+}
+
+--- stderr ---

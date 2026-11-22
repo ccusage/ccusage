@@ -9,28 +9,27 @@ on:
 
 permissions: {}
 
-# Both legs push to main, so overlapping runs from pushes, the schedule, or a
-# manual dispatch would otherwise race each other's push.
 concurrency:
   group: update-pricing
   cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
 
 jobs:
   update-pricing:
     name: ${{ matrix.name }}
     if: >-
-      github.event_name != 'push' || !(
-        startsWith(github.event.head_commit.message, 'chore: release v') ||
-        startsWith(github.event.head_commit.message, 'chore(pricing): ')
-      )
+      github.event_name != 'push' ||
+      !startsWith(github.event.head_commit.message, 'chore: release v')
     runs-on: blacksmith-32vcpu-ubuntu-2404
     timeout-minutes: 60
     permissions:
+      actions: read
       contents: write
     strategy:
       fail-fast: false
-      # The legs push to the same branch, so they must not race each other's
-      # rebase onto main.
       max-parallel: 1
       matrix:
         include:
@@ -52,36 +51,19 @@ jobs:
         id: update
         env:
           SCRIPT: ${{ matrix.script }}
-        run: $SCRIPT
-      # The push below cannot trigger ci.yaml, so the checks a pull request would
-      # have run happen here instead: `nix flake check` covers the preflight job's
-      # treefmt and gitleaks checks, and the remaining legs mirror the test job.
-      # Each leg no-ops when the update turned out to be lock-only churn.
-      - parallel:
-          - name: Run nix flake check
-            run: |
-              git diff --quiet && exit 0
-              nix flake check --print-build-logs
-          - name: Run Rust tests
-            run: |
-              git diff --quiet && exit 0
-              nix build .#ccusage-tests --no-link --print-build-logs
-          - name: JS test
-            run: |
-              git diff --quiet && exit 0
-              nix profile install --inputs-from . .#pnpm nixpkgs#nodejs nixpkgs#just
-              pnpm install --frozen-lockfile
-              mkdir -p "$HOME/.claude/projects"
-              mkdir -p "$HOME/.config/claude/projects"
-              just test-node
-          - name: Babashka performance harness test
-            run: |
-              git diff --quiet && exit 0
-              apps/ccusage/scripts/compare-pr-performance_test.clj
+        run: |
+          $SCRIPT | jq -r '"changed=\(.changed)", "paths=\(.paths | join(" "))"' >> "$GITHUB_OUTPUT"
+      - name: Validate changed pricing
+        if: steps.update.outputs.changed == 'true'
+        run: |
+          nix flake check
+          nix profile install --inputs-from . .#pnpm nixpkgs#nodejs nixpkgs#just nixpkgs#bun
+          just install
+          just test-node
+          just ccusage::test-performance-harness
+          just ccusage::test-diff-refs
       - uses: ./.github/actions/commit-and-push-main
         if: steps.update.outputs.changed == 'true'
         with:
           message: ${{ matrix.message }}
-          # The update script reports the files it owns, so the list is not
-          # repeated here where it can drift out of the Rust tree.
           paths: ${{ steps.update.outputs.paths }}

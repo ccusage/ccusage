@@ -1,0 +1,173 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage dsh session --offline --json --mode calculate
+---
+exit: 0
+--- stdout ---
+{
+  "sessions": [
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 3000,
+      "inputTokens": 2100,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 3000,
+          "cost": 0.000768,
+          "inputTokens": 1500,
+          "modelName": "deepseek-flash",
+          "outputTokens": 250
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0003132,
+          "inputTokens": 600,
+          "modelName": "deepseek-v4-pro",
+          "outputTokens": 60
+        }
+      ],
+      "modelsUsed": [
+        "deepseek-v4-pro",
+        "deepseek-flash"
+      ],
+      "outputTokens": 310,
+      "sessionId": "fork-beta",
+      "totalCost": 0.0010812,
+      "totalTokens": 5410
+    },
+    {
+      "cacheCreationTokens": 1440,
+      "cacheReadTokens": 30000,
+      "inputTokens": 22520,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 240,
+          "cacheReadTokens": 4000,
+          "cost": 0.01209,
+          "inputTokens": 1380,
+          "modelName": "anthropic/claude-sonnet-4.5",
+          "outputTokens": 390
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.006659999999999999,
+          "inputTokens": 19000,
+          "modelName": "deepseek-flash",
+          "outputTokens": 800
+        },
+        {
+          "cacheCreationTokens": 1200,
+          "cacheReadTokens": 26000,
+          "cost": 0.0019804099999999997,
+          "inputTokens": 2050,
+          "modelName": "deepseek-v4-pro",
+          "outputTokens": 543
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 90,
+          "missingPricing": true,
+          "modelName": "unknown",
+          "outputTokens": 10
+        }
+      ],
+      "modelsUsed": [
+        "anthropic/claude-sonnet-4.5",
+        "deepseek-v4-pro",
+        "deepseek-flash",
+        "unknown"
+      ],
+      "outputTokens": 1743,
+      "sessionId": "sess-alpha",
+      "totalCost": 0.020730409999999998,
+      "totalTokens": 56385
+    },
+    {
+      "cacheCreationTokens": 300,
+      "cacheReadTokens": 6000,
+      "inputTokens": 2700,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 300,
+          "cacheReadTokens": 6000,
+          "cost": 0.0018400500000000002,
+          "inputTokens": 2700,
+          "modelName": "deepseek-v4-pro",
+          "outputTokens": 590
+        }
+      ],
+      "modelsUsed": [
+        "deepseek-v4-pro"
+      ],
+      "outputTokens": 590,
+      "sessionId": "sess-beta",
+      "totalCost": 0.0018400500000000002,
+      "totalTokens": 9590
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 3000,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 3000,
+          "missingPricing": true,
+          "modelName": "dsh-mystery-1",
+          "outputTokens": 700
+        }
+      ],
+      "modelsUsed": [
+        "dsh-mystery-1"
+      ],
+      "outputTokens": 700,
+      "sessionId": "sess-deep",
+      "totalCost": 0.0,
+      "totalTokens": 3700
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 500,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 500,
+          "missingPricing": true,
+          "modelName": "unknown",
+          "outputTokens": 81
+        }
+      ],
+      "modelsUsed": [
+        "unknown"
+      ],
+      "outputTokens": 81,
+      "sessionId": "sess-legacy",
+      "totalCost": 0.0,
+      "totalTokens": 581
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 1740,
+    "cacheReadTokens": 39000,
+    "inputTokens": 30820,
+    "outputTokens": 3424,
+    "totalCost": 0.023651659999999998,
+    "totalTokens": 75666,
+    "unpricedModels": [
+      "dsh-mystery-1",
+      "unknown"
+    ]
+  }
+}
+
+--- stderr ---

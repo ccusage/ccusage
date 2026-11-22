@@ -10,6 +10,9 @@ ccusage can read Kimi CLI wire logs as one of its supported local data sources. 
 # Daily Kimi usage
 ccusage kimi daily
 
+# Weekly Kimi usage
+ccusage kimi weekly
+
 # Monthly Kimi usage
 ccusage kimi monthly
 
@@ -40,6 +43,7 @@ Expected files are discovered under:
 | Command                | Description                 | Related Report                          |
 | ---------------------- | --------------------------- | --------------------------------------- |
 | `ccusage kimi daily`   | Group usage by day          | [Daily Usage](/guide/daily-reports)     |
+| `ccusage kimi weekly`  | Group usage by week         | [Weekly Usage](/guide/weekly-reports)   |
 | `ccusage kimi monthly` | Group usage by month        | [Monthly Usage](/guide/monthly-reports) |
 | `ccusage kimi session` | Group usage by Kimi session | [Session Usage](/guide/session-reports) |
 
@@ -49,6 +53,8 @@ Expected files are discovered under:
 - **Output tokens** - `token_usage.output` (or `usage.output`)
 - **Cache read tokens** - `token_usage.input_cache_read` (or `usage.inputCacheRead`)
 - **Cache creation tokens** - `token_usage.input_cache_creation` (or `usage.inputCacheCreation`)
+
+Any unexplained remainder in the legacy `token_usage.total` contributes only to the reported total and is excluded from the cost estimate.
 
 Only `StatusUpdate` messages with non-zero token usage are included. Kimi Code logs instead emit `usage.record` lines; only turn-scoped records are counted, since session-scoped records are cumulative totals.
 

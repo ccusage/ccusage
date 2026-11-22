@@ -1,0 +1,33 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage zcode monthly --offline
+---
+exit: 0
+--- stdout ---
+┌──────────┬───────────────────┬───────────┬───────────┬───────────────┬─────────────┬───────────────┬─────────────┐
+│ Month    │ Models            │     Input │    Output │  Cache Create │  Cache Read │  Total Tokens │  Cost (USD) │
+├──────────┼───────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 1970-01  │ - gpt-5           │        11 │         7 │             0 │           0 │            18 │       $0.00 │
+├──────────┼───────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2025-12  │ - GLM-5.2         │     4,470 │     1,245 │           530 │       1,350 │         7,595 │       $0.02 │
+│          │ - GLM-5.3         │           │           │               │             │               │             │
+│          │ - GLM-5.3-Flash   │           │           │               │             │               │             │
+│          │ - opus-4          │           │           │               │             │               │             │
+│          │ - sonnet-4        │           │           │               │             │               │             │
+├──────────┼───────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2026-01  │ - GLM-5.3         │     4,350 │     1,160 │           290 │       1,010 │         7,425 │       $0.01 │
+│          │ - GLM-5.3-Flash   │           │           │               │             │               │             │
+│          │ - glm-5.3         │           │           │               │             │               │             │
+│          │ - gpt-5           │           │           │               │             │               │             │
+│          │ - haiku-4-5       │           │           │               │             │               │             │
+│          │ - opus-4          │           │           │               │             │               │             │
+│          │ - sonnet-4        │           │           │               │             │               │             │
+│          │ - zcode-mystery-1 │           │           │               │             │               │             │
+├──────────┼───────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ Total    │                   │     8,831 │     2,412 │           820 │       2,360 │        15,038 │       $0.03 │
+└──────────┴───────────────────┴───────────┴───────────┴───────────────┴─────────────┴───────────────┴─────────────┘
+
+--- stderr ---
+WARN  Missing embedded pricing for GLM-5.3; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for claude-sonnet-4-20250514; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for zcode-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.

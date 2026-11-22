@@ -4,11 +4,16 @@ on:
   pull_request:
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
   group: autofix-${{ github.event.pull_request.number }}
   cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
 
 jobs:
   autofix:
@@ -19,20 +24,14 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
-      # This workflow only runs on pull requests, which never commit a sticky
-      # disk, so borrow preflight's: it builds the same treefmt closure on main.
       - uses: ./.github/actions/setup-nix-cache
         with:
           disk-job: preflight
       - name: Regenerate Bun derivations
-        run: |
-          nix run .#generate-bun-nix
-          git restore --staged --worktree -- . ':(exclude,glob)nix/tools/*/bun.nix'
-          git clean -fd -- . ':(exclude,glob)nix/tools/*/bun.nix'
+        run: nix run .#generate-bun-nix
       - name: Apply formatting and lint fixes
         run: |
-          nix fmt -- --no-cache
-          # autofix.ci rejects the entire fix if it contains a .github path.
+          nix fmt
           git restore --worktree -- .github
       - name: Push fixes with autofix.ci
         uses: autofix-ci/action@c5b2d67aa2274e7b5a18224e8171550871fc7e4a # v1.3.4

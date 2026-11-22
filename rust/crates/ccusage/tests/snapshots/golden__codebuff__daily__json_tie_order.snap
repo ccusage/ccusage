@@ -1,0 +1,53 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage codebuff daily --offline --json
+---
+exit: 0
+--- stdout ---
+{
+  "daily": [
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "credits": 2.75,
+      "date": "2026-01-01",
+      "inputTokens": 30,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00003,
+          "inputTokens": 10,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 0
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.000019999999999999998,
+          "inputTokens": 20,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 0
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514",
+        "claude-haiku-4-5-20251001"
+      ],
+      "outputTokens": 0,
+      "totalCost": 0.000049999999999999996,
+      "totalTokens": 30
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 0,
+    "cacheReadTokens": 0,
+    "credits": 2.75,
+    "inputTokens": 30,
+    "outputTokens": 0,
+    "totalCost": 0.000049999999999999996,
+    "totalTokens": 30
+  }
+}
+
+--- stderr ---

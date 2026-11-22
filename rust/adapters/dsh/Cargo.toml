@@ -1,0 +1,21 @@
+[package]
+name = "ccusage-adapter-dsh"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+ccusage-adapter-common.workspace = true
+ccusage-core.workspace = true
+jiff.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+zstd.workspace = true
+ccusage-adapter-common = { workspace = true, features = ["testing"] }
+ccusage-test-support.workspace = true
+insta.workspace = true
+
+[lints]
+workspace = true

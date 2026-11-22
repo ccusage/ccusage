@@ -1,114 +1,61 @@
-use std::{fmt, io};
+use crate::cli::{SharedArgs, environment::Environment};
 
-pub mod agent_report;
 pub mod cost;
 pub mod date_utils;
+pub mod diagnostics;
+mod error;
 pub mod fast;
-pub mod home;
-pub mod last_window;
-pub mod logger;
 pub mod model_aliases;
 pub mod output;
-pub mod path_utils;
+pub mod parallel;
 pub mod pricing;
 pub mod progress;
 pub mod project_names;
+pub mod sort;
 pub mod summary;
 pub mod types;
-pub mod utils;
+pub mod window;
+
+#[cfg(test)]
+mod test_support;
 
 pub mod cli {
     pub use ccusage_cli::*;
 }
 
-pub use agent_report::{agent_summary_json, first_column, summary_period};
-pub use cost::{
-    calculate_cost, calculate_cost_for_usage_at, calculate_cost_from_pricing,
-    missing_pricing_model_for_candidates, missing_pricing_model_for_token_total,
-    missing_pricing_model_for_usage, stored_cost_for_mode,
-};
+pub use cost::{stored_cost_for_mode, sum_costs};
 pub use date_utils::*;
-pub use last_window::{PeriodUnit, last_periods_since};
-pub use logger::{debug_log, log_level};
+pub use diagnostics::{Diagnostics, Skip, SkipKind};
+pub use error::{CliError, Context, Result, cli_error};
 pub use output::{
-    UsageTableOptions, attach_unpriced_models, format_currency, format_models_multiline,
-    format_number, group_project_output, json_float, print_json_or_jq,
-    print_missing_pricing_warnings, print_missing_pricing_warnings_for_models, print_usage_table,
-    print_usage_table_with_options, sanitize_terminal_text, session_summary_json,
-    should_use_compact_layout, summary_json, totals_json, unpriced_models, wants_json,
+    UsageTableOptions, agent_summary_json, attach_estimated_models, attach_unpriced_models,
+    first_column, format_currency, format_models_multiline, format_number, json_float,
+    json_value_u64, non_empty_json_string, print_estimated_pricing_notes_for_models,
+    print_json_or_jq, print_missing_pricing_warnings_for_models, print_usage_table,
+    print_usage_table_with_options, sanitize_terminal_text, should_use_compact_layout,
+    summary_period, totals_json, wants_json,
 };
-pub use pricing::{Pricing, PricingMap, has_time_dependent_pricing};
+pub use pricing::{Pricing, PricingMap};
 pub(crate) use project_names::parse_project_aliases;
 pub(crate) use project_names::short_model_name;
 pub use project_names::{format_breakdown_model_label, format_project_name};
-pub use summary::{
-    BucketKind, SessionAccumulator, filter_and_sort_summaries, sort_summaries, summarize_by_key,
-    summarize_summaries_by_bucket, week_start,
-};
+pub use summary::{SessionAccumulator, sort_summaries, summarize_by_key_target, week_start};
 pub use types::*;
-pub use utils::{
-    apply_total_token_fallback, json_value_u64, non_empty_json_string, total_usage_tokens,
+pub use window::ReportWindow;
+
+pub use ccusage_terminal::{
+    Align, Color, ColumnKind, SimpleTable, TerminalStyle, errln, outln, stdout, stdout_is_terminal,
+    terminal_width,
 };
 
-pub use ccusage_terminal::{Align, Color, SimpleTable, TerminalStyle, terminal_width};
-
-pub const DEFAULT_SESSION_DURATION_HOURS: f64 = 5.0;
 pub const DEFAULT_RECENT_DAYS: i64 = 3;
 pub const USAGE_COMPACT_WIDTH_THRESHOLD: usize = 100;
 
-pub const BUILT_IN_AGENT_NAMES: &[&str] = &[
-    "claude",
-    "codex",
-    "opencode",
-    "amp",
-    "droid",
-    "codebuff",
-    "hermes",
-    "pi",
-    "goose",
-    "openclaw",
-    "kilo",
-    "copilot",
-    "gemini",
-    "antigravity",
-    "kimi",
-    "qwen",
-    "grok",
-    "zcode",
-];
-
-pub type Result<T> = std::result::Result<T, CliError>;
-
-#[derive(Debug)]
-pub struct CliError(String);
-
-impl fmt::Display for CliError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-impl From<io::Error> for CliError {
-    fn from(error: io::Error) -> Self {
-        Self(error.to_string())
-    }
-}
-
-impl From<serde_json::Error> for CliError {
-    fn from(error: serde_json::Error) -> Self {
-        Self(error.to_string())
-    }
-}
-
-pub fn cli_error(message: impl Into<String>) -> CliError {
-    CliError(message.into())
-}
-
 pub fn terminal_style(shared: &cli::SharedArgs) -> TerminalStyle {
     TerminalStyle {
-        color: shared.color,
+        color: shared.color == cli::ColorChoice::Always,
         log_level: log_level(),
-        no_color: shared.no_color,
+        no_color: shared.color == cli::ColorChoice::Never,
     }
 }
 
@@ -116,19 +63,19 @@ pub fn color(shared: &cli::SharedArgs, value: impl AsRef<str>, color: Color) -> 
     ccusage_terminal::color(terminal_style(shared), value, color)
 }
 
-pub fn print_box_title(title: &str, shared: &cli::SharedArgs) {
-    ccusage_terminal::print_box_title(title, terminal_style(shared));
+pub fn print_box_title(title: &str, shared: &cli::SharedArgs) -> std::io::Result<()> {
+    ccusage_terminal::print_box_title(title, terminal_style(shared))
 }
 
-pub trait Context<T> {
-    fn context(self, message: impl Into<String>) -> Result<T>;
-}
-
-impl<T, E> Context<T> for std::result::Result<T, E>
-where
-    E: fmt::Display,
-{
-    fn context(self, message: impl Into<String>) -> Result<T> {
-        self.map_err(|error| cli_error(format!("{}: {error}", message.into())))
+pub fn debug_log(shared: &SharedArgs, message: impl AsRef<str>) {
+    if shared.debug {
+        ccusage_terminal::errln!("{}", message.as_ref());
     }
+}
+
+pub fn log_level() -> Option<u8> {
+    Environment::current()
+        .var("LOG_LEVEL")
+        .ok()
+        .and_then(|value| value.parse::<u8>().ok())
 }

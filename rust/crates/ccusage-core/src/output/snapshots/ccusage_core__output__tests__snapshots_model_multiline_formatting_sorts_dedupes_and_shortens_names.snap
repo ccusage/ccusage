@@ -1,0 +1,7 @@
+---
+source: crates/ccusage-core/src/output/tests.rs
+expression: format_models_multiline(&models)
+---
+- gpt-5.2-codex
+- sonnet-4
+- unknown

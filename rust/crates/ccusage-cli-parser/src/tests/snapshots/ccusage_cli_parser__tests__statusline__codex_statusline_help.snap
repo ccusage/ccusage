@@ -1,0 +1,23 @@
+---
+source: crates/ccusage-cli-parser/src/tests/statusline.rs
+expression: "help_text_for_args(&[\"ccusage\".into(), \"codex\".into(), \"statusline\".into()])"
+---
+Show a Codex usage summary, or serve its native statusline with --mcp
+
+USAGE:
+  ccusage codex statusline <OPTIONS>
+
+OPTIONS:
+  --mcp                                Serve a local stdio MCP provider for Codex's native statusline (always offline)
+  -i, --id <id>                        Show one session instead of today's usage
+  -s, --since <since>                  Filter from date (YYYY-MM-DD or YYYYMMDD)
+  -u, --until <until>                  Filter until date (inclusive)
+  -z, --timezone <timezone>            Timezone for today's date and date filtering (IANA or local)
+  -O, --offline                        Use embedded pricing without a network request (default: true)
+  --no-offline                         Allow fetching updated pricing
+  --speed [speed]                      Cost speed tier: auto uses recorded settings, then Codex config.toml (default: auto, choices: auto | standard | flex | fast)
+  --no-cost                            Hide cost information in text and JSON output
+  -j, --json                           Output the usage summary as JSON
+  -q, --jq <jq>                        Apply a jq filter to the JSON summary
+  --config <config>                    Path to configuration file (default: auto-discovery)
+  -h, --help                           Display this help message

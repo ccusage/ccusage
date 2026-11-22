@@ -15,15 +15,14 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+use ccusage_cli::{
+    AgentCommand, AgentReportKind, ClaudeReport, Command, StandardAgent, TelemetryAction,
+};
 use ccusage_telemetry::{Ping, PingEvent};
 use ring::rand::{SecureRandom, SystemRandom};
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    Result,
-    cli::{AgentReportKind, Command, TelemetryAction},
-    http,
-};
+use crate::{Result, http};
 
 /// Builds without this endpoint never send anything, so forks and local builds
 /// cannot report into the official collector by accident.
@@ -106,7 +105,7 @@ pub(crate) fn start(command: Option<&Command>, offline: bool) -> Option<PendingP
     }
     // Statusline output is read by Claude Code, not a person, so the notice
     // waits for the next interactive command instead of disappearing there.
-    let can_notify = !matches!(command, Some(Command::Statusline(_)));
+    let can_notify = !is_statusline(command);
     let now = unix_seconds();
     // The first interactive invocation is notice-only, giving users a full
     // run to opt out before any ping leaves the machine.
@@ -237,30 +236,24 @@ fn command_name(command: Option<&Command>) -> String {
     let (agent, report) = match command {
         None => (None, "daily"),
         Some(Command::All(args)) => (None, report_name(args.kind)),
-        Some(Command::Daily(_)) => (Some("claude"), "daily"),
-        Some(Command::Monthly(_)) => (Some("claude"), "monthly"),
-        Some(Command::Weekly(_)) => (Some("claude"), "weekly"),
-        Some(Command::Session(_)) => (Some("claude"), "session"),
-        Some(Command::Blocks(_)) => (Some("claude"), "blocks"),
+        Some(Command::Claude { report, .. }) => (
+            Some("claude"),
+            match report {
+                ClaudeReport::Daily(_) => "daily",
+                ClaudeReport::Monthly(_) => "monthly",
+                ClaudeReport::Weekly(_) => "weekly",
+                ClaudeReport::Session(_) => "session",
+                ClaudeReport::Blocks(_) => "blocks",
+            },
+        ),
         Some(Command::Statusline(_)) => (None, "statusline"),
         Some(Command::Telemetry(_)) => (None, "telemetry"),
-        Some(Command::Codex(args)) => (Some("codex"), report_name(args.kind)),
-        Some(Command::OpenCode(args)) => (Some("opencode"), report_name(args.kind)),
-        Some(Command::Amp(args)) => (Some("amp"), report_name(args.kind)),
-        Some(Command::Droid(args)) => (Some("droid"), report_name(args.kind)),
-        Some(Command::Codebuff(args)) => (Some("codebuff"), report_name(args.kind)),
-        Some(Command::Hermes(args)) => (Some("hermes"), report_name(args.kind)),
-        Some(Command::Pi(args)) => (Some("pi"), report_name(args.kind)),
-        Some(Command::Goose(args)) => (Some("goose"), report_name(args.kind)),
-        Some(Command::Kilo(args)) => (Some("kilo"), report_name(args.kind)),
-        Some(Command::Copilot(args)) => (Some("copilot"), report_name(args.kind)),
-        Some(Command::Gemini(args)) => (Some("gemini"), report_name(args.kind)),
-        Some(Command::Antigravity(args)) => (Some("antigravity"), report_name(args.kind)),
-        Some(Command::Kimi(args)) => (Some("kimi"), report_name(args.kind)),
-        Some(Command::Qwen(args)) => (Some("qwen"), report_name(args.kind)),
-        Some(Command::OpenClaw(args)) => (Some("openclaw"), report_name(args.kind)),
-        Some(Command::Grok(args)) => (Some("grok"), report_name(args.kind)),
-        Some(Command::ZCode(args)) => (Some("zcode"), report_name(args.kind)),
+        Some(Command::Agent(agent, AgentCommand::Report(args))) => {
+            (Some(agent.spec().name), report_name(args.kind))
+        }
+        Some(Command::Agent(agent, AgentCommand::Statusline(_))) => {
+            (Some(agent.spec().name), "statusline")
+        }
     };
     match agent {
         Some(agent) => format!("{agent} {report}"),
@@ -278,36 +271,19 @@ fn report_name(kind: AgentReportKind) -> &'static str {
 }
 
 fn command_offline(command: Option<&Command>) -> bool {
-    let shared = match command {
-        Some(
-            Command::All(args)
-            | Command::Codex(args)
-            | Command::OpenCode(args)
-            | Command::Amp(args)
-            | Command::Droid(args)
-            | Command::Codebuff(args)
-            | Command::Hermes(args)
-            | Command::Pi(args)
-            | Command::Goose(args)
-            | Command::Kilo(args)
-            | Command::Copilot(args)
-            | Command::Gemini(args)
-            | Command::Antigravity(args)
-            | Command::Kimi(args)
-            | Command::Qwen(args)
-            | Command::OpenClaw(args)
-            | Command::Grok(args)
-            | Command::ZCode(args),
-        ) => Some(&args.shared),
-        Some(Command::Daily(args)) => Some(&args.shared),
-        Some(Command::Monthly(args)) => Some(args),
-        Some(Command::Weekly(args)) => Some(&args.shared),
-        Some(Command::Session(args)) => Some(&args.shared),
-        Some(Command::Blocks(args)) => Some(&args.shared),
-        Some(Command::Statusline(args)) => return args.offline && !args.no_offline,
-        None | Some(Command::Telemetry(_)) => None,
-    };
-    shared.is_some_and(|args| args.offline && !args.no_offline)
+    if let Some(Command::Statusline(args)) = command {
+        return args.offline;
+    }
+    command
+        .and_then(Command::shared)
+        .is_some_and(|args| args.offline)
+}
+
+fn is_statusline(command: Option<&Command>) -> bool {
+    matches!(
+        command,
+        Some(Command::Statusline(_) | Command::Agent(_, AgentCommand::Statusline(_)))
+    )
 }
 
 fn effective_disabled(state: &State, lookup: impl Fn(&str) -> Option<String>) -> Option<Disabled> {
@@ -553,15 +529,16 @@ mod tests {
 
     #[test]
     fn command_names_match_what_the_user_typed() {
-        let agent_args = |kind| crate::cli::AgentCommandArgs {
-            shared: crate::cli::SharedArgs::default(),
+        let agent_args = |kind| ccusage_cli::AgentCommandArgs {
+            shared: ccusage_cli::SharedArgs::default(),
             kind,
             session_id: None,
             sections: None,
             by_agent: false,
-            pi_path: None,
-            open_claw_path: None,
-            codex_speed: crate::cli::CodexSpeed::Auto,
+            options: ccusage_cli::AgentOptions::default(),
+            include_claude_agent: false,
+            start_of_week: ccusage_cli::WeekDay::Monday,
+            sources: Default::default(),
         };
 
         assert_eq!(
@@ -569,11 +546,16 @@ mod tests {
             "monthly"
         );
         assert_eq!(
-            command_name(Some(&Command::Codex(agent_args(AgentReportKind::Session)))),
+            command_name(Some(&Command::agent_report(
+                StandardAgent::Codex,
+                agent_args(AgentReportKind::Session)
+            ))),
             "codex session"
         );
         assert_eq!(
-            command_name(Some(&Command::Monthly(crate::cli::SharedArgs::default()))),
+            command_name(Some(&Command::claude_report(ClaudeReport::Monthly(
+                ccusage_cli::SharedArgs::default()
+            )))),
             "claude monthly"
         );
     }
@@ -629,21 +611,25 @@ mod tests {
 
     #[test]
     fn offline_commands_never_enter_the_send_plan() {
-        let args = crate::cli::AgentCommandArgs {
-            shared: crate::cli::SharedArgs {
+        let args = ccusage_cli::AgentCommandArgs {
+            shared: ccusage_cli::SharedArgs {
                 offline: true,
-                ..crate::cli::SharedArgs::default()
+                ..ccusage_cli::SharedArgs::default()
             },
             kind: AgentReportKind::Daily,
             session_id: None,
             sections: None,
             by_agent: false,
-            pi_path: None,
-            open_claw_path: None,
-            codex_speed: crate::cli::CodexSpeed::Auto,
+            options: ccusage_cli::AgentOptions::default(),
+            include_claude_agent: false,
+            start_of_week: ccusage_cli::WeekDay::Monday,
+            sources: Default::default(),
         };
 
-        assert!(command_offline(Some(&Command::Codex(args))));
+        assert!(command_offline(Some(&Command::agent_report(
+            StandardAgent::Codex,
+            args
+        ))));
     }
 
     #[test]

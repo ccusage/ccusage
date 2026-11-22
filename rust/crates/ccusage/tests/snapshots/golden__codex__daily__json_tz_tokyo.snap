@@ -1,0 +1,202 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage codex daily --offline --json --timezone Asia/Tokyo
+---
+exit: 0
+--- stdout ---
+{
+  "daily": [
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "costUSD": 0.0003125,
+      "date": "2025-12-28",
+      "inputTokens": 100,
+      "models": {
+        "gpt-5": {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "inputTokens": 100,
+          "isFallback": true,
+          "outputTokens": 50,
+          "reasoningOutputTokens": 0,
+          "totalTokens": 150
+        }
+      },
+      "outputTokens": 50,
+      "reasoningOutputTokens": 0,
+      "totalTokens": 150
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 1200,
+      "costUSD": 0.04335,
+      "date": "2025-12-30",
+      "inputTokens": 1800,
+      "models": {
+        "gpt-5.5": {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 1200,
+          "inputTokens": 1800,
+          "isFallback": false,
+          "outputTokens": 400,
+          "reasoningOutputTokens": 50,
+          "totalTokens": 3400
+        }
+      },
+      "outputTokens": 400,
+      "reasoningOutputTokens": 50,
+      "totalTokens": 3400
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 330,
+      "costUSD": 0.040425,
+      "date": "2025-12-31",
+      "inputTokens": 19396,
+      "models": {
+        "gpt-5": {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 80,
+          "inputTokens": 18176,
+          "isFallback": false,
+          "outputTokens": 1824,
+          "reasoningOutputTokens": 0,
+          "totalTokens": 20080
+        },
+        "gpt-5.5": {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 200,
+          "inputTokens": 700,
+          "isFallback": false,
+          "outputTokens": 90,
+          "reasoningOutputTokens": 0,
+          "totalTokens": 990
+        },
+        "gpt-6.1-sol": {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 50,
+          "inputTokens": 520,
+          "isFallback": false,
+          "outputTokens": 57,
+          "reasoningOutputTokens": 5,
+          "totalTokens": 627
+        }
+      },
+      "outputTokens": 1971,
+      "reasoningOutputTokens": 5,
+      "totalTokens": 21697
+    },
+    {
+      "cacheCreationTokens": 300,
+      "cacheReadTokens": 9020,
+      "costUSD": 0.0284055,
+      "date": "2026-01-01",
+      "inputTokens": 7700,
+      "models": {
+        "codex-mystery-1": {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "inputTokens": 300,
+          "isFallback": false,
+          "missingPricing": true,
+          "outputTokens": 30,
+          "reasoningOutputTokens": 0,
+          "totalTokens": 330
+        },
+        "gpt-5": {
+          "cacheCreationTokens": 300,
+          "cacheReadTokens": 2010,
+          "inputTokens": 1300,
+          "isFallback": false,
+          "outputTokens": 361,
+          "reasoningOutputTokens": 59,
+          "totalTokens": 3971
+        },
+        "gpt-5-codex": {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 5970,
+          "inputTokens": 4100,
+          "isFallback": true,
+          "outputTokens": 1007,
+          "reasoningOutputTokens": 5,
+          "totalTokens": 11077
+        },
+        "gpt-5.2-codex": {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 40,
+          "inputTokens": 600,
+          "isFallback": true,
+          "outputTokens": 64,
+          "reasoningOutputTokens": 0,
+          "totalTokens": 704
+        },
+        "gpt-5.5": {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 1000,
+          "inputTokens": 1400,
+          "isFallback": false,
+          "outputTokens": 240,
+          "reasoningOutputTokens": 30,
+          "totalTokens": 2640
+        }
+      },
+      "outputTokens": 1702,
+      "reasoningOutputTokens": 94,
+      "totalTokens": 18722
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 450400,
+      "costUSD": 0.58407625,
+      "date": "2026-01-02",
+      "inputTokens": 102350,
+      "models": {
+        "gpt-5": {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 200,
+          "inputTokens": 1750,
+          "isFallback": false,
+          "outputTokens": 195,
+          "reasoningOutputTokens": 0,
+          "totalTokens": 2145
+        },
+        "gpt-5-mini": {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "inputTokens": 200,
+          "isFallback": false,
+          "outputTokens": 20,
+          "reasoningOutputTokens": 0,
+          "totalTokens": 220
+        },
+        "gpt-5.5": {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 450200,
+          "inputTokens": 100400,
+          "isFallback": false,
+          "outputTokens": 1560,
+          "reasoningOutputTokens": 0,
+          "totalTokens": 552160
+        }
+      },
+      "outputTokens": 1775,
+      "reasoningOutputTokens": 0,
+      "totalTokens": 554525
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 300,
+    "cacheReadTokens": 460950,
+    "costUSD": 0.69656925,
+    "inputTokens": 131346,
+    "outputTokens": 5898,
+    "reasoningOutputTokens": 149,
+    "totalTokens": 598494,
+    "unpricedModels": [
+      "codex-mystery-1"
+    ]
+  }
+}
+
+--- stderr ---

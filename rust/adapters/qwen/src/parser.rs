@@ -1,31 +1,24 @@
-use std::{
-    collections::HashSet,
-    fs,
-    path::Path,
-    sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
+use ccusage_core::cost::PriceTable;
+use ccusage_core::{
+    cost::{EntryPricing, UsageGranularity, price_entry},
+    pricing::MatchKind,
 };
+use std::{path::Path, sync::Arc};
 
 use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
+use serde_json::Value;
 
-use ccusage_adapter_common::jsonl;
+use ccusage_adapter_common::{jsonl, units::UnitError};
 
 use super::paths;
 use crate::{
-    LoadedEntry, PricingMap, Result, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
-    apply_total_token_fallback, calculate_cost_for_usage_at,
-    cli::{CostMode, SharedArgs},
-    debug_log,
-    fast::LinePrefilter,
-    format_date_tz, format_rfc3339_millis, missing_pricing_model_for_candidates,
-    parse_ts_timestamp, parse_tz, read_files_parallel,
+    Diagnostics, LoadedEntry, TimestampMs, TokenUsageRaw, date_at, fast::LinePrefilter,
+    parse_ts_timestamp,
 };
 
 const DEFAULT_QWEN_MODEL: &str = "unknown";
 
-/// A single parsed Qwen chat record. Only the fields ccusage consumes are
-/// declared; serde skips everything else.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct QwenLine {
@@ -40,14 +33,13 @@ struct QwenLine {
     model: Option<String>,
 }
 
-/// Gemini-style usage metadata block carried by Qwen assistant records.
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct QwenUsageMetadata {
-    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
-    prompt_token_count: u64,
-    #[serde(default, deserialize_with = "jsonl::lenient_u64")]
-    candidates_token_count: u64,
+    #[serde(default, deserialize_with = "jsonl::lenient_optional_u64")]
+    prompt_token_count: Option<u64>,
+    #[serde(default, deserialize_with = "present_u64")]
+    candidates_token_count: Option<u64>,
     #[serde(default, deserialize_with = "jsonl::lenient_u64")]
     thoughts_token_count: u64,
     #[serde(default, deserialize_with = "jsonl::lenient_u64")]
@@ -56,107 +48,121 @@ struct QwenUsageMetadata {
     total_token_count: u64,
 }
 
-pub(super) fn load_entries(shared: &SharedArgs) -> Result<Vec<LoadedEntry>> {
-    let pricing = if shared.mode == CostMode::Display {
-        None
-    } else {
-        Some(PricingMap::load_with_overrides(
-            shared.offline,
-            crate::log_level() != Some(0),
-            shared.pricing_overrides.iter(),
-        ))
-    };
-    let tz = parse_tz(shared.timezone.as_deref());
-    let files = paths::discover_chat_files()?;
-    // Read chat files in parallel; the first-wins dedup runs sequentially over
-    // the original discovery order so the surviving record per id matches the
-    // single-threaded read.
-    let loaded = read_files_parallel(&files, shared.single_thread, |file| {
-        read_chat_file(file, tz.as_ref(), shared.mode, pricing.as_ref(), shared).unwrap_or_else(
-            |error| {
-                debug_log(
-                    shared,
-                    format!("Failed to read Qwen chat file {}: {error}", file.display()),
-                );
-                Vec::new()
-            },
-        )
-    });
-    let mut entries = Vec::new();
-    let mut seen = HashSet::new();
-    for file_entries in loaded {
-        for entry in file_entries {
-            if seen.insert(entry_id(&entry)) {
-                entries.push(entry);
-            }
-        }
+pub(super) struct QwenEntry {
+    pub(super) entry: LoadedEntry,
+    source_timestamp: String,
+    replay_counts: (u64, u64),
+}
+
+impl std::ops::Deref for QwenEntry {
+    type Target = LoadedEntry;
+
+    fn deref(&self) -> &Self::Target {
+        &self.entry
     }
-    entries.sort_by_key(|entry| entry.timestamp);
+}
+
+fn present_u64<'de, D>(deserializer: D) -> std::result::Result<Option<u64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    jsonl::lenient_u64(deserializer).map(Some)
+}
+
+pub(super) fn read_chat_file(
+    file: &Path,
+    tz: &JiffTimeZone,
+    pricing: PriceTable<'_>,
+    diagnostics: &Diagnostics,
+) -> std::result::Result<Vec<QwenEntry>, UnitError> {
+    let prefilter = LinePrefilter::all(&[br#""usageMetadata""#]);
+    let mut entries = Vec::new();
+    jsonl::read_records::<QwenLine>(
+        file,
+        Some(&prefilter),
+        diagnostics,
+        is_qwen_usage,
+        |number, record, diagnostics| match parse_line(file, &record, tz, pricing) {
+            Ok(Some(entry)) => entries.push(entry),
+            Ok(None) => {}
+            Err(MissingTimestamp) => diagnostics.record(ccusage_core::Skip::record(
+                file,
+                number,
+                ccusage_core::SkipKind::InvalidTimestamp,
+                "Qwen usage record has no valid timestamp",
+            )),
+        },
+    )?;
     Ok(entries)
 }
 
-fn read_chat_file(
-    file: &Path,
-    tz: Option<&JiffTimeZone>,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
-    shared: &SharedArgs,
-) -> Result<Vec<LoadedEntry>> {
-    let fallback = file_timestamp(file, shared);
-    let content = fs::read(file)?;
-    // Every usable Qwen line carries token counts under the `usageMetadata`
-    // key, so lines without it are skipped before JSON parsing.
-    let prefilter = LinePrefilter::all(&[br#""usageMetadata""#]);
-    let mut entries = Vec::new();
-    for record in jsonl::records::<QwenLine>(&content, Some(&prefilter)) {
-        if let Some(entry) = parse_line(file, fallback, &record, tz, mode, pricing) {
-            entries.push(entry);
-        }
-    }
-    Ok(entries)
+fn is_qwen_usage(value: &Value) -> bool {
+    value.get("type").and_then(Value::as_str) == Some("assistant")
+        && value.get("usageMetadata").is_some()
 }
+
+#[derive(Debug)]
+struct MissingTimestamp;
 
 fn parse_line(
     file: &Path,
-    fallback: TimestampMs,
     record: &QwenLine,
-    tz: Option<&JiffTimeZone>,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
-) -> Option<LoadedEntry> {
+    tz: &JiffTimeZone,
+    pricing: PriceTable<'_>,
+) -> std::result::Result<Option<QwenEntry>, MissingTimestamp> {
     if record.r#type.as_deref() != Some("assistant") {
-        return None;
+        return Ok(None);
     }
-    let usage = record.usage_metadata.as_ref()?;
-    let input_tokens = usage.prompt_token_count;
-    let output_tokens = usage.candidates_token_count;
-    let reasoning_tokens = usage.thoughts_token_count;
-    let cache_read_tokens = usage.cached_content_token_count;
+    let Some(usage) = record.usage_metadata.as_ref() else {
+        return Ok(None);
+    };
+    // NOTE(2026-11-21, #2168): Qwen Code's cost-ledger.ts treats total minus prompt as output including thinking when both counts are valid. Use that definition for records without a candidate count; a total alone cannot distinguish prompt and output.
+    let prompt_tokens = usage.prompt_token_count.unwrap_or_default();
     let total_tokens = usage.total_token_count;
-    let display_usage = TokenUsageRaw {
-        input_tokens,
+    let cache_read_tokens = usage.cached_content_token_count.min(prompt_tokens);
+    let output_tokens = match usage.candidates_token_count {
+        Some(candidates) if total_tokens > prompt_tokens => {
+            candidates.min(total_tokens - prompt_tokens)
+        }
+        Some(candidates) => candidates,
+        None if usage.prompt_token_count.is_some() => total_tokens.saturating_sub(prompt_tokens),
+        None => 0,
+    };
+    let raw_usage = TokenUsageRaw {
+        input_tokens: prompt_tokens - cache_read_tokens,
         output_tokens,
         cache_creation_input_tokens: 0,
         cache_read_input_tokens: cache_read_tokens,
         speed: None,
         cache_creation: None,
     };
-    let (display_usage, extra_total_tokens) =
-        apply_total_token_fallback(display_usage, reasoning_tokens, total_tokens);
-    if display_usage.input_tokens == 0
-        && display_usage.output_tokens == 0
-        && display_usage.cache_read_input_tokens == 0
+    let remainder = ccusage_core::AdditionalTokens::from_total(raw_usage, 0, total_tokens);
+    let thoughts_only = usage.candidates_token_count.is_none() && total_tokens == 0;
+    let reasoning_tokens = if thoughts_only {
+        usage.thoughts_token_count
+    } else {
+        usage.thoughts_token_count.min(remainder.report_remainder)
+    };
+    let extra_total_tokens = if thoughts_only {
+        reasoning_tokens
+    } else {
+        remainder.report_remainder
+    };
+    let replay_counts = if thoughts_only || usage.candidates_token_count.is_some() {
+        (output_tokens, extra_total_tokens)
+    } else {
+        remainder.replay_counts(output_tokens)
+    };
+    if raw_usage.input_tokens == 0
+        && raw_usage.output_tokens == 0
+        && raw_usage.cache_read_input_tokens == 0
         && extra_total_tokens == 0
     {
-        return None;
+        return Ok(None);
     }
 
-    let timestamp_text = record
-        .timestamp
-        .clone()
-        .and_then(|value| parse_ts_timestamp(&value).map(|_| value))
-        .unwrap_or_else(|| format_rfc3339_millis(fallback));
-    let timestamp = parse_ts_timestamp(&timestamp_text).unwrap_or(fallback);
+    let timestamp_text = record.timestamp.as_ref().ok_or(MissingTimestamp)?;
+    let timestamp = parse_ts_timestamp(timestamp_text).ok_or(MissingTimestamp)?;
     let project = paths::project_from_file(file).unwrap_or_else(|| "unknown".to_string());
     let session_id = record.session_id.clone().unwrap_or_else(|| {
         let stem = file
@@ -169,85 +175,64 @@ fn parse_line(
         .model
         .clone()
         .unwrap_or_else(|| DEFAULT_QWEN_MODEL.to_string());
-    let billable_usage = TokenUsageRaw {
-        output_tokens: display_usage
-            .output_tokens
-            .saturating_add(extra_total_tokens),
-        cache_creation: None,
-        ..display_usage
-    };
-    let cost = calculate_qwen_cost(&model, billable_usage, timestamp, mode, pricing);
-    let missing_pricing_model = missing_qwen_pricing(&model, billable_usage, mode, pricing);
-    let data = UsageEntry {
-        session_id: Some(session_id.clone()),
-        timestamp: timestamp_text,
-        version: None,
-        message: UsageMessage {
-            usage: display_usage,
-            model: Some(model.clone()),
-            id: None,
+    let (cost, missing_pricing_model, estimated_pricing) =
+        price_qwen(&model, raw_usage, reasoning_tokens, timestamp, pricing);
+    Ok(Some(QwenEntry {
+        source_timestamp: timestamp_text.clone(),
+        replay_counts,
+        entry: LoadedEntry {
+            usage: raw_usage,
+            message_id: None,
+            version: None,
+            recorded_cost: None,
+            timestamp,
+            date: date_at(timestamp, tz),
+            project: Arc::from("qwen"),
+            session_id: Arc::from(session_id),
+            project_path: Arc::from(project),
+            cost,
+            credits: None,
+            model: Some(model),
+            message_count: None,
+            usage_limit_reset_time: None,
+            missing_pricing_model,
+            estimated_pricing,
+            extra_total_tokens,
+            stored_cost: None,
         },
-        cost_usd: None,
-        request_id: None,
-        is_api_error_message: None,
-        is_sidechain: None,
-    };
-    Some(LoadedEntry {
-        data,
-        timestamp,
-        date: format_date_tz(timestamp, tz),
-        project: Arc::from("qwen"),
-        session_id: Arc::from(session_id),
-        project_path: Arc::from(project),
-        cost,
-        credits: None,
-        model: Some(model),
-        message_count: None,
-        usage_limit_reset_time: None,
-        missing_pricing_model,
-        extra_total_tokens,
-        stored_cost: None,
-    })
+    }))
 }
 
-fn calculate_qwen_cost(
+fn price_qwen(
     model: &str,
     usage: TokenUsageRaw,
+    reasoning_tokens: u64,
     timestamp: TimestampMs,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
-) -> f64 {
-    for candidate in qwen_model_candidates(model) {
-        if mode == CostMode::Display
-            || pricing.is_some_and(|pricing| pricing.find(&candidate).is_some())
-        {
-            return calculate_cost_for_usage_at(
-                Some(&candidate),
-                usage,
-                None,
-                Some(timestamp),
-                mode,
-                pricing,
-            );
-        }
-    }
-    0.0
-}
-
-fn missing_qwen_pricing(
-    model: &str,
-    usage: TokenUsageRaw,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
-) -> Option<String> {
-    if mode == CostMode::Display {
-        return None;
-    }
-    missing_pricing_model_for_candidates(
-        model,
-        qwen_model_candidates(model),
-        crate::total_usage_tokens(usage),
+    pricing: PriceTable<'_>,
+) -> (f64, Option<String>, bool) {
+    let candidates = qwen_model_candidates(model);
+    let candidates: Vec<_> = candidates
+        .iter()
+        .map(|name| (name.as_str(), MatchKind::Fuzzy))
+        .collect();
+    let priced = price_entry(
+        EntryPricing {
+            granularity: UsageGranularity::Request,
+            usage,
+            reasoning_tokens,
+            reported_model: Some(model),
+            candidates: &candidates,
+            stored_cost: None,
+            timestamp: Some(timestamp),
+        },
         pricing,
+    );
+    (
+        priced.cost,
+        priced
+            .missing_pricing
+            .then(|| ccusage_core::model_aliases::resolve_model_name(model).into_owned()),
+        priced.estimated,
     )
 }
 
@@ -259,45 +244,16 @@ fn qwen_model_candidates(model: &str) -> Vec<String> {
     ]
 }
 
-fn file_timestamp(file: &Path, shared: &SharedArgs) -> TimestampMs {
-    match fs::metadata(file)
-        .and_then(|metadata| metadata.modified())
-        .and_then(|modified| {
-            modified
-                .duration_since(UNIX_EPOCH)
-                .map_err(std::io::Error::other)
-        }) {
-        Ok(duration) => TimestampMs::from_millis(duration.as_millis().min(i64::MAX as u128) as i64),
-        Err(error) => {
-            crate::debug_log(
-                shared,
-                format!(
-                    "Failed to read Qwen chat file timestamp for {}: {error}",
-                    file.display()
-                ),
-            );
-            system_time_timestamp(SystemTime::now())
-        }
-    }
-}
-
-fn system_time_timestamp(time: SystemTime) -> TimestampMs {
-    time.duration_since(UNIX_EPOCH).map_or_else(
-        |_| TimestampMs::UNIX_EPOCH,
-        |duration| TimestampMs::from_millis(duration.as_millis().min(i64::MAX as u128) as i64),
-    )
-}
-
-fn entry_id(entry: &LoadedEntry) -> String {
-    let usage = entry.data.message.usage;
+pub(super) fn entry_id(entry: &QwenEntry) -> String {
+    let usage = entry.usage;
     serde_json::json!([
         entry.session_id.as_ref(),
-        entry.data.timestamp.as_str(),
+        entry.source_timestamp.as_str(),
         entry.model.as_deref().unwrap_or_default(),
         usage.input_tokens,
-        usage.output_tokens,
+        entry.replay_counts.0,
         usage.cache_read_input_tokens,
-        entry.extra_total_tokens
+        entry.replay_counts.1
     ])
     .to_string()
 }
@@ -307,12 +263,34 @@ mod tests {
     use super::*;
 
     #[test]
+    fn untimed_jsonl_usage_is_diagnosed_without_using_file_mtime() {
+        let fixture = ccusage_test_support::fs_fixture!({
+            "chat.jsonl": "{\"type\":\"assistant\",\"usageMetadata\":{\"promptTokenCount\":1}}\n{\"type\":\"assistant\",\"timestamp\":\"invalid\",\"usageMetadata\":{\"promptTokenCount\":1}}\n{\"type\":\"assistant\",\"timestamp\":\"1970-01-01T00:00:00Z\",\"usageMetadata\":{\"promptTokenCount\":1}}\n{\"type\":\"assistant\",\"usageMetadata\":{}}\n"
+        });
+        let diagnostics = Diagnostics::new("qwen");
+        let entries = read_chat_file(
+            &fixture.path("chat.jsonl"),
+            &JiffTimeZone::UTC,
+            PriceTable::Display,
+            &diagnostics,
+        )
+        .unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].timestamp, TimestampMs::UNIX_EPOCH);
+        assert_eq!(
+            diagnostics.skipped(ccusage_core::SkipKind::InvalidTimestamp),
+            2
+        );
+    }
+
+    #[test]
     fn calculate_qwen_cost_returns_explicit_zero_price() {
-        let mut pricing = PricingMap::default();
+        ccusage_test_support::install_pricing_snapshots();
+        let mut pricing = ccusage_core::PricingMap::default();
         pricing.load_json(
             r#"{
                 "free-model": {
-                    "input_cost_per_token": 0,
+                    "litellm_provider": "openai", "input_cost_per_token": 0,
                     "output_cost_per_token": 0,
                     "cache_creation_input_token_cost": 0,
                     "cache_read_input_token_cost": 0
@@ -324,7 +302,7 @@ mod tests {
             }"#,
         );
 
-        let cost = calculate_qwen_cost(
+        let (cost, _, _) = price_qwen(
             "free-model",
             TokenUsageRaw {
                 input_tokens: 100,
@@ -334,16 +312,20 @@ mod tests {
                 speed: None,
                 cache_creation: None,
             },
+            0,
             TimestampMs::UNIX_EPOCH,
-            CostMode::Calculate,
-            Some(&pricing),
+            PriceTable::Calculate(&pricing),
         );
 
         assert_eq!(cost, 0.0);
     }
 
     #[test]
-    fn falls_back_to_total_token_count_when_qwen_parts_are_missing() {
+    fn keeps_total_only_usage_out_of_output_tokens() {
+        ccusage_test_support::install_pricing_snapshots();
+        let mut pricing = ccusage_core::PricingMap::default();
+        pricing
+            .load_json(r#"{"qwen3-coder":{"input_cost_per_token":1,"output_cost_per_token":2}}"#);
         let record = serde_json::from_value::<QwenLine>(serde_json::json!({
             "type": "assistant",
             "timestamp": "2026-01-02T00:00:00.000Z",
@@ -356,60 +338,258 @@ mod tests {
         .unwrap();
         let entry = parse_line(
             Path::new("/tmp/project/chat.jsonl"),
-            TimestampMs::UNIX_EPOCH,
             &record,
-            None,
-            CostMode::Auto,
-            None,
+            &jiff::tz::TimeZone::UTC,
+            PriceTable::Calculate(&pricing),
         )
+        .unwrap()
         .unwrap();
 
-        assert_eq!(entry.data.message.usage.output_tokens, 321);
+        assert_eq!(entry.usage.output_tokens, 0);
+        assert_eq!(entry.extra_total_tokens, 321);
+        assert_eq!(entry.cost, 0.0);
+    }
+
+    #[test]
+    fn prices_total_minus_prompt_when_qwen_candidates_are_absent() {
+        ccusage_test_support::install_pricing_snapshots();
+        let mut pricing = ccusage_core::PricingMap::default();
+        pricing.load_json(
+            r#"{"qwen3-coder-plus":{"input_cost_per_token":0.000001,"output_cost_per_token":0.000005}}"#,
+        );
+
+        for thoughts in [0, 60] {
+            let entry = parse_usage_with_pricing(
+                serde_json::json!({
+                    "promptTokenCount": 1000,
+                    "totalTokenCount": 1500,
+                    "thoughtsTokenCount": thoughts,
+                }),
+                PriceTable::Calculate(&pricing),
+            );
+            assert_eq!(entry.usage.output_tokens, 500);
+            assert_eq!(entry.extra_total_tokens, 0);
+            assert!((entry.cost - 0.0035).abs() < 1e-12, "{}", entry.cost);
+        }
+        let total_only = parse_usage_with_pricing(
+            serde_json::json!({"totalTokenCount": 1500}),
+            PriceTable::Calculate(&pricing),
+        );
+        assert_eq!(total_only.cost, 0.0);
+        assert_eq!(total_only.usage.output_tokens, 0);
+        assert_eq!(total_only.extra_total_tokens, 1500);
+    }
+
+    #[test]
+    fn bills_explicit_qwen_thoughts_without_candidates_or_total() {
+        ccusage_test_support::install_pricing_snapshots();
+        let mut pricing = ccusage_core::PricingMap::default();
+        pricing.load_json(
+            r#"{"qwen3-coder-plus":{"input_cost_per_token":1,"output_cost_per_token":2}}"#,
+        );
+        let entry = parse_usage_with_pricing(
+            serde_json::json!({"promptTokenCount": 100, "thoughtsTokenCount": 20}),
+            PriceTable::Calculate(&pricing),
+        );
+        assert_eq!(entry.cost, 140.0);
+        assert_eq!(reported_total(&entry), 120);
+    }
+
+    fn parse_usage(usage: serde_json::Value) -> QwenEntry {
+        parse_usage_with_pricing(usage, PriceTable::Display)
+    }
+
+    fn parse_usage_with_pricing(usage: serde_json::Value, pricing: PriceTable<'_>) -> QwenEntry {
+        let record = serde_json::from_value::<QwenLine>(serde_json::json!({
+            "type": "assistant",
+            "timestamp": "2026-02-23T14:24:56.857Z",
+            "sessionId": "s",
+            "model": "qwen3-coder-plus",
+            "usageMetadata": usage
+        }))
+        .unwrap();
+        parse_line(
+            Path::new("/tmp/project/chat.jsonl"),
+            &record,
+            &jiff::tz::TimeZone::UTC,
+            pricing,
+        )
+        .unwrap()
+        .unwrap()
+    }
+
+    fn reported_total(entry: &QwenEntry) -> u64 {
+        ccusage_core::total_usage_tokens(entry.usage) + entry.extra_total_tokens
+    }
+
+    #[test]
+    fn cached_tokens_are_part_of_the_prompt_count() {
+        let entry = parse_usage(serde_json::json!({
+            "promptTokenCount": 1000,
+            "candidatesTokenCount": 200,
+            "cachedContentTokenCount": 400,
+            "totalTokenCount": 1200
+        }));
+
+        assert_eq!(entry.usage.input_tokens, 600);
+        assert_eq!(entry.usage.cache_read_input_tokens, 400);
+        assert_eq!(entry.usage.output_tokens, 200);
+        assert_eq!(reported_total(&entry), 1200);
+    }
+
+    #[test]
+    fn thoughts_inside_candidates_are_not_added_again() {
+        let entry = parse_usage(serde_json::json!({
+            "promptTokenCount": 1000,
+            "candidatesTokenCount": 200,
+            "thoughtsTokenCount": 50,
+            "cachedContentTokenCount": 400,
+            "totalTokenCount": 1200
+        }));
+
+        assert_eq!(entry.usage.output_tokens, 200);
+        assert_eq!(entry.extra_total_tokens, 0);
+        assert_eq!(reported_total(&entry), 1200);
+    }
+
+    #[test]
+    fn thoughts_outside_candidates_count_once_as_reasoning() {
+        let entry = parse_usage(serde_json::json!({
+            "promptTokenCount": 1000,
+            "candidatesTokenCount": 200,
+            "thoughtsTokenCount": 50,
+            "cachedContentTokenCount": 400,
+            "totalTokenCount": 1250
+        }));
+
+        assert_eq!(entry.usage.output_tokens, 200);
+        assert_eq!(entry.extra_total_tokens, 50);
+        assert_eq!(reported_total(&entry), 1250);
+    }
+
+    #[test]
+    fn cached_prompt_tokens_are_billed_once_at_the_cache_read_rate() {
+        ccusage_test_support::install_pricing_snapshots();
+        let mut pricing = ccusage_core::PricingMap::default();
+        pricing.load_json(
+            r#"{
+                "qwen3-coder-plus": {
+                    "litellm_provider": "dashscope",
+                    "input_cost_per_token": 0.000001,
+                    "output_cost_per_token": 0.000005,
+                    "cache_read_input_token_cost": 0.0000001
+                }
+            }"#,
+        );
+        let record = serde_json::from_value::<QwenLine>(serde_json::json!({
+            "type": "assistant",
+            "timestamp": "2026-02-23T14:24:56.857Z",
+            "sessionId": "s",
+            "model": "qwen3-coder-plus",
+            "usageMetadata": {
+                "promptTokenCount": 1000,
+                "candidatesTokenCount": 200,
+                "thoughtsTokenCount": 50,
+                "cachedContentTokenCount": 400,
+                "totalTokenCount": 1250
+            }
+        }))
+        .unwrap();
+        let entry = parse_line(
+            Path::new("/tmp/project/chat.jsonl"),
+            &record,
+            &jiff::tz::TimeZone::UTC,
+            PriceTable::Calculate(&pricing),
+        )
+        .unwrap()
+        .unwrap();
+
+        let expected = 600.0 * 0.000001 + 400.0 * 0.0000001 + 250.0 * 0.000005;
+        assert!((entry.cost - expected).abs() < 1e-12, "{}", entry.cost);
+    }
+
+    #[test]
+    fn thinking_with_zero_candidates_stays_reasoning() {
+        let entry = parse_usage(serde_json::json!({
+            "promptTokenCount": 1000,
+            "candidatesTokenCount": 0,
+            "thoughtsTokenCount": 50,
+            "totalTokenCount": 1050
+        }));
+
+        assert_eq!(entry.usage.output_tokens, 0);
+        assert_eq!(entry.extra_total_tokens, 50);
+    }
+
+    #[test]
+    fn without_a_total_thoughts_are_taken_to_be_inside_candidates() {
+        let entry = parse_usage(serde_json::json!({
+            "promptTokenCount": 500,
+            "candidatesTokenCount": 120,
+            "thoughtsTokenCount": 30,
+            "cachedContentTokenCount": 80
+        }));
+
+        assert_eq!(entry.usage.input_tokens, 420);
+        assert_eq!(entry.usage.cache_read_input_tokens, 80);
+        assert_eq!(entry.usage.output_tokens, 120);
         assert_eq!(entry.extra_total_tokens, 0);
     }
 
     #[test]
     fn entry_id_is_unambiguous_for_colon_fields() {
-        let entry = LoadedEntry {
-            data: UsageEntry {
-                session_id: Some("session:1".to_string()),
-                timestamp: "2026-01-02T00:00:00.000Z".to_string(),
-                version: None,
-                message: UsageMessage {
-                    usage: TokenUsageRaw {
-                        input_tokens: 1,
-                        output_tokens: 2,
-                        cache_creation_input_tokens: 0,
-                        cache_read_input_tokens: 3,
-                        speed: None,
-                        cache_creation: None,
-                    },
-                    model: Some("model:1".to_string()),
-                    id: None,
+        let entry = QwenEntry {
+            replay_counts: (2, 4),
+            source_timestamp: "2026-01-02T00:00:00.000Z".to_string(),
+            entry: LoadedEntry {
+                usage: TokenUsageRaw {
+                    input_tokens: 1,
+                    output_tokens: 2,
+                    cache_creation_input_tokens: 0,
+                    cache_read_input_tokens: 3,
+                    speed: None,
+                    cache_creation: None,
                 },
-                cost_usd: None,
-                request_id: None,
-                is_api_error_message: None,
-                is_sidechain: None,
+                message_id: None,
+                version: None,
+                recorded_cost: None,
+                timestamp: TimestampMs::UNIX_EPOCH,
+                date: ccusage_core::cli::IsoDate::parse("2026-01-02").unwrap(),
+                project: Arc::from("qwen"),
+                session_id: Arc::from("session:1"),
+                project_path: Arc::from("project"),
+                cost: 0.0,
+                extra_total_tokens: 4,
+                credits: None,
+                message_count: None,
+                model: Some("model:1".to_string()),
+                usage_limit_reset_time: None,
+                missing_pricing_model: None,
+                stored_cost: None,
+                estimated_pricing: false,
             },
-            timestamp: TimestampMs::UNIX_EPOCH,
-            date: "2026-01-02".to_string(),
-            project: Arc::from("qwen"),
-            session_id: Arc::from("session:1"),
-            project_path: Arc::from("project"),
-            cost: 0.0,
-            extra_total_tokens: 4,
-            credits: None,
-            message_count: None,
-            model: Some("model:1".to_string()),
-            usage_limit_reset_time: None,
-            missing_pricing_model: None,
-            stored_cost: None,
         };
 
         assert_eq!(
             entry_id(&entry),
             r#"["session:1","2026-01-02T00:00:00.000Z","model:1",1,2,3,4]"#
+        );
+    }
+}
+
+#[cfg(test)]
+mod pricing_identity_tests {
+    use super::*;
+
+    #[test]
+    fn adapter_pricing_identity() {
+        assert_eq!(
+            qwen_model_candidates("qwen3-coder-plus"),
+            [
+                "qwen3-coder-plus",
+                "qwen/qwen3-coder-plus",
+                "alibaba/qwen3-coder-plus"
+            ]
         );
     }
 }

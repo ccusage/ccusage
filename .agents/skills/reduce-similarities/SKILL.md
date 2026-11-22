@@ -27,7 +27,8 @@ real findings.
 
 ## Triage
 
-A score is a starting point, not a verdict. Usually worth refactoring:
+Use scores to prioritize review. Extract shared code only when the callers can
+share the same contract.
 
 - 100% matches: extract a shared function or generic.
 - 95-100% across different types: generic function with trait bounds.

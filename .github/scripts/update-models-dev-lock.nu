@@ -1,37 +1,30 @@
 #!/usr/bin/env nix
 #! nix shell --inputs-from ../.. nixpkgs#nushell nixpkgs#git --command nu
 
-use ./pricing-lock.nu report
+use ./pricing-lock.nu [report run-update]
+use ../../scripts/copy-models-dev-snapshots.nu [snapshot-paths build-snapshots]
 
-const SNAPSHOTS = [
-    'rust/crates/ccusage-pricing-snapshots/src/models-dev-pricing.json'
-    'rust/crates/ccusage-pricing-snapshots/src/models-dev-catalog-rules.json'
-    'rust/adapters/codex/src/codex-auto-review-fallbacks.json'
-]
-
-# Bump the pinned models.dev input, regenerate the committed snapshots, and report
-# whether anything the build embeds actually moved.
 def main [] {
-    # A snapshot that moved in the Rust tree would otherwise only surface as a
-    # `git checkout` pathspec failure after all the regeneration work, which is
-    # how this workflow stayed broken for weeks after the crate split.
-    let missing = $SNAPSHOTS | where {|path| not ($path | path exists) }
-    if ($missing | is-not-empty) {
-        error make {msg: $"snapshot paths no longer exist: ($missing | str join ', ')"}
+    run-update nix flake update models-dev
+    run-update nix shell --inputs-from . nixpkgs#just --command just gen-models-dev-pricing
+
+    let output = build-snapshots
+    let snapshots = snapshot-paths ($output | str trim)
+    let tracked = ^git ls-files --error-unmatch -- ...$snapshots | complete
+    if $tracked.exit_code != 0 {
+        error make {
+            msg: $"Generated snapshots must be tracked before comparing changes; git add each new snapshot: ($tracked.stderr | str trim)"
+        }
     }
-
-    ^nix flake update models-dev
-    ^nix develop --command just gen-models-dev-pricing
-
     let state = {
-        snapshots: (dirty ...$SNAPSHOTS)
+        snapshots: (dirty ...$snapshots)
         lock: (dirty flake.lock)
     }
     let changed = match $state {
         {snapshots: true} => true
         {snapshots: false, lock: true} => {
-            print 'models.dev pricing snapshots are unchanged; dropping the lock-only bump.'
-            ^git checkout -- flake.lock ...$SNAPSHOTS
+            print --stderr 'models.dev pricing snapshots are unchanged; dropping the lock-only bump.'
+            ^git checkout -- flake.lock ...$snapshots
             false
         }
         _ => false
@@ -39,7 +32,7 @@ def main [] {
 
     report {
         changed: $changed
-        paths: ($SNAPSHOTS | prepend flake.lock)
+        paths: ($snapshots | prepend flake.lock)
     }
 }
 

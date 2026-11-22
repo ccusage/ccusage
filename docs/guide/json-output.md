@@ -34,7 +34,7 @@ This removes cost fields such as `totalCost`, `costUSD`, `storedCost`, and neste
 When a model has no known price, its usage is charged at `0`. Table output prints a warning on stderr; JSON output records it in the data instead, so scripts and dashboards can tell "free" from "unknown":
 
 - `totals.unpricedModels` lists the model names, sorted and deduplicated. The key is present only when at least one entry in the report had usage with no price, so `.totals.unpricedModels // []` is safe in `jq`.
-- Each affected entry in `modelBreakdowns` carries `"missingPricing": true`. Priced entries omit the key.
+- Each affected entry in a summary row's `modelBreakdowns` carries `"missingPricing": true`. Priced entries omit the key.
 
 Both fields describe pricing availability, not amounts, so `--no-cost` keeps them.
 
@@ -42,33 +42,240 @@ Both fields describe pricing availability, not amounts, so `--no-cost` keeps the
 ccusage daily --json | jq '.totals.unpricedModels // []'
 ```
 
+In the `ccusage claude daily --json` fixture report, `mystery-model-9000` has no price. Its `modelBreakdowns` entry on 2026-01-01:
+
+```json
+{
+	"cacheCreationTokens": 0,
+	"cacheReadTokens": 800,
+	"cost": 0.0,
+	"inputTokens": 300,
+	"missingPricing": true,
+	"modelName": "mystery-model-9000",
+	"outputTokens": 70
+}
+```
+
+The report's `totals`:
+
 ```json
 {
 	"totals": {
-		"inputTokens": 100488,
-		"outputTokens": 3994,
-		"cacheCreationTokens": 0,
-		"cacheReadTokens": 50688,
-		"totalTokens": 155170,
-		"totalCost": 0,
-		"unpricedModels": ["openrouter/auto-beta"]
+		"cacheCreationTokens": 2500,
+		"cacheReadTokens": 44350,
+		"inputTokens": 8207,
+		"outputTokens": 3659,
+		"totalCost": 0.851326,
+		"totalTokens": 58716,
+		"unpricedModels": ["mystery-model-9000"]
 	}
 }
 ```
 
 Detection follows the [cost mode](/guide/cost-modes): an entry counts as unpriced only when ccusage had to calculate its cost from tokens and found no price. In `display` mode, or in `auto` mode for an entry that carries its own stored cost, nothing is looked up, so nothing is reported. A model can therefore appear in `unpricedModels` and still show a positive cost when some of its entries carried stored costs. An absent key means no unpriced usage was detected under the selected mode, not that every price is current.
 
-Covered: `daily`, `weekly`, `monthly`, and `session` reports for every agent, including `--instances`, `--sections`, and `--by-agent`. Focused `codex` reports set `missingPricing` on the affected entries of each period's `models` map. Not covered: `blocks` and `session --id`, which have no `totals` object.
+Covered: `daily`, `weekly`, `monthly`, and `session` reports for every agent, including `--instances`, `--sections`, and `--by-agent`. Focused `codex` reports set `missingPricing` on the affected entries of each period's `models` map. `blocks` and `session --id` have no `totals` object; Claude's `session --id` still marks unpriced entries of its `modelBreakdowns`.
 
 Update ccusage, or run without `--offline`, once the pricing source lists the model.
+
+## Estimated Prices
+
+Some vendors list a model at $0 for their own free tier. When that model runs through a paid host that publishes no price of its own, such as `kyma/glm-4.7-flash`, the vendor's free tier says nothing about what the host charges. ccusage prices that usage from the closest paid listing of the same model and marks the result as an estimate. If no paid listing exists, the model is reported as [unpriced](#unpriced-models) rather than free. A provider counts as a paid host only when ccusage's pricing data shows that it charges, such as OpenRouter, Novita, Kyma, or a cloud host like Bedrock. The vendor's free tier used directly, a host's own $0 listing, a local runtime such as Ollama, and a provider that the pricing data doesn't know all still bill $0 without an estimate.
+
+- `totals.estimatedModels` lists the estimated model names, sorted and deduplicated. The key is present only when at least one entry used an estimate, so `.totals.estimatedModels // []` is safe in `jq`.
+- Each estimated entry in a summary row's `modelBreakdowns` carries `"estimatedPricing": true`. Focused `codex` reports set it on the entry in each period's `models` map instead.
+- Table output prints an `INFO` note naming the estimated models on stderr.
+
+Like the unpriced fields, these describe how a price was found, so `--no-cost` keeps them, and they follow the [cost mode](/guide/cost-modes): `display` mode looks up no prices and reports no estimates.
+
+```bash
+ccusage daily --json | jq '.totals.estimatedModels // []'
+```
+
+In a generated `ccusage codex daily --mode calculate --json` fixture report, one million input and 100,000 output tokens of `kyma/glm-4.7-flash` bill at the paid $0.08 / $0.478 per million token listing. Its `models` entry:
+
+```json
+{
+	"cacheCreationTokens": 0,
+	"cacheReadTokens": 0,
+	"estimatedPricing": true,
+	"inputTokens": 1000000,
+	"isFallback": false,
+	"outputTokens": 100000,
+	"reasoningOutputTokens": 0,
+	"totalTokens": 1100000
+}
+```
+
+The report's `totals` include `"estimatedModels": ["kyma/glm-4.7-flash"]`.
 
 Unified reports also support JSON-oriented flags for dashboard-style consumers:
 
 ```bash
-ccusage daily --sections daily,monthly,session --by-agent --json
+ccusage daily --sections daily,weekly,monthly,session --json
+ccusage daily --by-agent --json
 ```
 
-`--sections` emits each requested unified section from one load. The invoked command's section is always included, and the top-level `totals` object remains the total for that invoked section. JSON keys are emitted with the invoked section first, then remaining sections in `daily`, `weekly`, `monthly`, `session` order, with `totals` last. `--by-agent` adds an `agents` array to daily, weekly, and monthly rows; session rows are already per-agent.
+`--sections` emits each requested unified section from one load. The invoked command's section is always included, and the top-level `totals` object remains the total for that invoked section. JSON keys are emitted with the invoked section first, then remaining sections in `daily`, `weekly`, `monthly`, `session` order, with `totals` last. This excerpt of `ccusage daily --sections daily,weekly,monthly,session --json` keeps one row of each section:
+
+```json
+{
+	"daily": [
+		{
+			"agent": "all",
+			"cacheCreationTokens": 0,
+			"cacheReadTokens": 2000,
+			"inputTokens": 1000,
+			"metadata": {
+				"agents": ["kimi"]
+			},
+			"modelBreakdowns": [
+				{
+					"cacheCreationTokens": 0,
+					"cacheReadTokens": 2000,
+					"cost": 0.00327,
+					"inputTokens": 1000,
+					"modelName": "kimi-for-coding",
+					"outputTokens": 500
+				}
+			],
+			"modelsUsed": ["kimi-for-coding"],
+			"outputTokens": 500,
+			"period": "2026-04-21",
+			"totalCost": 0.00327,
+			"totalTokens": 3500
+		}
+	],
+	"weekly": [
+		{
+			"agent": "all",
+			"cacheCreationTokens": 0,
+			"cacheReadTokens": 2000,
+			"inputTokens": 1000,
+			"metadata": {
+				"agents": ["kimi"]
+			},
+			"modelBreakdowns": [
+				{
+					"cacheCreationTokens": 0,
+					"cacheReadTokens": 2000,
+					"cost": 0.00327,
+					"inputTokens": 1000,
+					"modelName": "kimi-for-coding",
+					"outputTokens": 500
+				}
+			],
+			"modelsUsed": ["kimi-for-coding"],
+			"outputTokens": 500,
+			"period": "2026-04-20",
+			"totalCost": 0.00327,
+			"totalTokens": 3500
+		}
+	],
+	"monthly": [
+		{
+			"agent": "all",
+			"cacheCreationTokens": 0,
+			"cacheReadTokens": 2000,
+			"inputTokens": 1000,
+			"metadata": {
+				"agents": ["kimi"]
+			},
+			"modelBreakdowns": [
+				{
+					"cacheCreationTokens": 0,
+					"cacheReadTokens": 2000,
+					"cost": 0.00327,
+					"inputTokens": 1000,
+					"modelName": "kimi-for-coding",
+					"outputTokens": 500
+				}
+			],
+			"modelsUsed": ["kimi-for-coding"],
+			"outputTokens": 500,
+			"period": "2026-04",
+			"totalCost": 0.00327,
+			"totalTokens": 3500
+		}
+	],
+	"session": [
+		{
+			"agent": "claude",
+			"cacheCreationTokens": 250,
+			"cacheReadTokens": 16000,
+			"inputTokens": 2353,
+			"metadata": {
+				"lastActivity": "2026-01-02T10:00:00.000Z"
+			},
+			"modelBreakdowns": [
+				{
+					"cacheCreationTokens": 50,
+					"cacheReadTokens": 9000,
+					"cost": 0.5098565,
+					"inputTokens": 1453,
+					"modelName": "claude-sonnet-4-20250514",
+					"outputTokens": 454,
+					"storedCost": 0.5
+				},
+				{
+					"cacheCreationTokens": 200,
+					"cacheReadTokens": 7000,
+					"cost": 0.05775,
+					"inputTokens": 900,
+					"modelName": "claude-opus-4-20250514",
+					"outputTokens": 400
+				}
+			],
+			"modelsUsed": ["claude-opus-4-20250514", "claude-sonnet-4-20250514"],
+			"outputTokens": 854,
+			"period": "sess-beta-1",
+			"totalCost": 0.5676065,
+			"totalTokens": 19457
+		}
+	],
+	"totals": {
+		"cacheCreationTokens": 17765,
+		"cacheReadTokens": 1309867,
+		"inputTokens": 1347024,
+		"outputTokens": 58670,
+		"totalCost": 28.146135925000006,
+		"totalTokens": 2736743,
+		"unpricedModels": [
+			"GLM-5.3",
+			"[openclaw] openclaw-mystery-1",
+			"[openclaw] unknown",
+			"[pi] pi-mystery-1",
+			"[pi] pi-mystery-2",
+			"amp-mystery-1",
+			"antigravity-model-77",
+			"antigravity-mystery-1",
+			"claude-sonnet-4-20250514",
+			"cline-mystery-1",
+			"codebuff-mystery-1",
+			"codex-mystery-1",
+			"copilot-mystery-1",
+			"droid-mystery-1",
+			"dsh-mystery-1",
+			"gemini-mystery-1",
+			"goose-mystery-1",
+			"gpt-unknown",
+			"grok-mystery-1",
+			"grok-unknown",
+			"hermes-mystery-1",
+			"kilo-mystery-1",
+			"kimi-mystery-1",
+			"model_placeholder_m499",
+			"mystery-model-9000",
+			"opencode-mystery-1",
+			"qwen-mystery-1",
+			"unknown",
+			"zcode-mystery-1"
+		]
+	}
+}
+```
+
+`--by-agent` adds an `agents` array to daily, weekly, and monthly rows, one entry per source with its own tokens, cost, and `modelBreakdowns`; session rows are already per-agent. A row of `ccusage daily --by-agent --json`:
 
 ```json
 {
@@ -77,212 +284,49 @@ ccusage daily --sections daily,monthly,session --by-agent --json
 			"agent": "all",
 			"agents": [
 				{
-					"agent": "claude",
-					"cacheCreationTokens": 20,
-					"cacheReadTokens": 30,
-					"inputTokens": 500,
-					"modelBreakdowns": [
-						{
-							"cacheCreationTokens": 20,
-							"cacheReadTokens": 30,
-							"cost": 0.02,
-							"inputTokens": 500,
-							"modelName": "claude-sonnet-4-20250514",
-							"outputTokens": 100
-						}
-					],
-					"modelsUsed": ["claude-sonnet-4-20250514"],
-					"outputTokens": 100,
-					"totalCost": 0.02,
-					"totalTokens": 650
-				},
-				{
-					"agent": "codex",
+					"agent": "kimi",
 					"cacheCreationTokens": 0,
-					"cacheReadTokens": 100,
-					"inputTokens": 900,
+					"cacheReadTokens": 2000,
+					"inputTokens": 1000,
 					"modelBreakdowns": [
 						{
 							"cacheCreationTokens": 0,
-							"cacheReadTokens": 100,
-							"cost": 0.0031375,
-							"inputTokens": 900,
-							"modelName": "gpt-5",
-							"outputTokens": 200
+							"cacheReadTokens": 2000,
+							"cost": 0.00327,
+							"inputTokens": 1000,
+							"modelName": "kimi-for-coding",
+							"outputTokens": 500
 						}
 					],
-					"modelsUsed": ["gpt-5"],
-					"outputTokens": 200,
-					"totalCost": 0.0031375,
-					"totalTokens": 1200
+					"modelsUsed": ["kimi-for-coding"],
+					"outputTokens": 500,
+					"totalCost": 0.00327,
+					"totalTokens": 3500
 				}
 			],
-			"cacheCreationTokens": 20,
-			"cacheReadTokens": 130,
-			"inputTokens": 1400,
-			"metadata": {
-				"agents": ["claude", "codex"]
-			},
-			"modelBreakdowns": [
-				{
-					"cacheCreationTokens": 20,
-					"cacheReadTokens": 30,
-					"cost": 0.02,
-					"inputTokens": 500,
-					"modelName": "claude-sonnet-4-20250514",
-					"outputTokens": 100
-				},
-				{
-					"cacheCreationTokens": 0,
-					"cacheReadTokens": 100,
-					"cost": 0.0031375,
-					"inputTokens": 900,
-					"modelName": "gpt-5",
-					"outputTokens": 200
-				}
-			],
-			"modelsUsed": ["claude-sonnet-4-20250514", "gpt-5"],
-			"outputTokens": 300,
-			"period": "2026-01-02",
-			"totalCost": 0.023137500000000002,
-			"totalTokens": 1850
-		}
-	],
-	"monthly": [
-		{
-			"agent": "all",
-			"agents": [
-				{
-					"agent": "claude",
-					"cacheCreationTokens": 20,
-					"cacheReadTokens": 30,
-					"inputTokens": 500,
-					"modelBreakdowns": [
-						{
-							"cacheCreationTokens": 20,
-							"cacheReadTokens": 30,
-							"cost": 0.02,
-							"inputTokens": 500,
-							"modelName": "claude-sonnet-4-20250514",
-							"outputTokens": 100
-						}
-					],
-					"modelsUsed": ["claude-sonnet-4-20250514"],
-					"outputTokens": 100,
-					"totalCost": 0.02,
-					"totalTokens": 650
-				},
-				{
-					"agent": "codex",
-					"cacheCreationTokens": 0,
-					"cacheReadTokens": 100,
-					"inputTokens": 900,
-					"modelBreakdowns": [
-						{
-							"cacheCreationTokens": 0,
-							"cacheReadTokens": 100,
-							"cost": 0.0031375,
-							"inputTokens": 900,
-							"modelName": "gpt-5",
-							"outputTokens": 200
-						}
-					],
-					"modelsUsed": ["gpt-5"],
-					"outputTokens": 200,
-					"totalCost": 0.0031375,
-					"totalTokens": 1200
-				}
-			],
-			"cacheCreationTokens": 20,
-			"cacheReadTokens": 130,
-			"inputTokens": 1400,
-			"metadata": {
-				"agents": ["claude", "codex"]
-			},
-			"modelBreakdowns": [
-				{
-					"cacheCreationTokens": 20,
-					"cacheReadTokens": 30,
-					"cost": 0.02,
-					"inputTokens": 500,
-					"modelName": "claude-sonnet-4-20250514",
-					"outputTokens": 100
-				},
-				{
-					"cacheCreationTokens": 0,
-					"cacheReadTokens": 100,
-					"cost": 0.0031375,
-					"inputTokens": 900,
-					"modelName": "gpt-5",
-					"outputTokens": 200
-				}
-			],
-			"modelsUsed": ["claude-sonnet-4-20250514", "gpt-5"],
-			"outputTokens": 300,
-			"period": "2026-01",
-			"totalCost": 0.023137500000000002,
-			"totalTokens": 1850
-		}
-	],
-	"session": [
-		{
-			"agent": "claude",
-			"cacheCreationTokens": 20,
-			"cacheReadTokens": 30,
-			"inputTokens": 500,
-			"metadata": {
-				"lastActivity": "2026-01-02T10:00:00.000Z"
-			},
-			"modelBreakdowns": [
-				{
-					"cacheCreationTokens": 20,
-					"cacheReadTokens": 30,
-					"cost": 0.02,
-					"inputTokens": 500,
-					"modelName": "claude-sonnet-4-20250514",
-					"outputTokens": 100
-				}
-			],
-			"modelsUsed": ["claude-sonnet-4-20250514"],
-			"outputTokens": 100,
-			"period": "claude-session",
-			"totalCost": 0.02,
-			"totalTokens": 650
-		},
-		{
-			"agent": "codex",
 			"cacheCreationTokens": 0,
-			"cacheReadTokens": 100,
-			"inputTokens": 900,
+			"cacheReadTokens": 2000,
+			"inputTokens": 1000,
 			"metadata": {
-				"lastActivity": "2026-01-02T11:00:00.000Z",
-				"reasoningOutputTokens": 20
+				"agents": ["kimi"]
 			},
 			"modelBreakdowns": [
 				{
 					"cacheCreationTokens": 0,
-					"cacheReadTokens": 100,
-					"cost": 0.0031375,
-					"inputTokens": 900,
-					"modelName": "gpt-5",
-					"outputTokens": 200
+					"cacheReadTokens": 2000,
+					"cost": 0.00327,
+					"inputTokens": 1000,
+					"modelName": "kimi-for-coding",
+					"outputTokens": 500
 				}
 			],
-			"modelsUsed": ["gpt-5"],
-			"outputTokens": 200,
-			"period": "codex-session",
-			"totalCost": 0.0031375,
-			"totalTokens": 1200
+			"modelsUsed": ["kimi-for-coding"],
+			"outputTokens": 500,
+			"period": "2026-04-21",
+			"totalCost": 0.00327,
+			"totalTokens": 3500
 		}
-	],
-	"totals": {
-		"cacheCreationTokens": 20,
-		"cacheReadTokens": 130,
-		"inputTokens": 1400,
-		"outputTokens": 300,
-		"totalCost": 0.023137500000000002,
-		"totalTokens": 1850
-	}
+	]
 }
 ```
 
@@ -292,93 +336,314 @@ In `auto` [cost mode](/guide/cost-modes), an entry's `cost` can add together cos
 
 ```json
 {
+	"cacheCreationTokens": 0,
+	"cacheReadTokens": 0,
+	"cost": 0.01,
+	"inputTokens": 100,
 	"modelName": "claude-sonnet-4-20250514",
-	"inputTokens": 1500,
-	"outputTokens": 100,
-	"cacheCreationTokens": 20,
-	"cacheReadTokens": 30,
-	"cost": 0.503084,
-	"storedCost": 0.5
+	"outputTokens": 50,
+	"storedCost": 0.01
+}
+```
+
+## Cache Write TTL Split
+
+[Claude Code](/guide/claude/) records whether each cache write used the 5-minute or the 1-hour cache TTL, and the two tiers are billed at different rates. Each `modelBreakdowns` entry where at least one record reported that split carries `cacheCreation1hTokens`, the part of `cacheCreationTokens` written with the 1-hour TTL; the rest of `cacheCreationTokens` is 5-minute writes plus writes from records that reported no split, which ccusage prices at the 5-minute rate when it calculates cost. Entries whose records never reported a split, including every other agent, omit the key.
+
+```json
+{
+	"cacheCreation1hTokens": 400,
+	"cacheCreationTokens": 600,
+	"cacheReadTokens": 9000,
+	"cost": 0.09675,
+	"inputTokens": 500,
+	"modelName": "claude-opus-4-20250514",
+	"outputTokens": 800
 }
 ```
 
 ## JSON Structure
 
-### Daily Reports (Standard)
+There are two families of shapes. The unified reports, `ccusage daily`, `weekly`, `monthly`, and `session`, use one row shape keyed by `period`. A focused report such as `ccusage claude daily` uses its source's shape, keyed by `date`, `week`, `month`, or `sessionId`. Most report shapes include a `totals` object; `blocks` and `session --id` do not, and a focused Qwen report with no rows emits `totals: null`.
 
-Standard daily reports aggregate usage across all projects:
+The samples below are real output from the test fixtures that pin ccusage's report formats. The examples are excerpts that keep whole rows; omitted rows still contribute to the displayed `totals`. Most objects use alphabetical key order; multi-section reports place the invoked section first and `totals` last.
 
-<!-- eslint-skip -->
+### Unified Daily, Weekly, and Monthly Reports
+
+`ccusage daily --json` emits a `daily` array; `weekly` and `monthly` emit `weekly` and `monthly` arrays with the same row fields. `period` is the date, the first day of the week, or the month (`YYYY-MM`). `agent` is `"all"`, and `metadata.agents` lists the sources that contributed to the row:
 
 ```json
 {
 	"daily": [
 		{
-			"date": "2026-05-16",
-			"inputTokens": 277,
-			"outputTokens": 31456,
-			"cacheCreationTokens": 512,
-			"cacheReadTokens": 1024,
-			"totalTokens": 33269,
-			"totalCost": 17.58,
-			"modelsUsed": ["claude-opus-4-1-20250805", "claude-sonnet-4-5-20250929"],
-			"modelBreakdowns": [...]
+			"agent": "all",
+			"cacheCreationTokens": 0,
+			"cacheReadTokens": 2000,
+			"inputTokens": 1000,
+			"metadata": {
+				"agents": ["kimi"]
+			},
+			"modelBreakdowns": [
+				{
+					"cacheCreationTokens": 0,
+					"cacheReadTokens": 2000,
+					"cost": 0.00327,
+					"inputTokens": 1000,
+					"modelName": "kimi-for-coding",
+					"outputTokens": 500
+				}
+			],
+			"modelsUsed": ["kimi-for-coding"],
+			"outputTokens": 500,
+			"period": "2026-04-21",
+			"totalCost": 0.00327,
+			"totalTokens": 3500
 		}
 	],
 	"totals": {
-		"inputTokens": 11174,
-		"outputTokens": 720366,
-		"cacheCreationTokens": 896,
-		"cacheReadTokens": 2304,
-		"totalTokens": 734740,
-		"totalCost": 336.47
+		"cacheCreationTokens": 17765,
+		"cacheReadTokens": 1309867,
+		"inputTokens": 1347024,
+		"outputTokens": 58670,
+		"totalCost": 28.146135925000006,
+		"totalTokens": 2736743,
+		"unpricedModels": [
+			"GLM-5.3",
+			"[openclaw] openclaw-mystery-1",
+			"[openclaw] unknown",
+			"[pi] pi-mystery-1",
+			"[pi] pi-mystery-2",
+			"amp-mystery-1",
+			"antigravity-model-77",
+			"antigravity-mystery-1",
+			"claude-sonnet-4-20250514",
+			"cline-mystery-1",
+			"codebuff-mystery-1",
+			"codex-mystery-1",
+			"copilot-mystery-1",
+			"droid-mystery-1",
+			"dsh-mystery-1",
+			"gemini-mystery-1",
+			"goose-mystery-1",
+			"gpt-unknown",
+			"grok-mystery-1",
+			"grok-unknown",
+			"hermes-mystery-1",
+			"kilo-mystery-1",
+			"kimi-mystery-1",
+			"model_placeholder_m499",
+			"mystery-model-9000",
+			"opencode-mystery-1",
+			"qwen-mystery-1",
+			"unknown",
+			"zcode-mystery-1"
+		]
 	}
 }
 ```
 
-### Daily Reports (Project-Grouped)
+### Session Reports
 
-When using `--instances`, daily reports group usage by project:
+`ccusage session --json` emits a `session` array. Each row is one session of one source: `agent` names the source and `period` holds the session ID. When present, `metadata.lastActivity` is an RFC 3339 timestamp. Some sources add more `metadata`, such as `projectPath`, `credits`, or `reasoningOutputTokens`.
 
-<!-- eslint-skip -->
+```json
+{
+	"session": [
+		{
+			"agent": "claude",
+			"cacheCreationTokens": 250,
+			"cacheReadTokens": 16000,
+			"inputTokens": 2353,
+			"metadata": {
+				"lastActivity": "2026-01-02T10:00:00.000Z"
+			},
+			"modelBreakdowns": [
+				{
+					"cacheCreationTokens": 50,
+					"cacheReadTokens": 9000,
+					"cost": 0.5098565,
+					"inputTokens": 1453,
+					"modelName": "claude-sonnet-4-20250514",
+					"outputTokens": 454,
+					"storedCost": 0.5
+				},
+				{
+					"cacheCreationTokens": 200,
+					"cacheReadTokens": 7000,
+					"cost": 0.05775,
+					"inputTokens": 900,
+					"modelName": "claude-opus-4-20250514",
+					"outputTokens": 400
+				}
+			],
+			"modelsUsed": ["claude-opus-4-20250514", "claude-sonnet-4-20250514"],
+			"outputTokens": 854,
+			"period": "sess-beta-1",
+			"totalCost": 0.5676065,
+			"totalTokens": 19457
+		}
+	],
+	"totals": {
+		"cacheCreationTokens": 17865,
+		"cacheReadTokens": 1311467,
+		"inputTokens": 1348649,
+		"outputTokens": 58942,
+		"totalCost": 28.93028592500002,
+		"totalTokens": 2740360,
+		"unpricedModels": [
+			"GLM-5.3",
+			"[openclaw] openclaw-mystery-1",
+			"[openclaw] unknown",
+			"[pi] pi-mystery-1",
+			"[pi] pi-mystery-2",
+			"amp-mystery-1",
+			"antigravity-model-77",
+			"antigravity-mystery-1",
+			"claude-sonnet-4-20250514",
+			"cline-mystery-1",
+			"codebuff-mystery-1",
+			"codex-mystery-1",
+			"copilot-mystery-1",
+			"droid-mystery-1",
+			"dsh-mystery-1",
+			"gemini-mystery-1",
+			"goose-mystery-1",
+			"gpt-unknown",
+			"grok-mystery-1",
+			"grok-unknown",
+			"hermes-mystery-1",
+			"kilo-mystery-1",
+			"kimi-mystery-1",
+			"model_placeholder_m499",
+			"mystery-model-9000",
+			"opencode-mystery-1",
+			"qwen-mystery-1",
+			"unknown",
+			"zcode-mystery-1"
+		]
+	}
+}
+```
+
+This excerpt shows one session; `totals` covers the complete report.
+
+`ccusage claude session --json` emits a `sessions` array instead, with `sessionId`, `projectPath`, `firstActivity`, and `lastActivity` at the top level of each row:
+
+```json
+{
+	"sessions": [
+		{
+			"cacheCreationTokens": 250,
+			"cacheReadTokens": 16000,
+			"firstActivity": "2025-12-31T23:50:00.000Z",
+			"inputTokens": 2353,
+			"lastActivity": "2026-01-02T10:00:00.000Z",
+			"modelBreakdowns": [
+				{
+					"cacheCreationTokens": 50,
+					"cacheReadTokens": 9000,
+					"cost": 0.5098565,
+					"inputTokens": 1453,
+					"modelName": "claude-sonnet-4-20250514",
+					"outputTokens": 454,
+					"storedCost": 0.5
+				},
+				{
+					"cacheCreationTokens": 200,
+					"cacheReadTokens": 7000,
+					"cost": 0.05775,
+					"inputTokens": 900,
+					"modelName": "claude-opus-4-20250514",
+					"outputTokens": 400
+				}
+			],
+			"modelsUsed": ["claude-opus-4-20250514", "claude-sonnet-4-20250514"],
+			"outputTokens": 854,
+			"projectPath": "-Users-dev-beta",
+			"sessionId": "sess-beta-1",
+			"totalCost": 0.5676065,
+			"totalTokens": 19457
+		}
+	],
+	"totals": {
+		"cacheCreationTokens": 2500,
+		"cacheReadTokens": 44350,
+		"inputTokens": 8207,
+		"outputTokens": 3659,
+		"totalCost": 0.851326,
+		"totalTokens": 58716,
+		"unpricedModels": ["mystery-model-9000"]
+	}
+}
+```
+
+This excerpt shows one session; `totals` covers the complete report.
+
+### Claude Code Daily, Weekly, and Monthly Reports
+
+`ccusage claude daily`, `weekly`, and `monthly` use the same row fields as the unified reports, without `agent` and `metadata`, and with `date`, `week`, or `month` in place of `period`.
+
+### Project-Grouped Daily Reports
+
+`ccusage claude daily --instances --json` replaces the `daily` array with a `projects` object keyed by project, and adds `project` to each row:
 
 ```json
 {
 	"projects": {
-		"my-frontend-app": [
+		"-Users-dev-alpha": [
 			{
-				"date": "2026-05-16",
-				"inputTokens": 177,
-				"outputTokens": 16456,
-				"cacheCreationTokens": 256,
-				"cacheReadTokens": 512,
-				"totalTokens": 17401,
-				"totalCost": 7.33,
-				"modelsUsed": ["claude-sonnet-4-5-20250929"],
-				"modelBreakdowns": [...]
-			}
-		],
-		"backend-api": [
-			{
-				"date": "2026-05-16",
-				"inputTokens": 100,
-				"outputTokens": 15000,
-				"cacheCreationTokens": 256,
-				"cacheReadTokens": 512,
-				"totalTokens": 15868,
-				"totalCost": 10.25,
-				"modelsUsed": ["claude-opus-4-1-20250805"],
-				"modelBreakdowns": [...]
+				"cacheCreationTokens": 900,
+				"cacheReadTokens": 13100,
+				"date": "2025-12-30",
+				"inputTokens": 1550,
+				"modelBreakdowns": [
+					{
+						"cacheCreation1hTokens": 400,
+						"cacheCreationTokens": 600,
+						"cacheReadTokens": 9000,
+						"cost": 0.09675,
+						"inputTokens": 500,
+						"modelName": "claude-opus-4-20250514",
+						"outputTokens": 800
+					},
+					{
+						"cacheCreationTokens": 300,
+						"cacheReadTokens": 4000,
+						"cost": 0.0012,
+						"inputTokens": 1000,
+						"modelName": "claude-sonnet-4-20250514",
+						"outputTokens": 200,
+						"storedCost": 0.05
+					},
+					{
+						"cacheCreationTokens": 0,
+						"cacheReadTokens": 100,
+						"cost": 0.00016,
+						"inputTokens": 50,
+						"modelName": "claude-haiku-4-5-20251001",
+						"outputTokens": 20
+					}
+				],
+				"modelsUsed": [
+					"claude-sonnet-4-20250514",
+					"claude-opus-4-20250514",
+					"claude-haiku-4-5-20251001"
+				],
+				"outputTokens": 1020,
+				"project": "-Users-dev-alpha",
+				"totalCost": 0.14690999999999999,
+				"totalTokens": 16570
 			}
 		]
 	},
 	"totals": {
-		"inputTokens": 277,
-		"outputTokens": 31456,
-		"cacheCreationTokens": 512,
-		"cacheReadTokens": 1024,
-		"totalTokens": 33269,
-		"totalCost": 17.58
+		"cacheCreationTokens": 2500,
+		"cacheReadTokens": 44350,
+		"inputTokens": 8207,
+		"outputTokens": 3659,
+		"totalCost": 0.851326,
+		"totalTokens": 58716,
+		"unpricedModels": ["mystery-model-9000"]
 	}
 }
 ```
@@ -387,144 +652,65 @@ When using `--instances`, daily reports group usage by project:
 
 ```bash
 # Standard aggregated output
-ccusage daily --json
+ccusage claude daily --json
 
 # Project-grouped output
-ccusage daily --instances --json
+ccusage claude daily --instances --json
 
 # Filter to specific project
-ccusage daily --project my-frontend-app --json
-```
-
-### Monthly Reports
-
-```json
-{
-	"type": "monthly",
-	"data": [
-		{
-			"month": "2026-04",
-			"models": ["claude-opus-4-1-20250805", "claude-sonnet-4-5-20250929"],
-			"inputTokens": 11174,
-			"outputTokens": 720366,
-			"cacheCreationTokens": 896,
-			"cacheReadTokens": 2304,
-			"totalTokens": 734740,
-			"costUSD": 336.47
-		}
-	],
-	"summary": {
-		"totalInputTokens": 11174,
-		"totalOutputTokens": 720366,
-		"totalCacheCreationTokens": 896,
-		"totalCacheReadTokens": 2304,
-		"totalTokens": 734740,
-		"totalCostUSD": 336.47
-	}
-}
-```
-
-### Session Reports
-
-```json
-{
-	"type": "session",
-	"data": [
-		{
-			"session": "session-1",
-			"models": ["claude-opus-4-1-20250805", "claude-sonnet-4-5-20250929"],
-			"inputTokens": 4512,
-			"outputTokens": 350846,
-			"cacheCreationTokens": 512,
-			"cacheReadTokens": 1024,
-			"totalTokens": 356894,
-			"costUSD": 156.4,
-			"firstActivity": "2026-05-15T09:30:00.000Z",
-			"lastActivity": "2026-05-15T17:45:30.000Z"
-		}
-	],
-	"summary": {
-		"totalInputTokens": 11174,
-		"totalOutputTokens": 720445,
-		"totalCacheCreationTokens": 768,
-		"totalCacheReadTokens": 1792,
-		"totalTokens": 734179,
-		"totalCostUSD": 336.68
-	}
-}
+ccusage claude daily --project my-frontend-app --json
 ```
 
 ### Blocks Reports
 
-```json
-{
-	"type": "blocks",
-	"data": [
-		{
-			"blockStart": "2026-05-16T10:00:00.000Z",
-			"blockEnd": "2026-05-16T15:00:00.000Z",
-			"isActive": true,
-			"timeRemaining": "2h 15m",
-			"models": ["claude-sonnet-4-5-20250929"],
-			"inputTokens": 1250,
-			"outputTokens": 15000,
-			"cacheCreationTokens": 256,
-			"cacheReadTokens": 512,
-			"totalTokens": 17018,
-			"costUSD": 8.75,
-			"burnRate": 2400,
-			"projectedTotal": 25000,
-			"projectedCost": 12.5
-		}
-	],
-	"summary": {
-		"totalInputTokens": 11174,
-		"totalOutputTokens": 720366,
-		"totalCacheCreationTokens": 896,
-		"totalCacheReadTokens": 2304,
-		"totalTokens": 734740,
-		"totalCostUSD": 336.47
-	}
-}
-```
+`ccusage blocks --json` emits a `blocks` array with one entry per 5-hour block, including gaps. See [Blocks](/guide/blocks-reports#json-output) for a sample.
 
 ## Field Descriptions
 
 ### Common Fields
 
-- `models`: Array of Claude model names used
 - `inputTokens`: Number of input tokens consumed
 - `outputTokens`: Number of output tokens generated
 - `cacheCreationTokens`: Tokens used for cache creation
 - `cacheReadTokens`: Tokens read from cache
-- `totalTokens`: Sum of all token types
-- `costUSD`: Estimated cost in US dollars
+- `totalTokens`: All tokens, including any unexplained remainder in the source's recorded total
+- `totalCost`: Estimated cost in US dollars
+- `modelsUsed`: Names of the models used
+- `modelBreakdowns`: One entry per model with `modelName`, the four token counts, and `cost`, plus [`storedCost`](#stored-costs), [`cacheCreation1hTokens`](#cache-write-ttl-split), [`missingPricing`](#unpriced-models), and [`estimatedPricing`](#estimated-prices) when they apply
+
+An unexplained remainder appears only in `totalTokens` and is excluded from [token-based cost calculations](/guide/cost-modes#token-based-calculation). The total can therefore exceed the sum of the displayed token categories.
 
 ### Report-Specific Fields
 
-#### Daily Reports
+#### Unified Reports
 
-- `date`: Date in YYYY-MM-DD format
+- `period`: Date (`YYYY-MM-DD`), first day of the week, month (`YYYY-MM`), or session ID
+- `agent`: `"all"` for daily, weekly, and monthly rows; the source name for session rows
+- `metadata.agents`: Sources that contributed to a daily, weekly, or monthly row
+- `metadata.lastActivity`: RFC 3339 timestamp of a session's last entry
+- `agents`: Per-source rows, added by `--by-agent`
+- Top-level `notes`: A list of messages about report scope. When a Claude project filter is active, the note explains that it applies only to Claude Code usage.
 
-#### Monthly Reports
+#### Claude Code Reports
 
-- `month`: Month in YYYY-MM format
-
-#### Session Reports
-
-- `session`: Session identifier
-- `firstActivity`: RFC 3339 timestamp of first activity in the session
-- `lastActivity`: RFC 3339 timestamp of last activity in the session
+- `date`, `week`, `month`: The row's period
+- `project`: Project of a `--instances` row
+- `sessionId`, `projectPath`: Session identity in `ccusage claude session`
+- `firstActivity`, `lastActivity`: RFC 3339 timestamps of the session's first and last entries
 
 #### Blocks Reports
 
-- `blockStart`: ISO timestamp of block start
-- `blockEnd`: ISO timestamp of block end
-- `isActive`: Whether the block is currently active
-- `timeRemaining`: Human-readable time remaining (active blocks only)
-- `burnRate`: Tokens per hour rate (active blocks only)
-- `projectedTotal`: Projected total tokens for the block
-- `projectedCost`: Projected total cost for the block
+- `id`, `startTime`, `endTime`: Block identity and its 5-hour window
+- `actualEndTime`: Timestamp of the block's last entry
+- `isActive`, `isGap`: Whether the block is running, or a gap between blocks
+- `entries`: Number of usage entries in the block
+- `tokenCounts`: `inputTokens`, `outputTokens`, `cacheCreationInputTokens`, and `cacheReadInputTokens`
+- `costUSD`: Estimated cost of the block
+- `models`: Models used in the block
+- `burnRate`: `tokensPerMinute`, `tokensPerMinuteForIndicator`, and `costPerHour` of the active block, otherwise `null`
+- `projection`: `totalTokens`, `totalCost`, and `remainingMinutes` the active block reaches at its current burn rate, otherwise `null`
+- `tokenLimitStatus`: `limit`, `projectedUsage`, `percentUsed`, and `status` of the active block when `--token-limit` is given
+- `usageLimitResetTime`: When Claude Code reported that its usage limit resets
 
 ## Filtering with JSON Output
 
@@ -541,55 +727,16 @@ ccusage session --json --mode display
 # Sort order
 ccusage daily --json --order asc
 
-# With model breakdown
-ccusage daily --json --breakdown
-
 # Hide cost fields
 ccusage daily --json --no-cost
 
 # Project analysis
-ccusage daily --json --instances                    # Group by project
-ccusage daily --json --project my-project           # Filter to project
-ccusage daily --json --instances --project my-app   # Combined usage
+ccusage claude daily --json --instances                    # Group by project
+ccusage claude daily --json --project my-project           # Filter to project
+ccusage claude daily --json --instances --project my-app   # Combined usage
 ```
 
-### Model Breakdown JSON
-
-When using `--breakdown`, the JSON includes per-model details:
-
-```json
-{
-	"type": "daily",
-	"data": [
-		{
-			"date": "2026-05-16",
-			"models": ["claude-opus-4-1-20250805", "claude-sonnet-4-5-20250929"],
-			"inputTokens": 277,
-			"outputTokens": 31456,
-			"totalTokens": 33269,
-			"costUSD": 17.58,
-			"breakdown": {
-				"claude-opus-4-1-20250805": {
-					"inputTokens": 100,
-					"outputTokens": 15000,
-					"cacheCreationTokens": 256,
-					"cacheReadTokens": 512,
-					"totalTokens": 15868,
-					"costUSD": 10.25
-				},
-				"claude-sonnet-4-5-20250929": {
-					"inputTokens": 177,
-					"outputTokens": 16456,
-					"cacheCreationTokens": 256,
-					"cacheReadTokens": 512,
-					"totalTokens": 17401,
-					"costUSD": 7.33
-				}
-			}
-		}
-	]
-}
-```
+Unified and Claude summary rows include `modelBreakdowns` regardless of `--breakdown`; that flag only changes table output. Focused Codex reports instead use a `models` map and `costUSD` for each period.
 
 ## Integration Examples
 
@@ -599,26 +746,28 @@ You can pipe JSON output to jq for advanced filtering and formatting:
 
 ```bash
 # Get total cost for the last 7 days
-ccusage daily --json --since $(date -d '7 days ago' +%Y%m%d) | jq '.summary.totalCostUSD'
+ccusage daily --json --last 7 | jq '.totals.totalCost'
 
 # List all unique models used
-ccusage session --json | jq -r '.data[].models[]' | sort -u
+ccusage session --json | jq -r '.session[].modelsUsed[]' | sort -u
 
 # Find the most expensive session
-ccusage session --json | jq -r '.data | sort_by(.costUSD) | reverse | .[0].session'
+ccusage session --json | jq -r '.session | max_by(.totalCost) | "\(.agent) \(.period)"'
 
 # Get daily costs as CSV
-ccusage daily --json | jq -r '.daily[] | [.date, .totalCost] | @csv'
+ccusage daily --json | jq -r '.daily[] | [.period, .totalCost] | @csv'
 
 # Analyze project costs
-ccusage daily --instances --json | jq -r '.projects | to_entries[] | [.key, (.value | map(.totalCost) | add)] | @csv'
+ccusage claude daily --instances --json | jq -r '.projects | to_entries[] | [.key, (.value | map(.totalCost) | add)] | @csv'
 
 # Find most expensive project
-ccusage daily --instances --json | jq -r '.projects | to_entries | map({project: .key, total: (.value | map(.totalCost) | add)}) | sort_by(.total) | reverse | .[0].project'
+ccusage claude daily --instances --json | jq -r '.projects | to_entries | map({project: .key, total: (.value | map(.totalCost) | add)}) | max_by(.total) | .project'
 
 # Get usage by project for specific date
-ccusage daily --instances --json | jq '.projects | to_entries[] | select(.value[].date == "2026-05-16") | {project: .key, usage: .value[0]}'
+ccusage claude daily --instances --json | jq '.projects | to_entries[] | {project: .key, usage: (.value[] | select(.date == "2026-05-16"))}'
 ```
+
+`ccusage <command> --jq '<filter>'` passes the report to `jq`; the `jq` executable must be on your PATH.
 
 ### Using with Python
 
@@ -631,26 +780,26 @@ result = subprocess.run(['ccusage', 'daily', '--json'], capture_output=True, tex
 data = json.loads(result.stdout)
 
 # Process the data
-for day in data['data']:
-    print(f"Date: {day['date']}, Cost: ${day['costUSD']:.2f}")
+for day in data['daily']:
+    print(f"Date: {day['period']}, Cost: ${day['totalCost']:.2f}")
 
 total_cost = data['totals']['totalCost']
 print(f"Total cost: ${total_cost:.2f}")
 
 # Project analysis example
-result = subprocess.run(['ccusage', 'daily', '--instances', '--json'], capture_output=True, text=True)
+result = subprocess.run(['ccusage', 'claude', 'daily', '--instances', '--json'], capture_output=True, text=True)
 project_data = json.loads(result.stdout)
 
-if 'projects' in project_data:
-    for project_name, daily_entries in project_data['projects'].items():
-        project_total = sum(day['totalCost'] for day in daily_entries)
-        print(f"Project {project_name}: ${project_total:.2f}")
+for project_name, daily_entries in project_data['projects'].items():
+    project_total = sum(day['totalCost'] for day in daily_entries)
+    print(f"Project {project_name}: ${project_total:.2f}")
 
-    # Find highest spending project
-    project_totals = {
-        project: sum(day['totalCost'] for day in days)
-        for project, days in project_data['projects'].items()
-    }
+# Find highest spending project
+project_totals = {
+    project: sum(day['totalCost'] for day in days)
+    for project, days in project_data['projects'].items()
+}
+if project_totals:
     top_project = max(project_totals, key=project_totals.get)
     print(f"Highest spending project: {top_project} (${project_totals[top_project]:.2f})")
 ```
@@ -665,42 +814,39 @@ const output = execSync('ccusage session --json', { encoding: 'utf-8' });
 const data = JSON.parse(output);
 
 // Find sessions over $10
-const expensiveSessions = data.data.filter((session) => session.costUSD > 10);
+const expensiveSessions = data.session.filter((session) => session.totalCost > 10);
 console.log(`Found ${expensiveSessions.length} expensive sessions`);
 
 expensiveSessions.forEach((session) => {
-	console.log(`${session.session}: $${session.costUSD.toFixed(2)}`);
+	console.log(`${session.agent} ${session.period}: $${session.totalCost.toFixed(2)}`);
 });
 
 // Project analysis example
-const projectOutput = execSync('ccusage daily --instances --json', { encoding: 'utf-8' });
+const projectOutput = execSync('ccusage claude daily --instances --json', { encoding: 'utf-8' });
 const projectData = JSON.parse(projectOutput);
 
-if (projectData.projects) {
-	// Calculate total cost per project
-	const projectCosts = Object.entries(projectData.projects).map(([name, days]) => ({
-		name,
-		totalCost: days.reduce((sum, day) => sum + day.totalCost, 0),
-		totalTokens: days.reduce((sum, day) => sum + day.totalTokens, 0),
-	}));
+// Calculate total cost per project
+const projectCosts = Object.entries(projectData.projects).map(([name, days]) => ({
+	name,
+	totalCost: days.reduce((sum, day) => sum + day.totalCost, 0),
+	totalTokens: days.reduce((sum, day) => sum + day.totalTokens, 0),
+}));
 
-	// Sort by cost descending
-	projectCosts.sort((a, b) => b.totalCost - a.totalCost);
+// Sort by cost descending
+projectCosts.sort((a, b) => b.totalCost - a.totalCost);
 
-	console.log('Project Usage Summary:');
-	projectCosts.forEach((project) => {
-		console.log(
-			`${project.name}: $${project.totalCost.toFixed(2)} (${project.totalTokens.toLocaleString()} tokens)`,
-		);
-	});
-}
+console.log('Project Usage Summary:');
+projectCosts.forEach((project) => {
+	console.log(
+		`${project.name}: $${project.totalCost.toFixed(2)} (${project.totalTokens.toLocaleString()} tokens)`,
+	);
+});
 ```
 
 ## Programmatic Usage
 
 JSON output is designed for programmatic consumption:
 
-- **Consistent structure**: All fields are always present (with 0 or empty values when not applicable)
+- **Consistent structure**: Token and cost fields are always present (with 0 or empty values when not applicable), except that `--no-cost` removes cost fields. A few `modelBreakdowns` keys appear only when they apply: [`missingPricing`](#unpriced-models), [`storedCost`](#stored-costs), and [`cacheCreation1hTokens`](#cache-write-ttl-split)
 - **Standard types**: Numbers for metrics, strings for identifiers, arrays for lists
 - **ISO timestamps**: Standardized date/time formats for reliable parsing
-- **Stable schema**: Field names and structures remain consistent across versions

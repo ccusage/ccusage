@@ -1,53 +1,53 @@
-use ccusage_adapter_common::{
-    collect_files_with_extension, filter_loaded_entries_by_date, read_files_parallel,
+use ccusage_adapter_common::source::{EntryDescriptor, EntrySource, LoadContext};
+use ccusage_core::{
+    LoadedEntry, Result, TimestampMs, TokenUsageRaw, UsageSummary, cli,
+    cli::{AgentCommandArgs, AgentReportKind, SharedArgs},
+    date_at, fast, format_rfc3339_millis, model_aliases, parse_ts_timestamp, print_usage_table,
+    stored_cost_for_mode,
 };
-use ccusage_core::*;
 
 mod loader;
 mod parser;
 mod paths;
-mod report;
 
-use crate::cli::AgentCommandArgs;
-use crate::{PricingMap, Result, print_json_or_jq, print_usage_table, sort_summaries, wants_json};
+pub struct Copilot;
+pub static SOURCE: Copilot = Copilot;
 
-pub use loader::load_entries;
-pub(crate) use report::report_from_rows;
-pub use report::summarize_entries;
+impl EntrySource for Copilot {
+    fn descriptor(&self) -> EntryDescriptor {
+        EntryDescriptor {
+            session: ccusage_adapter_common::source::SessionShape::WithActivity,
+            ..EntryDescriptor::standard("copilot", "GitHub Copilot CLI")
+        }
+    }
+
+    fn load_entries(&self, cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
+        loader::load_entries_for_context(cx)
+    }
+
+    fn print_table(
+        &self,
+        rows: &[UsageSummary],
+        kind: AgentReportKind,
+        shared: &SharedArgs,
+    ) -> Result<()> {
+        if rows.is_empty() {
+            ccusage_core::errln!("{}", empty_usage_message());
+            return Ok(());
+        }
+        crate::print_usage_table(
+            "GitHub Copilot CLI Token Usage Report",
+            ccusage_core::first_column(kind),
+            rows,
+            shared,
+            false,
+            None,
+        )
+    }
+}
 
 pub fn run(args: AgentCommandArgs) -> Result<()> {
-    let shared = args.shared;
-    let pricing = PricingMap::load_with_overrides(
-        shared.offline,
-        crate::log_level() != Some(0),
-        shared.pricing_overrides.iter(),
-    );
-    let mut entries = load_entries(&shared, &pricing)?;
-    filter_loaded_entries_by_date(&mut entries, &shared);
-    let mut rows = summarize_entries(&entries, args.kind)?;
-    sort_summaries(&mut rows, &shared.order, |row| {
-        ccusage_core::summary_period(row)
-    });
-    if wants_json(&shared) {
-        return print_json_or_jq(
-            report_from_rows(&rows, args.kind),
-            shared.jq.as_deref(),
-            shared.no_cost,
-        );
-    }
-    if rows.is_empty() {
-        eprintln!("{}", empty_usage_message());
-        return Ok(());
-    }
-    print_usage_table(
-        "GitHub Copilot CLI Token Usage Report",
-        ccusage_core::first_column(args.kind),
-        &rows,
-        &shared,
-        false,
-        None,
-    )?;
-    Ok(())
+    SOURCE.run_focused(args)
 }
 
 fn empty_usage_message() -> &'static str {

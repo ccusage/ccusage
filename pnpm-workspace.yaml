@@ -8,20 +8,21 @@ catalogMode: strict
 catalogs:
   docs:
     '@ryoppippi/vite-plugin-cloudflare-redirect': ^1.1.3
-    vitepress: 2.0.0-alpha.20
-    vitepress-plugin-group-icons: ^1.8.1
-    vitepress-plugin-llms: ^1.14.0
+    cf: 1.0.0-rc.2
+    vitepress: 2.0.0-alpha.21
+    vitepress-plugin-group-icons: ^1.8.2
+    vitepress-plugin-llms: ^1.15.0
   telemetry:
-    '@cloudflare/vite-plugin': ^2.0.0-beta.v.2
+    '@cloudflare/vite-plugin': 2.0.0-rc.2
     '@cloudflare/workers-types': ^5.20261018.1
     '@hono/zod-validator': ^0.9.1
-    cf: ^1.0.0-beta.18
+    cf: 1.0.0-rc.2
     hono: ^4.13.13
     json-schema-to-ts: ^3.1.1
     vite: ^8.3.4
     zod: ^4.6.7
   types:
-    '@types/node': ^24.19.2
+    '@types/node': ^26.6.6
     '@types/react': ^19.3.0
 
 enablePrePostScripts: true
@@ -33,14 +34,11 @@ minimumReleaseAgeExclude:
   - vitepress-plugin-group-icons
   - vitepress-plugin-llms
 
-# Security settings for supply chain attack prevention
 strictDepBuilds: true
 blockExoticSubdeps: true
 
 trustPolicy: no-downgrade
 
-# Explicitly allow build scripts for packages that require them
-# (replaces onlyBuiltDependencies)
 allowBuilds:
   esbuild: true
   sharp: true
@@ -49,11 +47,4 @@ allowBuilds:
 
 shellEmulator: true
 
-# Nix pins pnpm for local development and CI, so pnpm should not download a
-# second package-manager binary or add its bootstrap metadata to the lockfile.
-pmOnFail: ignore
-
-# Collapse duplicate versions when one satisfies every range, so the lockfile
-# does not accumulate redundant copies between manual `pnpm dedupe` runs.
-# Requires pnpm 12.6+, pinned for Nix and package-manager installs.
 autoDedupe: true

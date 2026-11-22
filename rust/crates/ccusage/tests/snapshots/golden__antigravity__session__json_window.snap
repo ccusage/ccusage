@@ -1,0 +1,153 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage antigravity session --offline --json --since 20251231 --until 20260101
+---
+exit: 0
+--- stdout ---
+{
+  "sessions": [
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 102000,
+      "firstActivity": "2025-12-31T10:00:00.000Z",
+      "inputTokens": 251451,
+      "lastActivity": "2026-01-01T12:00:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 100000,
+          "cost": 0.665,
+          "inputTokens": 250000,
+          "modelName": "gemini-2.5-pro",
+          "outputTokens": 1000
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 2000,
+          "cost": 0.00279,
+          "inputTokens": 940,
+          "modelName": "gemini-3.5-flash-high",
+          "outputTokens": 120
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0011200000000000001,
+          "inputTokens": 500,
+          "modelName": "gemini-3-pro",
+          "outputTokens": 10
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00009075,
+          "inputTokens": 11,
+          "modelName": "gemini-3.6-flash-high",
+          "outputTokens": 22
+        }
+      ],
+      "modelsUsed": [
+        "gemini-3.5-flash-high",
+        "gemini-3-pro",
+        "gemini-3.6-flash-high",
+        "gemini-2.5-pro"
+      ],
+      "outputTokens": 1152,
+      "projectPath": "Antigravity",
+      "sessionId": "session-alpha",
+      "totalCost": 0.66900075,
+      "totalTokens": 354603
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 1000,
+      "firstActivity": "2025-12-31T15:30:00.000Z",
+      "inputTokens": 1230,
+      "lastActivity": "2026-01-01T12:30:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00585,
+          "inputTokens": 900,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 190
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0001275,
+          "inputTokens": 30,
+          "modelName": "gpt-5",
+          "outputTokens": 9
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 1000,
+          "cost": 0.0,
+          "inputTokens": 300,
+          "missingPricing": true,
+          "modelName": "antigravity-mystery-1",
+          "outputTokens": 70
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514",
+        "gpt-5",
+        "antigravity-mystery-1"
+      ],
+      "outputTokens": 269,
+      "projectPath": "Antigravity",
+      "sessionId": "session-beta",
+      "totalCost": 0.0059775,
+      "totalTokens": 2519
+    },
+    {
+      "cacheCreationTokens": 200,
+      "cacheReadTokens": 17000,
+      "firstActivity": "2025-12-31T23:50:00.500Z",
+      "inputTokens": 3020,
+      "lastActivity": "2026-01-01T00:20:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 10000,
+          "cost": 0.008749999999999999,
+          "inputTokens": 2000,
+          "modelName": "gpt-5",
+          "outputTokens": 500
+        },
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 7000,
+          "cost": 0.00412,
+          "inputTokens": 1020,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 430
+        }
+      ],
+      "modelsUsed": [
+        "claude-haiku-4-5-20251001",
+        "gpt-5"
+      ],
+      "outputTokens": 930,
+      "projectPath": "Antigravity",
+      "sessionId": "session-gamma",
+      "totalCost": 0.01287,
+      "totalTokens": 21150
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 200,
+    "cacheReadTokens": 120000,
+    "inputTokens": 255701,
+    "outputTokens": 2351,
+    "totalCost": 0.68784825,
+    "totalTokens": 378272,
+    "unpricedModels": [
+      "antigravity-mystery-1"
+    ]
+  }
+}
+
+--- stderr ---

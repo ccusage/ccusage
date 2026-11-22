@@ -1,0 +1,46 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: KILO_DATA_DIR=kilo-zero COLUMNS=200 ccusage kilo daily --json --offline
+---
+exit: 0
+--- stdout ---
+{
+  "daily": [
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "date": "2026-01-01",
+      "inputTokens": 100,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 100,
+          "missingPricing": true,
+          "modelName": "kilo-mystery-9",
+          "outputTokens": 50
+        }
+      ],
+      "modelsUsed": [
+        "kilo-mystery-9"
+      ],
+      "outputTokens": 50,
+      "totalCost": 0.0,
+      "totalTokens": 150
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 0,
+    "cacheReadTokens": 0,
+    "inputTokens": 100,
+    "outputTokens": 50,
+    "totalCost": 0.0,
+    "totalTokens": 150,
+    "unpricedModels": [
+      "kilo-mystery-9"
+    ]
+  }
+}
+
+--- stderr ---

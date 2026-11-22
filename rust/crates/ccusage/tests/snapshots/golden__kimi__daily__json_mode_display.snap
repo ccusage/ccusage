@@ -1,0 +1,206 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage kimi daily --offline --json --mode display
+---
+exit: 0
+--- stdout ---
+{
+  "daily": [
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "date": "2025-12-27",
+      "inputTokens": 100,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 100,
+          "modelName": "kimi-k2-thinking",
+          "outputTokens": 50
+        }
+      ],
+      "modelsUsed": [
+        "kimi-k2-thinking"
+      ],
+      "outputTokens": 50,
+      "totalCost": 0.0,
+      "totalTokens": 150
+    },
+    {
+      "cacheCreationTokens": 900,
+      "cacheReadTokens": 26000,
+      "date": "2025-12-30",
+      "inputTokens": 6000,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 900,
+          "cacheReadTokens": 12000,
+          "cost": 0.0,
+          "inputTokens": 3000,
+          "modelName": "kimi-k2-thinking",
+          "outputTokens": 610
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 14000,
+          "cost": 0.0,
+          "inputTokens": 3000,
+          "modelName": "kimi-for-coding",
+          "outputTokens": 80
+        }
+      ],
+      "modelsUsed": [
+        "kimi-k2-thinking",
+        "kimi-for-coding"
+      ],
+      "outputTokens": 690,
+      "totalCost": 0.0,
+      "totalTokens": 33590
+    },
+    {
+      "cacheCreationTokens": 620,
+      "cacheReadTokens": 29000,
+      "date": "2025-12-31",
+      "inputTokens": 5761,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 5000,
+          "cost": 0.0,
+          "inputTokens": 1411,
+          "modelName": "kimi-k2-thinking",
+          "outputTokens": 339
+        },
+        {
+          "cacheCreationTokens": 20,
+          "cacheReadTokens": 3000,
+          "cost": 0.0,
+          "inputTokens": 1650,
+          "modelName": "kimi-for-coding",
+          "outputTokens": 650
+        },
+        {
+          "cacheCreationTokens": 600,
+          "cacheReadTokens": 21000,
+          "cost": 0.0,
+          "inputTokens": 2700,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 1200
+        }
+      ],
+      "modelsUsed": [
+        "kimi-k2-thinking",
+        "kimi-for-coding",
+        "claude-sonnet-4-20250514"
+      ],
+      "outputTokens": 2189,
+      "totalCost": 0.0,
+      "totalTokens": 37570
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "date": "2026-01-01",
+      "inputTokens": 1100,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 500,
+          "modelName": "gpt-5",
+          "outputTokens": 100
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 300,
+          "modelName": "kimi-mystery-1",
+          "outputTokens": 70
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 100,
+          "modelName": "kimi-k2-thinking",
+          "outputTokens": 50
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 200,
+          "modelName": "kimi-for-coding",
+          "outputTokens": 45
+        }
+      ],
+      "modelsUsed": [
+        "gpt-5",
+        "kimi-mystery-1",
+        "kimi-k2-thinking",
+        "kimi-for-coding"
+      ],
+      "outputTokens": 265,
+      "totalCost": 0.0,
+      "totalTokens": 2047
+    },
+    {
+      "cacheCreationTokens": 50,
+      "cacheReadTokens": 6000,
+      "date": "2026-01-02",
+      "inputTokens": 800,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 50,
+          "cacheReadTokens": 6000,
+          "cost": 0.0,
+          "inputTokens": 800,
+          "modelName": "kimi-for-coding",
+          "outputTokens": 300
+        }
+      ],
+      "modelsUsed": [
+        "kimi-for-coding"
+      ],
+      "outputTokens": 300,
+      "totalCost": 0.0,
+      "totalTokens": 7150
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 2000,
+      "date": "2026-04-21",
+      "inputTokens": 1000,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 2000,
+          "cost": 0.0,
+          "inputTokens": 1000,
+          "modelName": "kimi-for-coding",
+          "outputTokens": 500
+        }
+      ],
+      "modelsUsed": [
+        "kimi-for-coding"
+      ],
+      "outputTokens": 500,
+      "totalCost": 0.0,
+      "totalTokens": 3500
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 1570,
+    "cacheReadTokens": 63000,
+    "inputTokens": 14761,
+    "outputTokens": 3994,
+    "totalCost": 0.0,
+    "totalTokens": 84007
+  }
+}
+
+--- stderr ---

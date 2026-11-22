@@ -1,0 +1,151 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage pi monthly --offline --json --timezone Asia/Tokyo
+---
+exit: 0
+--- stdout ---
+{
+  "monthly": [
+    {
+      "cacheCreationTokens": 1534,
+      "cacheReadTokens": 8443,
+      "inputTokens": 7482,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 127,
+          "cacheReadTokens": 353,
+          "cost": 3.25,
+          "inputTokens": 2802,
+          "missingPricing": true,
+          "modelName": "[pi] pi-mystery-1",
+          "outputTokens": 281,
+          "storedCost": 3.25
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 1.1,
+          "inputTokens": 270,
+          "modelName": "[pi] claude-opus-4-20250514",
+          "outputTokens": 90,
+          "storedCost": 1.1
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.12725,
+          "inputTokens": 2010,
+          "modelName": "[pi] gpt-5",
+          "outputTokens": 201,
+          "storedCost": 0.125
+        },
+        {
+          "cacheCreationTokens": 400,
+          "cacheReadTokens": 8000,
+          "cost": 0.07,
+          "inputTokens": 1800,
+          "modelName": "[pi] claude-sonnet-4-20250514",
+          "outputTokens": 360,
+          "storedCost": 0.07
+        },
+        {
+          "cacheCreationTokens": 1007,
+          "cacheReadTokens": 90,
+          "cost": 0.0,
+          "inputTokens": 600,
+          "missingPricing": true,
+          "modelName": "[pi] pi-mystery-2",
+          "outputTokens": 60
+        }
+      ],
+      "modelsUsed": [
+        "[pi] pi-mystery-1",
+        "[pi] pi-mystery-2",
+        "[pi] gpt-5",
+        "[pi] claude-sonnet-4-20250514",
+        "[pi] claude-opus-4-20250514"
+      ],
+      "month": "2025-12",
+      "outputTokens": 992,
+      "totalCost": 4.54725,
+      "totalTokens": 18451
+    },
+    {
+      "cacheCreationTokens": 701,
+      "cacheReadTokens": 36006,
+      "inputTokens": 8085,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 601,
+          "cacheReadTokens": 21006,
+          "cost": 4.0301668500000005,
+          "inputTokens": 2790,
+          "modelName": "[pi] claude-haiku-4-5-20251001",
+          "outputTokens": 1216,
+          "storedCost": 4.03
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 6000,
+          "cost": 0.5000675,
+          "inputTokens": 830,
+          "modelName": "[pi] gpt-5",
+          "outputTokens": 303,
+          "storedCost": 0.5
+        },
+        {
+          "cacheCreationTokens": 100,
+          "cacheReadTokens": 8000,
+          "cost": 0.0296,
+          "inputTokens": 2050,
+          "modelName": "[pi] claude-sonnet-4-20250514",
+          "outputTokens": 460,
+          "storedCost": 0.02
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 1000,
+          "cost": 0.006749999999999999,
+          "inputTokens": 2100,
+          "modelName": "[pi] claude-opus-4-20250514",
+          "outputTokens": 550,
+          "storedCost": 0.0
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 300,
+          "missingPricing": true,
+          "modelName": "[pi] pi-mystery-1",
+          "outputTokens": 70
+        }
+      ],
+      "modelsUsed": [
+        "[pi] claude-sonnet-4-20250514",
+        "[pi] claude-haiku-4-5-20251001",
+        "[pi] gpt-5",
+        "[pi] claude-opus-4-20250514",
+        "[pi] pi-mystery-1"
+      ],
+      "month": "2026-01",
+      "outputTokens": 2604,
+      "totalCost": 4.566584350000001,
+      "totalTokens": 48146
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 2235,
+    "cacheReadTokens": 44449,
+    "inputTokens": 15567,
+    "outputTokens": 3596,
+    "totalCost": 9.113834350000001,
+    "totalTokens": 66597,
+    "unpricedModels": [
+      "[pi] pi-mystery-1",
+      "[pi] pi-mystery-2"
+    ]
+  }
+}
+
+--- stderr ---

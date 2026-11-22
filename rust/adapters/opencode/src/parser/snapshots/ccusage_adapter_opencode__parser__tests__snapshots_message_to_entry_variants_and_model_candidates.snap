@@ -1,0 +1,92 @@
+---
+source: adapters/opencode/src/parser/tests.rs
+expression: "json!({\n    \"calculated\": entry_snapshot(&calculated), \"displayCost\":\n    entry_snapshot(&display_cost), \"unknownSession\":\n    entry_snapshot(&unknown_session), \"candidates\":\n    {\n        \"anthropic\": candidate_names(\"claude-sonnet-4.5\", \"anthropic\"),\n        \"copilot\": candidate_names(\"claude-sonnet-4.5\", \"github-copilot\"),\n        \"geminiAlias\": candidate_names(\"gemini-3-pro-high\", \"google\"),\n        \"unknownProvider\": candidate_names(\"gpt-test\", \"unknown\"),\n    }\n})"
+---
+{
+  "calculated": {
+    "cost": 22.03125,
+    "date": "2026-01-02",
+    "extraTotalTokens": 0,
+    "messageId": "message-a",
+    "missingPricingModel": null,
+    "model": "claude-sonnet-4.5",
+    "project": "opencode",
+    "projectPath": "OpenCode",
+    "recordedCost": 0.0,
+    "sessionId": "session-a",
+    "storedCost": null,
+    "timestamp": 1767312000000,
+    "usage": {
+      "cacheCreationInputTokens": 25,
+      "cacheReadInputTokens": 50,
+      "inputTokens": 100,
+      "outputTokens": 10
+    },
+    "version": null
+  },
+  "candidates": {
+    "anthropic": [
+      "claude-sonnet-4.5",
+      "claude-sonnet-4-5",
+      "anthropic/claude-sonnet-4.5",
+      "anthropic/claude-sonnet-4-5"
+    ],
+    "copilot": [
+      "claude-sonnet-4.5",
+      "claude-sonnet-4-5",
+      "github_copilot/claude-sonnet-4.5",
+      "github_copilot/claude-sonnet-4-5"
+    ],
+    "geminiAlias": [
+      "gemini-3-pro-high",
+      "gemini-3-pro-preview",
+      "google/gemini-3-pro-high",
+      "google/gemini-3-pro-preview"
+    ],
+    "unknownProvider": [
+      "gpt-test"
+    ]
+  },
+  "displayCost": {
+    "cost": 0.02,
+    "date": "2026-01-02",
+    "extraTotalTokens": 123,
+    "messageId": "message-b",
+    "missingPricingModel": null,
+    "model": "gpt-test",
+    "project": "opencode",
+    "projectPath": "OpenCode",
+    "recordedCost": 0.02,
+    "sessionId": "explicit-session",
+    "storedCost": null,
+    "timestamp": 1767312000000,
+    "usage": {
+      "cacheCreationInputTokens": 0,
+      "cacheReadInputTokens": 0,
+      "inputTokens": 0,
+      "outputTokens": 0
+    },
+    "version": null
+  },
+  "unknownSession": {
+    "cost": 0.03,
+    "date": "2026-01-02",
+    "extraTotalTokens": 0,
+    "messageId": "message-c",
+    "missingPricingModel": null,
+    "model": "gpt-test",
+    "project": "opencode",
+    "projectPath": "OpenCode",
+    "recordedCost": 0.03,
+    "sessionId": "unknown",
+    "storedCost": 0.03,
+    "timestamp": 1767312000000,
+    "usage": {
+      "cacheCreationInputTokens": 3,
+      "cacheReadInputTokens": 0,
+      "inputTokens": 7,
+      "outputTokens": 0
+    },
+    "version": null
+  }
+}

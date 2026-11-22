@@ -4,13 +4,6 @@ The Antigravity adapter turns local Antigravity SQLite conversation databases
 into the usage entries the reports render. It is a separate source boundary
 from the Gemini CLI adapter so unified reports preserve source attribution.
 
-## Owns
-
-- `loader.rs` — database discovery, bounded ordered reads, and identity-based deduplication.
-- `parser.rs` — SQLite row handling, GeneratorMetadata/CortexStepMetadata protobuf decoding, token buckets, retries, and model naming.
-- `paths.rs` — environment variables, default roots, and `.db` discovery.
-- `report.rs` — the JSON and table shapes where they differ from the shared ones.
-
 ## Data source
 
 The adapter reads `.db` files below these default roots:
@@ -24,25 +17,18 @@ The adapter reads `.db` files below these default roots:
 
 `ANTIGRAVITY_DATA_DIR` accepts one or more comma-separated data roots. Each
 root may contain a `conversations/` child or be the conversation directory
-itself. Databases are opened read-only and must provide the `gen_metadata`
-table. When present, the real `steps` schema contributes step and retry usage,
-and `trajectory_metadata_blob` supplies the timestamp fallback. SQLite,
-row-iteration, and protobuf failures are reported instead of becoming empty or
-partial reports.
+itself. Databases are opened read-only; a conversation database provides the
+`gen_metadata` table. When present, the real `steps` schema contributes step
+and retry usage, and `trajectory_metadata_blob` supplies the timestamp
+fallback. Empty databases and databases with none of those tables (such as
+`conversation_summaries.db`) are skipped silently (logged with `--debug`); a
+database with `steps` or `trajectory_metadata_blob` but no `gen_metadata`, and
+unreadable databases, are skipped with a filename warning. A database only contributes usage when its
+full read succeeds. Other readable databases remain available to the report.
 
-## Public surface
-
-- `loader::load_entries`
-- `report::summarize_entries`
-- `run`
-
-## Depends on
-
-- `ccusage-adapter-common`
-- `ccusage-core`
-- `jiff`
-- `serde_json`
-- `sqlite`
+Usage rows use generation, step, linked-record, or trajectory timestamps. Rows
+without any of these are skipped with an invalid-timestamp diagnostic; the
+database's modification time does not date individual records.
 
 ## Build layer
 

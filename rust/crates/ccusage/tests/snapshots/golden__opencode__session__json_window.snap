@@ -1,0 +1,283 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage opencode session --offline --json --since 20251231 --until 20260101
+---
+exit: 0
+--- stdout ---
+{
+  "sessions": [
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 80,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00036,
+          "inputTokens": 80,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 8
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514"
+      ],
+      "outputTokens": 8,
+      "sessionId": "ses-agg-json",
+      "totalCost": 0.00036,
+      "totalTokens": 88
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 3000,
+      "inputTokens": 600,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 3000,
+          "cost": 0.0042,
+          "inputTokens": 600,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 100
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514"
+      ],
+      "outputTokens": 100,
+      "sessionId": "ses-ch-gamma",
+      "totalCost": 0.0042,
+      "totalTokens": 3700
+    },
+    {
+      "cacheCreationTokens": 200,
+      "cacheReadTokens": 7000,
+      "inputTokens": 900,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 7000,
+          "cost": 2.0,
+          "inputTokens": 900,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 400,
+          "storedCost": 2.0
+        }
+      ],
+      "modelsUsed": [
+        "claude-haiku-4-5-20251001"
+      ],
+      "outputTokens": 400,
+      "sessionId": "ses-json-beta",
+      "totalCost": 2.0,
+      "totalTokens": 8500
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 2500,
+      "inputTokens": 1200,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 2500,
+          "cost": 0.0031875,
+          "inputTokens": 700,
+          "modelName": "gpt-5",
+          "outputTokens": 150
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0006399999999999999,
+          "inputTokens": 200,
+          "modelName": "gemini-3-pro-high",
+          "outputTokens": 20
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 300,
+          "missingPricing": true,
+          "modelName": "opencode-mystery-1",
+          "outputTokens": 70
+        }
+      ],
+      "modelsUsed": [
+        "gpt-5",
+        "opencode-mystery-1",
+        "gemini-3-pro-high"
+      ],
+      "outputTokens": 240,
+      "sessionId": "ses-v1-alpha",
+      "totalCost": 0.0038274999999999997,
+      "totalTokens": 3990
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 7,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 7,
+          "missingPricing": true,
+          "modelName": "opus",
+          "outputTokens": 1
+        }
+      ],
+      "modelsUsed": [
+        "opus"
+      ],
+      "outputTokens": 1,
+      "sessionId": "ses-v2-agent",
+      "totalCost": 0.0,
+      "totalTokens": 8
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 60,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00013500000000000003,
+          "inputTokens": 60,
+          "modelName": "gpt-5",
+          "outputTokens": 6
+        }
+      ],
+      "modelsUsed": [
+        "gpt-5"
+      ],
+      "outputTokens": 6,
+      "sessionId": "ses-v2-compact",
+      "totalCost": 0.00013500000000000003,
+      "totalTokens": 66
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 33,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0007199999999999999,
+          "inputTokens": 33,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 3
+        }
+      ],
+      "modelsUsed": [
+        "claude-opus-4-20250514"
+      ],
+      "outputTokens": 3,
+      "sessionId": "ses-v2-fork-before",
+      "totalCost": 0.0007199999999999999,
+      "totalTokens": 36
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 21,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.000465,
+          "inputTokens": 21,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 2
+        }
+      ],
+      "modelsUsed": [
+        "claude-opus-4-20250514"
+      ],
+      "outputTokens": 2,
+      "sessionId": "ses-v2-fork-lost",
+      "totalCost": 0.000465,
+      "totalTokens": 23
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 40,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0009,
+          "inputTokens": 40,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 4
+        }
+      ],
+      "modelsUsed": [
+        "claude-opus-4-20250514"
+      ],
+      "outputTokens": 4,
+      "sessionId": "ses-v2-fork-through",
+      "totalCost": 0.0009,
+      "totalTokens": 44
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 2190,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.039,
+          "inputTokens": 1300,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 260
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0048000000000000004,
+          "inputTokens": 800,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 160
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00020250000000000002,
+          "inputTokens": 90,
+          "modelName": "gpt-5",
+          "outputTokens": 9
+        }
+      ],
+      "modelsUsed": [
+        "claude-opus-4-20250514",
+        "gpt-5",
+        "claude-sonnet-4-20250514"
+      ],
+      "outputTokens": 429,
+      "sessionId": "ses-v2-parent",
+      "totalCost": 0.0440025,
+      "totalTokens": 2619
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 200,
+    "cacheReadTokens": 12500,
+    "inputTokens": 5131,
+    "outputTokens": 1193,
+    "totalCost": 2.0546100000000003,
+    "totalTokens": 19074,
+    "unpricedModels": [
+      "opencode-mystery-1",
+      "opus"
+    ]
+  }
+}
+
+--- stderr ---

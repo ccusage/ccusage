@@ -25,9 +25,13 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.issue.number || inputs.issue_number }}
   cancel-in-progress: false
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   triage:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 20
     permissions:
       contents: read
@@ -51,10 +55,8 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Set up Nushell
-        uses: hustcer/setup-nu@95cd3bfe252450ef7d35dd9a7ddecf3484341134 # v3.28
-        with:
-          version: 0.114.1
+      - name: Set up Nix
+        uses: ./.github/actions/setup-nix-cache
 
       - name: Resolve issue context
         id: issue
@@ -62,7 +64,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           ISSUE_NUMBER: ${{ github.event.issue.number || inputs.issue_number }}
-        run: nu .github/scripts/contribution-gate.nu issue-context
+        run: .github/scripts/contribution-gate.nu issue-context
 
       - name: Check issue author
         id: access
@@ -70,7 +72,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           AUTHOR: ${{ steps.issue.outputs.author }}
-        run: nu .github/scripts/contribution-gate.nu issue-access
+        run: .github/scripts/contribution-gate.nu issue-access
 
       - name: Prepare the Pullfrog request
         id: request
@@ -80,56 +82,20 @@ jobs:
           ISSUE_NUMBER: ${{ steps.issue.outputs.number }}
           AUTHOR_STATUS: ${{ steps.access.outputs.author_status }}
           CLOSE_ALLOWED: ${{ steps.access.outputs.close_allowed }}
-        run: nu .github/scripts/contribution-gate.nu issue-request
+        run: .github/scripts/contribution-gate.nu issue-request
 
       - name: Ask Pullfrog to judge the issue
         id: judge
         if: steps.access.outcome == 'success' && (steps.access.outputs.skip != 'true' || inputs.force_implementation == true)
         continue-on-error: true
-        uses: pullfrog/pullfrog@ad4283a862b8377cb525a0f5bf30f17c023b18ea # v0.1.98
+        uses: pullfrog/pullfrog@9eb4e93d38160a21b0e85b759ab8ea9fecaf5e58 # v0.1.138
         with:
           prompt: ${{ steps.request.outputs.prompt }}
           timeout: 15m
           push: disabled
           shell: disabled
           progress_comments: disabled
-          output_schema: |
-            {
-              "type": "object",
-              "additionalProperties": false,
-              "required": ["kind", "maintenance_fit", "confidence", "decision", "priority", "implementation", "reason"],
-              "properties": {
-                "kind": {
-                  "type": "string",
-                  "enum": ["bug", "documentation", "feature_request", "maintenance", "duplicate", "invalid", "spam", "out_of_scope", "security", "question", "unclear"]
-                },
-                "maintenance_fit": {
-                  "type": "string",
-                  "enum": ["maintainable", "excluded", "needs_review"]
-                },
-                "confidence": {
-                  "type": "string",
-                  "enum": ["high", "medium", "low"]
-                },
-                "decision": {
-                  "type": "string",
-                  "enum": ["keep_open", "close", "needs_human"]
-                },
-                "priority": {
-                  "type": "string",
-                  "enum": ["priority:critical", "priority:high", "priority:medium", "priority:low"]
-                },
-                "implementation": {
-                  "type": "string",
-                  "enum": ["create_pr", "none"]
-                },
-                "reason": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 1200
-                }
-              }
-            }
+          output_schema: ${{ steps.request.outputs.schema }}
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -140,11 +106,12 @@ jobs:
       needs.triage.result != 'cancelled' &&
       needs.triage.outputs.access_outcome == 'success' &&
       (needs.triage.outputs.skip != 'true' || inputs.force_implementation == true)
-    runs-on: ubuntu-slim
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     permissions:
       contents: read
       issues: write
     outputs:
+      schema: ${{ steps.implementation_request.outputs.schema }}
       implementation: ${{ steps.implementation_request.outputs.implementation || steps.verdict.outputs.implementation }}
       prompt: ${{ steps.implementation_request.outputs.prompt }}
       implementation_marker: ${{ steps.implementation_request.outputs.implementation_marker }}
@@ -159,10 +126,8 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Set up Nushell
-        uses: hustcer/setup-nu@95cd3bfe252450ef7d35dd9a7ddecf3484341134 # v3.28
-        with:
-          version: 0.114.1
+      - name: Set up Nix
+        uses: ./.github/actions/setup-nix-cache
 
       - name: Apply the issue verdict
         id: verdict
@@ -174,7 +139,7 @@ jobs:
           FORCE_IMPLEMENTATION: ${{ inputs.force_implementation == true }}
           JUDGE_OUTCOME: ${{ needs.triage.outputs.judge_outcome }}
           RESULT: ${{ needs.triage.outputs.result }}
-        run: nu .github/scripts/contribution-gate.nu issue-verdict
+        run: .github/scripts/contribution-gate.nu issue-verdict
 
       - name: Prepare the implementation request
         id: implementation_request
@@ -185,7 +150,7 @@ jobs:
           ISSUE_NUMBER: ${{ needs.triage.outputs.issue_number }}
           ISSUE_AUTHOR: ${{ needs.triage.outputs.issue_author }}
           ISSUE_AUTHOR_ID: ${{ needs.triage.outputs.issue_author_id }}
-        run: nu .github/scripts/contribution-gate.nu issue-implementation-request
+        run: .github/scripts/contribution-gate.nu issue-implementation-request
 
   implement:
     needs:
@@ -195,7 +160,7 @@ jobs:
       needs.triage.result == 'success' &&
       needs.apply.result == 'success' &&
       needs.apply.outputs.implementation == 'create_pr'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 70
     permissions:
       contents: read
@@ -213,20 +178,14 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Set up Nushell
-        uses: hustcer/setup-nu@95cd3bfe252450ef7d35dd9a7ddecf3484341134 # v3.28
-        with:
-          version: 0.114.1
+      - name: Set up Nix
+        uses: ./.github/actions/setup-nix-cache
 
       - name: Record the implementation base
         id: base
-        shell: nu {0}
         run: |
-          let result = run-external git rev-parse HEAD | complete
-          if $result.exit_code != 0 {
-              error make {msg: $"Could not resolve the implementation base: ($result.stderr | str trim)"}
-          }
-          $"base_sha=($result.stdout | str trim)\n" | save --append $env.GITHUB_OUTPUT
+          base_sha=$(git rev-parse HEAD)
+          echo "base_sha=$base_sha" >> "$GITHUB_OUTPUT"
 
       - name: Guard the implementation request
         id: implementation_guard
@@ -234,54 +193,26 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           ISSUE_NUMBER: ${{ needs.triage.outputs.issue_number }}
-        run: nu .github/scripts/contribution-gate.nu issue-implementation-guard
+        run: .github/scripts/contribution-gate.nu issue-implementation-guard
+
+      - name: Keep the gate scripts out of Pullfrog's reach
+        if: steps.implementation_guard.outputs.skip != 'true'
+        run: |
+          mkdir -p "$RUNNER_TEMP/contribution-gate/trusted"
+          cp -R .github/scripts "$RUNNER_TEMP/contribution-gate/trusted/scripts"
+          cp flake.nix flake.lock "$RUNNER_TEMP/contribution-gate"
 
       - name: Ask Pullfrog to implement the issue
         id: pullfrog
         if: steps.implementation_guard.outputs.skip != 'true'
-        uses: pullfrog/pullfrog@ad4283a862b8377cb525a0f5bf30f17c023b18ea # v0.1.98
+        uses: pullfrog/pullfrog@9eb4e93d38160a21b0e85b759ab8ea9fecaf5e58 # v0.1.138
         with:
           prompt: ${{ needs.apply.outputs.prompt }}
           timeout: 1h
           push: disabled
           shell: restricted
           progress_comments: disabled
-          output_schema: |
-            {
-              "type": "object",
-              "additionalProperties": false,
-              "required": ["implementation", "title", "body"],
-              "properties": {
-                "implementation": {
-                  "type": "string",
-                  "enum": ["prepared", "none"]
-                },
-                "title": {
-                  "type": "string",
-                  "maxLength": 240
-                },
-                "body": {
-                  "type": "string",
-                  "maxLength": 20000
-                }
-              },
-              "oneOf": [
-                {
-                  "properties": {
-                    "implementation": {"const": "prepared"},
-                    "title": {"minLength": 1},
-                    "body": {"minLength": 1}
-                  }
-                },
-                {
-                  "properties": {
-                    "implementation": {"const": "none"},
-                    "title": {"maxLength": 0},
-                    "body": {"maxLength": 0}
-                  }
-                }
-              ]
-            }
+          output_schema: ${{ needs.apply.outputs.schema }}
         env:
           GH_TOKEN: ${{ github.token }}
           PULLFROG_CONTRIBUTION_GATE: 'true'
@@ -289,109 +220,12 @@ jobs:
       - name: Prepare the implementation artifact
         id: artifact
         if: steps.pullfrog.outcome == 'success'
-        shell: nu {0}
         env:
           RESULT: ${{ steps.pullfrog.outputs.result }}
           BASE_SHA: ${{ steps.base.outputs.base_sha }}
           IMPLEMENTATION_PATCH: ${{ runner.temp }}/implementation.patch
           IMPLEMENTATION_METADATA: ${{ runner.temp }}/implementation.json
-        run: |
-          def git-complete [args: list<string>]: nothing -> record {
-              run-external git ...$args | complete
-          }
-
-          def git-run [args: list<string>]: nothing -> nothing {
-              let result = git-complete $args
-              if $result.exit_code != 0 {
-                  error make {
-                      msg: $"git ($args | str join ' ') failed with exit code ($result.exit_code): ($result.stderr | str trim)"
-                  }
-              }
-          }
-
-          let result = try {
-              $env.RESULT | from json
-          } catch {
-              error make {msg: 'Pullfrog returned invalid implementation JSON'}
-          }
-          let expected_fields = [body implementation title]
-          if ($result | describe) !~ '^record' or ($result | columns | sort) != $expected_fields {
-              error make {msg: 'Pullfrog returned unexpected implementation fields'}
-          }
-
-          let head = git-complete [rev-parse HEAD]
-          if $head.exit_code != 0 {
-              error make {msg: $"Could not resolve Pullfrog HEAD: ($head.stderr | str trim)"}
-          }
-          let head_sha = $head.stdout | str trim
-
-          if $result.implementation == 'none' {
-              if $head_sha != $env.BASE_SHA {
-                  error make {msg: 'Pullfrog declined implementation after creating local commits'}
-              }
-              let status = git-complete [status --porcelain]
-              if $status.exit_code != 0 or ($status.stdout | str trim | is-not-empty) {
-                  error make {msg: 'Pullfrog declined implementation after changing the working tree'}
-              }
-          } else if $result.implementation == 'prepared' {
-              let metadata_is_valid = [
-                  (($result.title | str trim | is-not-empty) and (($result.title | lines | length) == 1))
-                  (($result.title | str length) <= 240)
-                  (($result.body | str trim | is-not-empty) and (($result.body | str length) <= 20000))
-              ] | all {|valid| $valid}
-              if not $metadata_is_valid {
-                  error make {msg: 'Pullfrog returned invalid implementation PR metadata'}
-              }
-
-              let ancestry = git-complete [merge-base --is-ancestor $env.BASE_SHA $head_sha]
-              if $ancestry.exit_code != 0 {
-                  error make {msg: 'Pullfrog HEAD must descend from the checked-out base commit'}
-              }
-
-              let untracked_result = git-complete [ls-files --others --exclude-standard '-z']
-              if $untracked_result.exit_code != 0 {
-                  error make {msg: $"Could not inspect untracked files: ($untracked_result.stderr | str trim)"}
-              }
-              let untracked = $untracked_result.stdout | split row (char nul) | where {|path| $path | is-not-empty}
-              if ($untracked | length) > 100 {
-                  error make {msg: 'Pullfrog created too many untracked files for automatic publication'}
-              }
-              if ($untracked | is-not-empty) {
-                  git-run [add --intent-to-add -- ...$untracked]
-              }
-
-              let changed_paths_result = git-complete [diff --name-only '-z' $env.BASE_SHA --]
-              if $changed_paths_result.exit_code != 0 {
-                  error make {msg: $"Could not inspect changed paths: ($changed_paths_result.stderr | str trim)"}
-              }
-              let changed_paths = $changed_paths_result.stdout | split row (char nul) | where {|path| $path | is-not-empty}
-              if ($changed_paths | is-empty) or ($changed_paths | length) > 100 {
-                  error make {msg: 'Pullfrog implementation must change between 1 and 100 files'}
-              }
-
-              let changed = git-complete [diff --quiet $env.BASE_SHA --]
-              if $changed.exit_code == 0 {
-                  error make {msg: 'Pullfrog reported a prepared implementation without any changes'}
-              }
-              if $changed.exit_code != 1 {
-                  error make {msg: $"Could not inspect implementation changes: ($changed.stderr | str trim)"}
-              }
-              git-run [diff --check $env.BASE_SHA --]
-
-              let patch = git-complete [diff --binary --full-index $env.BASE_SHA --]
-              if $patch.exit_code != 0 {
-                  error make {msg: $"Could not create the implementation patch: ($patch.stderr | str trim)"}
-              }
-              if ($patch.stdout | encode utf8 | bytes length) > 5000000 {
-                  error make {msg: 'Pullfrog implementation patch exceeds the 5 MB publication limit'}
-              }
-              $patch.stdout | save --raw $env.IMPLEMENTATION_PATCH
-              $result | to json | save --raw $env.IMPLEMENTATION_METADATA
-          } else {
-              error make {msg: 'Pullfrog returned an unknown implementation result'}
-          }
-
-          $"implementation=($result.implementation)\n" | save --append $env.GITHUB_OUTPUT
+        run: '"$RUNNER_TEMP/contribution-gate/trusted/scripts/contribution-gate.nu" implementation-artifact'
 
       - name: Upload the implementation artifact
         if: steps.artifact.outputs.implementation == 'prepared'
@@ -414,7 +248,7 @@ jobs:
       needs.apply.result == 'success' &&
       needs.implement.result == 'success' &&
       needs.implement.outputs.implementation == 'prepared'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 15
     permissions:
       contents: write
@@ -429,10 +263,8 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Set up Nushell
-        uses: hustcer/setup-nu@95cd3bfe252450ef7d35dd9a7ddecf3484341134 # v3.28
-        with:
-          version: 0.114.1
+      - name: Set up Nix
+        uses: ./.github/actions/setup-nix-cache
 
       - name: Download the implementation artifact
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -453,7 +285,7 @@ jobs:
           IMPLEMENTATION_METADATA: ${{ runner.temp }}/implementation/implementation.json
           IMPLEMENTATION_PATCH: ${{ runner.temp }}/implementation/implementation.patch
           COAUTHOR_TRAILER: ${{ needs.apply.outputs.coauthor_trailer }}
-        run: nu .github/scripts/contribution-gate.nu publish-implementation
+        run: .github/scripts/contribution-gate.nu publish-implementation
 
       - name: Verify issue author co-authorship
         if: steps.publish.outputs.skip != 'true' && needs.apply.outputs.coauthor_email != ''
@@ -461,8 +293,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           ISSUE_AUTHOR_ID: ${{ needs.triage.outputs.issue_author_id }}
+          PR_NUMBER: ${{ steps.publish.outputs.pull_request_number }}
           IMPLEMENTATION_BRANCH: ${{ needs.apply.outputs.implementation_branch }}
           IMPLEMENTATION_MARKER: ${{ needs.apply.outputs.implementation_marker }}
           COAUTHOR_TRAILER: ${{ needs.apply.outputs.coauthor_trailer }}
           COAUTHOR_EMAIL: ${{ needs.apply.outputs.coauthor_email }}
-        run: nu .github/scripts/contribution-gate.nu verify-coauthor
+        run: .github/scripts/contribution-gate.nu verify-coauthor

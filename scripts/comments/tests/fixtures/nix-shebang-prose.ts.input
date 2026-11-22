@@ -1,0 +1,5 @@
+#!/usr/bin/env nix
+/*
+#! nix shell nixpkgs#nodejs -c node
+This block also contains prose.
+*/

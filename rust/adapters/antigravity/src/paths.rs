@@ -1,6 +1,9 @@
-use std::{collections::HashSet, env, fs, path::PathBuf};
+use std::{collections::HashSet, fs, path::PathBuf};
+
+use ccusage_adapter_common::roots::{self, RootsEnv};
 
 use ccusage_adapter_common::collect_files_with_extension;
+use ccusage_core::Diagnostics;
 
 use crate::Result;
 
@@ -15,55 +18,44 @@ const DEFAULT_ANTIGRAVITY_ROOTS: [&str; 6] = [
     ".config/antigravity",
 ];
 
-/// Resolves the Antigravity data roots. The flag is true when the roots come
-/// from the `ANTIGRAVITY_DATA_DIR` override rather than the default home roots.
-fn resolve_roots() -> (Vec<PathBuf>, bool) {
-    if let Ok(value) = env::var(ANTIGRAVITY_DATA_DIR_ENV) {
-        return (
-            value
-                .split(',')
-                .map(str::trim)
-                .filter(|path| !path.is_empty())
-                .map(PathBuf::from)
-                .collect(),
-            true,
-        );
-    }
-
-    (
-        crate::home::home_dir()
-            .into_iter()
-            .flat_map(|home| {
-                DEFAULT_ANTIGRAVITY_ROOTS
+fn conversation_dirs(debug: bool) -> Vec<PathBuf> {
+    roots::directories(
+        RootsEnv::List(ANTIGRAVITY_DATA_DIR_ENV)
+            .configured()
+            .map(|paths| {
+                paths
                     .into_iter()
-                    .map(move |root| home.join(root))
+                    .map(custom_conversation_dir)
+                    .collect::<Vec<_>>()
             })
-            .collect(),
-        false,
+            .unwrap_or_else(|| {
+                roots::default_candidates(debug, || {
+                    crate::cli::home::home_dir()
+                        .into_iter()
+                        .flat_map(|home| {
+                            DEFAULT_ANTIGRAVITY_ROOTS
+                                .map(|root| home.join(root).join("conversations"))
+                        })
+                        .collect()
+                })
+            }),
     )
 }
 
-fn conversation_dir(root: PathBuf) -> PathBuf {
+fn custom_conversation_dir(root: PathBuf) -> PathBuf {
     let nested = root.join("conversations");
     if nested.is_dir() { nested } else { root }
 }
 
-pub(super) fn conversation_db_paths() -> Result<Vec<PathBuf>> {
-    let (roots, custom_root) = resolve_roots();
+pub(super) fn conversation_db_paths(
+    diagnostics: &Diagnostics,
+    debug: bool,
+) -> Result<Vec<PathBuf>> {
     let mut paths = Vec::new();
     let mut seen = HashSet::new();
-    for root in roots {
-        // Default roots must contain `conversations/`; otherwise a fresh install
-        // with only `conversation_summaries.db` at the root would abort the
-        // whole report with `no such table: gen_metadata`. Custom
-        // `ANTIGRAVITY_DATA_DIR` entries keep the fallback so a directory can
-        // be either a data root or the conversation directory itself.
-        if !custom_root && !root.join("conversations").is_dir() {
-            continue;
-        }
-        let dir = conversation_dir(root);
+    for dir in conversation_dirs(debug) {
         let mut files = Vec::new();
-        collect_files_with_extension(&dir, "db", &mut files);
+        collect_files_with_extension(&dir, "db", &mut files, diagnostics);
         for path in files {
             let canonical_path = fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
             if seen.insert(canonical_path) {
@@ -79,7 +71,7 @@ pub(super) fn conversation_db_paths() -> Result<Vec<PathBuf>> {
 mod tests {
     use std::ffi::OsString;
 
-    use ccusage_test_support::{EnvVarsGuard, fs_fixture};
+    use ccusage_test_support::{Environment, fs_fixture};
 
     use super::*;
 
@@ -93,16 +85,17 @@ mod tests {
             ".gemini/antigravity-acp/conversations/acp.db": "",
             ".config/antigravity/conversations/config.db": "",
         });
-        let _guard = EnvVarsGuard::set_many([
+        Environment::with_vars([
             (ANTIGRAVITY_DATA_DIR_ENV, None),
             ("HOME", Some(OsString::from(fixture.root()))),
             ("USERPROFILE", Some(OsString::from(fixture.root()))),
-        ]);
+        ])
+        .run(|| {
+            let paths = conversation_db_paths(&Diagnostics::new("antigravity"), false).unwrap();
 
-        let paths = conversation_db_paths().unwrap();
-
-        assert_eq!(paths.len(), 6);
-        assert!(paths.iter().all(|path| path.extension().unwrap() == "db"));
+            assert_eq!(paths.len(), 6);
+            assert!(paths.iter().all(|path| path.extension().unwrap() == "db"));
+        })
     }
 
     #[test]
@@ -116,20 +109,21 @@ mod tests {
             fixture.path("parent").display(),
             fixture.path("direct").display()
         );
-        let _guard = EnvVarsGuard::set_many([(
+        Environment::with_vars([(
             ANTIGRAVITY_DATA_DIR_ENV,
             Some(OsString::from(override_value)),
-        )]);
+        )])
+        .run(|| {
+            let paths = conversation_db_paths(&Diagnostics::new("antigravity"), false).unwrap();
 
-        let paths = conversation_db_paths().unwrap();
-
-        assert_eq!(
-            paths,
-            vec![
-                fixture.path("direct/conversation.db"),
-                fixture.path("parent/conversations/parent.db"),
-            ]
-        );
+            assert_eq!(
+                paths,
+                vec![
+                    fixture.path("direct/conversation.db"),
+                    fixture.path("parent/conversations/parent.db"),
+                ]
+            );
+        })
     }
 
     #[test]
@@ -142,15 +136,16 @@ mod tests {
             fixture.root().display(),
             fixture.path("conversations/..").display()
         );
-        let _guard = EnvVarsGuard::set_many([(
+        Environment::with_vars([(
             ANTIGRAVITY_DATA_DIR_ENV,
             Some(OsString::from(override_value)),
-        )]);
-
-        assert_eq!(
-            conversation_db_paths().unwrap(),
-            vec![fixture.path("conversations/session.db")]
-        );
+        )])
+        .run(|| {
+            assert_eq!(
+                conversation_db_paths(&Diagnostics::new("antigravity"), false).unwrap(),
+                vec![fixture.path("conversations/session.db")]
+            );
+        })
     }
 
     #[test]
@@ -160,15 +155,16 @@ mod tests {
             ".gemini/antigravity-cli/conversations/session.db": "",
             ".gemini/antigravity/conversation_summaries.db": "",
         });
-        let _guard = EnvVarsGuard::set_many([
+        Environment::with_vars([
             (ANTIGRAVITY_DATA_DIR_ENV, None),
             ("HOME", Some(OsString::from(fixture.root()))),
             ("USERPROFILE", Some(OsString::from(fixture.root()))),
-        ]);
-
-        assert_eq!(
-            conversation_db_paths().unwrap(),
-            vec![fixture.path(".gemini/antigravity-cli/conversations/session.db")]
-        );
+        ])
+        .run(|| {
+            assert_eq!(
+                conversation_db_paths(&Diagnostics::new("antigravity"), false).unwrap(),
+                vec![fixture.path(".gemini/antigravity-cli/conversations/session.db")]
+            );
+        })
     }
 }

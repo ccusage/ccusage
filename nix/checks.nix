@@ -6,22 +6,17 @@ in
   perSystem =
     {
       config,
-      system,
+      pkgs,
+      craneLib,
+      testArtifacts,
       ...
     }:
     let
-      pkgs = import inputs.nixpkgs {
-        inherit system;
-        overlays = [ inputs.rust-overlay.overlays.default ];
-      };
-      rustToolchain = pkgs.rust-bin.fromRustupToolchainFile (root + /rust-toolchain.toml);
-      craneLib = (inputs.crane.mkLib pkgs).overrideToolchain rustToolchain;
       inherit (config.packages.ccusage.passthru)
-        cargoArtifacts
-        workspaceArtifacts
         commonArgs
         version
         ;
+      inherit (testArtifacts) cargoArtifacts;
       rustSrc = import ./rust-src.nix { inherit lib root; };
       repoSrc = lib.cleanSourceWith {
         name = "source";
@@ -38,33 +33,48 @@ in
             ]
           );
       };
+      clippyArgs = {
+        cargoExtraArgs = "--workspace";
+        cargoClippyExtraArgs = "--all-targets --config 'build.warnings=\"deny\"'";
+      };
       ccusage-clippy = craneLib.cargoClippy (
         commonArgs
+        // testArtifacts.consumerArgs
+        // clippyArgs
         // {
           src = rustSrc;
           sourceRoot = "source/rust";
           cargoLock = root + /rust/Cargo.lock;
           inherit cargoArtifacts;
-          cargoExtraArgs = "--workspace";
-          cargoClippyExtraArgs = "--all-targets -- -D warnings";
+          passthru = { inherit clippyArgs; };
         }
       );
-      # hawk belongs here rather than in treefmt: it analyses the whole workspace as a
-      # closed world instead of a file at a time, and narrowing a visibility is a
-      # semantic change, not formatting. It reuses the same cargo artifacts as clippy,
-      # so the cost is its own analysis rather than another workspace build.
       ccusage-hawk = craneLib.mkCargoDerivation (
         commonArgs
+        // testArtifacts.consumerArgs
         // {
           pname = "ccusage-hawk";
           src = rustSrc;
           sourceRoot = "source/rust";
           cargoLock = root + /rust/Cargo.lock;
-          inherit cargoArtifacts;
+          cargoArtifacts = testArtifacts.hawkArtifacts;
           nativeBuildInputs = commonArgs.nativeBuildInputs or [ ] ++ [ config.packages.cargo-hawk ];
-          buildPhaseCargoCommand = "cargo hawk check --manifest-path Cargo.toml -D warnings";
+          buildPhaseCargoCommand = ''
+            cargo hawk check --manifest-path Cargo.toml --target-dir "''${CARGO_TARGET_DIR:-target}" -D warnings
+          '';
         }
       );
+      ccusage-unsafe-code = import ./unsafe-code-check.nix {
+        inherit
+          commonArgs
+          craneLib
+          lib
+          root
+          ;
+        inherit (pkgs) nushell;
+        inherit cargoArtifacts;
+        withScriptTests = true;
+      };
       ccusage-fmt = craneLib.cargoFmt {
         pname = "ccusage-rust";
         inherit version;
@@ -72,60 +82,12 @@ in
         sourceRoot = "source/rust";
         cargoExtraArgs = "--all";
       };
-      # Build the schema generator straight from the current Rust source so the
-      # drift check below can never go stale: it always reflects whatever
-      # `rust/crates/ccusage/src/config_schema.rs` looks like right now.
-      generateConfigSchema = craneLib.buildPackage (
-        commonArgs
-        // {
-          pname = "generate-config-schema";
-          # Only the config layer is needed, so skip the adapter artifacts.
-          cargoArtifacts = workspaceArtifacts.foundation;
-          cargoExtraArgs = "-p ccusage-config --bin generate-config-schema";
-          doCheck = false;
-          meta = {
-            mainProgram = "generate-config-schema";
-          };
-        }
-      );
-      # Fail `nix flake check` when the committed config schema drifts from what
-      # the Rust source generates. This catches PRs that add or change a config
-      # field without regenerating the schema (run
-      # `just ccusage::generate-schema` to fix). Only the tracked
-      # apps/ccusage/config-schema.json is checked; docs/public/config-schema.json
-      # is a gitignored build copy.
-      config-schema =
-        pkgs.runCommand "config-schema-check"
-          {
-            src = repoSrc;
-            nativeBuildInputs = [
-              generateConfigSchema
-              pkgs.oxfmt
-              pkgs.diffutils
-            ];
-          }
-          ''
-            cp -R "$src" source
-            chmod -R u+w source
-            cd source
-
-            generate-config-schema generated.json
-            oxfmt --write generated.json
-
-            if ! diff -u apps/ccusage/config-schema.json generated.json; then
-              echo "ERROR: apps/ccusage/config-schema.json is out of sync with the Rust schema source." >&2
-              echo "Run 'nix run .#generate-schema' (or 'just ccusage::generate-schema') and commit the result." >&2
-              exit 1
-            fi
-
-            touch "$out"
-          '';
       generateTelemetrySchema = craneLib.buildPackage (
         commonArgs
         // {
           pname = "generate-telemetry-schema";
           # The generator only needs serde and schemars, so skip the adapter artifacts.
-          cargoArtifacts = workspaceArtifacts.foundation;
+          inherit cargoArtifacts;
           cargoExtraArgs = "-p ccusage-telemetry --bin generate-telemetry-schema";
           doCheck = false;
           meta = {
@@ -162,27 +124,15 @@ in
 
             touch "$out"
           '';
-      # Fail `nix flake check` when a tool's committed `bun.nix` no longer matches
-      # what `bun2nix` derives from its `bun.lock`. Renovate bumps `bun.lock`
-      # without knowing about `bun.nix`, and a stale pair would otherwise only
-      # surface as a confusing sandbox install failure. `bun2nix` only parses the
-      # lockfile, so this needs no network access.
       bun-nix =
         mkRepoCheck "bun-nix-check"
           [
-            inputs.bun2nix.packages.${system}.default
+            config.packages.generate-bun-nix
             pkgs.diffutils
           ]
           ''
-            for lockfile in nix/tools/*/bun.lock; do
-              toolDir="$(dirname "$lockfile")"
-              (cd "$toolDir" && bun2nix -o generated.nix)
-              if ! diff -u "$toolDir/bun.nix" "$toolDir/generated.nix"; then
-                echo "ERROR: $toolDir/bun.nix is out of sync with $lockfile." >&2
-                echo "Run 'just gen-bun-nix' and commit the result." >&2
-                exit 1
-              fi
-            done
+            generate-bun-nix
+            diff -ru "$src/nix/tools" nix/tools
           '';
       mkRepoCheck =
         name: nativeBuildInputs: command:
@@ -200,26 +150,67 @@ in
           '';
     in
     {
-      # `nix flake check` deliberately omits a full `config.packages.ccusage`
-      # build: ccusage-clippy already compiles the entire workspace with
-      # `--all-targets` (catching any build break), and the build-native-packages
-      # CI job produces and verifies the actual release binary. Building the
-      # optimized native package here too only duplicated a ~70s release compile
-      # on cache-cold runners.
       checks = {
+        clj-kondo = mkRepoCheck "clj-kondo-check" [ pkgs.clj-kondo pkgs.fd ] ''
+          fd --hidden --exclude .git --type file --extension clj --extension cljc --extension bb --exec-batch clj-kondo --lint
+        '';
+        ccusage-package = config.packages.ccusage;
+        ccusage-tests = config.packages.ccusage-tests;
+        clippy-config = mkRepoCheck "clippy-config-check" [ pkgs.nushell ] ''
+          nu --no-config-file scripts/check-clippy-config.nu rust
+        '';
+        models-dev-dependencies = mkRepoCheck "models-dev-dependencies-check" [ pkgs.nushell ] ''
+          nu scripts/check-models-dev-dependencies.nu \
+            ${inputs.models-dev}/bun.lock nix/tools/models-dev-gen/package.json
+        '';
+        workspace-dependency-inheritance =
+          mkRepoCheck "workspace-dependency-inheritance-check" [ pkgs.nushell ]
+            ''
+              nu --no-config-file scripts/check-workspace-dependency-inheritance.nu rust
+            '';
+        comments = mkRepoCheck "comment-check" [ pkgs.nushell pkgs.ast-grep pkgs.just ] ''
+          nu --no-config-file scripts/comments/check.nu --source-tree
+        '';
+        infra-scripts =
+          mkRepoCheck "infra-script-tests"
+            [
+              pkgs.ast-grep
+              pkgs.nushell
+              pkgs.just
+              pkgs.jq
+              pkgs.git
+            ]
+            ''
+              nu --no-config-file scripts/comments/tests/check.test.nu
+              nu scripts/validate-commit-scope.test.nu
+              nu scripts/check-models-dev-dependencies.test.nu
+              nu scripts/check-workspace-dependency-inheritance.test.nu
+              nu scripts/check-nushell.test.nu
+              nu .github/scripts/contribution-gate.test.nu
+              nu .github/scripts/pricing-lock.test.nu
+              nu .github/scripts/upsert-pr-comment.test.nu
+              nu .github/scripts/check-links.test.nu
+              nu .github/scripts/profile-instructions.test.nu
+              nu .github/scripts/binary-size.test.nu
+              nu .github/scripts/workflow-shell.test.nu
+              nu .github/scripts/install.test.nu
+            '';
         inherit
           bun-nix
           ccusage-clippy
           ccusage-fmt
           ccusage-hawk
-          config-schema
           telemetry-schema
+          ccusage-unsafe-code
           ;
-        oxlint = mkRepoCheck "oxlint-check" [ pkgs.oxlint ] ''
+        oxlint = mkRepoCheck "oxlint-check" [ config.packages.oxlint ] ''
           oxlint --config nix/oxlint-check.json .
         '';
         gitleaks = mkRepoCheck "gitleaks-check" [ pkgs.gitleaks ] ''
           gitleaks detect --source . --config .gitleaks.toml --no-git
+        '';
+        nushell-ide-check = mkRepoCheck "nushell-ide-check" [ pkgs.nushell ] ''
+          nu --no-config-file scripts/check-nushell.nu .
         '';
         config-example = mkRepoCheck "config-example-check" [ pkgs.check-jsonschema ] ''
           check-jsonschema --schemafile apps/ccusage/config-schema.json ccusage.example.json
@@ -232,22 +223,11 @@ in
               pkgs.nodejs
             ]
             ''
-              # nix/tools/*/package.json are dependency manifests for Nix-built
-              # JS tooling, not publishable packages, so they are out of scope.
               mapfile -t packageManifests < <(fd --type f '^package\.json$' . --exclude nix/tools)
 
               node - "''${packageManifests[@]}" <<'EOF'
               const fs = require("node:fs");
               const path = require("node:path");
-
-              const generatedArtifacts = new Map([
-                ["@ccusage/ccusage-darwin-arm64", ["bin/ccusage"]],
-                ["@ccusage/ccusage-darwin-x64", ["bin/ccusage"]],
-                ["@ccusage/ccusage-linux-arm64", ["bin/ccusage"]],
-                ["@ccusage/ccusage-linux-x64", ["bin/ccusage"]],
-                ["@ccusage/ccusage-win32-arm64", ["bin/ccusage.exe"]],
-                ["@ccusage/ccusage-win32-x64", ["bin/ccusage.exe"]],
-              ]);
 
               function touchGeneratedFile(packageDir, relativePath) {
                 const targetPath = path.join(packageDir, relativePath);
@@ -263,10 +243,11 @@ in
               for (const manifestPath of process.argv.slice(2)) {
                 const packageDir = path.dirname(manifestPath);
                 const packageJson = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-                const files = new Set(packageJson.files ?? []);
-                for (const relativePath of generatedArtifacts.get(packageJson.name) ?? []) {
-                  if (files.has(relativePath)) {
-                    touchGeneratedFile(packageDir, relativePath);
+                if (path.normalize(manifestPath).startsWith("packages/")) {
+                  for (const relativePath of packageJson.files ?? []) {
+                    if (relativePath.startsWith("bin/")) {
+                      touchGeneratedFile(packageDir, relativePath);
+                    }
                   }
                 }
               }

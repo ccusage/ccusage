@@ -1,6 +1,6 @@
 ---
-source: crates/ccusage/src/adapter/codex/mod.rs
-expression: "serde_json::json!({\n    \"daily\":\n    report_json(&events, AgentReportKind::Daily, Some(\"UTC\"), &pricing,\n    CodexSpeed::Standard,).unwrap(), \"weekly\":\n    report_json(&events, AgentReportKind::Weekly, Some(\"UTC\"), &pricing,\n    CodexSpeed::Standard,).unwrap(), \"monthly\":\n    report_json(&events, AgentReportKind::Monthly, Some(\"UTC\"), &pricing,\n    CodexSpeed::Standard,).unwrap(), \"sessionFast\":\n    report_json(&events, AgentReportKind::Session, Some(\"UTC\"), &pricing,\n    CodexSpeed::Fast,).unwrap(),\n})"
+source: adapters/codex/src/tests.rs
+expression: "serde_json::json!({\n    \"daily\": report(AgentReportKind::Daily, standard), \"weekly\":\n    report(AgentReportKind::Weekly, standard), \"monthly\":\n    report(AgentReportKind::Monthly, standard), \"sessionFast\":\n    report(AgentReportKind::Session,\n    CodexSpeedPolicy::Forced(CodexServiceTier::Fast),),\n})"
 ---
 {
   "daily": {
@@ -9,7 +9,7 @@ expression: "serde_json::json!({\n    \"daily\":\n    report_json(&events, Agent
         "cacheCreationTokens": 0,
         "cacheReadTokens": 110,
         "costUSD": 0.00040425,
-        "date": "2026-01-02",
+        "date": "2026-02-06",
         "inputTokens": 100,
         "models": {
           "gpt-5.3-codex": {
@@ -30,7 +30,7 @@ expression: "serde_json::json!({\n    \"daily\":\n    report_json(&events, Agent
         "cacheCreationTokens": 0,
         "cacheReadTokens": 0,
         "costUSD": 0.0000065,
-        "date": "2026-01-05",
+        "date": "2026-02-09",
         "inputTokens": 10,
         "models": {
           "gpt-5-mini": {
@@ -85,7 +85,7 @@ expression: "serde_json::json!({\n    \"daily\":\n    report_json(&events, Agent
             "totalTokens": 227
           }
         },
-        "month": "2026-01",
+        "month": "2026-02",
         "outputTokens": 17,
         "reasoningOutputTokens": 2,
         "totalTokens": 239
@@ -107,9 +107,9 @@ expression: "serde_json::json!({\n    \"daily\":\n    report_json(&events, Agent
         "cacheCreationTokens": 0,
         "cacheReadTokens": 110,
         "costUSD": 0.0008085,
-        "directory": "/workspace/api",
+        "directory": "workspace/api",
         "inputTokens": 100,
-        "lastActivity": "2026-01-02T00:05:00.000Z",
+        "lastActivity": "2026-02-06T00:05:00.000Z",
         "models": {
           "gpt-5.3-codex": {
             "cacheCreationTokens": 0,
@@ -123,17 +123,17 @@ expression: "serde_json::json!({\n    \"daily\":\n    report_json(&events, Agent
         },
         "outputTokens": 15,
         "reasoningOutputTokens": 2,
-        "sessionFile": "session-a.jsonl",
-        "sessionId": "/workspace/api/session-a.jsonl",
+        "sessionFile": "session-a",
+        "sessionId": "workspace/api/session-a",
         "totalTokens": 227
       },
       {
         "cacheCreationTokens": 0,
         "cacheReadTokens": 0,
         "costUSD": 0.0000065,
-        "directory": "/workspace/web",
+        "directory": "workspace/web",
         "inputTokens": 10,
-        "lastActivity": "2026-01-05T23:59:59.000Z",
+        "lastActivity": "2026-02-09T23:59:59.000Z",
         "models": {
           "gpt-5-mini": {
             "cacheCreationTokens": 0,
@@ -147,8 +147,8 @@ expression: "serde_json::json!({\n    \"daily\":\n    report_json(&events, Agent
         },
         "outputTokens": 2,
         "reasoningOutputTokens": 0,
-        "sessionFile": "session-b.jsonl",
-        "sessionId": "/workspace/web/session-b.jsonl",
+        "sessionFile": "session-b",
+        "sessionId": "workspace/web/session-b",
         "totalTokens": 12
       }
     ],
@@ -192,7 +192,7 @@ expression: "serde_json::json!({\n    \"daily\":\n    report_json(&events, Agent
         "outputTokens": 15,
         "reasoningOutputTokens": 2,
         "totalTokens": 227,
-        "week": "2025-12-29"
+        "week": "2026-02-02"
       },
       {
         "cacheCreationTokens": 0,
@@ -213,7 +213,7 @@ expression: "serde_json::json!({\n    \"daily\":\n    report_json(&events, Agent
         "outputTokens": 2,
         "reasoningOutputTokens": 0,
         "totalTokens": 12,
-        "week": "2026-01-05"
+        "week": "2026-02-09"
       }
     ]
   }

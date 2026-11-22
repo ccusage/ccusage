@@ -1,6 +1,6 @@
 ---
 name: rust
-description: Guides ccusage Rust implementation work. Use when editing rust/crates or rust/adapters, adapter module layout, crate visibility and hawk findings, embedded pricing, or Rust behavior parity.
+description: Guides ccusage Rust implementation work. Use when editing rust/crates or rust/adapters, adapter module layout, crate visibility and Hawk findings, embedded pricing, or Rust behavior parity.
 paths:
   - 'rust/**/*.rs'
   - 'rust/**/*.toml'
@@ -10,90 +10,29 @@ globs: 'rust/**/*.rs,rust/**/*.toml,rust/**/build.rs'
 
 # ccusage Rust
 
-The native Rust CLI is the production implementation. `rust/adapters/<agent>` holds
-one crate per usage source; `rust/crates` holds everything not tied to a single
-source.
+Read the crate README for the Crane build boundary. For adapter changes, follow
+`rust/adapters/README.md` and `rust/adapters/AGENTS.md`. Put plain argument types
+in `ccusage-cli` and parsing and help generation in `ccusage-cli-parser`.
 
-Read before editing:
-
-- `rust/adapters/README.md` and `rust/adapters/AGENTS.md` — adapter architecture,
-  the shared-vs-source boundary, module shape, and the checklist for adding an
-  agent. `rust/adapters/opencode/src/` is a compact worked example.
-- the crate's own `README.md` — what it owns and which Crane artifact layer it
-  builds in, which is what a change to it costs. Some adapters add a
-  `src/README.md` describing the source format.
-
-Two boundaries the crate names hide: `ccusage-cli` holds the plain
-argument types while `ccusage-cli-parser` holds the parser, help renderer, and
-embedded help JSON that only the binary depends on; `rust/crates/ccusage` stays
-thin on purpose, holding dispatch plus the commands that are not an agent report.
-Behavior two adapters need moves into `ccusage-adapter-common`
-(`rust/adapters/common`) instead of becoming an adapter-to-adapter dependency.
-
-For splitting large modules or hunting duplication, use the `reduce-similarities`
-skill.
-
-## Behavior Parity
-
-Preserve existing Rust behavior unless the user explicitly scopes a behavior
-change: report semantics, JSON fields, table columns, progress and spinner text,
-agent grouping, date filtering, `--offline`, `CLAUDE_CONFIG_DIR`, and
-source-specific environment variables.
-
-`origin/main` no longer contains the TypeScript adapters. When porting historical
-behavior, compare against a commit that still has them
-(`git log -1 -- apps/ccusage/src/adapter`). Fix the comparison window — current
-main, a previous release, or that pinned commit — before changing behavior.
+Preserve reports, JSON, table layout, progress text, date windows, pricing
+behavior, and source discovery unless the user requests a change. For parity
+with a historical release, compare against the matching tag or commit.
 
 ## Visibility
 
-In this workspace `pub` is only for what another crate actually uses; everything
-else is `pub(crate)`, including items other modules in the same crate reach
-through a module chain.
+Reserve `pub` for consumers in other crates. `just hawk` fails on every Hawk
+finding, and `nix flake check` runs the same gate. Every binary the repository
+ships or runs in a check has a `[[production]]` entry in `rust/hawk.toml`; add a
+missing one first. Then fix `unnecessary_public` by narrowing the item, never by
+editing `rust/hawk.toml` to silence it. Update the Hawk
+archive pins in `nix/cargo-hawk.nix` with the compiler in `rust-toolchain.toml`.
 
-`just hawk` reports the difference, and `nix flake check` gates on the same thing
-through `checks.<system>.ccusage-hawk`. When a finding looks wrong, check
-`rust/hawk.toml` for a missing shipped entry point before narrowing anything;
-adding `--fix` to the underlying `cargo hawk check` applies the narrowing.
+## Pricing embedding
 
-hawk only runs on the toolchain it was built against, so `rust-toolchain.toml` and
-`nix/cargo-hawk.nix` move together — that file's header explains the pinning and
-lists the hashes a version bump has to change.
+Keep snapshot bytes in `ccusage-pricing-snapshots` and filtering and compaction
+at build time. Use the build and regeneration commands in that crate's README.
+Keep `fetch-litellm-pricing` off by default. Maintain
+`rust/crates/ccusage-core/src/fast-multiplier-overrides.json` by hand.
 
-https://github.com/astral-sh/hawk
-
-## Pricing Embedding
-
-Two snapshots ship inside the binary, both fed by pinned flake inputs and loaded
-by `rust/crates/ccusage-core/src/pricing.rs`. The build-time half lives in
-`rust/crates/ccusage-pricing-snapshots` (its `README.md` and `build.rs`), a leaf
-crate only the binary depends on: the binary hands its bytes to
-`pricing::set_embedded_snapshots` at startup, so the scheduled snapshot
-refreshes rebuild that crate and the binary, not `ccusage-core` and every
-adapter. Keep snapshot data out of `ccusage-core` for that reason. Tests get the
-snapshots through `ccusage-core`'s `test-snapshots` feature, which a crate
-enables from its `[dev-dependencies]`.
-
-LiteLLM is the primary table. It is compacted into `OUT_DIR` at build time and
-never committed: Nix builds and the dev shell hand `build.rs` the locked snapshot
-through `CCUSAGE_PRICING_JSON_PATH`, and the off-by-default
-`fetch-litellm-pricing` feature downloads it instead for plain `cargo build` on
-platforms Nix cannot target. Keep it off by default — its rustls stack is the most
-expensive build-dependency in the workspace. `just update-litellm-pricing`
-re-locks the input and validates.
-
-models.dev is the committed offline fallback:
-`rust/crates/ccusage-pricing-snapshots/src/models-dev-pricing.json` and
-`rust/adapters/codex/src/codex-auto-review-fallbacks.json`, both regenerated by
-`just gen-models-dev-pricing` (`just update-models-dev-pricing` bumps the pinned
-input first). `rust/crates/ccusage-core/src/fast-multiplier-overrides.json` sits
-beside them but is hand-maintained.
-
-Filtering and compacting belong in `build.rs`, so runtime code loads the generated
-build-time snapshot first, then built-in model overrides, then a runtime fetch when
-not `--offline`. Cover embedded/offline pricing and context limits with tests.
-
-## Validation
-
-Test commands live in the `testing` skill; performance work and branch-vs-main
-comparisons in `profile`; repo-wide format and check recipes in `development`.
+Use the `testing` skill for fixture and pricing checks, `profile` for performance
+comparisons, and `development` for workspace validation.

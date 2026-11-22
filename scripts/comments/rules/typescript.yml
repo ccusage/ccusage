@@ -1,0 +1,5 @@
+id: typescript-comment
+language: TypeScript
+message: Collect TypeScript comments.
+rule:
+  kind: comment

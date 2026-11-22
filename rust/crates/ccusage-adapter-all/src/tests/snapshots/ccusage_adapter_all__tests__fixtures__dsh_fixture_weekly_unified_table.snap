@@ -1,0 +1,118 @@
+---
+source: crates/ccusage-adapter-all/src/tests/fixtures.rs
+expression: "serde_json::to_string_pretty(&table_snapshot(&result.rows, kind,\n&result.detected_agents,)).unwrap()"
+---
+{
+  "headers": [
+    "Week",
+    "Agent",
+    "Models",
+    "Input",
+    "Output",
+    "Cache Create",
+    "Cache Read",
+    "Total Tokens",
+    "Cost (USD)"
+  ],
+  "rows": [
+    {
+      "cells": [
+        "2026-10-12",
+        "All",
+        "",
+        "20,650",
+        "1,220",
+        "600",
+        "17,000",
+        "39,470",
+        "$0.01"
+      ],
+      "kind": "row"
+    },
+    {
+      "cells": [
+        "",
+        "- DeepSeek Harness",
+        "- deepseek-flash\n- deepseek-v4-pro",
+        "20,650",
+        "1,220",
+        "600",
+        "17,000",
+        "39,470",
+        "$0.01"
+      ],
+      "kind": "agent-breakdown"
+    },
+    {
+      "cells": [
+        "2026-10-19",
+        "All",
+        "",
+        "3,000",
+        "500",
+        "2,000",
+        "0",
+        "5,500",
+        "$0.02"
+      ],
+      "kind": "row"
+    },
+    {
+      "cells": [
+        "",
+        "- DeepSeek Harness",
+        "- sonnet-4-5",
+        "3,000",
+        "500",
+        "2,000",
+        "0",
+        "5,500",
+        "$0.02"
+      ],
+      "kind": "agent-breakdown"
+    },
+    {
+      "cells": [
+        "2026-10-26",
+        "All",
+        "",
+        "200",
+        "50",
+        "0",
+        "5,000",
+        "5,250",
+        "$0.00"
+      ],
+      "kind": "row"
+    },
+    {
+      "cells": [
+        "",
+        "- DeepSeek Harness",
+        "- sonnet-4-5",
+        "200",
+        "50",
+        "0",
+        "5,000",
+        "5,250",
+        "$0.00"
+      ],
+      "kind": "agent-breakdown"
+    },
+    {
+      "cells": [
+        "Total",
+        "",
+        "",
+        "23,850",
+        "1,770",
+        "2,600",
+        "22,000",
+        "50,220",
+        "$0.03"
+      ],
+      "kind": "total"
+    }
+  ],
+  "title": "Coding (Agent) CLI Usage Report - Weekly\nDetected: DeepSeek Harness"
+}

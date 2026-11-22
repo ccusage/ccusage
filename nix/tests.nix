@@ -1,9 +1,4 @@
-# Rust workspace test run as a Nix derivation so it shares the crane
-# `cargoArtifacts` cache (warm on the per-job Blacksmith sticky disk) instead of
-# recompiling into an uncached `rust/target` on every CI run. Built by the CI
-# test job via `nix build .#ccusage-tests`; the derivation succeeds only when
-# `cargo test --workspace` passes.
-{ inputs, lib, ... }:
+{ lib, ... }:
 let
   root = ./..;
 in
@@ -11,43 +6,31 @@ in
   perSystem =
     {
       config,
-      system,
+      pkgs,
+      craneLib,
+      testArtifacts,
       ...
     }:
     let
-      pkgs = import inputs.nixpkgs {
-        inherit system;
-        overlays = [ inputs.rust-overlay.overlays.default ];
-      };
-      rustToolchain = pkgs.rust-bin.fromRustupToolchainFile (root + /rust-toolchain.toml);
-      craneLib = (inputs.crane.mkLib pkgs).overrideToolchain rustToolchain;
-      inherit (config.packages.ccusage.passthru) cargoArtifacts commonArgs;
+      inherit (config.packages.ccusage.passthru) commonArgs;
       testSrc = import ./rust-src.nix { inherit lib root; };
     in
     {
       packages.ccusage-tests = craneLib.cargoTest (
         commonArgs
+        // testArtifacts.consumerArgs
         // {
           src = testSrc;
           sourceRoot = "source/rust";
           cargoLock = root + /rust/Cargo.lock;
-          inherit cargoArtifacts;
-          # commonArgs disables checks for the release build; re-enable here so
-          # cargoTest actually runs the test suite rather than skipping it.
+          nativeBuildInputs = commonArgs.nativeBuildInputs or [ ] ++ [ pkgs.jq ];
+          inherit (testArtifacts) cargoArtifacts;
+          passthru = { inherit (testArtifacts) cargoArtifacts; };
           doCheck = true;
           cargoExtraArgs = "--workspace";
-          # jiff resolves named time zones (e.g. Asia/Tokyo) from the system
-          # zoneinfo database, which the hermetic build sandbox lacks, so it
-          # would fall back to UTC and shift the timezone-dependent tests by a
-          # day. Point it at the nixpkgs tzdata; referencing the store path here
-          # also pulls it into the sandbox as a build input.
           TZDIR = "${pkgs.tzdata}/share/zoneinfo";
-          # The workspace tests resolve default Claude data directories from
-          # $HOME; the sandbox has none, so seed a writable HOME with the same
-          # empty directory layout the CI test job creates before running tests.
           preBuild = ''
             export HOME=$(mktemp -d)
-            mkdir -p "$HOME/.claude/projects" "$HOME/.config/claude/projects"
           '';
         }
       );

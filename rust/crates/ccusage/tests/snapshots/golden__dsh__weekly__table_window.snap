@@ -1,0 +1,29 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: LOG_LEVEL=3 COLUMNS=200 ccusage dsh weekly --offline --since 20251231 --until 20260101
+---
+exit: 0
+--- stdout ---
+
+╭────────────────────────────────────────────╮
+│                                            │
+│    DeepSeek Harness Token Usage Report     │
+│                                            │
+╰────────────────────────────────────────────╯
+
+┌────────────┬───────────────────┬───────────┬───────────┬───────────────┬─────────────┬───────────────┬─────────────┐
+│ Week       │ Models            │     Input │    Output │  Cache Create │  Cache Read │  Total Tokens │  Cost (USD) │
+├────────────┼───────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2025-12-29 │ - deepseek-flash  │    25,340 │     2,383 │         1,440 │      24,000 │        53,845 │       $0.01 │
+│            │ - deepseek-v4-pro │           │           │               │             │               │             │
+│            │ - dsh-mystery-1   │           │           │               │             │               │             │
+│            │ - sonnet-4.5      │           │           │               │             │               │             │
+│            │ - unknown         │           │           │               │             │               │             │
+├────────────┼───────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ Total      │                   │    25,340 │     2,383 │         1,440 │      24,000 │        53,845 │       $0.01 │
+└────────────┴───────────────────┴───────────┴───────────┴───────────────┴─────────────┴───────────────┴─────────────┘
+
+--- stderr ---
+WARN  dsh: skipped 2 inputs and 2 records in 4 inputs (invalid data)
+WARN  Missing embedded pricing for dsh-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for unknown; cost excludes this model. Run without --offline or update ccusage after pricing is added.

@@ -5,6 +5,8 @@ description: Routes ccusage documentation impact work. Use when code or behavior
 
 # ccusage Docs
 
+Use `ccusage` with agent subcommands, such as `ccusage codex daily`, in examples.
+
 Documentation impact is decided by what a user can observe, not by which
 directory changed. Internal refactors, test-only changes, and skill maintenance
 need nothing; anything that changes what a user can run, see, or configure needs

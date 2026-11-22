@@ -1,92 +1,162 @@
-use std::{env, fs, path::PathBuf};
+use std::{fs, path::PathBuf};
 
-use serde_json::{Map, Value};
+use ccusage_core::pricing::{EmbeddedSnapshots, encode_pricing_table, set_embedded_snapshots};
+use ccusage_environment::Environment;
+
+use serde_json::Value;
+
+#[path = "src/litellm_filter.rs"]
+mod litellm_filter;
 
 const FLAKE_LOCK_JSON: &str = "../../../flake.lock";
-#[cfg(feature = "fetch-litellm-pricing")]
-const LITELLM_PRICING_JSON: &str = "model_prices_and_context_window.json";
 const OUT_PRICING_JSON: &str = "litellm-pricing.json.deflate";
 const MODELS_DEV_PRICING_JSON: &str = "src/models-dev-pricing.json";
 const OUT_MODELS_DEV_PRICING_JSON: &str = "models-dev-pricing.json.deflate";
 const MODELS_DEV_CATALOG_RULES_JSON: &str = "src/models-dev-catalog-rules.json";
 const OUT_MODELS_DEV_CATALOG_RULES_JSON: &str = "models-dev-catalog-rules.json.deflate";
+const OUT_PRICING_TABLE: &str = "pricing-table.bin";
+const OUT_MODELS_DEV_TABLE: &str = "models-dev-table.bin";
+const OUT_FLOAT_PROBE: &str = "float-probe.rs";
+// NOTE(2026-11-20, #2399): serde_json's default float parser misrounds this rate by one ULP and its `float_roundtrip` parser does not. Record how this build script parses it, so a test can check that the runtime parses rates the same way.
+const FLOAT_PROBE: &str = "1.4999999999999999e-07";
 const PRICING_JSON_PATH_ENV: &str = "CCUSAGE_PRICING_JSON_PATH";
 #[cfg(feature = "fetch-litellm-pricing")]
 const PRICING_FETCH_TIMEOUT_SECONDS: u64 = 10;
 
-#[cfg(not(test))]
-fn main() {
+fn main() -> Result<(), String> {
     println!("cargo:rerun-if-env-changed={PRICING_JSON_PATH_ENV}");
 
-    let out_path = out_dir_path(OUT_PRICING_JSON);
-    let pricing_json = if let Some(path) = env::var_os(PRICING_JSON_PATH_ENV) {
+    let out_path = out_dir_path(OUT_PRICING_JSON)?;
+    let pricing_json = if let Some(path) = Environment::current().var_os(PRICING_JSON_PATH_ENV) {
         let path = PathBuf::from(path);
         println!("cargo:rerun-if-changed={}", path.display());
-        fs::read_to_string(path).expect("read pricing snapshot from CCUSAGE_PRICING_JSON_PATH")
+        fs::read_to_string(path).map_err(|error| {
+            format!("read pricing snapshot from CCUSAGE_PRICING_JSON_PATH: {error}")
+        })?
     } else {
         println!("cargo:rerun-if-changed={FLAKE_LOCK_JSON}");
-        fetch_pricing_json()
+        fetch_pricing_json()?
     };
-    let pricing_json = compact_pricing_json(&pricing_json).expect("compact LiteLLM pricing JSON");
+    let models_dev_pricing = embed_snapshot(MODELS_DEV_PRICING_JSON, OUT_MODELS_DEV_PRICING_JSON)?;
+    let paid_hosts = litellm_filter::paid_host_providers(&pricing_json, &models_dev_pricing.json)
+        .ok_or_else(|| "list paid hosts".to_string())?;
+    let pricing_json = litellm_filter::filter_pricing_json(&pricing_json)
+        .ok_or_else(|| "filter LiteLLM pricing JSON".to_string())?;
+    ensure_reparses_to_itself("filtered LiteLLM pricing", &pricing_json)?;
+    write_float_probe()?;
 
     fs::write(out_path, deflate(pricing_json.as_bytes()))
-        .expect("write build-time pricing snapshot");
+        .map_err(|error| format!("write build-time pricing snapshot: {error}"))?;
 
-    embed_snapshot(MODELS_DEV_PRICING_JSON, OUT_MODELS_DEV_PRICING_JSON);
-    embed_snapshot(
+    let litellm_sources = embed_litellm_sources(paid_hosts)?;
+    let models_dev_catalog_rules = embed_snapshot(
         MODELS_DEV_CATALOG_RULES_JSON,
         OUT_MODELS_DEV_CATALOG_RULES_JSON,
-    );
+    )?;
+
+    set_embedded_snapshots(EmbeddedSnapshots {
+        litellm_sources: litellm_sources.deflated.leak(),
+        models_dev_catalog_rules: models_dev_catalog_rules.deflated.leak(),
+        pricing_table: &[],
+        models_dev_table: &[],
+    });
+    let (table, models_dev_table, mut models_dev_index) =
+        encode_pricing_table(&pricing_json, &models_dev_pricing.json);
+    fs::write(out_dir_path(OUT_PRICING_TABLE)?, table)
+        .map_err(|error| format!("write {OUT_PRICING_TABLE}: {error}"))?;
+    models_dev_index.extend(deflate(&models_dev_table));
+    fs::write(out_dir_path(OUT_MODELS_DEV_TABLE)?, models_dev_index)
+        .map_err(|error| format!("write {OUT_MODELS_DEV_TABLE}: {error}"))
 }
 
-/// The committed snapshots stay indented so their regeneration diffs stay
-/// reviewable, but they are embedded verbatim, so the indentation - and, at
-/// 2K+ models, most of the JSON itself - would ship in the binary. Minify and
-/// deflate on the way in; the runtime inflates once on first use.
-fn embed_snapshot(source: &str, out_name: &str) {
+struct Snapshot {
+    json: String,
+    deflated: Vec<u8>,
+}
+
+fn embed_snapshot(source: &str, out_name: &str) -> Result<Snapshot, String> {
     println!("cargo:rerun-if-changed={source}");
-    let snapshot =
-        fs::read_to_string(source).unwrap_or_else(|error| panic!("read {source}: {error}"));
+    let snapshot = fs::read_to_string(source).map_err(|error| format!("read {source}: {error}"))?;
     let value = serde_json::from_str::<Value>(&snapshot)
-        .unwrap_or_else(|error| panic!("parse {source}: {error}"));
-    let minified =
-        serde_json::to_string(&value).unwrap_or_else(|error| panic!("serialize {source}: {error}"));
-    fs::write(out_dir_path(out_name), deflate(minified.as_bytes()))
-        .unwrap_or_else(|error| panic!("write {out_name}: {error}"));
+        .map_err(|error| format!("parse {source}: {error}"))?;
+    let json =
+        serde_json::to_string(&value).map_err(|error| format!("serialize {source}: {error}"))?;
+    ensure_reparses_to_itself(source, &json)?;
+    let deflated = deflate(json.as_bytes());
+    fs::write(out_dir_path(out_name)?, &deflated)
+        .map_err(|error| format!("write {out_name}: {error}"))?;
+    Ok(Snapshot { json, deflated })
 }
 
-/// Raw deflate at maximum effort: the cost is paid once per changed snapshot at
-/// build time, and the level only matters there.
+fn embed_litellm_sources(paid_hosts: Vec<String>) -> Result<Snapshot, String> {
+    const SOURCE: &str = "src/litellm-sources.json";
+    println!("cargo:rerun-if-changed={SOURCE}");
+    let snapshot = fs::read_to_string(SOURCE).map_err(|error| format!("read {SOURCE}: {error}"))?;
+    let mut value = serde_json::from_str::<Value>(&snapshot)
+        .map_err(|error| format!("parse {SOURCE}: {error}"))?;
+    value["paidHostProviders"] = Value::from(paid_hosts);
+    let json =
+        serde_json::to_string(&value).map_err(|error| format!("serialize {SOURCE}: {error}"))?;
+    let deflated = deflate(json.as_bytes());
+    fs::write(out_dir_path("litellm-sources.json.deflate")?, &deflated)
+        .map_err(|error| format!("write litellm-sources.json.deflate: {error}"))?;
+    Ok(Snapshot { json, deflated })
+}
+
+// NOTE(2026-11-20, #2399): The table is encoded from rewritten JSON while fetched pricing is parsed from upstream text. When parsing the rewritten JSON and writing it again gives back the same text, every number in it is the value the parser read from the upstream text.
+fn ensure_reparses_to_itself(name: &str, json: &str) -> Result<(), String> {
+    let value =
+        serde_json::from_str::<Value>(json).map_err(|error| format!("parse {name}: {error}"))?;
+    let rewritten =
+        serde_json::to_string(&value).map_err(|error| format!("serialize {name}: {error}"))?;
+    if rewritten == json {
+        Ok(())
+    } else {
+        Err(format!(
+            "{name} changes when parsed and written again, so a rate would shift"
+        ))
+    }
+}
+
+fn write_float_probe() -> Result<(), String> {
+    let bits = serde_json::from_str::<f64>(FLOAT_PROBE)
+        .map_err(|error| format!("parse {FLOAT_PROBE}: {error}"))?
+        .to_bits();
+    fs::write(
+        out_dir_path(OUT_FLOAT_PROBE)?,
+        format!(
+            "const FLOAT_PROBE: &str = {FLOAT_PROBE:?};\nconst FLOAT_PROBE_BITS: u64 = {bits};\n"
+        ),
+    )
+    .map_err(|error| format!("write {OUT_FLOAT_PROBE}: {error}"))
+}
+
 fn deflate(bytes: &[u8]) -> Vec<u8> {
     miniz_oxide::deflate::compress_to_vec(bytes, 10)
 }
 
-fn out_dir_path(file_name: &str) -> PathBuf {
-    PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR is set by cargo")).join(file_name)
+fn out_dir_path(file_name: &str) -> Result<PathBuf, String> {
+    let out_dir = Environment::current()
+        .var_os("OUT_DIR")
+        .ok_or_else(|| "OUT_DIR is set by cargo".to_string())?;
+    Ok(PathBuf::from(out_dir).join(file_name))
 }
 
-// The snapshot is normally handed to the build by CCUSAGE_PRICING_JSON_PATH, which
-// every Nix build sets from the pinned litellm input — and which is the only way
-// to get the snapshot inside the network-free Nix sandbox. Downloading it is for
-// plain `cargo build` on platforms Nix cannot target, so the HTTPS client that
-// download needs is behind this feature instead of on every build's critical
-// path: rustls and its C crypto backend are the single most expensive
-// build-dependency in the workspace.
 #[cfg(not(feature = "fetch-litellm-pricing"))]
-fn fetch_pricing_json() -> String {
-    panic!(
+fn fetch_pricing_json() -> Result<String, String> {
+    Err(format!(
         "no LiteLLM pricing snapshot available: set {PRICING_JSON_PATH_ENV} to a \
          model_prices_and_context_window.json, or build with \
          --features fetch-litellm-pricing to download it"
-    );
+    ))
 }
 
-#[cfg(all(feature = "fetch-litellm-pricing", not(test)))]
-fn fetch_pricing_json() -> String {
-    download_pricing_json().expect("fetch LiteLLM pricing for embed")
+#[cfg(feature = "fetch-litellm-pricing")]
+fn fetch_pricing_json() -> Result<String, String> {
+    download_pricing_json().map_err(|error| format!("fetch LiteLLM pricing for embed: {error}"))
 }
 
-#[cfg(all(feature = "fetch-litellm-pricing", not(test)))]
+#[cfg(feature = "fetch-litellm-pricing")]
 fn download_pricing_json() -> std::io::Result<String> {
     let response = minreq::get(litellm_pricing_url()?)
         .with_timeout(PRICING_FETCH_TIMEOUT_SECONDS)
@@ -126,18 +196,12 @@ fn litellm_pricing_url() -> std::io::Result<String> {
                 "flake.lock is missing nodes.litellm.locked",
             )
         })?;
-    let owner = required_flake_lock_string_field(locked, "owner")?;
-    let repo = required_flake_lock_string_field(locked, "repo")?;
-    let rev = required_flake_lock_string_field(locked, "rev")?;
-
-    Ok(format!(
-        "https://raw.githubusercontent.com/{owner}/{repo}/{rev}/{LITELLM_PRICING_JSON}"
-    ))
+    required_flake_lock_string_field(locked, "url")
 }
 
 #[cfg(feature = "fetch-litellm-pricing")]
 fn required_flake_lock_string_field(
-    object: &Map<String, Value>,
+    object: &serde_json::Map<String, Value>,
     field: &str,
 ) -> std::io::Result<String> {
     object
@@ -150,106 +214,4 @@ fn required_flake_lock_string_field(
                 format!("flake.lock nodes.litellm.locked.{field} must be a string"),
             )
         })
-}
-
-fn compact_pricing_json(json: &str) -> Option<String> {
-    let Value::Object(raw) = serde_json::from_str::<Value>(json).ok()? else {
-        return None;
-    };
-    let mut compact = Map::new();
-    for (model, pricing) in raw {
-        if !is_embedded_model(&model) {
-            continue;
-        }
-        let Value::Object(pricing) = pricing else {
-            continue;
-        };
-        let mut fields = Map::new();
-        for (source, target) in [
-            ("input_cost_per_token", "i"),
-            ("output_cost_per_token", "o"),
-            ("cache_creation_input_token_cost", "cc"),
-            ("cache_read_input_token_cost", "cr"),
-            ("input_cost_per_token_above_200k_tokens", "ia"),
-            ("output_cost_per_token_above_200k_tokens", "oa"),
-            ("cache_creation_input_token_cost_above_200k_tokens", "cca"),
-            ("cache_read_input_token_cost_above_200k_tokens", "cra"),
-            ("max_input_tokens", "ctx"),
-        ] {
-            let Some(value) = pricing.get(source) else {
-                continue;
-            };
-            if !value.is_null() {
-                fields.insert(target.to_string(), value.clone());
-            }
-        }
-        for tier in ["fast", "flex"] {
-            if let Some(multiplier) = pricing
-                .get("provider_specific_entry")
-                .and_then(Value::as_object)
-                .and_then(|entry| entry.get(tier))
-                .filter(|value| !value.is_null())
-            {
-                fields.insert(tier.to_string(), multiplier.clone());
-            }
-        }
-        if fields.contains_key("i") && fields.contains_key("o") {
-            compact.insert(model, Value::Object(fields));
-        }
-    }
-    serde_json::to_string(&Value::Object(compact)).ok()
-}
-
-fn is_embedded_model(model: &str) -> bool {
-    model.starts_with("claude-")
-        || model.starts_with("anthropic.")
-        || model.starts_with("anthropic/")
-        || model.starts_with("us.anthropic.")
-        || model.starts_with("eu.anthropic.")
-        || model.starts_with("global.anthropic.")
-        || model.starts_with("jp.anthropic.")
-        || model.starts_with("au.anthropic.")
-        || model.starts_with("gpt-")
-        || model == "o3"
-        || model.starts_with("o3-")
-        || model == "o4-mini"
-        || model.starts_with("o4-mini-")
-        || model.starts_with("openai/")
-        || model.starts_with("azure/")
-        || model.starts_with("zai/")
-        || model.starts_with("openrouter/openai/")
-}
-
-#[cfg(test)]
-mod tests {
-    use super::compact_pricing_json;
-    use ccusage_core::PricingMap;
-
-    #[test]
-    fn keeps_service_tier_multipliers_in_embedded_pricing() {
-        let compact = compact_pricing_json(
-            r#"{
-                "gpt-test": {
-                    "input_cost_per_token": 0.000001,
-                    "output_cost_per_token": 0.000002,
-                    "provider_specific_entry": { "fast": 2, "flex": 0.5 }
-                },
-                "gpt-flex-only": {
-                    "input_cost_per_token": 0.000001,
-                    "output_cost_per_token": 0.000002,
-                    "provider_specific_entry": { "fast": null, "flex": 0.25 }
-                }
-            }"#,
-        )
-        .unwrap();
-        let mut pricing = PricingMap::default();
-        pricing.load_json(&compact);
-
-        let both = pricing.find_exact("gpt-test").unwrap();
-        assert_eq!(both.fast_multiplier, 2.0);
-        assert_eq!(both.flex_multiplier, 0.5);
-        let flex_only = pricing.find_exact("gpt-flex-only").unwrap();
-        assert_eq!(flex_only.fast_multiplier, 1.0);
-        assert_eq!(flex_only.flex_multiplier, 0.25);
-    }
 }

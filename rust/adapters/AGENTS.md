@@ -1,8 +1,6 @@
 # AGENTS.md - Agent Source Architecture
 
-`README.md` covers adapter architecture, the shared-vs-source boundary, and the crate module shape;
-`rust/adapters/opencode/src/` is a compact example of it. This file adds the workflow rules for
-changing or adding an adapter.
+Follow the adapter boundaries in [README.md](README.md).
 
 - Moving a loader into an adapter updates internal imports to the adapter path rather than leaving
   compatibility re-export shims behind. Root-level modules stay only when they are declared public

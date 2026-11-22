@@ -10,55 +10,42 @@ name = "ccusage"
 path = "src/main.rs"
 
 [features]
-# Enabled by the Windows release build, which cannot get the pricing snapshot
-# from the pinned Nix input the way every other platform does.
+test-clock = []
 fetch-litellm-pricing = ["ccusage-pricing-snapshots/fetch-litellm-pricing"]
 
 [dependencies]
 ccusage-adapter-all.workspace = true
-ccusage-adapter-amp.workspace = true
-ccusage-adapter-antigravity.workspace = true
 ccusage-adapter-claude.workspace = true
-ccusage-adapter-codebuff.workspace = true
-ccusage-adapter-codex.workspace = true
-ccusage-adapter-common.workspace = true
-ccusage-adapter-copilot.workspace = true
-ccusage-adapter-droid.workspace = true
-ccusage-adapter-gemini.workspace = true
-ccusage-adapter-goose.workspace = true
-ccusage-adapter-grok.workspace = true
-ccusage-adapter-hermes.workspace = true
-ccusage-adapter-kilo.workspace = true
-ccusage-adapter-kimi.workspace = true
-ccusage-adapter-openclaw.workspace = true
-ccusage-adapter-opencode.workspace = true
-ccusage-adapter-pi.workspace = true
-ccusage-adapter-qwen.workspace = true
-ccusage-adapter-zcode.workspace = true
 ccusage-cli-parser.workspace = true
 ccusage-cli.workspace = true
 ccusage-config.workspace = true
 ccusage-core.workspace = true
 ccusage-pricing-snapshots.workspace = true
 ccusage-telemetry.workspace = true
+jiff.workspace = true
 ring.workspace = true
 rustls.workspace = true
 rustls-webpki.workspace = true
-serde.workspace = true
-serde_json.workspace = true
 ureq.workspace = true
 
 [build-dependencies]
+ccusage-environment.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
-ccusage-core = { workspace = true, features = ["test-snapshots"] }
+ccusage = { path = ".", features = ["test-clock"] }
 ccusage-test-support.workspace = true
 insta.workspace = true
+serde_json.workspace = true
 sqlite.workspace = true
 zstd.workspace = true
 
-# mimalloc measurably beats the musl allocator on the static Linux build's
-# allocation-heavy JSONL parsing.
-[target.'cfg(all(target_os = "linux", target_env = "musl"))'.dependencies]
+[target.'cfg(target_os = "macos")'.dependencies]
 mimalloc.workspace = true
+
+[target.'cfg(all(target_os = "linux", target_env = "musl"))'.dependencies]
+# NOTE(2026-11-21): Huge-page hints inflate peak RSS. See https://github.com/ccusage/ccusage/issues/2480.
+mimalloc = { workspace = true, features = ["no_thp", "override"] }
+
+[lints]
+workspace = true

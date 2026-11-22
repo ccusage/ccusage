@@ -1,0 +1,24 @@
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+allow-print-in-tests = true
+disallowed-methods = [
+	{ path = "std::env::var", reason = "Read environment variables through Environment." },
+	{ path = "std::env::var_os", reason = "Read environment variables through Environment." },
+	{ path = "std::env::vars", reason = "Read named environment variables through Environment." },
+	{ path = "std::env::vars_os", reason = "Read named environment variables through Environment." },
+	{ path = "std::env::set_var", reason = "Set environment variables on child commands or inject an environment lookup." },
+	{ path = "std::env::remove_var", reason = "Remove variables from child commands or inject a missing value." },
+	{ path = "jiff::tz::TimeZone::system", reason = "Resolve local time through ReportTimezone." },
+	{ path = "jiff::tz::TimeZone::try_system", reason = "Resolve local time through ReportTimezone." },
+	{ path = "jiff::Zoned::now", reason = "Use the report clock to read the current time." },
+	{ path = "std::path::Path::read_dir", reason = "Use shared adapter discovery or the test-support fixture reader." },
+	{ path = "std::process::exit", reason = "Return an exit status from the entry point so resources are dropped." },
+	{ path = "std::thread::spawn", reason = "Use the shared worker helpers to carry the fixture environment." },
+	{ path = "std::thread::Scope::spawn", reason = "Use the shared worker helpers to carry the fixture environment." },
+	{ path = "std::thread::Builder::spawn", reason = "Use the shared worker helpers to carry the fixture environment." },
+	{ path = "std::io::stdout", reason = "Write standard output through ccusage_terminal." },
+	{ path = "std::io::stderr", reason = "Write standard error through ccusage_terminal." },
+	{ path = "serde::de::Deserializer::deserialize_bytes", reason = "JsonText matches from_slice only for string targets; decode byte strings with serde_json::from_slice." },
+	{ path = "serde::de::Deserializer::deserialize_byte_buf", reason = "JsonText matches from_slice only for string targets; decode byte strings with serde_json::from_slice." },
+]

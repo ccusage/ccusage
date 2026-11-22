@@ -1,9 +1,11 @@
 #!/usr/bin/env nix
 #! nix shell --inputs-from ../.. nixpkgs#nushell --command nu
 
-use ./contribution-gate/coauthor.nu [coauthor-validation]
+use ./contribution-gate/coauthor.nu [coauthor-validation is-implementation-pull-request]
 use ./contribution-gate/context.nu [issue-context-record]
-use ./contribution-gate/core.nu [parse-issue-number]
+use ./contribution-gate/core.nu [parse-issue-number ISSUE_KINDS REASON_MAX_LENGTH]
+use ./contribution-gate/access.nu [approved-entries approval-update approval-capability]
+use ./contribution-gate/schemas.nu [issue-schema pr-schema implementation-schema]
 use ./contribution-gate/mutations.nu [is-contribution-gate-comment]
 use ./contribution-gate/verdict.nu [issue-verdict-record]
 use ./contribution-gate/requests.nu [
@@ -15,6 +17,7 @@ use ./contribution-gate/requests.nu [
     coauthor-email
     competing-closing-pull-request
     existing-implementation-pull-request
+    implementation-artifact
     implementation-branch
     implementation-commit-args
     implementation-pull-request-body
@@ -38,6 +41,30 @@ def expect [name: string, actual, expected]: nothing -> nothing {
 }
 
 def test-coauthor-validation []: nothing -> nothing {
+    let published = {
+        state: open
+        user: {login: 'github-actions[bot]'}
+        head: {
+            repo: {full_name: 'test/repo'}
+            ref: implementation
+        }
+        body: '<!-- publication:123 -->'
+    }
+    expect 'accepts the published PR identity' (
+        is-implementation-pull-request $published test/repo implementation '<!-- publication:123 -->'
+    ) true
+    [
+        ($published | update state closed)
+        ($published | update user.login stranger)
+        ($published | update head.repo.full_name fork/repo)
+        ($published | update head.ref other)
+        ($published | update body '<!-- publication:456 -->')
+        ($published | update body null)
+    ] | each {|candidate|
+        expect 'rejects another publication' (
+            is-implementation-pull-request $candidate test/repo implementation '<!-- publication:123 -->'
+        ) false
+    } | ignore
     let trailer = 'Co-authored-by: alice <alice@users.noreply.github.com>'
     let message = $"Implement the fix\n\n($trailer)"
     let attribution = [
@@ -230,7 +257,11 @@ def test-existing-implementation-pull-request []: nothing -> nothing {
             'pullfrog/issue-42-run-999'
     ) null
 
-    let closing_pull_request = {number: 1209, state: OPEN, url: 'https://github.com/ccusage/ccusage/pull/1209'}
+    let closing_pull_request = {
+        number: 1209
+        state: OPEN
+        url: 'https://github.com/ccusage/ccusage/pull/1209'
+    }
     expect 'finds an open pull request that GitHub recognizes as closing the issue' (
         open-closing-pull-request [$closing_pull_request]
     ) {number: 1209, html_url: 'https://github.com/ccusage/ccusage/pull/1209'}
@@ -287,7 +318,11 @@ def test-existing-implementation-pull-request []: nothing -> nothing {
 def test-implementation-result []: nothing -> nothing {
     expect 'accepts prepared PR metadata' (
         implementation-result '{"implementation":"prepared","title":"fix: count cache writes","body":"Fixes the missing cost.\n\nTests: focused adapter test."}'
-    ) {implementation: prepared, title: 'fix: count cache writes', body: "Fixes the missing cost.\n\nTests: focused adapter test."}
+    ) {
+        implementation: prepared
+        title: 'fix: count cache writes'
+        body: "Fixes the missing cost.\n\nTests: focused adapter test."
+    }
     expect 'accepts a declined implementation' (
         implementation-result '{"implementation":"none","title":"","body":""}'
     ) {implementation: none, title: '', body: ''}
@@ -541,7 +576,11 @@ def test-issue-context []: nothing -> nothing {
 }
 
 def test-issue-number []: nothing -> nothing {
-    expect 'parses a positive integer issue number' (parse-issue-number '42') 42
+    (expect
+        'parses a positive integer issue number'
+        (parse-issue-number '42')
+        42
+    )
 
     [
         '1.5'
@@ -616,7 +655,11 @@ def test-issue-triage-policy []: nothing -> nothing {
     )
 
     let core_bug = issue-verdict-record '{"kind":"bug","maintenance_fit":"maintainable","confidence":"high","decision":"keep_open","priority":"priority:high","implementation":"create_pr","reason":"Confirmed cost calculation regression with a focused fix."}' true
-    expect 'keeps a high-confidence core bug open' $core_bug.decision keep_open
+    (expect
+        'keeps a high-confidence core bug open'
+        $core_bug.decision
+        keep_open
+    )
     (expect
         'allows an important maintainable bug implementation'
         $core_bug.implementation
@@ -653,7 +696,11 @@ def test-issue-triage-policy []: nothing -> nothing {
     )
 
     let security = issue-verdict-record '{"kind":"security","maintenance_fit":"excluded","confidence":"high","decision":"close","priority":"priority:low","implementation":"none","reason":"The report may affect credential handling."}' true
-    expect 'never auto-closes a security report' $security.decision needs_human
+    (expect
+        'never auto-closes a security report'
+        $security.decision
+        needs_human
+    )
     (expect
         'marks a security report for review'
         $security.maintenance_fit
@@ -831,7 +878,192 @@ def test-contribution-gate-comment []: nothing -> nothing {
     ) false
 }
 
+def test-gate-contracts []: nothing -> nothing {
+    (expect
+        'issue kinds come from the contract'
+        (issue-schema | get properties.kind.enum)
+        $ISSUE_KINDS
+    )
+    (expect
+        'reason limit comes from the contract'
+        (pr-schema | get properties.reason.maxLength)
+        $REASON_MAX_LENGTH
+    )
+    (expect
+        'implementation declines require empty metadata'
+        (implementation-schema | get oneOf.1.properties.title.maxLength)
+        0
+    )
+}
+
+def test-contributor-approval-records []: nothing -> nothing {
+    let content = "# Approvals
+Alice issue
+bad unknown
+malformed
+"
+    (expect
+        'invalid capabilities grant no access'
+        (approval-capability (approved-entries $content) bad)
+        null
+    )
+    let update = approval-update $content alice pr
+    expect 'upgrades an existing contributor' $update.status updated
+    expect 'preserves comments and malformed entries' $update.content "# Approvals
+Alice pr
+bad unknown
+malformed
+"
+    (expect
+        'reads the upgraded capability'
+        (approval-capability (approved-entries $update.content) ALICE)
+        pr
+    )
+    (expect
+        'never downgrades PR approval'
+        (approval-update $update.content alice issue | get status)
+        already
+    )
+    expect 'adds a new contributor' (approval-update $content Bob issue | get content) "# Approvals
+Alice issue
+bad unknown
+malformed
+Bob issue
+"
+}
+
+def test-implementation-artifact []: nothing -> nothing {
+    let fixture = mktemp -d
+    let caller = pwd
+    try {
+        mkdir ($fixture | path join repo)
+        cd ($fixture | path join repo)
+        ^git init --quiet
+        ^git config user.email fixture@example.com
+        ^git config user.name Fixture
+        'base' | save file.txt
+        ^git add file.txt
+        ^git commit --quiet -m base
+        let base = ^git rev-parse HEAD | str trim
+        let output = $fixture | path join output
+        let patch = $fixture | path join implementation.patch
+        let metadata = $fixture | path join implementation.json
+        with-env {
+            RESULT: ('{implementation: none, title: "", body: ""}' | from nuon | to json)
+            BASE_SHA: $base
+            GITHUB_OUTPUT: $output
+            IMPLEMENTATION_PATCH: $patch
+            IMPLEMENTATION_METADATA: $metadata
+        } {
+            implementation-artifact
+            expect 'declined implementation creates no patch' ($patch | path exists) false
+            'changed' | save --force file.txt
+            let declined = try { implementation-artifact; false } catch { true }
+            expect 'declined implementation rejects working changes' $declined true
+        }
+        with-env {
+            RESULT: ({implementation: prepared, title: 'fix: fixture', body: 'A fixture fix'} | to json)
+            BASE_SHA: $base
+            GITHUB_OUTPUT: $output
+            IMPLEMENTATION_PATCH: $patch
+            IMPLEMENTATION_METADATA: $metadata
+        } {
+            let trusted_scripts = $fixture | path join contribution-gate-scripts
+            cp -r $env.FILE_PWD $trusted_scripts
+            let result = nu ($trusted_scripts | path join contribution-gate.nu) implementation-artifact | complete
+            expect 'artifact runs from a copy of the gate scripts' $result.exit_code 0
+            expect 'artifact includes the changed file' (open --raw $patch | str contains '+changed') true
+            expect 'artifact preserves validated metadata' (open --raw $metadata | from json | get title) 'fix: fixture'
+        }
+        rm -f $patch $metadata
+    } catch {|err|
+        cd $caller
+        rm -rf $fixture
+        error make $err
+    }
+    cd $caller
+    rm -rf $fixture
+}
+
+def test-post-agent-steps-run-trusted-code []: nothing -> nothing {
+    glob ($env.FILE_PWD | path join ../workflows/*.y*ml) | each {|file|
+        open $file | get jobs | transpose name job | each {|job|
+            let steps = $job.job | get --optional steps | default []
+            let agent = $steps | enumerate | where {|step|
+                (
+                    ($step.item | get --optional uses | default '' | str starts-with 'pullfrog/pullfrog@')
+                    and ($step.item | get --optional with.shell | default disabled) != disabled
+                )
+            }
+            if ($agent | is-not-empty) {
+                $steps | skip (($agent | first).index + 1) | each {|step|
+                    let name = $"($file | path basename) ($job.name) '($step | get --optional name | default '')'"
+                    expect $"($name) does not run a local action edited by the agent" ($step | get --optional uses | default '' | str starts-with './') false
+                    expect $"($name) does not run workspace scripts edited by the agent" ($step | get --optional run | default '' | str contains '.github/scripts') false
+                } | ignore
+            }
+        } | ignore
+    } | ignore
+}
+
+def test-contributor-approval-operation []: nothing -> nothing {
+    let fixture = mktemp -d
+    let caller = pwd
+    let script = $env.FILE_PWD | path join contribution-gate.nu
+    try {
+        mkdir ($fixture | path join .github) ($fixture | path join bin)
+        let approved = $fixture | path join .github/APPROVED_CONTRIBUTORS
+        'Alice issue' | save $approved
+        let event = $fixture | path join event.json
+        {
+            comment: {
+                body: lgtm
+                user: {login: maintainer}
+            }
+            issue: {
+                number: 42
+                user: {login: Alice}
+            }
+        } | to json | save $event
+        let output = $fixture | path join output
+        [
+            $"#!($nu.current-exe)"
+            'def --wrapped main [...args: string] {'
+            '    if $env.TEST_PERMISSION == "error" { print --stderr "HTTP 500"; exit 1 }'
+            '    {permission: $env.TEST_PERMISSION} | to json | print'
+            '}'
+        ] | str join "\n" | save ($fixture | path join bin/gh)
+        ^chmod +x ($fixture | path join bin/gh)
+        cd $fixture
+        [read error write] | each {|permission|
+            let result = with-env {
+                PATH: ($env.PATH | prepend ($fixture | path join bin))
+                TEST_PERMISSION: $permission
+                GITHUB_REPOSITORY: test/repo
+                GITHUB_EVENT_PATH: $event
+                GITHUB_OUTPUT: $output
+            } {
+                nu $script approve-contributor | complete
+            }
+            expect 'permission lookup failure is reported' ($result.exit_code != 0) ($permission == error)
+            let expected = if $permission == write { "Alice pr\n" } else { 'Alice issue' }
+            expect 'approval changes only with verified write access' (open --raw $approved) $expected
+        } | ignore
+    } catch {|err|
+        cd $caller
+        rm -rf $fixture
+        error make $err
+    }
+    cd $caller
+    rm -rf $fixture
+}
+
 def main [] {
+    test-gate-contracts
+    test-contributor-approval-records
+    test-contributor-approval-operation
+    test-implementation-artifact
+    test-post-agent-steps-run-trusted-code
     test-coauthor-validation
     test-coauthor-email
     test-implementation-commit-args

@@ -1,0 +1,97 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage dsh monthly --offline --json --since 20251231 --until 20260101
+---
+exit: 0
+--- stdout ---
+{
+  "monthly": [
+    {
+      "cacheCreationTokens": 1200,
+      "cacheReadTokens": 24000,
+      "inputTokens": 5850,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 1200,
+          "cacheReadTokens": 24000,
+          "cost": 0.0024951599999999997,
+          "inputTokens": 2850,
+          "modelName": "deepseek-v4-pro",
+          "outputTokens": 743
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 3000,
+          "missingPricing": true,
+          "modelName": "dsh-mystery-1",
+          "outputTokens": 700
+        }
+      ],
+      "modelsUsed": [
+        "deepseek-v4-pro",
+        "dsh-mystery-1"
+      ],
+      "month": "2025-12",
+      "outputTokens": 1443,
+      "totalCost": 0.0024951599999999997,
+      "totalTokens": 32493
+    },
+    {
+      "cacheCreationTokens": 240,
+      "cacheReadTokens": 0,
+      "inputTokens": 19490,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.006659999999999999,
+          "inputTokens": 19000,
+          "modelName": "deepseek-flash",
+          "outputTokens": 800
+        },
+        {
+          "cacheCreationTokens": 240,
+          "cacheReadTokens": 0,
+          "cost": 0.004050000000000001,
+          "inputTokens": 400,
+          "modelName": "anthropic/claude-sonnet-4.5",
+          "outputTokens": 130
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 90,
+          "missingPricing": true,
+          "modelName": "unknown",
+          "outputTokens": 10
+        }
+      ],
+      "modelsUsed": [
+        "anthropic/claude-sonnet-4.5",
+        "deepseek-flash",
+        "unknown"
+      ],
+      "month": "2026-01",
+      "outputTokens": 940,
+      "totalCost": 0.01071,
+      "totalTokens": 21352
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 1440,
+    "cacheReadTokens": 24000,
+    "inputTokens": 25340,
+    "outputTokens": 2383,
+    "totalCost": 0.01320516,
+    "totalTokens": 53845,
+    "unpricedModels": [
+      "dsh-mystery-1",
+      "unknown"
+    ]
+  }
+}
+
+--- stderr ---

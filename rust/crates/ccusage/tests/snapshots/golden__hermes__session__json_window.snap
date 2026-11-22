@@ -1,0 +1,186 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage hermes session --offline --json --since 20251231 --until 20260101
+---
+exit: 0
+--- stdout ---
+{
+  "sessions": [
+    {
+      "cacheCreationTokens": 20,
+      "cacheReadTokens": 500,
+      "inputTokens": 250,
+      "messageCount": 3,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 20,
+          "cacheReadTokens": 500,
+          "cost": 0.000525,
+          "inputTokens": 250,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 40
+        }
+      ],
+      "modelsUsed": [
+        "claude-haiku-4-5-20251001"
+      ],
+      "outputTokens": 40,
+      "sessionId": "b-morning",
+      "totalCost": 0.000525,
+      "totalTokens": 810
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 45,
+      "inputTokens": 120,
+      "messageCount": 3,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 45,
+          "cost": 0.00045562500000000003,
+          "inputTokens": 120,
+          "modelName": "gpt-5",
+          "outputTokens": 30
+        }
+      ],
+      "modelsUsed": [
+        "gpt-5"
+      ],
+      "outputTokens": 30,
+      "sessionId": "b-odd-types",
+      "totalCost": 0.00045562500000000003,
+      "totalTokens": 195
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 400,
+      "messageCount": 2,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0024000000000000002,
+          "inputTokens": 400,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 80
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514"
+      ],
+      "outputTokens": 80,
+      "sessionId": "b-twin",
+      "totalCost": 0.0024000000000000002,
+      "totalTokens": 480
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 2500,
+      "inputTokens": 700,
+      "messageCount": 8,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 2500,
+          "cost": 0.25,
+          "inputTokens": 700,
+          "modelName": "gpt-5",
+          "outputTokens": 150,
+          "storedCost": 0.25
+        }
+      ],
+      "modelsUsed": [
+        "gpt-5"
+      ],
+      "outputTokens": 150,
+      "sessionId": "p-gpt5-estimated",
+      "totalCost": 0.25,
+      "totalTokens": 3350
+    },
+    {
+      "cacheCreationTokens": 200,
+      "cacheReadTokens": 7000,
+      "inputTokens": 900,
+      "messageCount": 5,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 7000,
+          "cost": 0.00385,
+          "inputTokens": 900,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 400
+        }
+      ],
+      "modelsUsed": [
+        "claude-haiku-4-5-20251001"
+      ],
+      "outputTokens": 400,
+      "sessionId": "p-haiku-zero-cost",
+      "totalCost": 0.00385,
+      "totalTokens": 8500
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 300,
+      "messageCount": 2,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 300,
+          "missingPricing": true,
+          "modelName": "hermes-mystery-1",
+          "outputTokens": 70
+        }
+      ],
+      "modelsUsed": [
+        "hermes-mystery-1"
+      ],
+      "outputTokens": 70,
+      "sessionId": "p-mystery",
+      "totalCost": 0.0,
+      "totalTokens": 370
+    },
+    {
+      "cacheCreationTokens": 50,
+      "cacheReadTokens": 3000,
+      "inputTokens": 600,
+      "messageCount": 4,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 50,
+          "cacheReadTokens": 3000,
+          "cost": 0.021937500000000002,
+          "inputTokens": 600,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 100
+        }
+      ],
+      "modelsUsed": [
+        "claude-opus-4-20250514"
+      ],
+      "outputTokens": 100,
+      "sessionId": "p-opus-padded",
+      "totalCost": 0.021937500000000002,
+      "totalTokens": 3750
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 270,
+    "cacheReadTokens": 13045,
+    "inputTokens": 3270,
+    "outputTokens": 870,
+    "totalCost": 0.27916812500000004,
+    "totalTokens": 17455,
+    "unpricedModels": [
+      "hermes-mystery-1"
+    ]
+  }
+}
+
+--- stderr ---

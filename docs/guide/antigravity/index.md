@@ -10,6 +10,9 @@ separate from Gemini CLI rows in focused and unified reports.
 # Daily Antigravity usage
 ccusage antigravity daily
 
+# Weekly Antigravity usage
+ccusage antigravity weekly
+
 # Monthly Antigravity usage
 ccusage antigravity monthly
 
@@ -41,11 +44,9 @@ ANTIGRAVITY_DATA_DIR="$HOME/.gemini/antigravity-cli,/backup/antigravity" \
   ccusage antigravity daily
 ```
 
-Only `.db` files are read. ccusage opens them read-only and reads the
-`gen_metadata` rows in ascending `idx` order. When present, the real `steps`
-schema contributes step and retry usage, and `trajectory_metadata_blob` supplies
-the timestamp fallback. SQLite, row-iteration, and protobuf failures are
-reported instead of becoming empty or partial reports.
+ccusage opens `.db` files read-only. Empty databases are listed with
+`--debug`. Unreadable databases produce a filename warning while other readable
+databases still contribute usage.
 
 ## What Gets Calculated
 
@@ -61,10 +62,7 @@ reported instead of becoming empty or partial reports.
   when the catalog does not list a separate variant. Use `--offline` to avoid a
   pricing refresh.
 
-Continuation rows inherit the most recently observed model in their database.
-Usage in generation metadata and step metadata is combined, including retry
-records. Successful, retry, and source copies are deduplicated by their response,
-provider-assigned message, or message identity.
+Continuation rows without a model inherit the most recently observed model in the same database. Reports include recorded retry usage and match duplicates by response ID, provider-assigned message ID, or message ID.
 
 ## Configuration
 
@@ -94,10 +92,11 @@ set `ANTIGRAVITY_DATA_DIR` to the directory containing `conversations/`. The
 databases must contain the `gen_metadata` table.
 :::
 
-::: details A database error is reported
-ccusage does not turn unreadable or incomplete SQLite databases into an empty
-report. Check the path in the error and ensure the database is readable and has
-the expected `gen_metadata (idx, data)` schema.
+::: details A database warning is shown
+ccusage skips unreadable databases and excludes all usage from that file.
+Check the filename in the warning and ensure the database is readable and has
+the expected `gen_metadata (idx, data)` schema. Other readable databases remain
+in the report. Set `LOG_LEVEL=0` to silence these warnings.
 :::
 
 ::: details Costs show as zero

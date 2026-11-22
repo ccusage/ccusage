@@ -1,0 +1,60 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage codex session --offline --json --id 11111111-1111-4111-8111-111111111111
+---
+exit: 0
+--- stdout ---
+{
+  "cacheCreationTokens": 0,
+  "cacheReadTokens": 1950,
+  "directory": "2025/12/30",
+  "inputTokens": 4220,
+  "lastActivity": "2026-01-02T08:30:00.000Z",
+  "models": {
+    "codex-mystery-1": {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 300,
+      "isFallback": false,
+      "missingPricing": true,
+      "outputTokens": 30,
+      "reasoningOutputTokens": 0,
+      "totalTokens": 330
+    },
+    "gpt-5-mini": {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 200,
+      "isFallback": false,
+      "outputTokens": 20,
+      "reasoningOutputTokens": 0,
+      "totalTokens": 220
+    },
+    "gpt-5.5": {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 1900,
+      "inputTokens": 3200,
+      "isFallback": false,
+      "outputTokens": 610,
+      "reasoningOutputTokens": 60,
+      "totalTokens": 5710
+    },
+    "gpt-6.1-sol": {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 50,
+      "inputTokens": 520,
+      "isFallback": false,
+      "outputTokens": 57,
+      "reasoningOutputTokens": 5,
+      "totalTokens": 627
+    }
+  },
+  "outputTokens": 717,
+  "reasoningOutputTokens": 65,
+  "sessionFile": "rollout-2025-12-30T10-00-00-11111111-1111-4111-8111-111111111111",
+  "sessionId": "2025/12/30/rollout-2025-12-30T10-00-00-11111111-1111-4111-8111-111111111111",
+  "totalCost": 0.06701000000000001,
+  "totalTokens": 6887
+}
+
+--- stderr ---

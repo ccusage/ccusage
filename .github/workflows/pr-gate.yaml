@@ -1,8 +1,5 @@
 name: PR Gate
 
-# Use pull_request_target so outside-contributor PRs receive the base
-# repository's write permissions. This workflow checks out only the base branch
-# and gives Pullfrog the PR diff as data; it never executes code from the PR.
 on:
   pull_request_target:
     types:
@@ -13,9 +10,13 @@ permissions:
   issues: read
   pull-requests: read
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   check-contributor:
-    runs-on: ubuntu-slim
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     permissions:
       contents: read
       issues: read
@@ -36,10 +37,8 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Set up Nushell
-        uses: hustcer/setup-nu@95cd3bfe252450ef7d35dd9a7ddecf3484341134 # v3.28
-        with:
-          version: 0.114.1
+      - name: Set up Nix
+        uses: ./.github/actions/setup-nix-cache
 
       - name: Check PR author
         id: access
@@ -47,7 +46,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           AUTHOR: ${{ github.event.pull_request.user.login }}
-        run: nu .github/scripts/contribution-gate.nu pr-access
+        run: .github/scripts/contribution-gate.nu pr-access
 
       - name: Prepare the Pullfrog request
         id: request
@@ -58,7 +57,7 @@ jobs:
         env:
           GITHUB_REPOSITORY: ${{ github.repository }}
           ISSUE_NUMBER: ${{ github.event.pull_request.number }}
-        run: nu .github/scripts/contribution-gate.nu pr-request
+        run: .github/scripts/contribution-gate.nu pr-request
 
       - name: Ask Luna for a PR verdict
         id: judge
@@ -67,30 +66,14 @@ jobs:
           steps.access.outputs.skip != 'true' &&
           steps.access.outputs.bypass != 'true'
         continue-on-error: true
-        uses: pullfrog/pullfrog@ad4283a862b8377cb525a0f5bf30f17c023b18ea # v0.1.98
+        uses: pullfrog/pullfrog@9eb4e93d38160a21b0e85b759ab8ea9fecaf5e58 # v0.1.138
         with:
           prompt: ${{ steps.request.outputs.prompt }}
           timeout: 15m
           push: disabled
           shell: disabled
           progress_comments: disabled
-          output_schema: |
-            {
-              "type": "object",
-              "additionalProperties": false,
-              "required": ["decision", "reason"],
-              "properties": {
-                "decision": {
-                  "type": "string",
-                  "enum": ["keep_open", "close", "needs_human"]
-                },
-                "reason": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 1200
-                }
-              }
-            }
+          output_schema: ${{ steps.request.outputs.schema }}
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -102,7 +85,7 @@ jobs:
       needs.check-contributor.outputs.access_outcome == 'success' &&
       needs.check-contributor.outputs.skip != 'true' &&
       needs.check-contributor.outputs.bypass != 'true'
-    runs-on: ubuntu-slim
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     permissions:
       contents: read
       issues: write
@@ -115,10 +98,8 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Set up Nushell
-        uses: hustcer/setup-nu@95cd3bfe252450ef7d35dd9a7ddecf3484341134 # v3.28
-        with:
-          version: 0.114.1
+      - name: Set up Nix
+        uses: ./.github/actions/setup-nix-cache
 
       - name: Apply the PR verdict
         env:
@@ -128,4 +109,4 @@ jobs:
           CLOSE_ALLOWED: ${{ needs.check-contributor.outputs.close_allowed }}
           JUDGE_OUTCOME: ${{ needs.check-contributor.outputs.judge_outcome }}
           RESULT: ${{ needs.check-contributor.outputs.result }}
-        run: nu .github/scripts/contribution-gate.nu pr-verdict
+        run: .github/scripts/contribution-gate.nu pr-verdict

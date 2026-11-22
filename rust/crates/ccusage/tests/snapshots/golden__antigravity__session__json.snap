@@ -1,0 +1,200 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage antigravity session --offline --json
+---
+exit: 0
+--- stdout ---
+{
+  "sessions": [
+    {
+      "cacheCreationTokens": 250,
+      "cacheReadTokens": 109500,
+      "firstActivity": "2025-12-30T09:59:59.000Z",
+      "inputTokens": 253091,
+      "lastActivity": "2026-01-02T10:00:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 100000,
+          "cost": 0.665,
+          "inputTokens": 250000,
+          "modelName": "gemini-2.5-pro",
+          "outputTokens": 1000
+        },
+        {
+          "cacheCreationTokens": 50,
+          "cacheReadTokens": 4500,
+          "cost": 0.00772,
+          "inputTokens": 1500,
+          "modelName": "gemini-3-pro",
+          "outputTokens": 210
+        },
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 3000,
+          "cost": 0.005699999999999999,
+          "inputTokens": 600,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 100
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 2000,
+          "cost": 0.00279,
+          "inputTokens": 940,
+          "modelName": "gemini-3.5-flash-high",
+          "outputTokens": 120
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00015075,
+          "inputTokens": 51,
+          "modelName": "gemini-3.6-flash-high",
+          "outputTokens": 30
+        }
+      ],
+      "modelsUsed": [
+        "gemini-3-pro",
+        "gemini-3.5-flash-high",
+        "gemini-3.6-flash-high",
+        "gemini-2.5-pro",
+        "claude-sonnet-4-20250514"
+      ],
+      "outputTokens": 1460,
+      "projectPath": "Antigravity",
+      "sessionId": "session-alpha",
+      "totalCost": 0.6813607500000001,
+      "totalTokens": 364451
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 1000,
+      "firstActivity": "2025-12-31T15:30:00.000Z",
+      "inputTokens": 1290,
+      "lastActivity": "2026-01-02T08:00:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00585,
+          "inputTokens": 900,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 190
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0001275,
+          "inputTokens": 30,
+          "modelName": "gpt-5",
+          "outputTokens": 9
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 1000,
+          "cost": 0.0,
+          "inputTokens": 300,
+          "missingPricing": true,
+          "modelName": "antigravity-mystery-1",
+          "outputTokens": 70
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 60,
+          "missingPricing": true,
+          "modelName": "model_placeholder_m499",
+          "outputTokens": 15
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514",
+        "gpt-5",
+        "antigravity-mystery-1",
+        "model_placeholder_m499"
+      ],
+      "outputTokens": 284,
+      "projectPath": "Antigravity",
+      "sessionId": "session-beta",
+      "totalCost": 0.0059775,
+      "totalTokens": 2594
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "firstActivity": "2025-12-27T23:30:00.000Z",
+      "inputTokens": 10,
+      "lastActivity": "2025-12-27T23:30:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 10,
+          "missingPricing": true,
+          "modelName": "antigravity-model-77",
+          "outputTokens": 5
+        }
+      ],
+      "modelsUsed": [
+        "antigravity-model-77"
+      ],
+      "outputTokens": 5,
+      "projectPath": "Antigravity",
+      "sessionId": "session-delta",
+      "totalCost": 0.0,
+      "totalTokens": 15
+    },
+    {
+      "cacheCreationTokens": 200,
+      "cacheReadTokens": 17000,
+      "firstActivity": "2025-12-30T18:00:00.000Z",
+      "inputTokens": 3025,
+      "lastActivity": "2026-01-01T00:20:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 10000,
+          "cost": 0.00876625,
+          "inputTokens": 2005,
+          "modelName": "gpt-5",
+          "outputTokens": 501
+        },
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 7000,
+          "cost": 0.00412,
+          "inputTokens": 1020,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 430
+        }
+      ],
+      "modelsUsed": [
+        "gpt-5",
+        "claude-haiku-4-5-20251001"
+      ],
+      "outputTokens": 931,
+      "projectPath": "Antigravity",
+      "sessionId": "session-gamma",
+      "totalCost": 0.012886249999999998,
+      "totalTokens": 21156
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 450,
+    "cacheReadTokens": 127500,
+    "inputTokens": 257416,
+    "outputTokens": 2680,
+    "totalCost": 0.7002245,
+    "totalTokens": 388216,
+    "unpricedModels": [
+      "antigravity-model-77",
+      "antigravity-mystery-1",
+      "model_placeholder_m499"
+    ]
+  }
+}
+
+--- stderr ---

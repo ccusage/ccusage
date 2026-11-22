@@ -1,355 +1,109 @@
 # Cost Modes
 
-ccusage supports three different cost calculation modes to handle various scenarios and data sources. Understanding these modes helps you get the most accurate cost estimates for your usage analysis.
+Use `--mode auto`, `--mode calculate`, or `--mode display` to select how a report obtains costs. The default is `auto`.
 
-## Overview
+The entry rules below describe Claude Code. Auto's stored-cost preference depends on the source:
 
-Claude Code stores usage data in JSONL files with both token counts and pre-calculated cost information. ccusage can handle this data in different ways depending on your needs:
+| Source                                                                           | Auto                                                                          | Calculate | Display                                         |
+| -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | --------- | ----------------------------------------------- |
+| Claude Code, Amp, Cline, OpenClaw                                                | Recorded cost when present, including zero; otherwise tokens                  | Tokens    | Recorded cost only                              |
+| Codex, Goose, Droid, Codebuff, Antigravity, Gemini, Grok, Kimi, Qwen, ZCode, dsh | Tokens                                                                        | Tokens    | $0; these logs contain no recorded USD cost     |
+| pi-agent                                                                         | Recorded cost when valid, unless a pricing override applies; otherwise tokens | Tokens    | Recorded cost only                              |
+| GitHub Copilot CLI                                                               | Recorded AI credits at $0.01 each when present; otherwise tokens              | Tokens    | Recorded credits converted to USD; otherwise $0 |
+| Hermes                                                                           | Positive recorded actual/estimated cost; otherwise tokens                     | Tokens    | Recorded actual/estimated cost only             |
+| Kilo, OpenCode                                                                   | Positive recorded cost; otherwise tokens                                      | Tokens    | Recorded cost only                              |
 
-- **`auto`** - Smart mode using the best available data
-- **`calculate`** - Always calculate from token counts
-- **`display`** - Only show pre-calculated costs
+Tokens remain in Display reports even when their cost is zero. Focused and unified Display reports load no pricing table and emit neither `missingPricing` nor `unpricedModels`.
 
-## Mode Details
+Rows with neither tokens nor a cost are omitted from focused and unified reports. A tokenless recorded cost remains when the selected mode uses it.
 
-### auto (Default)
+## auto (Default)
 
-The `auto` mode intelligently chooses the best cost calculation method for each entry:
-
-```bash
-ccusage daily --mode auto
-# or simply:
-ccusage daily
-```
-
-#### How it works:
-
-1. **Pre-calculated costs available** → Uses Claude's `costUSD` values
-2. **No pre-calculated costs** → Calculates from token counts using model pricing
-3. **Mixed data** → Uses the best method for each entry; JSON output reports the stored part of each model's cost as [`storedCost`](/guide/json-output#stored-costs)
-
-#### Best for:
-
-- ✅ **General usage** - Works well for most scenarios
-- ✅ **Mixed data sets** - Handles old and new data properly
-- ✅ **Accuracy** - Uses official costs when available
-- ✅ **Completeness** - Shows estimates for all entries
-
-#### Example output:
-
-```
-┌──────────────┬─────────────┬────────┬─────────┬────────────┐
-│ Date         │ Models      │ Input  │ Output  │ Cost (USD) │
-├──────────────┼─────────────┼────────┼─────────┼────────────┤
-│ 2026-05-16   │ • opus-4-1    │  1,245 │  28,756 │    $12.45  │ ← Pre-calculated
-│ 2026-05-15   │ • sonnet-4-5  │    856 │  19,234 │     $8.67  │ ← Calculated
-│ 2026-05-14   │ • opus-4-1    │    634 │  15,678 │     $7.23  │ ← Calculated
-└──────────────┴─────────────┴────────┴─────────┴────────────┘
-```
-
-### calculate
-
-The `calculate` mode always computes costs from token counts using model pricing:
+For each entry, use its stored `costUSD` when present, otherwise calculate from tokens and model pricing. A stored value of zero is still used.
 
 ```bash
-ccusage daily --mode calculate
-ccusage monthly --mode calculate --breakdown
+ccusage claude daily --mode auto
 ```
 
-#### How it works:
+In JSON, each model breakdown with a stored contribution includes [`storedCost`](/guide/json-output#stored-costs). It is the part of `cost` that came from the logs.
 
-1. **Ignores `costUSD` values** from Claude Code data
-2. **Uses token counts** (input, output, cache) for all entries
-3. **Applies model pricing** from LiteLLM, models.dev, and built-in historical schedules using each event's timestamp
-4. **Consistent methodology** across all time periods
+## calculate
 
-#### Best for:
-
-- ✅ **Consistent comparisons** - Same calculation method for all data
-- ✅ **Token analysis** - Understanding pure token-based costs
-- ✅ **Historical analysis** - Comparing costs across different time periods
-- ✅ **Pricing research** - Analyzing cost per token trends
-
-#### Example output:
-
-```
-┌──────────────┬─────────────┬────────┬─────────┬────────────┐
-│ Date         │ Models      │ Input  │ Output  │ Cost (USD) │
-├──────────────┼─────────────┼────────┼─────────┼────────────┤
-│ 2026-05-16   │ • opus-4-1    │  1,245 │  28,756 │    $12.38  │ ← Calculated
-│ 2026-05-15   │ • sonnet-4-5  │    856 │  19,234 │     $8.67  │ ← Calculated
-│ 2026-05-14   │ • opus-4-1    │    634 │  15,678 │     $7.23  │ ← Calculated
-└──────────────┴─────────────┴────────┴─────────┴────────────┘
-```
-
-### display
-
-The `display` mode only shows pre-calculated costs from Claude Code:
+Ignore stored costs and calculate from tokens and model pricing:
 
 ```bash
-ccusage daily --mode display
-ccusage session --mode display --json
+ccusage claude daily --mode calculate --offline
+ccusage claude monthly --mode calculate --breakdown
 ```
 
-#### How it works:
+## display
 
-1. **Uses only `costUSD` values** from Claude Code data
-2. **Shows $0.00** for entries without pre-calculated costs
-3. **No token-based calculations** performed
-4. **Exact Claude billing data** when available
-
-#### Best for:
-
-- ✅ **Official costs only** - Shows exactly what Claude calculated
-- ✅ **Billing verification** - Comparing with actual Claude charges
-- ✅ **Recent data** - Most accurate for newer usage entries
-- ✅ **Audit purposes** - Verifying pre-calculated costs
-
-#### Example output:
-
-```
-┌──────────────┬─────────────┬────────┬─────────┬────────────┐
-│ Date         │ Models      │ Input  │ Output  │ Cost (USD) │
-├──────────────┼─────────────┼────────┼─────────┼────────────┤
-│ 2026-05-16   │ • opus-4-1    │  1,245 │  28,756 │    $12.45  │ ← Pre-calculated
-│ 2026-05-15   │ • sonnet-4-5  │    856 │  19,234 │     $0.00  │ ← No cost data
-│ 2026-05-14   │ • opus-4-1    │    634 │  15,678 │     $0.00  │ ← No cost data
-└──────────────┴─────────────┴────────┴─────────┴────────────┘
-```
-
-## Practical Examples
-
-### Scenario 1: Mixed Data Analysis
-
-You have data from different time periods with varying cost information:
+Use stored `costUSD` values only. Entries without a stored cost contribute zero cost; their tokens still count.
 
 ```bash
-# Auto mode handles mixed data intelligently
-ccusage daily --mode auto --since 20260501
-
-# Shows:
-# - Pre-calculated costs where the source provides them
-# - Calculated costs where only token counts are available
+ccusage claude daily --mode display
+ccusage claude session --mode display --json
 ```
 
-### Scenario 2: Consistent Cost Comparison
+Stored costs are values from the logs, not a billing statement. ccusage does not retrieve invoices or subscription charges.
 
-You want to compare costs across different months using the same methodology:
+## Token-Based Calculation
+
+The Claude calculation prices input, output, cache writes, and cache reads separately:
+
+```text
+cost = inputTokens         × input price
+     + outputTokens        × output price
+     + cacheCreate5mTokens × cache creation price
+     + cacheCreate1hTokens × one-hour cache creation price
+     + cacheReadTokens     × cache read price
+```
+
+When a record includes a cache-write duration split, the calculation uses its 5-minute and 1-hour counts. Otherwise, all `cache_creation_input_tokens` use the standard cache creation rate.
+
+Explicit reasoning tokens are priced at the output rate. When the source includes reasoning in its output count, that count already covers the reasoning tokens. An unexplained difference between the recorded total and its token components contributes to the reported usage total only.
+
+The one-hour rate uses the published duration price or `cacheCreationInputTokenCostAbove1hr` override, and above 200K tokens the published long-context one-hour price. When a pricing row publishes no cache rate, ccusage uses the cache multipliers documented by the model's vendor, recognized from the model id wherever the model is hosted. In a whole-request tier with a long-context input rate, missing cache-read and cache-write rates use that input rate and the same vendor multipliers, with the base-tier cache rates as a minimum. Marginal tiers use the base rates for omitted cache reads and five-minute writes. Vendors covered include Anthropic, OpenAI, Google Gemini, DeepSeek, xAI, Moonshot, Z.ai, Qwen, MiniMax, Mistral, and Amazon Nova. For example, Claude models write at 1.25× (five minutes) and 2× (one hour), GPT-5.5 and earlier write at the input price, GPT-5.6 and later write at 1.25× and 2.5×, and Gemini reads cache at 0.1× input. When the model id names no known vendor, the pricing row's provider decides (an OpenAI-provided row writes at the input price). Only when neither identifies a vendor does ccusage estimate with Anthropic's multipliers: 1.25× and 2× for writes and 0.1× for reads. Published tier rates and explicit long-context pricing overrides take precedence.
+
+For whole-request tiers, the input context (including cache reads and writes) selects the rates for every token in the request. Claude, Gemini, and Grok use whole-request billing wherever they are hosted, using the serving host's tier rates when listed. For example, a Gemini prompt over 200,000 tokens uses the higher input and output rates for the entire request. In marginal tiers, the higher rate applies to tokens in each category above the threshold. Tiered rates require per-request token counts. Goose, Hermes and Droid sessions, OpenCode session aggregates, Grok turns, and Copilot shutdown intervals record one total for several requests, so their calculated cost uses the base rates. Fast-mode usage applies the model fast multiplier.
+
+Pricing comes from LiteLLM, models.dev, built-in model data, and configured [pricing overrides](/guide/config-files#pricing-overrides). Timestamp-aware historical rates use the entry timestamp where supported. `--offline` uses embedded pricing without network requests; `--no-offline` enables online pricing retrieval, including its cache.
+
+When ccusage calculates a cost, it first looks for a pricing override on the reported model label, its configured alias, or the model ID behind its provider path. It tries the reported case first, then ignores ASCII case. Within each pass, a full-label override takes precedence over overrides on shorter paths. Either override match takes precedence over the catalogue. The adapter supplies the model names and any provider information from its logs. Dots, at signs, and dashes are interchangeable in a pricing ID.
+
+When the agent logged the host that served a request, ccusage uses that host's own LiteLLM listing for the model when available, ahead of the vendor's list price. Logged host names that differ from LiteLLM's are treated as the same host: `amazon-bedrock` and `aws-bedrock` as Bedrock (including its default-region rows such as `deepseek.v3.2`), `azure-openai` as `azure`, and `google-vertex` as `vertex_ai`. A model ID in Bedrock's dotted spelling, such as `moonshotai.kimi-k2-thinking` or `us.anthropic.<id>`, can identify Bedrock as the host. A logged direct vendor such as Anthropic or DeepSeek rules out Bedrock pricing, even for a dotted model ID. A regional Bedrock path absent from the offline catalogue uses Bedrock's default-region listing if available. Then ccusage checks LiteLLM and its built-in entries for every candidate's identity. It then checks each candidate in order for a paid entry behind its provider path and for a models.dev entry for the candidate or for the model ID behind its provider path, so `openrouter/anthropic/<id>` uses the models.dev entry for `anthropic/<id>`. A LiteLLM or built-in entry for a model ID behind the path still comes first. A vendor's free listing can answer behind the path only after every candidate has missed both checks. A free hosted listing with a provider path applies only to its full pricing ID.
+
+These catalogue identity checks first use the logged case. If they find no match, ccusage repeats them ignoring ASCII case before trying fuzzy matching. A hosted identity that matches the logged case keeps its own rates and context limit. Fuzzy matching compares case-sensitive IDs.
+
+If these checks find no price, ccusage uses the longest matching pricing key it can find, checking LiteLLM and built-in entries before models.dev. A key matches when it names the same model ID: the logged ID may add a host or provider prefix in front, and after it a date (`-20250514`, `-2025-05-14`), a bracketed note such as `[1m]`, a Bedrock revision such as `-v1:0`, a reasoning-effort level (`-minimal`, `-low`, `-medium`, `-high`, `-xhigh`, `-extra-low`, `-extra-high`), or `latest`, `default` or `beta`. For vendors that bill a thinking or reasoning run as ordinary output tokens, the variant word also matches: `thinking` after a Claude, Gemini, DeepSeek, GLM, Kimi or Mistral key, or after a Qwen key whose model Alibaba prices the same in both modes (such as `qwen4-max` or `qwen3.5-plus`), and `reasoning` or `non-reasoning` after a Grok key. Qwen models that Alibaba bills at a higher thinking-mode output rate (`qwen-plus`, `qwen-turbo`, `qwen3-30b-a3b`, `qwen3-14b`, `qwen3-8b`) have built-in `-thinking` entries at that rate. Other families, such as Gemma, keep these words as a different model. A longer key matches a shorter logged ID only when it adds nothing but a host or provider prefix, so a logged `claude-3-5-sonnet` does not take a `claude-3-5-sonnet-20240620` row. A host or provider prefix ends in `/`, `.`, `:` or `@` (`openrouter/`, `us.`); a word joined with `-` or `_`, as in `chat-gpt-5.4`, makes it a different model ID. Any other word or version names a different model, so `gpt-5.4-codex` does not take the `gpt-5.4` price and `gpt-6.2` does not take a `gpt-6.2-…` variant's price; such a model reports missing pricing until a catalogue lists it. When the matches include the requested model ID, entries for longer model IDs are removed from consideration. A separately priced models.dev tier, such as `gemini-3.5-flash-lite` beside `gemini-3.5-flash`, matches only a logged ID that names the tier, optionally behind a host or provider prefix, followed by nothing or by one of the suffixes above, so `models/gemini-3.5-flash-lite` and `gemini-3.5-flash-lite[1m]` use the tier price while `gemini-3.5-flash` never does. Historical schedules apply to direct model IDs and their pricing overrides when the lookup matches by identity.
+
+## Comparing Stored and Calculated Costs
+
+Run the same report in both modes:
 
 ```bash
-# Calculate mode ensures consistent methodology
-ccusage monthly --mode calculate --breakdown
-
-# All months use the same token-based calculation
-# Useful for trend analysis and cost projections
+ccusage claude daily --mode display --json | jq '.totals.totalCost'
+ccusage claude daily --mode calculate --json | jq '.totals.totalCost'
 ```
 
-### Scenario 3: Billing Verification
+In `auto` mode, `cost - storedCost` is the calculated part of a model breakdown when `storedCost` is present.
 
-You want to verify Claude's official cost calculations:
+## Missing Prices
+
+When a calculation cannot resolve a model price, its calculated cost is zero. JSON marks affected model breakdowns with `missingPricing: true` and lists the names in `totals.unpricedModels`. See [Unpriced Models](/guide/json-output#unpriced-models).
 
 ```bash
-# Display mode shows only official Claude costs
-ccusage daily --mode display --since 20260101
-
-# Compare with your Claude billing dashboard
-# Entries without costs show $0.00
+ccusage claude daily --mode calculate --json | jq '.totals.unpricedModels // []'
 ```
 
-### Scenario 4: Historical Analysis
+To use available online prices, run with `--no-offline`. For private or proxied models, configure a pricing override.
 
-Analyzing usage patterns over time:
+## Estimated Prices
 
-```bash
-# Auto mode for complete picture
-ccusage daily --mode auto --since 20260501 --until 20260516
+A vendor's free model used through a paid host with no price of its own is priced from the closest paid listing of the same model, not at $0. Local runtimes such as Ollama, and providers that ccusage's pricing data doesn't know, keep the free price. JSON marks those model breakdowns with `estimatedPricing: true` and lists the names in `totals.estimatedModels`, and table output prints an `INFO` note. When no paid listing exists, the model is reported as missing instead. See [Estimated Prices](/guide/json-output#estimated-prices).
 
-# Calculate mode for consistent comparison
-ccusage monthly --mode calculate --order asc
-```
+## Related Guides
 
-## Cost Calculation Details
-
-### Token-Based Calculation
-
-When calculating costs from tokens, ccusage uses:
-
-#### Model Pricing Sources
-
-- **LiteLLM database and models.dev catalog** - Up-to-date model pricing and model metadata
-- **Automatic updates** - Pricing refreshed regularly
-- **Historical schedules** - Time-varying model rates use each event's recorded timestamp
-- **Multiple models** - Supports Claude Opus 4.1, Sonnet 4.5, and other models
-
-#### Token Types
-
-```typescript
-type TokenCosts = {
-	input: number; // Input tokens
-	output: number; // Output tokens
-	cacheCreate5m: number; // 5-minute cache creation tokens
-	cacheCreate1h: number; // 1-hour cache creation tokens
-	cacheRead: number; // Cache read tokens
-};
-```
-
-#### Calculation Formula
-
-```typescript
-totalCost =
-	inputTokens * inputPrice +
-	outputTokens * outputPrice +
-	cacheCreate5mTokens * cacheCreatePrice +
-	cacheCreate1hTokens * inputPrice * 2 +
-	cacheReadTokens * cacheReadPrice;
-```
-
-When Claude Code records do not include the `cache_creation` duration
-breakdown, ccusage falls back to pricing `cache_creation_input_tokens` at the
-standard cache creation rate.
-
-### Pre-calculated Costs
-
-Claude Code provides `costUSD` values in JSONL files:
-
-```json
-{
-	"timestamp": "2026-05-16T10:30:00Z",
-	"model": "claude-opus-4-1-20250805",
-	"usage": {
-		"input_tokens": 1245,
-		"output_tokens": 28756,
-		"cache_creation_input_tokens": 512,
-		"cache_read_input_tokens": 256
-	},
-	"costUSD": 12.45
-}
-```
-
-## Debug Mode
-
-Use debug mode to understand cost calculation discrepancies:
-
-```bash
-ccusage daily --mode auto --debug
-```
-
-Shows:
-
-- **Pricing mismatches** between calculated and pre-calculated costs
-- **Missing cost data** entries
-- **Calculation details** for each entry
-- **Sample discrepancies** for investigation
-
-```bash
-# Show more sample discrepancies
-ccusage daily --debug --debug-samples 10
-```
-
-## Mode Selection Guide
-
-### When to use `auto` mode:
-
-- **General usage** - Default for most scenarios
-- **Mixed data sets** - Combining old and new usage data
-- **Maximum accuracy** - Best available cost information
-- **Regular reporting** - Daily/monthly usage tracking
-
-### When to use `calculate` mode:
-
-- **Consistent analysis** - Comparing different time periods
-- **Token cost research** - Understanding pure token costs
-- **Pricing validation** - Verifying calculated vs actual costs
-- **Historical comparison** - Analyzing cost trends over time
-
-### When to use `display` mode:
-
-- **Billing verification** - Comparing with Claude charges
-- **Official costs only** - Trusting Claude's calculations
-- **Recent data analysis** - Most accurate for new usage
-- **Audit purposes** - Verifying pre-calculated costs
-
-## Advanced Usage
-
-### Combining with Other Options
-
-```bash
-# Calculate mode with breakdown by model
-ccusage daily --mode calculate --breakdown
-
-# Display mode with JSON output for analysis
-ccusage session --mode display --json | jq '.[] | select(.totalCost > 0)'
-
-# Auto mode with date filtering
-ccusage monthly --mode auto --since 20260101 --order asc
-```
-
-### Performance Considerations
-
-- **`display` mode** - Fastest (no calculations)
-- **`auto` mode** - Moderate (conditional calculations)
-- **`calculate` mode** - Slowest (always calculates)
-
-### Offline Mode Compatibility
-
-```bash
-# All modes work with offline pricing data
-ccusage daily --mode calculate --offline
-ccusage monthly --mode auto --offline
-```
-
-## Common Issues and Solutions
-
-### Issue: Costs showing as $0.00
-
-**Cause**: Using `display` mode with data that lacks pre-calculated costs
-
-**Solution**:
-
-```bash
-# Switch to auto or calculate mode
-ccusage daily --mode auto
-ccusage daily --mode calculate
-```
-
-### Issue: Inconsistent cost calculations
-
-**Cause**: Mixed use of different modes or pricing changes
-
-**Solution**:
-
-```bash
-# Use calculate mode for consistency
-ccusage daily --mode calculate --since 20260501
-```
-
-### Issue: Large discrepancies in debug mode
-
-**Cause**: Pricing updates or model changes
-
-**Solution**:
-
-```bash
-# Check for pricing updates
-ccusage daily --mode auto  # Updates pricing cache
-ccusage daily --mode calculate --debug  # Compare calculations
-```
-
-### Issue: Missing cost data for recent entries
-
-**Cause**: Claude Code hasn't calculated costs yet
-
-**Solution**:
-
-```bash
-# Use calculate mode as fallback
-ccusage daily --mode calculate
-```
-
-## Next Steps
-
-After understanding cost modes:
-
-- Explore [Configuration](/guide/configuration) for environment setup
-- Learn about [Claude Code](/guide/claude/) data paths for custom Claude Code directories
-- Set per-model prices via [Pricing Overrides](/guide/config-files#pricing-overrides) for private or proxied models
+- [JSON Output](/guide/json-output) - Stored costs, cache-write splits, and unpriced or estimated models
+- [Configuration Files](/guide/config-files) - Persistent mode and pricing settings
+- [Claude Code](/guide/claude/) - Data paths and source-specific options

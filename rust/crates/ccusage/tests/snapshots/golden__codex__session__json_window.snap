@@ -1,0 +1,268 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage codex session --offline --json --since 20251231 --until 20260101
+---
+exit: 0
+--- stdout ---
+{
+  "sessions": [
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 500,
+      "costUSD": 0.011975000000000001,
+      "directory": "2025/12/30",
+      "inputTokens": 1300,
+      "lastActivity": "2026-01-01T12:11:00.000Z",
+      "models": {
+        "codex-mystery-1": {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "inputTokens": 300,
+          "isFallback": false,
+          "missingPricing": true,
+          "outputTokens": 30,
+          "reasoningOutputTokens": 0,
+          "totalTokens": 330
+        },
+        "gpt-5.5": {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 500,
+          "inputTokens": 1000,
+          "isFallback": false,
+          "outputTokens": 150,
+          "reasoningOutputTokens": 10,
+          "totalTokens": 1650
+        }
+      },
+      "outputTokens": 180,
+      "reasoningOutputTokens": 10,
+      "sessionFile": "rollout-2025-12-30T10-00-00-11111111-1111-4111-8111-111111111111",
+      "sessionId": "2025/12/30/rollout-2025-12-30T10-00-00-11111111-1111-4111-8111-111111111111",
+      "totalTokens": 1980
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 700,
+      "costUSD": 0.005625,
+      "directory": "2025/12/31",
+      "inputTokens": 1100,
+      "lastActivity": "2025-12-31T15:30:01.000Z",
+      "models": {
+        "gpt-5.5": {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 700,
+          "inputTokens": 1100,
+          "isFallback": false,
+          "outputTokens": 180,
+          "reasoningOutputTokens": 20,
+          "totalTokens": 1980
+        }
+      },
+      "outputTokens": 180,
+      "reasoningOutputTokens": 20,
+      "sessionFile": "rollout-2025-12-31T10-00-00-33333333-3333-4333-8333-333333333333",
+      "sessionId": "2025/12/31/rollout-2025-12-31T10-00-00-33333333-3333-4333-8333-333333333333",
+      "totalTokens": 1980
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 30,
+      "costUSD": 0.00012937500000000001,
+      "directory": "2025/12/31",
+      "inputTokens": 100,
+      "lastActivity": "2025-12-31T12:01:00.000Z",
+      "models": {
+        "gpt-5": {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 30,
+          "inputTokens": 100,
+          "isFallback": false,
+          "outputTokens": 13,
+          "reasoningOutputTokens": 0,
+          "totalTokens": 143
+        }
+      },
+      "outputTokens": 13,
+      "reasoningOutputTokens": 0,
+      "sessionFile": "rollout-2025-12-31T12-00-00-bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "sessionId": "2025/12/31/rollout-2025-12-31T12-00-00-bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "totalTokens": 143
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 6000,
+      "costUSD": 0.01231875,
+      "directory": "2025/12/31",
+      "inputTokens": 3100,
+      "lastActivity": "2026-01-01T01:05:00.000Z",
+      "models": {
+        "gpt-5": {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 1500,
+          "inputTokens": 500,
+          "isFallback": false,
+          "outputTokens": 200,
+          "reasoningOutputTokens": 50,
+          "totalTokens": 2200
+        },
+        "gpt-5-codex": {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 4500,
+          "inputTokens": 2600,
+          "isFallback": true,
+          "outputTokens": 710,
+          "reasoningOutputTokens": 0,
+          "totalTokens": 7810
+        }
+      },
+      "outputTokens": 910,
+      "reasoningOutputTokens": 50,
+      "sessionFile": "rollout-2025-12-31T16-00-00-22222222-2222-4222-8222-222222222222",
+      "sessionId": "2025/12/31/rollout-2025-12-31T16-00-00-22222222-2222-4222-8222-222222222222",
+      "totalTokens": 10010
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 1220,
+      "costUSD": 0.0024975,
+      "directory": "2026/01/01",
+      "inputTokens": 500,
+      "lastActivity": "2026-01-01T02:11:00.000Z",
+      "models": {
+        "gpt-5-codex": {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 1220,
+          "inputTokens": 500,
+          "isFallback": true,
+          "outputTokens": 172,
+          "reasoningOutputTokens": 0,
+          "totalTokens": 1892
+        }
+      },
+      "outputTokens": 172,
+      "reasoningOutputTokens": 0,
+      "sessionFile": "rollout-2026-01-01T02-00-00-cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      "sessionId": "2026/01/01/rollout-2026-01-01T02-00-00-cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      "totalTokens": 1892
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 10,
+      "costUSD": 0.00046125,
+      "directory": "2026/01/01",
+      "inputTokens": 200,
+      "lastActivity": "2026-01-01T14:00:00.000+09:00",
+      "models": {
+        "gpt-5": {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 10,
+          "inputTokens": 200,
+          "isFallback": false,
+          "outputTokens": 21,
+          "reasoningOutputTokens": 0,
+          "totalTokens": 231
+        }
+      },
+      "outputTokens": 21,
+      "reasoningOutputTokens": 0,
+      "sessionFile": "rollout-2026-01-01T05-00-00-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "sessionId": "2026/01/01/rollout-2026-01-01T05-00-00-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "totalTokens": 231
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 100,
+      "costUSD": 0.0010125,
+      "directory": "2026/01/01",
+      "inputTokens": 400,
+      "lastActivity": "2026-01-01T12:05:00.500Z",
+      "models": {
+        "gpt-5-codex": {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 100,
+          "inputTokens": 400,
+          "isFallback": false,
+          "outputTokens": 50,
+          "reasoningOutputTokens": 0,
+          "totalTokens": 550
+        }
+      },
+      "outputTokens": 50,
+      "reasoningOutputTokens": 0,
+      "sessionFile": "rollout-2026-01-01T12-05-00-44444444-4444-4444-8444-444444444444",
+      "sessionId": "2026/01/01/rollout-2026-01-01T12-05-00-44444444-4444-4444-8444-444444444444",
+      "totalTokens": 550
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 150,
+      "costUSD": 0.0015187500000000001,
+      "directory": "2026/01/01",
+      "inputTokens": 600,
+      "lastActivity": "2026-01-01T12:06:00.000Z",
+      "models": {
+        "gpt-5-codex": {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 150,
+          "inputTokens": 600,
+          "isFallback": false,
+          "outputTokens": 75,
+          "reasoningOutputTokens": 5,
+          "totalTokens": 825
+        }
+      },
+      "outputTokens": 75,
+      "reasoningOutputTokens": 5,
+      "sessionFile": "rollout-2026-01-01T12-05-00-ffffffff-ffff-4fff-8fff-ffffffffffff",
+      "sessionId": "2026/01/01/rollout-2026-01-01T12-05-00-ffffffff-ffff-4fff-8fff-ffffffffffff",
+      "totalTokens": 825
+    },
+    {
+      "cacheCreationTokens": 300,
+      "cacheReadTokens": 540,
+      "costUSD": 0.00324675,
+      "directory": "exec",
+      "inputTokens": 1200,
+      "lastActivity": "2026-01-01T03:10:00.000Z",
+      "models": {
+        "gpt-5": {
+          "cacheCreationTokens": 300,
+          "cacheReadTokens": 500,
+          "inputTokens": 600,
+          "isFallback": false,
+          "outputTokens": 140,
+          "reasoningOutputTokens": 9,
+          "totalTokens": 1540
+        },
+        "gpt-5.2-codex": {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 40,
+          "inputTokens": 600,
+          "isFallback": true,
+          "outputTokens": 64,
+          "reasoningOutputTokens": 0,
+          "totalTokens": 704
+        }
+      },
+      "outputTokens": 204,
+      "reasoningOutputTokens": 9,
+      "sessionFile": "headless-run",
+      "sessionId": "exec/headless-run",
+      "totalTokens": 2244
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 300,
+    "cacheReadTokens": 9250,
+    "costUSD": 0.038784875,
+    "inputTokens": 8500,
+    "outputTokens": 1805,
+    "reasoningOutputTokens": 94,
+    "totalTokens": 19855,
+    "unpricedModels": [
+      "codex-mystery-1"
+    ]
+  }
+}
+
+--- stderr ---

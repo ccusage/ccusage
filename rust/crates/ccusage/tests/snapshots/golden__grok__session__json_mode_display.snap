@@ -1,0 +1,215 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage grok session --offline --json --mode display
+---
+exit: 0
+--- stdout ---
+{
+  "sessions": [
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "firstActivity": "2026-01-01T12:30:00.000Z",
+      "inputTokens": 345,
+      "lastActivity": "2026-01-01T12:30:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 345,
+          "modelName": "unknown",
+          "outputTokens": 55
+        }
+      ],
+      "modelsUsed": [
+        "unknown"
+      ],
+      "outputTokens": 55,
+      "projectPath": "/work/beta",
+      "sessionId": "cccccccc-0000-4000-8000-000000000003",
+      "totalCost": 0.0,
+      "totalTokens": 400
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 100,
+      "firstActivity": "2026-01-02T11:00:00.000Z",
+      "inputTokens": 300,
+      "lastActivity": "2026-01-02T11:00:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 100,
+          "cost": 0.0,
+          "inputTokens": 300,
+          "modelName": "grok-4.5-build",
+          "outputTokens": 60
+        }
+      ],
+      "modelsUsed": [
+        "grok-4.5-build"
+      ],
+      "outputTokens": 60,
+      "projectPath": "/git/delta",
+      "sessionId": "dddddddd-0000-4000-8000-000000000004",
+      "totalCost": 0.0,
+      "totalTokens": 460
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "firstActivity": "2025-12-30T10:30:00.000Z",
+      "inputTokens": 120,
+      "lastActivity": "2025-12-30T10:30:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 120,
+          "modelName": "grok-code-fast-1",
+          "outputTokens": 30
+        }
+      ],
+      "modelsUsed": [
+        "grok-code-fast-1"
+      ],
+      "outputTokens": 30,
+      "projectPath": "deeper",
+      "sessionId": "eeeeeeee-0000-4000-8000-000000000005",
+      "totalCost": 0.0,
+      "totalTokens": 150
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 600,
+      "firstActivity": "2026-01-01T00:10:00.000Z",
+      "inputTokens": 900,
+      "lastActivity": "2026-01-01T12:00:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 600,
+          "cost": 0.0,
+          "inputTokens": 0,
+          "modelName": "grok-4.3-build",
+          "outputTokens": 100
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 900,
+          "modelName": "grok-mystery-1",
+          "outputTokens": 210
+        }
+      ],
+      "modelsUsed": [
+        "grok-4.3-build",
+        "grok-mystery-1"
+      ],
+      "outputTokens": 310,
+      "projectPath": "/summary/beta",
+      "sessionId": "line-session-gamma",
+      "totalCost": 0.0,
+      "totalTokens": 1810
+    },
+    {
+      "cacheCreationTokens": 100,
+      "cacheReadTokens": 51900,
+      "firstActivity": "2025-12-27T22:00:00.000Z",
+      "inputTokens": 205100,
+      "lastActivity": "2026-01-01T12:30:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 100,
+          "cacheReadTokens": 51900,
+          "cost": 0.6173000000000001,
+          "inputTokens": 204000,
+          "modelName": "grok-4.5-build",
+          "outputTokens": 2000
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 800,
+          "modelName": "grok-code-fast-1",
+          "outputTokens": 160
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 300,
+          "modelName": "grok-mystery-1",
+          "outputTokens": 70
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 0,
+          "modelName": "grok-4.7-build",
+          "outputTokens": 0
+        }
+      ],
+      "modelsUsed": [
+        "grok-4.5-build",
+        "grok-code-fast-1",
+        "grok-mystery-1",
+        "grok-4.7-build"
+      ],
+      "outputTokens": 2230,
+      "projectPath": "/work/alpha",
+      "sessionId": "sess-alpha",
+      "totalCost": 0.6173000000000001,
+      "totalTokens": 259330
+    },
+    {
+      "cacheCreationTokens": 750,
+      "cacheReadTokens": 800,
+      "firstActivity": "2025-12-31T23:50:00.000Z",
+      "inputTokens": 650,
+      "lastActivity": "2026-01-02T11:00:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 50,
+          "cacheReadTokens": 700,
+          "cost": 0.003,
+          "inputTokens": 650,
+          "modelName": "grok-code-fast-1",
+          "outputTokens": 450
+        },
+        {
+          "cacheCreationTokens": 700,
+          "cacheReadTokens": 100,
+          "cost": 0.001,
+          "inputTokens": 0,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 300
+        }
+      ],
+      "modelsUsed": [
+        "grok-code-fast-1",
+        "claude-sonnet-4-20250514"
+      ],
+      "outputTokens": 750,
+      "projectPath": "/summary/beta",
+      "sessionId": "summary-session-beta",
+      "totalCost": 0.004,
+      "totalTokens": 2950
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 850,
+    "cacheReadTokens": 53400,
+    "inputTokens": 207415,
+    "outputTokens": 3435,
+    "totalCost": 0.6213000000000001,
+    "totalTokens": 265100
+  }
+}
+
+--- stderr ---

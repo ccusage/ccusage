@@ -6,6 +6,7 @@ Goose support is experimental. ccusage can read Goose session usage from its loc
 
 ```bash
 ccusage goose daily
+ccusage goose weekly
 ccusage goose monthly
 ccusage goose session
 ```
@@ -42,20 +43,20 @@ $GOOSE_PATH_ROOT/data/sessions/sessions.db
 
 ccusage reads Goose session rows with model configuration and token columns:
 
-| Goose column                                        | ccusage field       |
-| --------------------------------------------------- | ------------------- |
-| `accumulated_input_tokens` or `input_tokens`        | Input tokens        |
-| `accumulated_output_tokens` or `output_tokens`      | Output tokens       |
-| `accumulated_total_tokens` or `total_tokens`        | Total tokens        |
-| `total - input - output`, when positive             | Reasoning/extra use |
-| `model_config_json.model_name`                      | Model               |
-| `provider_name`, when present, otherwise model hint | Provider            |
+| Goose column                                        | ccusage field   |
+| --------------------------------------------------- | --------------- |
+| `accumulated_input_tokens` or `input_tokens`        | Input tokens    |
+| `accumulated_output_tokens` or `output_tokens`      | Output tokens   |
+| `accumulated_total_tokens` or `total_tokens`        | Total tokens    |
+| `total - input - output`, when positive             | Residual tokens |
+| `model_config_json.model_name`                      | Model           |
+| `provider_name`, when present, otherwise model hint | Provider        |
 
 Goose does not expose cache read/write token columns in this database, so cache columns are reported as zero.
 
 ## Cost Calculation
 
-Goose rows do not store recorded USD cost, so ccusage estimates cost from token counts and LiteLLM pricing. Any positive total-token remainder beyond input and output is treated as output-priced usage for cost estimation.
+Goose rows do not store recorded USD cost. Auto and Calculate estimate cost from the recorded input and output counts. A positive remainder contributes to the reported token total only. Display reports $0 while retaining token usage. See [Cost Modes](/guide/cost-modes).
 
 Use `--offline` to rely on cached pricing data:
 

@@ -1,0 +1,218 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage gemini daily --offline --json
+---
+exit: 0
+--- stdout ---
+{
+  "daily": [
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "date": "2025-12-27",
+      "inputTokens": 100,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0010500000000000002,
+          "inputTokens": 100,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 50
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514"
+      ],
+      "outputTokens": 50,
+      "totalCost": 0.0010500000000000002,
+      "totalTokens": 150
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 1000,
+      "date": "2025-12-30",
+      "inputTokens": 2334,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 400,
+          "cost": 0.0037,
+          "inputTokens": 680,
+          "modelName": "gemini-2.5-pro",
+          "outputTokens": 230
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 600,
+          "cost": 0.0010142999999999999,
+          "inputTokens": 1621,
+          "modelName": "gemini-2.5-flash",
+          "outputTokens": 204
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 33,
+          "missingPricing": true,
+          "modelName": "unknown",
+          "outputTokens": 11
+        }
+      ],
+      "modelsUsed": [
+        "gemini-2.5-pro",
+        "gemini-2.5-flash",
+        "unknown"
+      ],
+      "outputTokens": 445,
+      "totalCost": 0.004714300000000001,
+      "totalTokens": 3829
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 2280,
+      "date": "2025-12-31",
+      "inputTokens": 2393,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 1700,
+          "cost": 0.008972500000000001,
+          "inputTokens": 1808,
+          "modelName": "gemini-2.5-pro",
+          "outputTokens": 510
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 80,
+          "cost": 0.0008065,
+          "inputTokens": 585,
+          "modelName": "gemini-3-flash-preview",
+          "outputTokens": 140
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 500,
+          "cost": 0.0,
+          "inputTokens": 0,
+          "missingPricing": true,
+          "modelName": "gemini-mystery-1",
+          "outputTokens": 20
+        }
+      ],
+      "modelsUsed": [
+        "gemini-2.5-pro",
+        "gemini-3-flash-preview",
+        "gemini-mystery-1"
+      ],
+      "outputTokens": 670,
+      "totalCost": 0.009779,
+      "totalTokens": 6167
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 150103,
+      "date": "2026-01-01",
+      "inputTokens": 300562,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 150000,
+          "cost": 0.8025000000000001,
+          "inputTokens": 300000,
+          "modelName": "gemini-2.5-pro",
+          "outputTokens": 1000
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0009000000000000001,
+          "inputTokens": 100,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 40
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 100,
+          "cost": 0.000255,
+          "inputTokens": 200,
+          "modelName": "gemini-3-flash-preview",
+          "outputTokens": 45
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 3,
+          "cost": 3.69e-6,
+          "inputTokens": 12,
+          "modelName": "gemini-2.5-flash",
+          "outputTokens": 0
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 250,
+          "missingPricing": true,
+          "modelName": "gemini-mystery-1",
+          "outputTokens": 50
+        }
+      ],
+      "modelsUsed": [
+        "gemini-2.5-flash",
+        "gemini-mystery-1",
+        "claude-sonnet-4-20250514",
+        "gemini-2.5-pro",
+        "gemini-3-flash-preview"
+      ],
+      "outputTokens": 1135,
+      "totalCost": 0.8036586900000001,
+      "totalTokens": 451865
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 2030,
+      "date": "2026-01-02",
+      "inputTokens": 1110,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 2000,
+          "cost": 0.0033,
+          "inputTokens": 500,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 80
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 30,
+          "cost": 0.0005464,
+          "inputTokens": 610,
+          "modelName": "gemini-2.5-flash",
+          "outputTokens": 135
+        }
+      ],
+      "modelsUsed": [
+        "gemini-2.5-flash",
+        "claude-sonnet-4-20250514"
+      ],
+      "outputTokens": 215,
+      "totalCost": 0.0038464,
+      "totalTokens": 3365
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 0,
+    "cacheReadTokens": 155413,
+    "inputTokens": 306499,
+    "outputTokens": 2515,
+    "totalCost": 0.8230483900000002,
+    "totalTokens": 465376,
+    "unpricedModels": [
+      "gemini-mystery-1",
+      "unknown"
+    ]
+  }
+}
+
+--- stderr ---

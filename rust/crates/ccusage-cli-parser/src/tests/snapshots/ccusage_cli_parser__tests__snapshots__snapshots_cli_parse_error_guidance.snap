@@ -1,0 +1,64 @@
+---
+source: crates/ccusage-cli-parser/src/tests/snapshots.rs
+expression: cases
+---
+[
+  {
+    "args": [
+      "ccusage",
+      "--daily"
+    ],
+    "error": "Report flags like --daily are not supported. Use \"ccusage daily\" instead."
+  },
+  {
+    "args": [
+      "ccusage",
+      "daily",
+      "--agent",
+      "codex"
+    ],
+    "error": "Agent filters like --agent are not supported. Use \"ccusage <agent> <report>\", for example \"ccusage codex daily\"."
+  },
+  {
+    "args": [
+      "ccusage",
+      "codex",
+      "blocks"
+    ],
+    "error": "The \"blocks\" report is only available for Claude Code usage.\nUse \"ccusage codex daily\" for Codex usage reports."
+  },
+  {
+    "args": [
+      "ccusage",
+      "--mode",
+      "bad"
+    ],
+    "error": "Invalid cost mode 'bad'"
+  },
+  {
+    "args": [
+      "ccusage",
+      "blocks",
+      "--session-length",
+      "abc"
+    ],
+    "error": "Invalid value for --session-length: Expected a number of hours"
+  },
+  {
+    "args": [
+      "ccusage",
+      "statusline",
+      "--visual-burn-rate",
+      "loud"
+    ],
+    "error": "Invalid visual burn rate 'loud'"
+  },
+  {
+    "args": [
+      "ccusage",
+      "codex",
+      "yearly"
+    ],
+    "error": "The \"yearly\" report is not available for Codex usage.\nUse \"ccusage codex daily\" for Codex usage reports."
+  }
+]

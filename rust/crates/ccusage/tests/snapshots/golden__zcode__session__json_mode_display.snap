@@ -1,0 +1,260 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage zcode session --offline --json --mode display
+---
+exit: 0
+--- stdout ---
+{
+  "sessions": [
+    {
+      "cacheCreationTokens": 130,
+      "cacheReadTokens": 1000,
+      "firstActivity": "2025-12-27T22:00:00.000Z",
+      "inputTokens": 3670,
+      "lastActivity": "2026-01-02T10:00:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 30,
+          "cacheReadTokens": 50,
+          "cost": 0.0,
+          "inputTokens": 100,
+          "modelName": "GLM-5.2",
+          "outputTokens": 50
+        },
+        {
+          "cacheCreationTokens": 100,
+          "cacheReadTokens": 300,
+          "cost": 0.0,
+          "inputTokens": 1100,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 250
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 600,
+          "cost": 0.0,
+          "inputTokens": 1520,
+          "modelName": "GLM-5.3",
+          "outputTokens": 330
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 300,
+          "modelName": "zcode-mystery-1",
+          "outputTokens": 70
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 400,
+          "modelName": "gpt-5",
+          "outputTokens": 100
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 50,
+          "cost": 0.0,
+          "inputTokens": 250,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 0
+        }
+      ],
+      "modelsUsed": [
+        "GLM-5.2",
+        "claude-sonnet-4-20250514",
+        "GLM-5.3",
+        "zcode-mystery-1",
+        "gpt-5",
+        "claude-opus-4-20250514"
+      ],
+      "outputTokens": 800,
+      "projectPath": "/work/project-alpha",
+      "sessionId": "s-alpha",
+      "totalCost": 0.0,
+      "totalTokens": 5870
+    },
+    {
+      "cacheCreationTokens": 440,
+      "cacheReadTokens": 960,
+      "firstActivity": "1970-01-21T10:53:13.200Z",
+      "inputTokens": 2811,
+      "lastActivity": "2026-01-02T13:00:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 11,
+          "modelName": "gpt-5",
+          "outputTokens": 7
+        },
+        {
+          "cacheCreationTokens": 400,
+          "cacheReadTokens": 600,
+          "cost": 0.0,
+          "inputTokens": 1200,
+          "modelName": "GLM-5.3",
+          "outputTokens": 320
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 200,
+          "cost": 0.0,
+          "inputTokens": 1600,
+          "modelName": "GLM-5.3-Flash",
+          "outputTokens": 800
+        },
+        {
+          "cacheCreationTokens": 40,
+          "cacheReadTokens": 160,
+          "cost": 0.0,
+          "inputTokens": 0,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 30
+        }
+      ],
+      "modelsUsed": [
+        "gpt-5",
+        "GLM-5.3",
+        "GLM-5.3-Flash",
+        "claude-sonnet-4-20250514"
+      ],
+      "outputTokens": 1157,
+      "projectPath": "/work/project-beta",
+      "sessionId": "s-beta",
+      "totalCost": 0.0,
+      "totalTokens": 5713
+    },
+    {
+      "cacheCreationTokens": 200,
+      "cacheReadTokens": 100,
+      "firstActivity": "2026-01-01T14:00:00.000Z",
+      "inputTokens": 500,
+      "lastActivity": "2026-01-01T14:00:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 100,
+          "cost": 0.0,
+          "inputTokens": 500,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 120
+        }
+      ],
+      "modelsUsed": [
+        "claude-haiku-4-5-20251001"
+      ],
+      "outputTokens": 120,
+      "projectPath": "ZCode",
+      "sessionId": "s-blank-dir",
+      "totalCost": 0.0,
+      "totalTokens": 920
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 300,
+      "firstActivity": "2025-12-30T20:00:00.000Z",
+      "inputTokens": 1000,
+      "lastActivity": "2025-12-31T18:00:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 200,
+          "cost": 0.0,
+          "inputTokens": 500,
+          "modelName": "GLM-5.2",
+          "outputTokens": 90
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 100,
+          "cost": 0.0,
+          "inputTokens": 500,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 80
+        }
+      ],
+      "modelsUsed": [
+        "GLM-5.2",
+        "claude-sonnet-4-20250514"
+      ],
+      "outputTokens": 170,
+      "projectPath": "/work/project-legacy",
+      "sessionId": "s-legacy",
+      "totalCost": 0.0,
+      "totalTokens": 1470
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "firstActivity": "2025-12-27T23:00:00.000Z",
+      "inputTokens": 400,
+      "lastActivity": "2026-01-01T23:59:59.999Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 150,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 25
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 250,
+          "modelName": "gpt-5",
+          "outputTokens": 40
+        }
+      ],
+      "modelsUsed": [
+        "claude-opus-4-20250514",
+        "gpt-5"
+      ],
+      "outputTokens": 65,
+      "projectPath": "/work/project-alpha",
+      "sessionId": "s-minimal",
+      "totalCost": 0.0,
+      "totalTokens": 465
+    },
+    {
+      "cacheCreationTokens": 50,
+      "cacheReadTokens": 0,
+      "firstActivity": "2026-01-01T13:00:00.000Z",
+      "inputTokens": 450,
+      "lastActivity": "2026-01-01T13:00:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 50,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 450,
+          "modelName": "glm-5.3",
+          "outputTokens": 100
+        }
+      ],
+      "modelsUsed": [
+        "glm-5.3"
+      ],
+      "outputTokens": 100,
+      "projectPath": "ZCode",
+      "sessionId": "s-orphan",
+      "totalCost": 0.0,
+      "totalTokens": 600
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 820,
+    "cacheReadTokens": 2360,
+    "inputTokens": 8831,
+    "outputTokens": 2412,
+    "totalCost": 0.0,
+    "totalTokens": 15038
+  }
+}
+
+--- stderr ---

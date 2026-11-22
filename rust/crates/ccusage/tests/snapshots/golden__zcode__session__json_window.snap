@@ -1,0 +1,205 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage zcode session --offline --json --since 20251231 --until 20260101
+---
+exit: 0
+--- stdout ---
+{
+  "sessions": [
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 600,
+      "firstActivity": "2025-12-31T12:00:00.000Z",
+      "inputTokens": 2200,
+      "lastActivity": "2026-01-01T12:00:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 600,
+          "cost": 0.003436,
+          "inputTokens": 1400,
+          "modelName": "GLM-5.3",
+          "outputTokens": 300
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 500,
+          "missingPricing": true,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 50
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 300,
+          "missingPricing": true,
+          "modelName": "zcode-mystery-1",
+          "outputTokens": 70
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514",
+        "GLM-5.3",
+        "zcode-mystery-1"
+      ],
+      "outputTokens": 420,
+      "projectPath": "/work/project-alpha",
+      "sessionId": "s-alpha",
+      "totalCost": 0.003436,
+      "totalTokens": 3220
+    },
+    {
+      "cacheCreationTokens": 400,
+      "cacheReadTokens": 800,
+      "firstActivity": "2025-12-31T15:30:00.666Z",
+      "inputTokens": 2800,
+      "lastActivity": "2026-01-01T00:10:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 400,
+          "cacheReadTokens": 600,
+          "cost": 0.003436,
+          "inputTokens": 1200,
+          "missingPricing": true,
+          "modelName": "GLM-5.3",
+          "outputTokens": 320
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 200,
+          "cost": 0.000646,
+          "inputTokens": 1600,
+          "modelName": "GLM-5.3-Flash",
+          "outputTokens": 800
+        }
+      ],
+      "modelsUsed": [
+        "GLM-5.3",
+        "GLM-5.3-Flash"
+      ],
+      "outputTokens": 1120,
+      "projectPath": "/work/project-beta",
+      "sessionId": "s-beta",
+      "totalCost": 0.004082,
+      "totalTokens": 5120
+    },
+    {
+      "cacheCreationTokens": 200,
+      "cacheReadTokens": 100,
+      "firstActivity": "2026-01-01T14:00:00.000Z",
+      "inputTokens": 500,
+      "lastActivity": "2026-01-01T14:00:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 100,
+          "cost": 0.00131,
+          "inputTokens": 500,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 120
+        }
+      ],
+      "modelsUsed": [
+        "claude-haiku-4-5-20251001"
+      ],
+      "outputTokens": 120,
+      "projectPath": "ZCode",
+      "sessionId": "s-blank-dir",
+      "totalCost": 0.00131,
+      "totalTokens": 920
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 100,
+      "firstActivity": "2025-12-31T18:00:00.000Z",
+      "inputTokens": 500,
+      "lastActivity": "2025-12-31T18:00:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 100,
+          "cost": 0.0027300000000000002,
+          "inputTokens": 500,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 80
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514"
+      ],
+      "outputTokens": 80,
+      "projectPath": "/work/project-legacy",
+      "sessionId": "s-legacy",
+      "totalCost": 0.0027300000000000002,
+      "totalTokens": 680
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "firstActivity": "2026-01-01T23:59:59.999Z",
+      "inputTokens": 250,
+      "lastActivity": "2026-01-01T23:59:59.999Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0007125,
+          "inputTokens": 250,
+          "modelName": "gpt-5",
+          "outputTokens": 40
+        }
+      ],
+      "modelsUsed": [
+        "gpt-5"
+      ],
+      "outputTokens": 40,
+      "projectPath": "/work/project-alpha",
+      "sessionId": "s-minimal",
+      "totalCost": 0.0007125,
+      "totalTokens": 290
+    },
+    {
+      "cacheCreationTokens": 50,
+      "cacheReadTokens": 0,
+      "firstActivity": "2026-01-01T13:00:00.000Z",
+      "inputTokens": 450,
+      "lastActivity": "2026-01-01T13:00:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 50,
+          "cacheReadTokens": 0,
+          "cost": 0.00114,
+          "inputTokens": 450,
+          "modelName": "glm-5.3",
+          "outputTokens": 100
+        }
+      ],
+      "modelsUsed": [
+        "glm-5.3"
+      ],
+      "outputTokens": 100,
+      "projectPath": "ZCode",
+      "sessionId": "s-orphan",
+      "totalCost": 0.00114,
+      "totalTokens": 600
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 650,
+    "cacheReadTokens": 1600,
+    "inputTokens": 6700,
+    "outputTokens": 1880,
+    "totalCost": 0.013410499999999999,
+    "totalTokens": 10830,
+    "unpricedModels": [
+      "GLM-5.3",
+      "claude-sonnet-4-20250514",
+      "zcode-mystery-1"
+    ]
+  }
+}
+
+--- stderr ---

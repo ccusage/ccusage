@@ -1,0 +1,131 @@
+{
+	"acme-alpha-1.5": {
+		"input_cost_per_token": 1e-6,
+		"litellm_provider": "openai",
+		"output_cost_per_token": 1e-6
+	},
+	"acme.alpha@1.5": {
+		"input_cost_per_token": 2e-6,
+		"litellm_provider": "openai",
+		"output_cost_per_token": 2e-6
+	},
+	"ambient/small": {
+		"input_cost_per_token": 0.001,
+		"litellm_provider": "ambient",
+		"output_cost_per_token": 0.001
+	},
+	"azure/us-gov/text-embedding-3-small": {
+		"input_cost_per_token": 2.5e-8,
+		"litellm_provider": "azure",
+		"max_input_tokens": 8191,
+		"output_cost_per_token": 0.0
+	},
+	"bedrock/us-east-1/deepseek.v3.2": {
+		"input_cost_per_token": 6.2e-7,
+		"litellm_provider": "bedrock",
+		"max_input_tokens": 156000,
+		"output_cost_per_token": 1.85e-6
+	},
+	"deepseek-v3-2-251201": {
+		"input_cost_per_token": 0.0,
+		"litellm_provider": "volcengine",
+		"max_input_tokens": 98304,
+		"output_cost_per_token": 0.0
+	},
+	"gemini-2.5-flash": {
+		"cache_read_input_token_cost": 3e-8,
+		"input_cost_per_token": 3e-7,
+		"litellm_provider": "vertex_ai-language-models",
+		"max_input_tokens": 1048576,
+		"output_cost_per_token": 2.5e-6
+	},
+	"gemini/gemini-2.5-pro": {
+		"cache_read_input_token_cost": 1.25e-7,
+		"input_cost_per_token": 1.25e-6,
+		"litellm_provider": "gemini",
+		"max_input_tokens": 1048576,
+		"output_cost_per_token": 1e-5
+	},
+	"gpt-5.5": {
+		"input_cost_per_token": 5e-6,
+		"input_cost_per_token_above_200k_tokens": 1e-5,
+		"litellm_provider": "openai",
+		"output_cost_per_token": 3e-5
+	},
+	"hostx/acme-1": {
+		"input_cost_per_token": 3e-6,
+		"litellm_provider": "hostx",
+		"output_cost_per_token": 4e-6
+	},
+	"kyma/glm-4.7-flash": {
+		"cache_read_input_token_cost": 1.35e-8,
+		"input_cost_per_token": 8.1e-8,
+		"litellm_provider": "kyma",
+		"max_input_tokens": 203000,
+		"output_cost_per_token": 5.4e-7
+	},
+	"ollama/gpt-oss:20b-cloud": {
+		"input_cost_per_token": 0.0,
+		"litellm_provider": "ollama",
+		"max_input_tokens": 131072,
+		"output_cost_per_token": 0.0
+	},
+	"openrouter/openai/gpt-5.5": {
+		"input_cost_per_token": 2e-6,
+		"litellm_provider": "openrouter",
+		"output_cost_per_token": 1e-5
+	},
+	"vercel_ai_gateway/openai/gpt-6-luna-decisions": {
+		"cache_creation_input_token_cost": 1.25e-7,
+		"cache_read_input_token_cost": 1e-8,
+		"input_cost_per_token": 1e-7,
+		"litellm_provider": "vercel_ai_gateway",
+		"max_input_tokens": 1050000,
+		"output_cost_per_token": 0.0
+	},
+	"vertex_ai/gemini-2.0-flash": {
+		"input_cost_per_token": 1.5e-7,
+		"litellm_provider": "vertex_ai",
+		"max_input_tokens": 1048576,
+		"output_cost_per_token": 6e-7
+	},
+	"xai/grok-4.3": {
+		"cache_read_input_token_cost": 2e-7,
+		"input_cost_per_token": 1.25e-6,
+		"litellm_provider": "xai",
+		"max_input_tokens": 1000000,
+		"output_cost_per_token": 2.5e-6
+	},
+	"xai/grok-code-fast-1": {
+		"cache_read_input_token_cost": 2e-7,
+		"input_cost_per_token": 1e-6,
+		"litellm_provider": "xai",
+		"max_input_tokens": 256000,
+		"output_cost_per_token": 2e-6
+	},
+	"deepseek.v3.2": {
+		"input_cost_per_token": 6.2e-7,
+		"litellm_provider": "bedrock_converse",
+		"output_cost_per_token": 1.85e-6
+	},
+	"openrouter/deepseek/deepseek-v4-flash": {
+		"input_cost_per_token": 9e-8,
+		"litellm_provider": "openrouter",
+		"output_cost_per_token": 1.8e-7
+	},
+	"vertex_ai/gemini-2.5-flash": {
+		"input_cost_per_token": 3.5e-7,
+		"litellm_provider": "vertex_ai-language-models",
+		"output_cost_per_token": 2.6e-6
+	},
+	"bedrock/moonshotai.kimi-k2-thinking": {
+		"input_cost_per_token": 6e-7,
+		"litellm_provider": "bedrock",
+		"output_cost_per_token": 2.5e-6
+	},
+	"bedrock_mantle/ap-northeast-1/moonshotai.kimi-k2-thinking": {
+		"input_cost_per_token": 7.3e-7,
+		"litellm_provider": "bedrock_mantle",
+		"output_cost_per_token": 3.03e-6
+	}
+}

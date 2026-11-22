@@ -1,31 +1,52 @@
-use std::{collections::HashSet, env, path::PathBuf};
+use std::path::PathBuf;
+
+use ccusage_adapter_common::roots::{self, RootsEnv};
 
 use crate::Result;
 
 const AMP_DATA_DIR_ENV: &str = "AMP_DATA_DIR";
 
 pub(super) fn paths() -> Result<Vec<PathBuf>> {
-    let mut paths = Vec::new();
-    let mut seen = HashSet::new();
-    if let Ok(env_paths) = env::var(AMP_DATA_DIR_ENV) {
-        for raw in env_paths
-            .split(',')
-            .map(str::trim)
-            .filter(|path| !path.is_empty())
-        {
-            let path = PathBuf::from(raw);
-            if path.is_dir() && seen.insert(path.clone()) {
-                paths.push(path);
-            }
-        }
-        return Ok(paths);
+    Ok(roots::resolve(RootsEnv::List(AMP_DATA_DIR_ENV), || {
+        crate::cli::home::home_dir()
+            .into_iter()
+            .flat_map(|home| [".local/share/amp"].map(|path| home.join(path)))
+            .collect()
+    }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ccusage_test_support::{Environment, fs_fixture};
+
+    #[test]
+    fn blank_data_dir_falls_back_to_home() {
+        let fixture = fs_fixture!({});
+        let root = fixture.create_dir_all(".local/share/amp");
+        Environment::with_vars([
+            (AMP_DATA_DIR_ENV, Some(" , ".into())),
+            ("HOME", Some(fixture.root().into())),
+            ("USERPROFILE", None),
+            ("HOMEDRIVE", None),
+            ("HOMEPATH", None),
+        ])
+        .run(|| {
+            assert_eq!(paths().unwrap(), vec![root]);
+        })
     }
 
-    let home =
-        crate::home::home_dir().ok_or_else(|| crate::cli_error("home directory is not set"))?;
-    let path = home.join(".local/share/amp");
-    if path.is_dir() && seen.insert(path.clone()) {
-        paths.push(path);
+    #[test]
+    fn missing_home_returns_no_roots() {
+        Environment::with_vars([
+            (AMP_DATA_DIR_ENV, None),
+            ("HOME", None),
+            ("USERPROFILE", None),
+            ("HOMEDRIVE", None),
+            ("HOMEPATH", None),
+        ])
+        .run(|| {
+            assert_eq!(paths().unwrap(), Vec::<PathBuf>::new());
+        })
     }
-    Ok(paths)
 }

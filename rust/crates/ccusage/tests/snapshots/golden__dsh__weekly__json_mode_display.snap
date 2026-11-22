@@ -1,0 +1,100 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage dsh weekly --offline --json --mode display
+---
+exit: 0
+--- stdout ---
+{
+  "totals": {
+    "cacheCreationTokens": 1740,
+    "cacheReadTokens": 39000,
+    "inputTokens": 30820,
+    "outputTokens": 3424,
+    "totalCost": 0.0,
+    "totalTokens": 75666
+  },
+  "weekly": [
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 500,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 500,
+          "modelName": "unknown",
+          "outputTokens": 81
+        }
+      ],
+      "modelsUsed": [
+        "unknown"
+      ],
+      "outputTokens": 81,
+      "totalCost": 0.0,
+      "totalTokens": 581,
+      "week": "2025-12-22"
+    },
+    {
+      "cacheCreationTokens": 1740,
+      "cacheReadTokens": 39000,
+      "inputTokens": 30320,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 240,
+          "cacheReadTokens": 4000,
+          "cost": 0.0,
+          "inputTokens": 1380,
+          "modelName": "anthropic/claude-sonnet-4.5",
+          "outputTokens": 390
+        },
+        {
+          "cacheCreationTokens": 1500,
+          "cacheReadTokens": 32000,
+          "cost": 0.0,
+          "inputTokens": 5350,
+          "modelName": "deepseek-v4-pro",
+          "outputTokens": 1193
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 3000,
+          "modelName": "dsh-mystery-1",
+          "outputTokens": 700
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 3000,
+          "cost": 0.0,
+          "inputTokens": 20500,
+          "modelName": "deepseek-flash",
+          "outputTokens": 1050
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 90,
+          "modelName": "unknown",
+          "outputTokens": 10
+        }
+      ],
+      "modelsUsed": [
+        "anthropic/claude-sonnet-4.5",
+        "deepseek-v4-pro",
+        "dsh-mystery-1",
+        "deepseek-flash",
+        "unknown"
+      ],
+      "outputTokens": 3343,
+      "totalCost": 0.0,
+      "totalTokens": 75085,
+      "week": "2025-12-29"
+    }
+  ]
+}
+
+--- stderr ---

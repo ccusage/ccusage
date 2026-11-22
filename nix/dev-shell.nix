@@ -1,28 +1,22 @@
 { inputs, lib, ... }:
-let
-  root = ./..;
-in
 {
   perSystem =
     {
       config,
       system,
+      pkgs,
+      rustToolchain,
       ...
     }:
     let
-      pkgs = import inputs.nixpkgs {
-        inherit system;
-        overlays = [ inputs.rust-overlay.overlays.default ];
-      };
-      rustToolchain = pkgs.rust-bin.fromRustupToolchainFile (root + /rust-toolchain.toml);
       gitWtHook = import ./git-wt.nix { inherit pkgs; };
     in
     {
       devShells.default = pkgs.mkShell {
-        # Hand cargo the pinned LiteLLM snapshot the way the Nix packages do, so
-        # `cargo build` in the dev shell stays offline and does not need the
-        # fetch-litellm-pricing feature's rustls stack.
-        CCUSAGE_PRICING_JSON_PATH = "${inputs.litellm}/model_prices_and_context_window.json";
+        CCUSAGE_PRICING_JSON_PATH = "${inputs.litellm}";
+        CCUSAGE_SCHEMA_GEN_FROM_WORKSPACE = "1";
+
+        RUSTFLAGS = config.packages.ccusage.passthru.linkerRustflags;
 
         buildInputs =
           (with pkgs; [
@@ -32,13 +26,13 @@ in
             bun
             inputs.bun2nix.packages.${system}.default
             nushell
-            config.packages.cargo-hawk
             config.packages.publint
 
             rustToolchain
+            config.packages.cargo-hawk
             cargo-edit
             cargo-insta
-            cargo-llvm-cov
+            (cargo-llvm-cov.overrideAttrs { doCheck = false; })
             pkg-config
             openssl
             config.treefmt.build.wrapper
@@ -48,10 +42,12 @@ in
             typos
             typos-lsp
             oxfmt
-            actionlint
+            config.packages.actionlint
+            config.packages.blacksmith
             zizmor
-            oxlint
+            config.packages.oxlint
             just
+            clj-kondo
             prek
             gitleaks
             renovate
@@ -73,43 +69,18 @@ in
           ]
           ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isDarwin [
             pkgs.apple-sdk_15
+            pkgs.llvmPackages.lld
           ]
           ++ config.pre-commit.settings.enabledPackages;
 
         shellHook = ''
-          if [ "$(uname -s)" = "Linux" ]; then
-            case " ''${RUSTFLAGS:-} " in
-              *" -C link-arg=-fuse-ld=mold "*) ;;
-              *) export RUSTFLAGS="''${RUSTFLAGS:+$RUSTFLAGS }-C link-arg=-fuse-ld=mold" ;;
-            esac
-          fi
+          export RUSTC_WRAPPER="''${RUSTC_WRAPPER-${lib.getExe pkgs.sccache}}"
 
-          # Install whenever a lockfile is newer than the last `just install`, so
-          # a `git pull` that bumps dependencies does not leave a stale tree. The
-          # `.envrc` watches pnpm-lock.yaml and the whole nix/ tree, so direnv
-          # re-enters the shell — and re-runs this check — as soon as one changes.
-          # The tool dirs under nix/tools are outside the pnpm workspace, hence
-          # the extra lockfiles.
-          needsInstall=false
-          if [ ! -e node_modules/.install-stamp ]; then
-            needsInstall=true
-          else
-            for lock in pnpm-lock.yaml nix/tools/*/bun.lock; do
-              if [ "$lock" -nt node_modules/.install-stamp ]; then
-                needsInstall=true
-              fi
-            done
-          fi
-          if [ "$needsInstall" = true ]; then
-            echo "Installing dependencies..."
-            just install
-          fi
+          just install if-stale
 
           ${lib.getExe config.packages.syncAgentSkills}
           ${config.pre-commit.shellHook}
 
-          # Hooks are shared across worktrees, but the config symlink only exists
-          # where this shell has loaded; git-hooks.nix cannot pass this flag.
           for stage in ${lib.escapeShellArgs config.pre-commit.settings.installStages}; do
             hookFile=$(${lib.getExe config.pre-commit.settings.gitPackage} rev-parse --path-format=absolute --git-path "hooks/$stage")
             if ! grep -q -- --skip-on-missing-config "$hookFile" 2>/dev/null; then

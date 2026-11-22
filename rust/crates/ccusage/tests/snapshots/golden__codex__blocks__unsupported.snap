@@ -1,0 +1,11 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage codex blocks --offline --json
+---
+exit: 2
+--- stdout ---
+
+--- stderr ---
+The "blocks" report is only available for Claude Code usage.
+Use "ccusage codex daily" for Codex usage reports.
+Run 'ccusage --help' for usage.

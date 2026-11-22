@@ -7,9 +7,6 @@ inputs:
   binary:
     description: Path to the built ccusage binary
     required: true
-  nix-github-token:
-    description: Whether Nix builds may use the GitHub token from Nix config
-    default: 'true'
   cache-scope:
     description: >
       Unique matrix-entry identifier (the matrix `name`) used to scope the Nix
@@ -28,30 +25,21 @@ runs:
       with:
         cache-scope: ${{ inputs.cache-scope }}
         save: ${{ inputs.save-nix-cache }}
-        gc-max-store-size-linux: 4G
 
-    - name: Build Linux static binary
+    - name: Build Linux static binary and check its target under the unsafe_code forbid
       id: build
       shell: bash
       env:
-        NIX_GITHUB_TOKEN: ${{ inputs.nix-github-token }}
+        ARCH: ${{ inputs.arch }}
         TELEMETRY_ENABLED: ${{ inputs.telemetry-enabled }}
       run: |
         package=ccusage-static
         if [ "$TELEMETRY_ENABLED" = "true" ]; then
-          package=ccusage-static-release
+          package="ccusage-release-linux-$ARCH"
         fi
         echo "package=$package" >> "$GITHUB_OUTPUT"
-        if [ "$NIX_GITHUB_TOKEN" = "false" ]; then
-          NIX_CONFIG="access-tokens =" nix build ".#$package" --print-build-logs
-        else
-          nix build ".#$package" --print-build-logs
-        fi
+        nix build ".#$package" ".#$package.passthru.unsafeCodeCheck"
 
-    # The link lives inside the store's own gcroots, so it persists with a
-    # sticky disk or a cache-nix-action entry and protects these artifacts
-    # (and, through keep-outputs, their toolchain) from the next trim until a
-    # later run replaces it.
     - name: Root current Crane artifacts for cache save
       if: inputs.save-nix-cache == 'true'
       shell: bash
@@ -59,23 +47,10 @@ runs:
         PACKAGE: ${{ steps.build.outputs.package }}
       run: |
         system="$(nix eval --impure --raw --expr builtins.currentSystem)"
-        mkdir -p /nix/var/nix/gcroots/ci
-        nix build ".#packages.$system.$PACKAGE.passthru.workspaceArtifacts.cacheRoot" \
-          --out-link /nix/var/nix/gcroots/ci/ccusage-cargo-artifacts
-
-    - name: Verify Linux binary is static
-      shell: bash
-      env:
-        BINARY: ${{ inputs.binary }}
-      run: |
-        file "$BINARY"
-        if ldd "$BINARY" > "$RUNNER_TEMP/ldd.txt" 2>&1; then
-          cat "$RUNNER_TEMP/ldd.txt"
-          grep -Eiq 'not a dynamic executable|statically linked' "$RUNNER_TEMP/ldd.txt"
-        else
-          cat "$RUNNER_TEMP/ldd.txt"
-          grep -Eiq 'not a dynamic executable|statically linked' "$RUNNER_TEMP/ldd.txt"
-        fi
+        user_gcroot="/nix/var/nix/gcroots/per-user/$(id -un)/ci"
+        mkdir -p "$user_gcroot"
+        nix build ".#packages.$system.$PACKAGE.passthru.cacheRoot" \
+          --out-link "$user_gcroot/ccusage-cargo-artifacts"
 
     - name: Stage native package
       shell: bash

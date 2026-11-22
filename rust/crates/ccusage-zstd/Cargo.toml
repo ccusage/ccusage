@@ -1,0 +1,17 @@
+[package]
+name = "ccusage-zstd"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+ccusage-core.workspace = true
+memchr.workspace = true
+zstd.workspace = true
+zstd-sys.workspace = true
+
+[dev-dependencies]
+ccusage-test-support.workspace = true
+
+[lints]
+workspace = true

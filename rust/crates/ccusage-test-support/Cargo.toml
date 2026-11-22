@@ -4,7 +4,14 @@ version.workspace = true
 edition.workspace = true
 publish.workspace = true
 
+[features]
+test-environment = ["ccusage-core/test-environment"]
+
 [dependencies]
 assert_fs.workspace = true
+ccusage-core = { workspace = true, features = ["resolver-trace"] }
+ccusage-pricing-snapshots.workspace = true
 jiff.workspace = true
-sqlite.workspace = true
+
+[lints]
+workspace = true

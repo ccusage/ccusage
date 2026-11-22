@@ -1,0 +1,140 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage antigravity daily --offline --json --since 20251231 --until 20260101
+---
+exit: 0
+--- stdout ---
+{
+  "daily": [
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 2000,
+      "date": "2025-12-31",
+      "inputTokens": 2060,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0033,
+          "inputTokens": 500,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 100
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 2000,
+          "cost": 0.00279,
+          "inputTokens": 940,
+          "modelName": "gemini-3.5-flash-high",
+          "outputTokens": 120
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0011200000000000001,
+          "inputTokens": 500,
+          "modelName": "gemini-3-pro",
+          "outputTokens": 10
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00027,
+          "inputTokens": 120,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 30
+        }
+      ],
+      "modelsUsed": [
+        "gemini-3.5-flash-high",
+        "claude-sonnet-4-20250514",
+        "gemini-3-pro",
+        "claude-haiku-4-5-20251001"
+      ],
+      "outputTokens": 260,
+      "totalCost": 0.0074800000000000005,
+      "totalTokens": 4340
+    },
+    {
+      "cacheCreationTokens": 200,
+      "cacheReadTokens": 118000,
+      "date": "2026-01-01",
+      "inputTokens": 253641,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 100000,
+          "cost": 0.665,
+          "inputTokens": 250000,
+          "modelName": "gemini-2.5-pro",
+          "outputTokens": 1000
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 10000,
+          "cost": 0.0088775,
+          "inputTokens": 2030,
+          "modelName": "gpt-5",
+          "outputTokens": 509
+        },
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 7000,
+          "cost": 0.00385,
+          "inputTokens": 900,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 400
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00255,
+          "inputTokens": 400,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 90
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00009075,
+          "inputTokens": 11,
+          "modelName": "gemini-3.6-flash-high",
+          "outputTokens": 22
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 1000,
+          "cost": 0.0,
+          "inputTokens": 300,
+          "missingPricing": true,
+          "modelName": "antigravity-mystery-1",
+          "outputTokens": 70
+        }
+      ],
+      "modelsUsed": [
+        "claude-haiku-4-5-20251001",
+        "gpt-5",
+        "claude-sonnet-4-20250514",
+        "gemini-3.6-flash-high",
+        "gemini-2.5-pro",
+        "antigravity-mystery-1"
+      ],
+      "outputTokens": 2091,
+      "totalCost": 0.68036825,
+      "totalTokens": 373932
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 200,
+    "cacheReadTokens": 120000,
+    "inputTokens": 255701,
+    "outputTokens": 2351,
+    "totalCost": 0.68784825,
+    "totalTokens": 378272,
+    "unpricedModels": [
+      "antigravity-mystery-1"
+    ]
+  }
+}
+
+--- stderr ---

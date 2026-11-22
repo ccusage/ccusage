@@ -1,0 +1,51 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage claude daily --offline --json --mode calculate
+---
+exit: 0
+--- stdout ---
+{
+  "daily": [
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "date": "2026-01-02",
+      "inputTokens": 110,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.000315,
+          "inputTokens": 100,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 1
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00030000000000000003,
+          "inputTokens": 10,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 2
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514",
+        "claude-opus-4-20250514"
+      ],
+      "outputTokens": 3,
+      "totalCost": 0.0006150000000000001,
+      "totalTokens": 113
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 0,
+    "cacheReadTokens": 0,
+    "inputTokens": 110,
+    "outputTokens": 3,
+    "totalCost": 0.0006150000000000001,
+    "totalTokens": 113
+  }
+}
+
+--- stderr ---

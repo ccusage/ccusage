@@ -3,12 +3,9 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
-    pnpm-nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
-    # Tirith 0.4 rejects existing shell and Nushell workflow bodies as incomplete.
-    # Keep the last working scanner independent of routine nixpkgs updates.
+    # NOTE(2026-11-17): Tirith 0.4.2 rejects valid workflow bodies as incomplete (sheeki03/tirith#260). Keep the working pin until the workflow scan passes.
     tirith-nixpkgs.url = "github:NixOS/nixpkgs/91cc1fdf6831e29b6c98768e721a72241f3d0797";
     bun2nix = {
-      # Released bun2nix rejects the lockfile format written by current Bun.
       url = "github:nix-community/bun2nix/0456acb1b7394fc14c414b056aa889df5124943a";
       inputs.nixpkgs.follows = "nixpkgs";
     };
@@ -23,7 +20,7 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     litellm = {
-      url = "github:BerriAI/litellm";
+      url = "file+https://raw.githubusercontent.com/BerriAI/litellm/6df435f81c1703f1c6c61a2b4f4f1aaf54a31c0c/model_prices_and_context_window.json";
       flake = false;
     };
     models-dev = {
@@ -46,13 +43,13 @@
       systems = [
         "x86_64-linux"
         "aarch64-linux"
-        "x86_64-darwin"
         "aarch64-darwin"
       ];
 
       imports = [
         inputs.treefmt-nix.flakeModule
         inputs.git-hooks.flakeModule
+        ./nix/system.nix
         ./nix/agent-skills.nix
         ./nix/treefmt.nix
         ./nix/git-hooks.nix
@@ -60,7 +57,7 @@
         ./nix/pnpm.nix
         ./nix/tirith.nix
         ./nix/static-package.nix
-        ./nix/darwin-x64-package.nix
+        ./nix/darwin-package.nix
         ./nix/tests.nix
         ./nix/checks.nix
         ./nix/dev-shell.nix

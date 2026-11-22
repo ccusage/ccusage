@@ -1,0 +1,5 @@
+id: json-comment
+language: Json
+message: Collect Json comments.
+rule:
+  kind: comment

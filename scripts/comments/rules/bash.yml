@@ -1,0 +1,5 @@
+id: bash-comment
+language: Bash
+message: Collect Bash comments.
+rule:
+  kind: comment

@@ -3,44 +3,16 @@
 The OpenClaw adapter: it turns session JSONL files, including the tool's earlier names,
 and per-agent SQLite transcript stores into the usage entries the reports render.
 
-## Owns
-
-- `loader.rs` — reading the source, dedupe, and date filtering.
-- `parser.rs` — raw record parsing, token mapping, and model naming.
-- `paths.rs` — environment variables, default directories, and file discovery.
-- `sqlite.rs` — per-agent `openclaw-agent.sqlite` transcript reading.
-- `report.rs` — the JSON and table shapes where they differ from the shared ones.
-
-Anything that is not specific to this source belongs in `ccusage-core` or
-`ccusage-adapter-common` instead.
-
 ## Data source
 
 - `${OPENCLAW_DIR:-~/.openclaw}/**/*.jsonl`, plus `~/.clawdbot`, `~/.moltbot`, and `~/.moldbot`
 - `${OPENCLAW_DIR:-~/.openclaw}/agents/*/agent/openclaw-agent.sqlite` (2026.9.x database-first storage)
 
-Reads plain files through `ccusage-adapter-common`, which handles walking, size-balanced
-chunking, and ordered parallel reads. SQLite stores open read-only; rows from
-`transcript_events` reuse the same transcript parsing and embedded-cost
-contract as the JSONL path, and win over migrated JSONL duplicates.
-
-## Public surface
-
-- `loader::load_entries`
-- `report::report_from_rows`
-- `report::summarize_entries`
-- `run`
-
-## Depends on
-
-- `ccusage-adapter-common`
-- `ccusage-cli`
-- `ccusage-core`
-- `jiff`
-- `serde`
-- `serde_json`
-- `sqlite`
+JSONL usage records without a valid timestamp are skipped with a diagnostic.
+SQLite events can use the timestamp stored in their own `created_at` column.
+The SQLite store is opened read-only. Its transcript events take precedence
+over duplicates in migrated JSONL files.
 
 ## Build layer
 
-Built in the `adapters` Crane artifact layer; the layer compiles all adapters in one Cargo invocation, so they build concurrently.
+Built in the `adapters` Crane artifact layer.

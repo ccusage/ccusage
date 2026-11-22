@@ -1,30 +1,31 @@
 #!/usr/bin/env nix
 #! nix shell --inputs-from .. nixpkgs#nushell --command nu
 
-# Conventional Commit scopes here name the agent that changed, not the directory
-# holding it: `fix(kimi)`, `feat(codex)`. Nothing about a subject line reveals an
-# invented scope on its own — `feat(coding)` reads fine until you know the change
-# was codex — so this reads the ownership off the staged paths instead.
-#
-# The commit-msg hook runs this. A squash merge writes the pull request title
-# instead of these subjects, so the same rules are applied to PR titles by
-# .github/workflows/check-pr-title.yaml; keep the two in step.
-
-# Scopes accepted whatever the changed paths map to, because they describe a
-# reason for the change rather than a part of the tree.
 const CROSS_CUTTING_SCOPES = [deps, release, pricing, revert]
-
-# Additionally accepted when a change spans several agents at once, where no
-# single agent name would be honest.
 const WORKSPACE_SCOPES = [adapter, all, rust]
-
-# Prefixes git generates or rewrites later, where the author picks no scope.
 const GENERATED_SUBJECTS = ["Merge ", "Revert ", "fixup!", "squash!", "amend!"]
 
 # Validates the subject in `message_file` against the staged paths.
 def main [message_file: path]: nothing -> nothing {
-    let line = commit-subject $message_file
+    let paths = git diff --cached --name-only | lines
+    validate "commit scope: subject" (commit-subject $message_file) $paths
+}
 
+def "main pr" []: nothing -> nothing {
+    let pull_request = open $env.GITHUB_EVENT_PATH | get pull_request
+    let exempt = $env.TITLE_EXEMPT_LABELS | lines | where {|label| $label != "" }
+    if ($pull_request.labels.name | any {|label| $label in $exempt }) {
+        return
+    }
+
+    let paths = gh api $"repos/($env.GITHUB_REPOSITORY)/pulls/($pull_request.number)/files" --paginate --slurp
+    | from json
+    | flatten
+    | get filename
+    validate "PR title" ($pull_request.title | str trim) $paths
+}
+
+export def validate [what: string, line: string, paths: list<string>]: nothing -> nothing {
     if ($line | is-empty) or ($GENERATED_SUBJECTS | any {|prefix| $line | str starts-with $prefix }) {
         return
     }
@@ -32,13 +33,14 @@ def main [message_file: path]: nothing -> nothing {
     let parsed = parse-subject $line
     if $parsed == null {
         (reject
+            $what
             $line
             "is not a Conventional Commit"
             "Use `<type>(<scope>): <subject>`, for example `feat(codex): add session totals`."
         )
     }
 
-    let owners = staged-owners
+    let owners = path-owners $paths
     let scopes = $parsed.scope
     | default ""
     | split row ","
@@ -46,22 +48,19 @@ def main [message_file: path]: nothing -> nothing {
     | where {|scope| $scope != "" }
 
     match $owners {
-
-        # Nothing under `rust/adapters/` changed, so no scope is derivable and the
-        # author's choice stands.
         [] => { }
         [$owner] => {
             (check
+                $what
                 $line
                 $scopes
                 ($CROSS_CUTTING_SCOPES | prepend $owner)
                 $"The change belongs to `($owner)`, so use `($parsed.type)\(($owner)\): ...`."
             )
         }
-        # A change spanning several agents has no single owner, but it still may not
-        # claim an unrelated name.
         [_, _, ..] => {
             (check
+                $what
                 $line
                 $scopes
                 (
@@ -77,24 +76,30 @@ def main [message_file: path]: nothing -> nothing {
 
 # Rejects a subject whose scope is missing from `allowed`.
 def check [
+    what: string
     line: string
     scopes: list<string>
     allowed: list<string>
     hint: string
 ]: nothing -> nothing {
     if ($scopes | is-empty) {
-        reject $line "needs a scope" $hint
+        reject $what $line "needs a scope" $hint
     }
 
     if not ($scopes | all {|scope| $scope in $allowed }) {
-        reject $line $"is scoped `($scopes | str join ',')`" $hint
+        reject $what $line $"is scoped `($scopes | str join ',')`" $hint
     }
 }
 
 # Stops the commit with a plain message; `error make` would bury it in a Nushell
 # diagnostic that git then indents into noise.
-def reject [line: string, problem: string, hint: string]: nothing -> nothing {
-    print --stderr $"commit scope: subject ($problem):\n  ($line)\n\n($hint)"
+def reject [
+    what: string
+    line: string
+    problem: string
+    hint: string
+]: nothing -> nothing {
+    print --stderr $"($what) ($problem):\n  ($line)\n\n($hint)"
     exit 1
 }
 
@@ -116,10 +121,8 @@ def parse-subject [line: string]: nothing -> any {
     | get 0?
 }
 
-# Lists the agents owning the staged paths.
-def staged-owners []: nothing -> list<string> {
-    git diff --cached --name-only
-    | lines
+def path-owners [paths: list<string>]: nothing -> list<string> {
+    $paths
     | where {|path| ($path | str trim) != "" }
     | each {|path| owner-for-path $path }
     | compact
@@ -134,7 +137,6 @@ def staged-owners []: nothing -> list<string> {
 def owner-for-path [path: string]: nothing -> any {
     match ($path | split row "/") {
         ["rust", "adapters", "common", ..] => "adapter"
-        # A dot means the entry is a file directly under `adapters/`, not an agent.
         ["rust", "adapters", $agent, ..] if not ($agent | str contains ".") => $agent
         _ => null
     }

@@ -5,8 +5,13 @@ edition.workspace = true
 publish.workspace = true
 
 [dependencies]
+ccusage-environment.workspace = true
 terminal_size.workspace = true
 unicode-width.workspace = true
 
 [dev-dependencies]
+ccusage-environment = { workspace = true, features = ["test-environment"] }
 insta.workspace = true
+
+[lints]
+workspace = true

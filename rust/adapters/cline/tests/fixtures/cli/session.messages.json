@@ -1,0 +1,99 @@
+{
+	"version": 1,
+	"sessionId": "session-a",
+	"messages": [
+		{
+			"role": "user",
+			"timestamp": "2026-11-01T00:00:00Z",
+			"content": "hello"
+		},
+		{
+			"role": "assistant",
+			"ts": 1793491260000,
+			"id": "assistant-1",
+			"modelInfo": {
+				"id": "claude-sonnet-4-20250514",
+				"provider": "anthropic"
+			},
+			"metrics": {
+				"inputTokens": 100,
+				"outputTokens": 15,
+				"cacheReadTokens": 25,
+				"cacheWriteTokens": 10,
+				"cost": 0
+			}
+		},
+		{
+			"role": "assistant",
+			"ts": 1793491260000,
+			"id": "assistant-2",
+			"modelInfo": {
+				"id": "claude-sonnet-4-20250514",
+				"provider": "anthropic"
+			},
+			"metrics": {
+				"inputTokens": 120,
+				"outputTokens": 16,
+				"cacheReadTokens": 20,
+				"cacheWriteTokens": 10,
+				"cost": 0.0002
+			}
+		},
+		{
+			"role": "assistant",
+			"ts": 1793491320000,
+			"id": "missing-cache-read",
+			"modelInfo": { "id": "claude-sonnet-4-20250514" },
+			"metrics": { "inputTokens": 10, "outputTokens": 2, "cacheWriteTokens": 1 }
+		},
+		{
+			"role": "assistant",
+			"ts": 1793491380000,
+			"id": "unknown-model",
+			"modelInfo": { "id": "unknown" },
+			"metrics": {
+				"inputTokens": 10,
+				"outputTokens": 2,
+				"cacheReadTokens": 1,
+				"cacheWriteTokens": 1
+			}
+		},
+		{
+			"role": "assistant",
+			"ts": 1793491440000,
+			"id": "cache-exceeds-input",
+			"modelInfo": { "id": "claude-sonnet-4-20250514" },
+			"metrics": {
+				"inputTokens": 5,
+				"outputTokens": 2,
+				"cacheReadTokens": 4,
+				"cacheWriteTokens": 2
+			}
+		},
+		{
+			"role": "assistant",
+			"ts": 1793491500000,
+			"id": "cache-overflow",
+			"modelInfo": { "id": "claude-sonnet-4-20250514" },
+			"metrics": {
+				"inputTokens": 18446744073709551615,
+				"outputTokens": 2,
+				"cacheReadTokens": 18446744073709551615,
+				"cacheWriteTokens": 1
+			}
+		},
+		{
+			"role": "assistant",
+			"ts": 1793491560000,
+			"id": "zero-placeholder",
+			"modelInfo": { "id": "claude-sonnet-4-20250514" },
+			"metrics": {
+				"inputTokens": 0,
+				"outputTokens": 0,
+				"cacheReadTokens": 0,
+				"cacheWriteTokens": 0,
+				"cost": 0.5
+			}
+		}
+	]
+}

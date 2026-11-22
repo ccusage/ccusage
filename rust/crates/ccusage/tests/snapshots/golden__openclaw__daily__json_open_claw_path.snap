@@ -1,0 +1,69 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: "COLUMNS=200 ccusage openclaw daily --offline --json --open-claw-path [ROOT]/openclaw/alt"
+---
+exit: 0
+--- stdout ---
+{
+  "daily": [
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "date": "2025-12-31",
+      "inputTokens": 40,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 40,
+          "missingPricing": true,
+          "modelName": "[openclaw] openclaw-mystery-1",
+          "outputTokens": 10
+        }
+      ],
+      "modelsUsed": [
+        "[openclaw] openclaw-mystery-1"
+      ],
+      "outputTokens": 10,
+      "totalCost": 0.0,
+      "totalTokens": 50
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "date": "2026-01-01",
+      "inputTokens": 210,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.04,
+          "inputTokens": 210,
+          "modelName": "[openclaw] gpt-5",
+          "outputTokens": 90,
+          "storedCost": 0.04
+        }
+      ],
+      "modelsUsed": [
+        "[openclaw] gpt-5"
+      ],
+      "outputTokens": 90,
+      "totalCost": 0.04,
+      "totalTokens": 300
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 0,
+    "cacheReadTokens": 0,
+    "inputTokens": 250,
+    "outputTokens": 100,
+    "totalCost": 0.04,
+    "totalTokens": 350,
+    "unpricedModels": [
+      "[openclaw] openclaw-mystery-1"
+    ]
+  }
+}
+
+--- stderr ---

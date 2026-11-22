@@ -2,17 +2,25 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'tagpr-from-*']
   pull_request:
-  # Dispatched by release.yaml for tagpr's release PR.
+  merge_group:
+    types: [checks_requested]
   workflow_dispatch:
 
 permissions: read-all
 
+env:
+  PERSIST_CACHES: ${{ github.ref == 'refs/heads/main' }}
+
+defaults:
+  run:
+    shell: bash
+
 jobs:
   changes:
     name: Detect code changes
-    runs-on: ubuntu-slim
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     outputs:
       code-changed: ${{ steps.detect.outputs.code-changed }}
     steps:
@@ -23,21 +31,12 @@ jobs:
       - id: detect
         uses: ./.github/actions/detect-code-changes
 
-  # Security gate: scan the repository with tirith (https://tirith.sh/docs/ci/)
-  # before any of the real CI work runs. This is wired on `pull_request` (not
-  # `pull_request_target`), so fork PRs only ever get a read-only token and
-  # cannot leak secrets while we scan their code. The downstream jobs `needs`
-  # this job, so they are skipped unless tirith passes. tirith is installed from
-  # the flake's pinned package so CI matches the dev shell.
   tirith-scan:
     name: tirith security scan
     runs-on: blacksmith-32vcpu-ubuntu-2404
     timeout-minutes: 15
-    # Read-only: this job executes PR-controlled code (the local action, the PR
-    # flake, the installed tirith), so it must hold no write scopes. The SARIF
-    # is published from the separate `tirith-sarif-upload` job, which never runs
-    # PR code, keeping the elevated `security-events: write` away from the scan.
     permissions:
+      actions: read
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -45,17 +44,10 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - uses: ./.github/actions/setup-nix-cache
+        with:
+          save: ${{ env.PERSIST_CACHES }}
       - name: Install tirith
         run: nix profile install .#tirith
-      # One pass produces the SARIF report and sets the gate exit code. tirith's
-      # `--ci` exit code is: 0 = no findings, 1 = findings at/above --fail-on,
-      # 2 = findings present but all below it. We capture it (rather than letting
-      # it abort the step) so the SARIF still uploads before the gate decides.
-      #
-      # `*.snap` are excluded: they are terminal snapshot test fixtures that
-      # intentionally contain ANSI escape sequences, so the `ansi_escapes` rule
-      # (High) fires on them as a false positive. The rule stays active for real
-      # source files; we only skip the test data.
       - name: Scan repository with tirith
         id: scan
         run: |
@@ -72,9 +64,6 @@ jobs:
           echo "tirith reported ${count} finding(s)" | tee -a "$GITHUB_STEP_SUMMARY"
           jq -r '.runs[].results[]? | "- [\(.level // "warning")] \(.ruleId): \(.locations[0].physicalLocation.artifactLocation.uri)"' \
             results.sarif 2>/dev/null | tee -a "$GITHUB_STEP_SUMMARY" || true
-      # Hand the SARIF to the privileged upload job as an artifact. Uploaded
-      # before the gate step so findings reach the Security tab even when the
-      # gate then blocks the PR.
       - name: Upload SARIF artifact
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -101,23 +90,16 @@ jobs:
               ;;
           esac
 
-  # Publish the tirith SARIF to the Security tab. Split from the scan so the
-  # `security-events: write` scope lives in a job that never executes
-  # PR-controlled code: it only downloads the artifact and runs trusted, pinned
-  # actions. `always()` so findings are published even when the gate blocked the
-  # PR; skipped for fork PRs, whose token is read-only and cannot upload.
   tirith-sarif-upload:
     name: tirith SARIF upload
     needs: tirith-scan
     if: ${{ always() && !github.event.pull_request.head.repo.fork }}
-    runs-on: ubuntu-slim
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 10
     permissions:
       contents: read
       security-events: write
     steps:
-      # Checkout only places files for path mapping; no PR code is executed in
-      # this privileged job.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -125,25 +107,17 @@ jobs:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: tirith-sarif
-      - uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
+      - uses: github/codeql-action/upload-sarif@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4
         with:
           sarif_file: results.sarif
           category: tirith
 
-  # Fast, unconditional fail-fast gate for the cheap-but-high-signal checks:
-  # secret detection (gitleaks) and workflow/format lint (the treefmt check,
-  # which runs actionlint + zizmor with the repo's exact ignore config). Runs in
-  # parallel with tirith-scan and is NOT gated on `changes`, so secrets and
-  # workflow regressions are caught even on docs-only PRs and on fork PRs (where
-  # local git hooks never run). Both are existing flake checks, so this reuses
-  # their exact behavior instead of re-specifying flags here. The heavy test job
-  # re-runs them inside `nix flake check`; that is intentional duplication so the
-  # gate can fail fast before any build/test work starts.
   preflight:
     name: security & lint preflight
     runs-on: blacksmith-32vcpu-ubuntu-2404
     timeout-minutes: 15
     permissions:
+      actions: read
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -151,15 +125,18 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - uses: ./.github/actions/setup-nix-cache
-      - name: Secret scan and workflow lint
-        run: nix build --print-build-logs .#checks.x86_64-linux.gitleaks .#checks.x86_64-linux.treefmt
+        with:
+          save: ${{ env.PERSIST_CACHES }}
+      - name: Secret scan, formatting and comments
+        run: nix build --print-build-logs .#checks.x86_64-linux.gitleaks .#checks.x86_64-linux.treefmt .#checks.x86_64-linux.comments
 
   test:
-    needs: [changes, tirith-scan, preflight]
+    needs: [changes, tirith-scan]
     if: needs.changes.outputs.code-changed == 'true'
     runs-on: blacksmith-32vcpu-ubuntu-2404
     timeout-minutes: 30
     permissions:
+      actions: read
       contents: read
       pull-requests: read
 
@@ -169,32 +146,40 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - uses: ./.github/actions/setup-nix-cache
+        with:
+          save: ${{ env.PERSIST_CACHES }}
       - parallel:
           - name: Run nix flake check
             run: nix flake check --print-build-logs
-          - name: Run Rust tests
-            run: nix build .#ccusage-tests --print-build-logs
-          - name: JS test
+          - name: JS tests and typecheck
             run: |
-              nix profile install --inputs-from . .#pnpm nixpkgs#nodejs nixpkgs#just
-              pnpm install --frozen-lockfile
-              mkdir -p "$HOME/.claude/projects"
-              mkdir -p "$HOME/.config/claude/projects"
+              nix profile install --inputs-from . .#pnpm .#oxlint nixpkgs#nodejs nixpkgs#just nixpkgs#bun
+              just install
               just test-node
-          - name: Nushell contribution-gate tests
-            run: .github/scripts/contribution-gate.test.nu
+              just typecheck
           - name: Babashka performance harness test
-            run: apps/ccusage/scripts/compare-pr-performance_test.clj
+            run: nix shell --inputs-from . nixpkgs#just --command just ccusage::test-performance-harness
+          - name: Babashka diff-refs test
+            run: nix shell --inputs-from . nixpkgs#just --command just ccusage::test-diff-refs
+      - name: Root test dependency layers for the sticky disk
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: |
+          user_gcroot="/nix/var/nix/gcroots/per-user/$(id -un)/ci"
+          mkdir -p "$user_gcroot"
+          nix build .#ccusage-tests.passthru.cargoArtifacts \
+            --out-link "$user_gcroot/ccusage-test-deps"
 
   build-native-packages:
-    needs: [changes, tirith-scan, preflight]
+    needs: [changes, tirith-scan]
     if: needs.changes.outputs.code-changed == 'true'
     name: ${{ matrix.name }}
     permissions:
-      actions: write
+      actions: read
       contents: read
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    env:
+      NIX_CONFIG: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'access-tokens =' || '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -227,13 +212,15 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/build-linux-native-package
         if: matrix.platform == 'linux'
         with:
           arch: ${{ matrix.arch }}
           binary: ${{ matrix.binary }}
-          nix-github-token: ${{ github.event_name != 'pull_request' }}
           cache-scope: ${{ matrix.name }}
+          save-nix-cache: ${{ env.PERSIST_CACHES }}
       - uses: ./.github/actions/build-macos-nix-native-package
         if: matrix.platform == 'darwin'
         with:
@@ -245,10 +232,12 @@ jobs:
         with:
           arch: ${{ matrix.arch }}
           binary: ${{ matrix.binary }}
+          save-cargo-cache: ${{ env.PERSIST_CACHES }}
 
   npm-publish-dry-run-and-upload-pkg-pr-now:
     needs:
       - changes
+      - preflight
       - build-native-packages
     if: needs.changes.outputs.code-changed == 'true'
     permissions:
@@ -261,12 +250,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup-nix-cache
-      # Packing only repackages the native binaries restored from the build
-      # matrix below (no Rust build happens here), so the full `nix develop` dev
-      # shell is unnecessary. The package checks bring Nu through their Nix
-      # shebangs; `publint` is the flake's own pinned build, invoked by every
-      # package's prepack script.
+        with:
+          save: ${{ env.PERSIST_CACHES }}
       - run: nix profile install --inputs-from . .#pnpm nixpkgs#nodejs .#publint
       - run: pnpm install --frozen-lockfile
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -280,13 +268,7 @@ jobs:
             tar -xf "$archive"
           done
       - id: publish
-        # Fetched on demand rather than carried as a root devDependency: this
-        # job is the only thing that runs it, and it never needs to resolve
-        # against the workspace. Renovate does not update `dlx` specifiers, so
-        # bump the pin here by hand.
-        run: pnpm dlx pkg-pr-new@0.0.75 publish --pnpm --bin './apps/ccusage' './packages/ccusage-linux-arm64' './packages/ccusage-linux-x64' './packages/ccusage-darwin-arm64' './packages/ccusage-darwin-x64' './packages/ccusage-win32-x64'
-      # Resolve the ccusage CLI preview URL and build the E2E fixture here (this
-      # job has the checkout); the E2E jobs then run without a checkout.
+        run: pnpm dlx pkg-pr-new@0.0.94 publish --pnpm --bin './apps/ccusage' './packages/ccusage-linux-arm64' './packages/ccusage-linux-x64' './packages/ccusage-darwin-arm64' './packages/ccusage-darwin-x64' './packages/ccusage-win32-x64'
       - id: preview-url
         env:
           URLS: ${{ steps.publish.outputs.urls }}
@@ -308,9 +290,6 @@ jobs:
           if-no-files-found: error
 
   ccusage-preview-e2e:
-    # Run on PRs and on pushes to the default branch. `push` only fires on main
-    # (see on.push.branches), so this validates the published preview package
-    # post-merge too, not just on PRs.
     if: needs.changes.outputs.code-changed == 'true'
     name: e2e ${{ matrix.runner }} (${{ matrix.os }})
     needs:
@@ -318,11 +297,6 @@ jobs:
       - npm-publish-dry-run-and-upload-pkg-pr-now
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
-    # No checkout on purpose: the working directory stays empty so each package
-    # runner behaves like a real end user instead of inheriting the repo's
-    # pnpm-workspace.yaml / package.json (which is why pnpm previously needed
-    # --config overrides). The preview URL and the fixture come from the publish
-    # job via a job output and an artifact.
     env:
       CCUSAGE_PREVIEW_URL: ${{ needs.npm-publish-dry-run-and-upload-pkg-pr-now.outputs.preview-url }}
       LOG_LEVEL: '0'
@@ -333,23 +307,22 @@ jobs:
           - blacksmith-32vcpu-ubuntu-2404
           - blacksmith-32vcpu-ubuntu-2404-arm
           - blacksmith-12vcpu-macos-26
-          # Intel macOS to exercise the cross-built x86_64 darwin binary on real
-          # Intel hardware (the build runner is arm64).
           - macos-15-intel
           - blacksmith-32vcpu-windows-2025
-        # One job per package runner, each installed via its official action.
-        # Excluded:
-        #   yarn - no official install action (it expects corepack, which we avoid)
         runner:
           - npm
           - pnpm
           - bun
+        exclude:
+          # NOTE(2026-11-17, #1293): pnpm dlx on Windows skips the optional native binary in its temporary store. Exclude that leg because the launcher fails with spawn ENOENT.
+          - os: blacksmith-32vcpu-windows-2025
+            runner: pnpm
 
     steps:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: lts/*
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
         if: matrix.runner == 'pnpm'
         with:
           version: latest
@@ -361,28 +334,12 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
-          # actions/download-artifact talks to the artifact backend through the
-          # Blacksmith-proxied results-receiver endpoint, whose local agent is
-          # not yet listening in the first seconds after a macOS VM boots: the
-          # download runs ~2s in and intermittently hits ECONNREFUSED on
-          # ListArtifacts (re-running the job, once the agent is warm, succeeds).
-          # gh run download uses the api.github.com REST API directly, sidestepping
-          # that proxy, and we retry with backoff to ride out any transient hiccup.
-          # These jobs skip actions/checkout, so create a minimal git context
-          # for gh instead of relying on --repo (which some gh versions still
-          # follow with a local git probe).
-          $gitDir = "$env:RUNNER_TEMP/gh-context"
-          New-Item -ItemType Directory -Force -Path $gitDir | Out-Null
-          Push-Location $gitDir
-          git init -q
-          git remote add origin "https://github.com/$env:GITHUB_REPOSITORY.git"
-          Pop-Location
+          # NOTE(2026-06-12, #1297): Blacksmith macOS cold starts returned ECONNREFUSED from the artifact proxy. Download via the GitHub REST API with backoff.
           $dir = "$env:RUNNER_TEMP/e2e-fixture"
           for ($i = 1; $i -le 5; $i++) {
-            Push-Location $gitDir
             gh run download $env:GITHUB_RUN_ID --name ccusage-e2e-fixture --dir $dir
-            Pop-Location
             if ($LASTEXITCODE -eq 0) { break }
             if ($i -eq 5) { throw "failed to download the E2E fixture after 5 attempts" }
             Start-Sleep -Seconds ($i * 5)
@@ -392,38 +349,22 @@ jobs:
         shell: pwsh
         env:
           RUNNER_KIND: ${{ matrix.runner }}
-          # pnpm defaults minimumReleaseAge to 1440 (24h), which would reject
-          # a pkg.pr.new preview published moments ago. Opt out via the config
-          # env var (only pnpm reads PNPM_CONFIG_*, so npm ignores it).
-          # https://pnpm.io/settings#minimumreleaseage
+          # NOTE(2026-06-12, #1293): pnpm's minimumReleaseAge blocks freshly published tarballs (https://pnpm.io/settings#minimumreleaseage). Allow the preview to install immediately.
           PNPM_CONFIG_MINIMUM_RELEASE_AGE: '0'
-          # pnpm also defaults blockExoticSubdeps to true, which rejects the
-          # URL-resolved native optional deps (e.g. @ccusage/ccusage-linux-x64)
-          # that pkg.pr.new injects into the published ccusage manifest. Allow
-          # them so `pnpm dlx <url>` can install the matching native binary.
-          # https://pnpm.io/settings#blockexoticsubdeps
+          # NOTE(2026-06-12, #1293): pnpm's blockExoticSubdeps rejects URL-resolved dependencies (https://pnpm.io/settings#blockexoticsubdeps). Allow the native optional dependencies injected by pkg.pr.new.
           PNPM_CONFIG_BLOCK_EXOTIC_SUBDEPS: 'false'
         run: |
-          # pnpm dlx on Windows doesn't install optional native binaries into its
-          # temporary store, so the CLI launcher fails with spawn ENOENT; skip
-          # that one combination.
-          if ($env:RUNNER_KIND -eq 'pnpm' -and $IsWindows) {
-            Write-Host 'skip: pnpm dlx on Windows cannot install the native binary'
-            exit 0
-          }
           $url = $env:CCUSAGE_PREVIEW_URL
           function Invoke-Ccusage([string[]]$ccArgs) {
             switch ($env:RUNNER_KIND) {
               'npm' { return (npx --yes $url @ccArgs) }
               'pnpm' { return (pnpm dlx $url @ccArgs) }
-              # bunx rejects a bare URL as the package, so name the binary.
+              # NOTE(2026-10-15, #1900): bunx rejects a bare URL as the package argument. Use --package and name the binary explicitly.
               'bun' { return (bunx --package $url ccusage @ccArgs) }
             }
           }
           Invoke-Ccusage @('--version') | Out-Host
           if ($LASTEXITCODE -ne 0) { throw '--version failed' }
-          # Exercise every report command, both offline and online (online fetches
-          # live pricing), validating the JSON output each time.
           foreach ($cmd in 'daily', 'monthly', 'session') {
             foreach ($mode in @(@('--offline'), @())) {
               $label = "$cmd $($mode -join ' ')".Trim()
@@ -437,104 +378,119 @@ jobs:
             }
           }
 
-  ccusage-perf-comment:
-    name: ccusage ${{ matrix.label }}
+  ccusage-perf:
+    name: ccusage perf
     if: github.event_name == 'pull_request' && needs.changes.outputs.code-changed == 'true'
-    needs:
-      - changes
-      - npm-publish-dry-run-and-upload-pkg-pr-now
+    needs: [changes, tirith-scan, preflight]
     permissions:
+      actions: read
       contents: read
-      pull-requests: write
-      issues: write
     runs-on: blacksmith-32vcpu-ubuntu-2404
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # Same benchmark from two entry points, posted as two PR comments:
-          # the JS launcher (default runtime) and the bundled Rust native binary.
-          - runtime: js
-            label: perf comment
-            slug: perf-comment
-            head-runtime-arg: ''
-          - runtime: rust
-            label: rust perf comment
-            slug: rust-perf-comment
-            head-runtime-arg: --head-runtime rust
+    env:
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      NIX_CONFIG: 'access-tokens ='
 
     steps:
-      - name: Checkout PR
+      - name: Checkout merge commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Setup Nix
         uses: ./.github/actions/setup-nix-cache
         with:
-          # This job only runs on pull requests, which never commit a sticky
-          # disk, so both legs read test's instead: it installs `just` and the
-          # same flake inputs on every push to main.
-          disk-job: test
-      # This job only benchmarks the prebuilt ccusage binary bundled in the
-      # installed pkg.pr.new package (no Rust build happens here), so the full
-      # `nix develop` dev shell is unnecessary. Install just the tools the perf
-      # scripts invoke, pinned to the flake's nixpkgs via `--inputs-from .`.
+          disk-job: build-native-packages
+          cache-scope: build-linux-x64
+          save: ${{ env.PERSIST_CACHES }}
+
       - name: Install perf tooling
         run: nix profile install --inputs-from . nixpkgs#just
 
-      - name: Resolve PR preview package URL
-        env:
-          PKG_PR_NEW_URLS: ${{ needs.npm-publish-dry-run-and-upload-pkg-pr-now.outputs.urls }}
+      - name: Check that the build sits on the base commit
         run: |
-          preview_url="$(
-            printf '%s\n' "$PKG_PR_NEW_URLS" \
-              | tr '[:space:]' '\n' \
-              | grep -E '(^|/)ccusage@' \
-              | head -n 1
-          )"
-          if [ -z "$preview_url" ]; then
-            echo "ccusage preview URL not found in: $PKG_PR_NEW_URLS" >&2
+          if ! git merge-base --is-ancestor "$BASE_SHA" HEAD; then
+            echo "::error::Base $BASE_SHA is not an ancestor of the checked-out commit $(git rev-parse HEAD)"
             exit 1
           fi
-          echo "CCUSAGE_PREVIEW_URL=$preview_url" >> "$GITHUB_ENV"
 
-      - name: Generate large ccusage fixture
+      - name: Build base and PR binaries
         run: |
-          just generate-large-fixture \
-            "$RUNNER_TEMP/ccusage-large-fixture" \
-            "$RUNNER_TEMP/ccusage-large-codex-fixture" \
-            1024
+          nix build .#ccusage-static-no-pgo --out-link "$RUNNER_TEMP/ccusage-head"
+          base="git+file://$PWD?rev=$BASE_SHA"
+          system="$(nix eval --impure --raw --expr builtins.currentSystem)"
+          base_package=ccusage-static-no-pgo
+          # NOTE(2026-11-21, #2457): Bases older than the untrained twin only have ccusage-static. That attribute was untrained there, so it is the same comparison.
+          if [ "$(nix eval "$base#packages.$system" --apply 'packages: packages ? ccusage-static-no-pgo')" != true ]; then
+            base_package=ccusage-static
+          fi
+          nix build "$base#$base_package" --out-link "$RUNNER_TEMP/ccusage-base"
+
+      - name: Generate benchmark fixtures
+        run: just generate-benchmark-fixtures "$RUNNER_TEMP/ccusage-fixtures"
 
       - name: Compare performance
         run: |
+          fixtures="$RUNNER_TEMP/ccusage-fixtures"
           apps/ccusage/scripts/compare-pr-performance.bb \
-            --base-package-url "https://pkg.pr.new/${{ github.repository }}/ccusage@${{ github.event.pull_request.base.sha }}" \
-            --base-sha "${{ github.event.pull_request.base.sha }}" \
-            --head-dir . \
-            --head-package-url "$CCUSAGE_PREVIEW_URL" \
-            ${{ matrix.head-runtime-arg }} \
-            --fixture-dir apps/ccusage/test/fixtures/claude \
-            --codex-fixture-dir apps/ccusage/test/fixtures/codex \
+            --base-bin "$RUNNER_TEMP/ccusage-base/bin/ccusage" \
+            --base-sha "$BASE_SHA" \
+            --head-bin "$RUNNER_TEMP/ccusage-head/bin/ccusage" \
+            --head-sha "$HEAD_SHA" \
+            --fixture-dir "$fixtures/large" \
+            --codex-fixture-dir "$fixtures/large-codex" \
+            --grok-fixture-dir "$fixtures/large-grok" \
+            --many-files-fixture-dir "$fixtures/many-files" \
+            --proxy-fixture-dir "$fixtures/proxy" \
+            --small-fixture-dir "$fixtures/small" \
+            --opencode-fixture-dir "$fixtures/opencode" \
             --warmup 2 \
-            --runs 7 \
-            --large-fixture-dir "$RUNNER_TEMP/ccusage-large-fixture" \
-            --large-codex-fixture-dir "$RUNNER_TEMP/ccusage-large-codex-fixture" \
-            --large-warmup 0 \
-            --large-runs 1 \
-            --package-runner-timeout-ms 300000 \
-            --output "$RUNNER_TEMP/ccusage-${{ matrix.slug }}.md"
+            --runs 11 \
+            --output "$RUNNER_TEMP/ccusage-perf-comment.md"
 
       - name: Write job summary
-        run: cat "$RUNNER_TEMP/ccusage-${{ matrix.slug }}.md" >> "$GITHUB_STEP_SUMMARY"
+        run: cat "$RUNNER_TEMP/ccusage-perf-comment.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload comment
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ccusage-perf-comment
+          path: ${{ runner.temp }}/ccusage-perf-comment.md
+          if-no-files-found: error
+
+  ccusage-perf-comment:
+    name: ccusage perf comment
+    if: github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork
+    needs: ccusage-perf
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: write
+      issues: write
+    runs-on: blacksmith-32vcpu-ubuntu-2404
+    timeout-minutes: 10
+    steps:
+      - name: Checkout base commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-nix-cache
+        with:
+          save: ${{ env.PERSIST_CACHES }}
+
+      - name: Download comment
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ccusage-perf-comment
+          path: ${{ runner.temp }}/ccusage-perf
 
       - name: Upsert PR comment
-        if: ${{ !github.event.pull_request.head.repo.fork }}
         env:
-          COMMENT_FILE: ${{ runner.temp }}/ccusage-${{ matrix.slug }}.md
-          COMMENT_MARKER: <!-- ccusage-${{ matrix.slug }}:${{ github.event.pull_request.head.sha }} -->
+          COMMENT_FILE: ${{ runner.temp }}/ccusage-perf/ccusage-perf-comment.md
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -550,16 +506,13 @@ jobs:
       - build-native-packages
       - npm-publish-dry-run-and-upload-pkg-pr-now
       - ccusage-preview-e2e
+      - ccusage-perf
       - ccusage-perf-comment
     if: ${{ always() }}
-    runs-on: ubuntu-slim
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
-      - uses: Kesin11/actions-timeline@57fc93f20c6da7fbc14063c6d24a2a5627c799ad # v3.2.0
+      - uses: Kesin11/actions-timeline@460b1f8a750077029ad3589824d371b200e91dcf # v3.2.1
 
-  # Single check for main's branch ruleset to require. Most jobs above are gated
-  # on `changes` and are skipped on docs-only pull requests, so requiring them
-  # individually would leave those pull requests blocked on checks that never
-  # report. A skipped job is fine here; only real failures fail the gate.
   ci-gate:
     name: ci gate
     needs:
@@ -571,9 +524,10 @@ jobs:
       - build-native-packages
       - npm-publish-dry-run-and-upload-pkg-pr-now
       - ccusage-preview-e2e
+      - ccusage-perf
       - ccusage-perf-comment
     if: ${{ always() }}
-    runs-on: ubuntu-slim
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - name: Report job results
         env:
@@ -583,11 +537,11 @@ jobs:
         if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
         run: exit 1
 
-  # Dispatch runs aren't attached to the release PR; report via commit status.
+  # NOTE(2026-11-10, #2062): Dispatch check runs do not attach to the release PR. Post a commit status on the same SHA to satisfy the required ci gate.
   release-dispatch-status-pending:
     name: release dispatch status (pending)
-    if: github.event_name == 'workflow_dispatch' && startsWith(github.ref_name, 'tagpr-from-')
-    runs-on: ubuntu-slim
+    if: (github.event_name == 'workflow_dispatch' || github.event_name == 'push') && startsWith(github.ref_name, 'tagpr-from-')
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 5
     permissions:
       statuses: write
@@ -598,7 +552,7 @@ jobs:
         run: |
           gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
             -f state=pending \
-            -f context='CI (release dispatch)' \
+            -f context='ci gate' \
             -f description='CI is running' \
             -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
 
@@ -607,8 +561,8 @@ jobs:
     needs:
       - release-dispatch-status-pending
       - ci-gate
-    if: ${{ always() && github.event_name == 'workflow_dispatch' && startsWith(github.ref_name, 'tagpr-from-') }}
-    runs-on: ubuntu-slim
+    if: ${{ always() && (github.event_name == 'workflow_dispatch' || github.event_name == 'push') && startsWith(github.ref_name, 'tagpr-from-') }}
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 5
     permissions:
       statuses: write
@@ -627,6 +581,6 @@ jobs:
           fi
           gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
             -f state="$state" \
-            -f context='CI (release dispatch)' \
+            -f context='ci gate' \
             -f description="$description" \
             -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"

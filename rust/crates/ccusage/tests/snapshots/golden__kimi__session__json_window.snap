@@ -1,0 +1,161 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage kimi session --offline --json --since 20251231 --until 20260101
+---
+exit: 0
+--- stdout ---
+{
+  "sessions": [
+    {
+      "cacheCreationTokens": 400,
+      "cacheReadTokens": 14000,
+      "inputTokens": 2300,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 400,
+          "cacheReadTokens": 14000,
+          "cost": 0.0231,
+          "inputTokens": 1800,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 800
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.000255,
+          "inputTokens": 200,
+          "modelName": "kimi-for-coding",
+          "outputTokens": 45
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 300,
+          "missingPricing": true,
+          "modelName": "kimi-mystery-1",
+          "outputTokens": 70
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514",
+        "kimi-mystery-1",
+        "kimi-for-coding"
+      ],
+      "outputTokens": 915,
+      "sessionId": "session-new-1",
+      "totalCost": 0.023355,
+      "totalTokens": 17615
+    },
+    {
+      "cacheCreationTokens": 200,
+      "cacheReadTokens": 9000,
+      "inputTokens": 1900,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 7000,
+          "cost": 0.01155,
+          "inputTokens": 900,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 400
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 2000,
+          "cost": 0.0023,
+          "inputTokens": 1000,
+          "modelName": "kimi-for-coding",
+          "outputTokens": 500
+        }
+      ],
+      "modelsUsed": [
+        "kimi-for-coding",
+        "claude-sonnet-4-20250514"
+      ],
+      "outputTokens": 900,
+      "sessionId": "session-new-2",
+      "totalCost": 0.01385,
+      "totalTokens": 12000
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 5000,
+      "inputTokens": 1511,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 5000,
+          "cost": 0.0026291,
+          "inputTokens": 1511,
+          "modelName": "kimi-k2-thinking",
+          "outputTokens": 389
+        }
+      ],
+      "modelsUsed": [
+        "kimi-k2-thinking"
+      ],
+      "outputTokens": 389,
+      "sessionId": "session-old-1",
+      "totalCost": 0.0026291,
+      "totalTokens": 7582
+    },
+    {
+      "cacheCreationTokens": 20,
+      "cacheReadTokens": 1000,
+      "inputTokens": 650,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 20,
+          "cacheReadTokens": 1000,
+          "cost": 0.000955,
+          "inputTokens": 650,
+          "modelName": "kimi-for-coding",
+          "outputTokens": 150
+        }
+      ],
+      "modelsUsed": [
+        "kimi-for-coding"
+      ],
+      "outputTokens": 150,
+      "sessionId": "session-old-3",
+      "totalCost": 0.000955,
+      "totalTokens": 1820
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 500,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0016250000000000001,
+          "inputTokens": 500,
+          "modelName": "gpt-5",
+          "outputTokens": 100
+        }
+      ],
+      "modelsUsed": [
+        "gpt-5"
+      ],
+      "outputTokens": 100,
+      "sessionId": "z",
+      "totalCost": 0.0016250000000000001,
+      "totalTokens": 600
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 620,
+    "cacheReadTokens": 29000,
+    "inputTokens": 6861,
+    "outputTokens": 2454,
+    "totalCost": 0.0424141,
+    "totalTokens": 39617,
+    "unpricedModels": [
+      "kimi-mystery-1"
+    ]
+  }
+}
+
+--- stderr ---

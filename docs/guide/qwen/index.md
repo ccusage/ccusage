@@ -35,14 +35,19 @@ QWEN_DATA_DIR="$HOME/.qwen,/backup/qwen" ccusage qwen daily
 └── projects/
     └── {project}/
         └── chats/
-            └── *.jsonl
+            ├── *.jsonl
+            └── archive/
+                └── *.jsonl
 ```
+
+Sessions that Qwen Code archives to `chats/archive/` are read as well, so archived usage stays in the reports. A record found in both `chats/` and `chats/archive/` counts once.
 
 ## Report Views
 
 | Focused view           | Description                 | See also                                |
 | ---------------------- | --------------------------- | --------------------------------------- |
 | `ccusage qwen daily`   | Aggregate usage by date     | [Daily Usage](/guide/daily-reports)     |
+| `ccusage qwen weekly`  | Aggregate usage by week     | [Weekly Usage](/guide/weekly-reports)   |
 | `ccusage qwen monthly` | Aggregate usage by month    | [Monthly Usage](/guide/monthly-reports) |
 | `ccusage qwen session` | Group usage by Qwen session | [Session Usage](/guide/session-reports) |
 
@@ -51,16 +56,16 @@ These views support `--json` for structured output, `--compact` for narrow termi
 ## What Gets Calculated
 
 - **Token usage** - Qwen assistant rows provide input and output token counts through `usageMetadata`.
-- **Reasoning tokens** - `thoughtsTokenCount` is included in `totalTokens` and priced as output tokens when pricing data is available.
-- **Cache tokens** - `cachedContentTokenCount` is treated as cache read tokens. Qwen logs do not currently expose cache creation tokens.
+- **Cache tokens** - `cachedContentTokenCount` is part of `promptTokenCount`, as Qwen Code records it. It is reported as cache read tokens and only the rest of the prompt as input. Qwen logs do not currently expose cache creation tokens.
+- **Reasoning tokens** - Explicit `thoughtsTokenCount` is priced at the output rate. If the recorded total shows that some thinking falls outside `candidatesTokenCount`, ccusage adds that portion for pricing. When the candidate count is absent but the prompt and total counts are recorded, their difference is output including thinking. Any unexplained remainder contributes to the reported token total only.
 - **Pricing** - Costs are calculated from LiteLLM pricing data using the raw model name and Qwen provider-prefixed candidates.
 
 ## Environment Variables
 
-| Variable        | Description                                                                            |
-| --------------- | -------------------------------------------------------------------------------------- |
-| `QWEN_DATA_DIR` | Override the root directory, or comma-separated root directories, containing Qwen data |
-| `LOG_LEVEL`     | Adjust verbosity (0 silent ... 5 trace)                                                |
+| Variable        | Description                                                                                                   |
+| --------------- | ------------------------------------------------------------------------------------------------------------- |
+| `QWEN_DATA_DIR` | Override the root directory, or comma-separated root directories, containing Qwen data                        |
+| `LOG_LEVEL`     | `0` hides aggregated warnings, progress, and table titles ([details](/guide/environment-variables#log-level)) |
 
 ## Troubleshooting
 

@@ -1,0 +1,89 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage codebuff session --offline --json --since 20251231 --until 20260101
+---
+exit: 0
+--- stdout ---
+{
+  "sessions": [
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 2500,
+      "credits": 0.95,
+      "inputTokens": 1000,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 2500,
+          "cost": 0.0026875,
+          "inputTokens": 700,
+          "modelName": "gpt-5",
+          "outputTokens": 150
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 300,
+          "missingPricing": true,
+          "modelName": "codebuff-mystery-1",
+          "outputTokens": 70
+        }
+      ],
+      "modelsUsed": [
+        "gpt-5",
+        "codebuff-mystery-1"
+      ],
+      "outputTokens": 220,
+      "sessionId": "manicode/alpha/2025-12-30T10-00-00.000Z",
+      "totalCost": 0.0026875,
+      "totalTokens": 4065
+    },
+    {
+      "cacheCreationTokens": 200,
+      "cacheReadTokens": 13000,
+      "credits": 2.0,
+      "inputTokens": 2100,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 6000,
+          "cost": 0.0084,
+          "inputTokens": 1200,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 200
+        },
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 7000,
+          "cost": 0.00385,
+          "inputTokens": 900,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 400
+        }
+      ],
+      "modelsUsed": [
+        "claude-haiku-4-5-20251001",
+        "claude-sonnet-4-20250514"
+      ],
+      "outputTokens": 600,
+      "sessionId": "manicode/alpha/2025-12-31T23-50-00.000Z",
+      "totalCost": 0.01225,
+      "totalTokens": 15900
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 200,
+    "cacheReadTokens": 15500,
+    "credits": 2.95,
+    "inputTokens": 3100,
+    "outputTokens": 820,
+    "totalCost": 0.0149375,
+    "totalTokens": 19965,
+    "unpricedModels": [
+      "codebuff-mystery-1"
+    ]
+  }
+}
+
+--- stderr ---

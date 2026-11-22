@@ -1,27 +1,22 @@
-use std::io::IsTerminal;
-
-use serde_json::Value;
-
 use ccusage_core::cli::{AgentReportKind, SharedArgs};
 use ccusage_core::{
-    Align, Color, Result, SimpleTable, USAGE_COMPACT_WIDTH_THRESHOLD, UsageSummary, color,
-    first_column, format_breakdown_model_label, format_currency, format_models_multiline,
-    format_number, json_value_u64, print_box_title, should_use_compact_layout, terminal_style,
-    terminal_width, totals_json,
+    Color, ColumnKind, Result, SimpleTable, Totals, USAGE_COMPACT_WIDTH_THRESHOLD, UsageSummary,
+    color, first_column, format_breakdown_model_label, format_currency, format_models_multiline,
+    format_number, print_box_title, should_use_compact_layout, terminal_style, terminal_width,
 };
 
-pub fn print_table_for_agent(
+fn print_table_for_agent(
     agent_name: &str,
     kind: AgentReportKind,
     rows: &[UsageSummary],
     shared: &SharedArgs,
 ) -> Result<()> {
     if rows.is_empty() {
-        eprintln!("No {agent_name} usage data found.");
+        ccusage_core::errln!("No {agent_name} usage data found.");
         return Ok(());
     }
     let terminal_width = terminal_width();
-    let is_tty = std::io::stdout().is_terminal();
+    let is_tty = ccusage_core::stdout_is_terminal();
     let compact = should_use_compact_layout(
         shared,
         is_tty,
@@ -34,7 +29,7 @@ pub fn print_table_for_agent(
             agent_report_label(kind)
         ),
         shared,
-    );
+    )?;
     let first_column = first_column(kind);
     let mut table = if compact {
         let mut headers = vec![
@@ -45,19 +40,19 @@ pub fn print_table_for_agent(
             "Credits",
             "Cost (USD)",
         ];
-        let mut aligns = vec![
-            Align::Left,
-            Align::Left,
-            Align::Right,
-            Align::Right,
-            Align::Right,
-            Align::Right,
+        let mut columns = vec![
+            ColumnKind::Primary,
+            ColumnKind::Models,
+            ColumnKind::Numeric,
+            ColumnKind::Numeric,
+            ColumnKind::Numeric,
+            ColumnKind::Numeric,
         ];
         if shared.no_cost {
             headers.pop();
-            aligns.pop();
+            columns.pop();
         }
-        SimpleTable::new(headers, aligns, terminal_style(shared))
+        SimpleTable::new(headers, columns, terminal_style(shared))
     } else {
         let mut headers = vec![
             first_column,
@@ -70,22 +65,22 @@ pub fn print_table_for_agent(
             "Credits",
             "Cost (USD)",
         ];
-        let mut aligns = vec![
-            Align::Left,
-            Align::Left,
-            Align::Right,
-            Align::Right,
-            Align::Right,
-            Align::Right,
-            Align::Right,
-            Align::Right,
-            Align::Right,
+        let mut columns = vec![
+            ColumnKind::Primary,
+            ColumnKind::Models,
+            ColumnKind::Numeric,
+            ColumnKind::Numeric,
+            ColumnKind::Numeric,
+            ColumnKind::Numeric,
+            ColumnKind::Numeric,
+            ColumnKind::Numeric,
+            ColumnKind::Numeric,
         ];
         if shared.no_cost {
             headers.pop();
-            aligns.pop();
+            columns.pop();
         }
-        SimpleTable::new(headers, aligns, terminal_style(shared))
+        SimpleTable::new(headers, columns, terminal_style(shared))
     }
     .with_terminal_width(terminal_width)
     .with_date_compaction(true);
@@ -132,76 +127,36 @@ pub fn print_table_for_agent(
         push_breakdown_rows(&mut table, row, compact, shared);
     }
 
-    let totals = totals_json(rows);
+    let totals = Totals::from_summaries(rows);
+    let total = |value: String| color(shared, value, Color::Yellow);
+    let credits = format!("{:.2}", totals.credits.unwrap_or_default());
     table.separator();
-    let credits = totals
-        .get("credits")
-        .and_then(Value::as_f64)
-        .unwrap_or_default();
-    if compact {
-        let mut row = vec![
-            color(shared, "Total", Color::Yellow),
+    let mut row = if compact {
+        vec![
+            total("Total".to_string()),
             String::new(),
-            color(
-                shared,
-                format_number(json_value_u64(totals.get("inputTokens"))),
-                Color::Yellow,
-            ),
-            color(
-                shared,
-                format_number(json_value_u64(totals.get("outputTokens"))),
-                Color::Yellow,
-            ),
-            color(shared, format!("{credits:.2}"), Color::Yellow),
-            color(
-                shared,
-                format_currency(
-                    totals
-                        .get("totalCost")
-                        .and_then(Value::as_f64)
-                        .unwrap_or(0.0),
-                ),
-                Color::Yellow,
-            ),
-        ];
-        if shared.no_cost {
-            row.pop();
-        }
-        table.push(row);
+            total(format_number(totals.input_tokens)),
+            total(format_number(totals.output_tokens)),
+            total(credits),
+            total(format_currency(totals.total_cost)),
+        ]
     } else {
-        let input = json_value_u64(totals.get("inputTokens"));
-        let output = json_value_u64(totals.get("outputTokens"));
-        let cache_create = json_value_u64(totals.get("cacheCreationTokens"));
-        let cache_read = json_value_u64(totals.get("cacheReadTokens"));
-        let mut row = vec![
-            color(shared, "Total", Color::Yellow),
+        vec![
+            total("Total".to_string()),
             String::new(),
-            color(shared, format_number(input), Color::Yellow),
-            color(shared, format_number(output), Color::Yellow),
-            color(shared, format_number(cache_create), Color::Yellow),
-            color(shared, format_number(cache_read), Color::Yellow),
-            color(
-                shared,
-                format_number(json_value_u64(totals.get("totalTokens"))),
-                Color::Yellow,
-            ),
-            color(shared, format!("{credits:.2}"), Color::Yellow),
-            color(
-                shared,
-                format_currency(
-                    totals
-                        .get("totalCost")
-                        .and_then(Value::as_f64)
-                        .unwrap_or(0.0),
-                ),
-                Color::Yellow,
-            ),
-        ];
-        if shared.no_cost {
-            row.pop();
-        }
-        table.push(row);
+            total(format_number(totals.input_tokens)),
+            total(format_number(totals.output_tokens)),
+            total(format_number(totals.cache_creation_tokens)),
+            total(format_number(totals.cache_read_tokens)),
+            total(format_number(totals.total_tokens)),
+            total(credits),
+            total(format_currency(totals.total_cost)),
+        ]
+    };
+    if shared.no_cost {
+        row.pop();
     }
+    table.push(row);
     table.print()?;
     Ok(())
 }
@@ -291,6 +246,68 @@ fn agent_report_label(kind: AgentReportKind) -> &'static str {
     }
 }
 
+pub fn report_json(
+    rows: &[UsageSummary],
+    kind: AgentReportKind,
+    session_metadata: bool,
+) -> serde_json::Value {
+    let rows_json = rows
+        .iter()
+        .map(|row| {
+            ccusage_core::agent_summary_json(
+                row,
+                kind,
+                session_metadata && kind == AgentReportKind::Session,
+            )
+        })
+        .collect::<Vec<_>>();
+    serde_json::json!({
+        rows_key(kind): rows_json,
+        "totals": ccusage_core::totals_json(rows),
+    })
+}
+
+fn rows_key(kind: AgentReportKind) -> &'static str {
+    match kind {
+        AgentReportKind::Daily => "daily",
+        AgentReportKind::Monthly => "monthly",
+        AgentReportKind::Weekly => "weekly",
+        AgentReportKind::Session => "sessions",
+    }
+}
+
+pub fn print_table(
+    descriptor: crate::source::EntryDescriptor,
+    rows: &[UsageSummary],
+    kind: AgentReportKind,
+    shared: &SharedArgs,
+) -> Result<()> {
+    use crate::source::TableStyle;
+    if descriptor.table == TableStyle::Credits {
+        return print_table_for_agent(descriptor.label, kind, rows, shared);
+    }
+    let options = table_options(descriptor, rows);
+    ccusage_core::print_usage_table_with_options(
+        &format!("{} Token Usage Report", descriptor.label),
+        first_column(kind),
+        rows,
+        shared,
+        false,
+        None,
+        options,
+    )
+}
+
+pub fn table_options(
+    descriptor: crate::source::EntryDescriptor,
+    rows: &[UsageSummary],
+) -> ccusage_core::UsageTableOptions {
+    ccusage_core::UsageTableOptions {
+        show_cache_creation: descriptor.table != crate::source::TableStyle::AutoCacheCreation
+            || rows.iter().any(|row| row.cache_creation_tokens > 0),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -321,10 +338,12 @@ mod tests {
                     output_tokens: 30,
                     cache_creation_tokens: 6,
                     cache_read_tokens: 3,
+                    cache_creation_1h_tokens: None,
                     extra_total_tokens: 4,
                     cost: 0.15,
                     missing_pricing: false,
                     stored_cost: None,
+                    estimated_pricing: false,
                 },
                 ModelBreakdown {
                     model_name: "model-b".to_string(),
@@ -332,10 +351,12 @@ mod tests {
                     output_tokens: 20,
                     cache_creation_tokens: 4,
                     cache_read_tokens: 2,
+                    cache_creation_1h_tokens: None,
                     extra_total_tokens: 3,
                     cost: 0.10,
                     missing_pricing: false,
                     stored_cost: None,
+                    estimated_pricing: false,
                 },
             ],
             project: None,
@@ -347,7 +368,7 @@ mod tests {
     fn breakdown_rows_include_extra_tokens_and_match_parent_total() {
         let row = breakdown_summary();
         let shared = SharedArgs {
-            no_color: true,
+            color: ccusage_core::cli::ColorChoice::Never,
             ..SharedArgs::default()
         };
         let shared = SharedArgs {
@@ -375,7 +396,7 @@ mod tests {
     fn no_breakdown_flag_keeps_existing_row_count() {
         let row = breakdown_summary();
         let shared = SharedArgs {
-            no_color: true,
+            color: ccusage_core::cli::ColorChoice::Never,
             ..SharedArgs::default()
         };
 

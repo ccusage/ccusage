@@ -6,19 +6,18 @@ description: Diagnoses and fixes failing GitHub Actions checks with gh. Use when
 # Fix CI
 
 1. Read the check state with `gh pr checks`, then pull the failing job logs with
-   `gh run view <run-id> --log-failed`. Logs fetched through `gh` are reproducible;
-   browser-only inspection is not. Pending checks can usually wait unless the failure is
-   already clear.
+   `gh run view <run-id> --log-failed`. Diagnose the first failing step from its logs.
 
 2. Reproduce locally. CI runs almost everything through Nix, so the failing step maps onto a
    `just` recipe:
 
-   | CI job / step                                  | Local                                                  |
-   | ---------------------------------------------- | ------------------------------------------------------ |
-   | `preflight`, or `Run nix flake check`          | `just check`                                           |
-   | `Run Rust tests` (`nix build .#ccusage-tests`) | `just rust::test`                                      |
-   | `JS test`                                      | `just test-node`                                       |
-   | `Babashka performance harness test`            | `apps/ccusage/scripts/compare-pr-performance_test.clj` |
+   | CI job / step                                  | Local                                    |
+   | ---------------------------------------------- | ---------------------------------------- |
+   | `preflight`, or `Run nix flake check`          | `just check`                             |
+   | `Run Rust tests` (`nix build .#ccusage-tests`) | `just rust::test`                        |
+   | `JS test`                                      | `just test-node`                         |
+   | `Babashka performance harness test`            | `just ccusage::test-performance-harness` |
+   | `Babashka diff-refs test`                      | `just ccusage::test-diff-refs`           |
 
    Start with the narrowest command that reproduces the failure — a single `cargo test`
    filter — before the recipe above.

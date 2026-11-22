@@ -1,6 +1,6 @@
 {
 	"name": "ccusage",
-	"version": "20.0.38",
+	"version": "20.0.51",
 	"description": "Analyze coding (agent) CLI token usage and costs from local data",
 	"homepage": "https://github.com/ccusage/ccusage#readme",
 	"bugs": {
@@ -23,7 +23,7 @@
 	],
 	"type": "module",
 	"scripts": {
-		"build": "scripts/ensure-native-binary.nu && publint",
+		"build": "publint",
 		"prepack": "pnpm run build"
 	},
 	"devDependencies": {

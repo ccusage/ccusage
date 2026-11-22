@@ -1,7 +1,4 @@
-# dependencies (bun install)
 node_modules
-
-# output
 out
 dist
 target/
@@ -9,42 +6,23 @@ result
 result-*
 *.tgz
 packages/ccusage-*/bin/
-
-# code coverage
 coverage
 *.lcov
-
-# logs
 logs
-_.log
-report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
-
-# dotenv environment variable files
+*.log
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 .env
 .env.development.local
 .env.test.local
 .env.production.local
 .env.local
 .npmrc
-
-# caches
-.eslintcache
 .cache
 *.tsbuildinfo
-
-# IntelliJ based IDEs
 .idea
-
-# Finder (MacOS) folder config
 .DS_Store
-
-.eslintcache
-
-# nix
 .direnv
 !.envrc
 .pre-commit-config.yaml
-.npmrc
-
-# generated local agent skills
 .claude/skills
+.cloudflare

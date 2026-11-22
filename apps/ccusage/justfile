@@ -1,62 +1,25 @@
-# Recipes for the published `ccusage` npm package. Run from the repo root as
-# `just ccusage::<recipe>`, or from this directory as `just <recipe>`.
-
 [private]
 default:
     @just --list
 
-# Verify native binary glue for the published package.
-build: build-package
-
-build-package:
-    just ensure-native-binary
-    publint
-
-prepack:
-    just build-package
-
-build-rust:
-    cargo build --manifest-path ../../rust/Cargo.toml --release --bin ccusage
-
-ensure-native-binary:
-    scripts/ensure-native-binary.nu
-
-generate-schema:
-    cargo run --quiet --manifest-path ../../rust/Cargo.toml -p ccusage-config --bin generate-config-schema -- config-schema.json
-    oxfmt --write config-schema.json
-    cp config-schema.json ../../docs/public/config-schema.json
+# Lint the published package manifest.
+build:
+    pnpm run build
 
 start *args:
     cargo run --manifest-path ../../rust/Cargo.toml --bin ccusage -- {{args}}
 
-test-statusline:
-    just test-statusline-file test/statusline-test.json
-
 # Run focused tests for the Babashka performance harness.
 test-performance-harness:
-    scripts/compare-pr-performance_test.clj
+    scripts/compare_pr_performance_test.clj
 
-test-statusline-all:
-    @echo 'Testing Sonnet 4:'
-    just test-statusline-sonnet4
-    @echo 'Testing Opus 4.1:'
-    just test-statusline-opus4
-    @echo 'Testing Sonnet 4.1:'
-    just test-statusline-sonnet41
-    @echo 'Testing Fable 5:'
-    just test-statusline-fable5
+# Run focused tests for the diff-refs output comparison.
+test-diff-refs:
+    scripts/diff_refs_test.clj
 
-test-statusline-opus4:
-    just test-statusline-file test/statusline-test-opus4.json --offline
-
-test-statusline-sonnet4:
-    just test-statusline-file test/statusline-test-sonnet4.json --offline
-
-test-statusline-sonnet41:
-    just test-statusline-file test/statusline-test-sonnet41.json --offline
-
-test-statusline-fable5:
-    just test-statusline-file test/statusline-test-fable5.json --offline
+# Pipe every sample payload in test/ through `ccusage statusline --offline`.
+test-statusline:
+    for file in test/statusline-test-*.json; do echo "$file:"; just test-statusline-file "$file" --offline || exit 1; done
 
 test-statusline-file file *args:
     cargo run --manifest-path ../../rust/Cargo.toml --bin ccusage -- statusline {{args}} < {{file}}

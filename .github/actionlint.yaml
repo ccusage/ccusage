@@ -1,11 +1,13 @@
 self-hosted-runner:
   labels:
     - blacksmith-12vcpu-macos-26
+    - blacksmith-2vcpu-ubuntu-2404
     - blacksmith-32vcpu-ubuntu-2404
     - blacksmith-32vcpu-ubuntu-2404-arm
     - blacksmith-32vcpu-windows-2025
 
 paths:
-  .github/workflows/*.{yaml,yml}:
+  # NOTE(2026-11-17): Actionlint 1.7.12 flags GitHub Actions parallel steps as missing run or uses. Scope the ignore to workflows that use parallel.
+  .github/workflows/ci.yaml:
     ignore:
-      - 'unknown permission scope "code-quality"'
+      - 'step must run script with "run" section or run action with "uses" section'

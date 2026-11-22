@@ -1,0 +1,189 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage gemini session --offline --json --since 20251231 --until 20260101
+---
+exit: 0
+--- stdout ---
+{
+  "sessions": [
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 83,
+      "inputTokens": 617,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0009000000000000001,
+          "inputTokens": 100,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 40
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 80,
+          "cost": 0.0007065,
+          "inputTokens": 505,
+          "modelName": "gemini-3-flash-preview",
+          "outputTokens": 120
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 3,
+          "cost": 3.69e-6,
+          "inputTokens": 12,
+          "modelName": "gemini-2.5-flash",
+          "outputTokens": 0
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 0,
+          "modelName": "gemini-mystery-1",
+          "outputTokens": 0
+        }
+      ],
+      "modelsUsed": [
+        "gemini-3-flash-preview",
+        "gemini-mystery-1",
+        "gemini-2.5-flash",
+        "claude-sonnet-4-20250514"
+      ],
+      "outputTokens": 160,
+      "sessionId": "aaaa1111-session-json",
+      "totalCost": 0.00161019,
+      "totalTokens": 1604
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 1500,
+      "inputTokens": 1130,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 1500,
+          "cost": 0.0057875,
+          "inputTokens": 800,
+          "modelName": "gemini-2.5-pro",
+          "outputTokens": 360
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00009999999999999999,
+          "inputTokens": 80,
+          "modelName": "gemini-3-flash-preview",
+          "outputTokens": 20
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 250,
+          "missingPricing": true,
+          "modelName": "gemini-mystery-1",
+          "outputTokens": 50
+        }
+      ],
+      "modelsUsed": [
+        "gemini-2.5-pro",
+        "gemini-3-flash-preview",
+        "gemini-mystery-1"
+      ],
+      "outputTokens": 430,
+      "sessionId": "bbbb2222-session-jsonl",
+      "totalCost": 0.0058874999999999995,
+      "totalTokens": 3160
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 150000,
+      "inputTokens": 300000,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 150000,
+          "cost": 0.8025000000000001,
+          "inputTokens": 300000,
+          "modelName": "gemini-2.5-pro",
+          "outputTokens": 1000
+        }
+      ],
+      "modelsUsed": [
+        "gemini-2.5-pro"
+      ],
+      "outputTokens": 1000,
+      "sessionId": "cccc3333",
+      "totalCost": 0.8025000000000001,
+      "totalTokens": 451000
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 700,
+      "inputTokens": 1008,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 200,
+          "cost": 0.0031850000000000003,
+          "inputTokens": 1008,
+          "modelName": "gemini-2.5-pro",
+          "outputTokens": 150
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 500,
+          "cost": 0.0,
+          "inputTokens": 0,
+          "missingPricing": true,
+          "modelName": "gemini-mystery-1",
+          "outputTokens": 20
+        }
+      ],
+      "modelsUsed": [
+        "gemini-2.5-pro",
+        "gemini-mystery-1"
+      ],
+      "outputTokens": 170,
+      "sessionId": "eeee5555-headless",
+      "totalCost": 0.0031850000000000003,
+      "totalTokens": 1918
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 100,
+      "inputTokens": 200,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 100,
+          "cost": 0.000255,
+          "inputTokens": 200,
+          "modelName": "gemini-3-flash-preview",
+          "outputTokens": 45
+        }
+      ],
+      "modelsUsed": [
+        "gemini-3-flash-preview"
+      ],
+      "outputTokens": 45,
+      "sessionId": "result-ffff6666",
+      "totalCost": 0.000255,
+      "totalTokens": 350
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 0,
+    "cacheReadTokens": 152383,
+    "inputTokens": 302955,
+    "outputTokens": 1805,
+    "totalCost": 0.8134376900000001,
+    "totalTokens": 458032,
+    "unpricedModels": [
+      "gemini-mystery-1"
+    ]
+  }
+}
+
+--- stderr ---

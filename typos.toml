@@ -9,8 +9,13 @@ extend-ignore-re = [
 
 [default.extend-words]
 color = "color"
+edn = "edn"
 sade = "sade"
 
 [files]
 ignore-hidden = false
 extend-exclude = [".git", "node_modules", "pnpm-lock.yaml", "pnpm-workspace.yaml"]
+
+[type.gitleaks]
+extend-glob = [".gitleaks.toml"]
+extend-ignore-re = ["(?m)^[ \t]*'''[A-Za-z_]+=[A-Za-z0-9_-]+''',[ \t]*$"]

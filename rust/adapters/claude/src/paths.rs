@@ -1,177 +1,284 @@
 use std::{
-    env, fs,
-    io::{BufRead as _, BufReader},
+    fs::{self, File},
+    io::{self, BufRead, BufReader},
     path::{Path, PathBuf},
+    sync::mpsc,
+    thread,
     time::UNIX_EPOCH,
 };
 
-use jiff::tz::TimeZone as JiffTimeZone;
-use memchr::memmem;
 use serde::Deserialize;
 
-use crate::{
-    MILLIS_PER_DAY, Result,
-    cli::SharedArgs,
-    cli_error, date_range_bounds_ms,
-    fast::{FxHashMap, FxHashSet},
-    home, parse_tz,
-    path_utils::expand_home_path,
-};
-use crate::{TimestampMs, parse_ts_timestamp};
-use ccusage_adapter_common::collect_usage_files;
+use memchr::memmem::Finder;
 
-pub fn claude_paths() -> Result<Vec<PathBuf>> {
-    let mut paths = Vec::new();
-    let mut seen = FxHashSet::default();
-    if let Ok(env_paths) = env::var("CLAUDE_CONFIG_DIR") {
-        for raw in env_paths
-            .split(',')
-            .map(str::trim)
-            .filter(|path| !path.is_empty())
-        {
-            let path = normalize_claude_config_path(raw);
-            if path.join("projects").is_dir() && seen.insert(path.clone()) {
-                paths.push(path);
-            }
-        }
-        if !paths.is_empty() {
-            return Ok(paths);
-        }
+use crate::{
+    Diagnostics, MILLIS_PER_DAY, Result, TimestampMs,
+    cli::{SharedArgs, home},
+    cli_error, date_range_bounds_ms,
+    fast::{FxHashMap, FxHashSet, LinePrefilter},
+    parse_ts_timestamp, resolve_tz,
+    usage_wire::Text,
+};
+use ccusage_adapter_common::{read_discovered_paths, visit_usage_files as visit_usage_files_in};
+use ccusage_core::parallel::spawn_scoped_worker;
+
+pub(crate) fn claude_paths() -> Result<Vec<PathBuf>> {
+    let (env_value, dirs) = match home::claude_config_dirs() {
+        home::ClaudeConfigDirs::Env { value, dirs } => (Some(value), dirs),
+        home::ClaudeConfigDirs::Default(dirs) => (None, dirs),
+        home::ClaudeConfigDirs::NoHome => return Err(cli_error("home directory is not set")),
+    };
+    let paths: Vec<PathBuf> = dirs
+        .into_iter()
+        .filter(|path| path.join("projects").is_dir())
+        .collect();
+    if let Some(env_paths) = env_value
+        && paths.is_empty()
+    {
         return Err(cli_error(format!(
             "No valid Claude data directories found in CLAUDE_CONFIG_DIR. Expected each path to be a Claude config directory containing 'projects/', or the 'projects/' directory itself: {env_paths}"
         )));
     }
-
-    let home = home::home_dir().ok_or_else(|| cli_error("home directory is not set"))?;
-    let xdg = env::var("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from(&home).join(".config"));
-    for path in [xdg.join("claude"), home.join(".claude")] {
-        if path.join("projects").is_dir() && seen.insert(path.clone()) {
-            paths.push(path);
-        }
-    }
     Ok(paths)
 }
 
-fn normalize_claude_config_path(raw: &str) -> PathBuf {
-    let path = expand_home_path(raw);
-    if path.file_name().is_some_and(|name| name == "projects") && path.is_dir() {
-        return path.parent().map(Path::to_path_buf).unwrap_or(path);
-    }
-    path
-}
-
-pub fn usage_files(paths: &[PathBuf], project_filter: Option<&str>) -> Vec<PathBuf> {
+#[cfg(test)]
+pub(crate) fn usage_files(
+    paths: &[PathBuf],
+    project_filter: Option<&str>,
+    diagnostics: &Diagnostics,
+) -> Vec<PathBuf> {
     let mut files = Vec::new();
-    for path in paths {
-        let projects_dir = path.join("projects");
-        if let Some(project_filter) =
-            project_filter.filter(|filter| is_project_path_segment(filter))
-        {
-            collect_usage_files(&projects_dir.join(project_filter), &mut files);
-        } else {
-            collect_usage_files(&projects_dir, &mut files);
-        }
-    }
-    files.sort_by_cached_key(|path| path.to_string_lossy().into_owned());
+    visit_usage_files(
+        paths,
+        project_filter,
+        &mut |path| files.push(path),
+        diagnostics,
+    );
+    files.sort_by(|left, right| usage_file_order(left, right));
     files
 }
 
-/// Margin subtracted from the `--since` lower bound before comparing it with
-/// file mtimes. It absorbs the gap between the timezone-resolved bound and
-/// wall-clock mtimes, plus sessions flushed well after the entries they hold.
-const MTIME_PRUNE_MARGIN_MS: i64 = MILLIS_PER_DAY;
+pub(crate) fn visit_usage_files(
+    paths: &[PathBuf],
+    project_filter: Option<&str>,
+    visit: &mut dyn FnMut(PathBuf),
+    diagnostics: &Diagnostics,
+) {
+    let roots = projects_roots(paths);
+    let mut filtered_visit = |file: PathBuf| {
+        if project_filter.is_none_or(|filter| {
+            extract_project(&file, containing_projects_root(&file, &roots)) == filter
+        }) {
+            visit(file);
+        }
+    };
+    for projects_dir in &roots {
+        if let Some(project_filter) =
+            project_filter.filter(|filter| is_project_path_segment(filter))
+        {
+            visit_usage_files_in(
+                &projects_dir.join(project_filter),
+                &mut filtered_visit,
+                diagnostics,
+            );
+        } else {
+            visit_usage_files_in(projects_dir, &mut filtered_visit, diagnostics);
+        }
+    }
+}
 
-/// Usage files split by whether they can hold entries inside a `--since`
-/// window.
-pub(super) struct SinceFiles {
-    /// Files that may hold entries inside the window, in discovery order.
-    pub(super) kept: Vec<PathBuf>,
-    /// Files skipped because their whole session was last written before it.
+pub(crate) fn projects_roots(config_dirs: &[PathBuf]) -> Vec<PathBuf> {
+    config_dirs
+        .iter()
+        .map(|config_dir| config_dir.join("projects"))
+        .collect()
+}
+
+// NOTE(2026-11-20, #2374): CLAUDE_CONFIG_DIR can list a config directory and one of its descendants. The deepest root keeps a transcript attributed to its own config directory.
+pub(crate) fn containing_projects_root<'a>(
+    file: &Path,
+    projects_roots: &'a [PathBuf],
+) -> Option<&'a Path> {
+    projects_roots
+        .iter()
+        .map(PathBuf::as_path)
+        .filter(|root| file.starts_with(root))
+        .max_by_key(|root| root.components().count())
+}
+
+#[cfg(test)]
+pub(crate) fn fixture_projects_root(path: &Path) -> Option<PathBuf> {
+    path.ancestors()
+        .find(|ancestor| ancestor.file_name().is_some_and(|name| name == "projects"))
+        .map(Path::to_path_buf)
+}
+
+pub(crate) fn usage_file_order(left: &Path, right: &Path) -> std::cmp::Ordering {
+    left.as_os_str().cmp(right.as_os_str())
+}
+
+const MTIME_PRUNE_MARGIN_MS: i64 = MILLIS_PER_DAY;
+const TAIL_PROBE_BYTES: u64 = 16 * 1024;
+const PROBE_READ_LIMIT: u64 = 1024 * 1024;
+const HEAD_PROBE_BYTES: u64 = 64 * 1024;
+const WALK_BACKLOG: usize = 1024;
+const WALK_BATCH: usize = 64;
+
+pub(super) struct SinceFiles<T> {
+    pub(super) kept: Vec<(PathBuf, T)>,
     pub(super) pruned: Vec<PathBuf>,
 }
 
-/// Drops sessions whose files were all last written before the `--since`
-/// window.
-///
-/// Claude session JSONL files are append-only, so a file last written before
-/// the window opened cannot hold an entry inside it. Deduplication matches
-/// sidechain replays against their parent messages by session ID, which spans
-/// files (subagent and workflow transcripts, legacy flat `agent-*.jsonl`
-/// files, copies in another config root), so files are kept or dropped per
-/// connected group of session IDs: dropping a parent file alone would let its
-/// replay count twice. Copies of a message in other sessions, such as resumed
-/// transcripts, keep the original timestamp, so they fall on the same side of
-/// the window as the original.
-///
-/// Only the file list is narrowed; entries parsed from a surviving file are
-/// untouched. Every file is kept when `since` is unset or unparsable, when the
-/// window opens ahead of the current clock, or when a file's mtime cannot be
-/// read.
-///
-/// @param files Discovered usage files.
-/// @param shared Report arguments providing `since` and `timezone`.
-/// @param now Current wall-clock time.
-/// @returns The kept files and the pruned ones, each in discovery order.
-pub(super) fn split_files_before_since(
-    files: Vec<PathBuf>,
+// NOTE(2026-09-25, #1794): Claude Code appends session JSONL, and a transcript can record a session ID different from its directory. Keep related transcripts together when pruning by mtime so a replay still has its parent.
+pub(super) fn read_usage_files_since<T: Send>(
+    paths: &[PathBuf],
+    project_filter: Option<&str>,
+    diagnostics: &Diagnostics,
     shared: &SharedArgs,
     now: TimestampMs,
-) -> SinceFiles {
-    let keep_all = |files| SinceFiles {
-        kept: files,
-        pruned: Vec::new(),
-    };
-    let timezone = parse_tz(shared.timezone.as_deref()).or_else(|| Some(JiffTimeZone::system()));
-    let (Some(since_ms), _) =
-        date_range_bounds_ms(shared.since.as_deref(), None, timezone.as_ref())
-    else {
-        return keep_all(files);
-    };
-    // Entry timestamps can outrun any mtime the filesystem reports when the
-    // window starts in the future, so an mtime cannot rule a file out.
-    if since_ms > now.as_millis() {
-        return keep_all(files);
-    }
-    let threshold = since_ms.saturating_sub(MTIME_PRUNE_MARGIN_MS);
-
-    // Union every file's session IDs so files sharing any ID share a group.
-    let mut sessions = SessionGroups::default();
-    let file_groups = files
-        .iter()
-        .map(|file| {
-            let (path_session, _) = extract_session_parts(file);
-            let group = sessions.id(&path_session);
-            if let Some(recorded) = recorded_session_id(file) {
-                let recorded = sessions.id(&recorded);
-                sessions.union(group, recorded);
-            }
-            group
-        })
-        .collect::<Vec<_>>();
-    let live_groups = files
-        .iter()
-        .zip(&file_groups)
-        .filter(|(file, _)| file_modified_millis(file).is_none_or(|modified| modified >= threshold))
-        .map(|(_, &group)| sessions.root(group))
-        .collect::<FxHashSet<_>>();
-
-    let mut split = SinceFiles {
-        kept: Vec::new(),
-        pruned: Vec::new(),
-    };
-    for (file, group) in files.into_iter().zip(file_groups) {
-        if live_groups.contains(&sessions.root(group)) {
-            split.kept.push(file);
-        } else {
-            split.pruned.push(file);
-        }
-    }
-    split
+    read: impl Fn(&PathBuf) -> T + Sync,
+) -> SinceFiles<T> {
+    read_files_since(
+        shared.single_thread,
+        prune_threshold(shared, now),
+        &projects_roots(paths),
+        |visit| visit_usage_files(paths, project_filter, visit, diagnostics),
+        read,
+    )
 }
 
-/// Union-find over session IDs.
+fn prune_threshold(shared: &SharedArgs, now: TimestampMs) -> Option<i64> {
+    let timezone = resolve_tz(shared.timezone.as_ref());
+    let (since, _) = date_range_bounds_ms(shared.since, None, &timezone);
+    since
+        .filter(|since| *since <= now.as_millis())
+        .map(|since| since.saturating_sub(MTIME_PRUNE_MARGIN_MS))
+}
+
+pub(super) fn select_usage_files(
+    files: Vec<PathBuf>,
+    shared: &SharedArgs,
+    roots: &[PathBuf],
+) -> (Vec<PathBuf>, Vec<PathBuf>) {
+    let threshold = prune_threshold(shared, shared.clock.now().into());
+    if threshold.is_none() {
+        return (files, Vec::new());
+    }
+    let mut files = files.into_iter();
+    let selected = read_files_since(
+        shared.single_thread,
+        threshold,
+        roots,
+        |visit| files.by_ref().for_each(visit),
+        |_| (),
+    );
+    (
+        selected.kept.into_iter().map(|(file, ())| file).collect(),
+        selected.pruned,
+    )
+}
+
+fn read_files_since<T: Send>(
+    single_thread: bool,
+    threshold: Option<i64>,
+    projects_roots: &[PathBuf],
+    discover: impl FnMut(&mut dyn FnMut(PathBuf)) + Send,
+    read: impl Fn(&PathBuf) -> T + Sync,
+) -> SinceFiles<T> {
+    let Some(threshold) = threshold else {
+        return SinceFiles {
+            kept: read_discovered_paths(single_thread, discover, read),
+            pruned: Vec::new(),
+        };
+    };
+    // NOTE(2026-11-20, #2355): Stat'ing and probing from the parallel readers contends in the kernel. The walker checks each mtime and probes stale files before queuing; live files' session probes run serially after parsing.
+    let mut discovered = Vec::new();
+    let mut probe = StaleProbe::new(threshold);
+    let mut kept = walk_beside(single_thread, discover, |files| {
+        read_discovered_paths(
+            single_thread,
+            |visit| {
+                files(&mut |file| {
+                    let (live, recorded_session) = probe.file(&file);
+                    if live {
+                        visit(file.clone());
+                    }
+                    discovered.push((file, live, recorded_session));
+                });
+            },
+            &read,
+        )
+    });
+    if kept.is_empty() || kept.len() == discovered.len() {
+        return SinceFiles {
+            kept,
+            pruned: discovered
+                .into_iter()
+                .filter_map(|(file, live, _)| (!live).then_some(file))
+                .collect(),
+        };
+    }
+
+    let mut sessions = SessionGroups::default();
+    let groups = discovered
+        .into_iter()
+        .map(|(file, live, recorded_session)| {
+            let recorded_session =
+                recorded_session.unwrap_or_else(|| first_recorded_session_id(&file));
+            let group = sessions.file(&file, recorded_session.as_deref(), projects_roots);
+            (file, live, group)
+        })
+        .collect::<Vec<_>>();
+    let live_groups = groups
+        .iter()
+        .filter(|(_, live, _)| *live)
+        .map(|&(_, _, group)| sessions.root(group))
+        .collect::<FxHashSet<_>>();
+    let (mut revived, pruned) = groups
+        .into_iter()
+        .filter(|(_, live, _)| !live)
+        .map(|(file, _, group)| (file, group))
+        .partition::<Vec<_>, _>(|(_, group)| live_groups.contains(&sessions.root(*group)));
+    kept.extend(read_discovered_paths(
+        single_thread,
+        |visit| revived.drain(..).for_each(|(file, _)| visit(file)),
+        read,
+    ));
+    SinceFiles {
+        kept,
+        pruned: pruned.into_iter().map(|(file, _)| file).collect(),
+    }
+}
+
+// NOTE(2026-11-21): Directory reads and stale-file probes are both blocking syscalls on one thread. Walking on its own thread overlaps them. Paths cross in batches because one wake-up per path cost macOS more than the overlap saved.
+fn walk_beside<R>(
+    single_thread: bool,
+    mut discover: impl FnMut(&mut dyn FnMut(PathBuf)) + Send,
+    consume: impl FnOnce(&mut dyn FnMut(&mut dyn FnMut(PathBuf))) -> R,
+) -> R {
+    if single_thread {
+        return consume(&mut discover);
+    }
+    thread::scope(|scope| {
+        let (sender, batches) = mpsc::sync_channel::<Vec<PathBuf>>(WALK_BACKLOG / WALK_BATCH);
+        spawn_scoped_worker(scope, move || {
+            let mut batch = Vec::with_capacity(WALK_BATCH);
+            discover(&mut |file| {
+                batch.push(file);
+                if batch.len() == WALK_BATCH {
+                    let _ = sender.send(std::mem::replace(
+                        &mut batch,
+                        Vec::with_capacity(WALK_BATCH),
+                    ));
+                }
+            });
+            let _ = sender.send(batch);
+        });
+        consume(&mut |visit| batches.iter().flatten().for_each(&mut *visit))
+    })
+}
+
 #[derive(Default)]
 struct SessionGroups {
     ids: FxHashMap<String, usize>,
@@ -179,6 +286,17 @@ struct SessionGroups {
 }
 
 impl SessionGroups {
+    fn file(&mut self, file: &Path, recorded: Option<&str>, projects_roots: &[PathBuf]) -> usize {
+        let (path_session, _) =
+            extract_session_parts(file, containing_projects_root(file, projects_roots));
+        let group = self.id(&path_session);
+        if let Some(recorded) = recorded {
+            let recorded = self.id(recorded);
+            self.union(group, recorded);
+        }
+        group
+    }
+
     fn id(&mut self, session: &str) -> usize {
         if let Some(&id) = self.ids.get(session) {
             return id;
@@ -191,7 +309,6 @@ impl SessionGroups {
 
     fn root(&mut self, mut id: usize) -> usize {
         while self.parents[id] != id {
-            // Path halving: point each visited node at its grandparent.
             self.parents[id] = self.parents[self.parents[id]];
             id = self.parents[id];
         }
@@ -204,38 +321,294 @@ impl SessionGroups {
     }
 }
 
-/// Returns the first `sessionId` a transcript records, which is the session
-/// the loaders attribute its entries to. Transcripts record a single session,
-/// so reading stops at the first line that names one.
-fn recorded_session_id(path: &Path) -> Option<String> {
+struct StaleProbe {
+    threshold: i64,
+    session_marker: LinePrefilter,
+    timestamp_key: Finder<'static>,
+    escape: Finder<'static>,
+    tail: Vec<u8>,
+    partial_line: Vec<u8>,
+    escaped_lines: Vec<(usize, usize)>,
+    older_lines: Vec<(usize, usize)>,
+}
+
+impl StaleProbe {
+    fn new(threshold: i64) -> Self {
+        Self {
+            threshold,
+            session_marker: session_marker(),
+            timestamp_key: Finder::new(br#""timestamp""#),
+            escape: Finder::new(br"\u00"),
+            tail: Vec::new(),
+            partial_line: Vec::new(),
+            escaped_lines: Vec::new(),
+            older_lines: Vec::new(),
+        }
+    }
+
+    // NOTE(2026-11-21, #2431): On a recent `--since` most files are stale, and each stale file is opened for its tail anyway. Taking the mtime from the open handle saves a path lookup per stale file, and session grouping's first recorded session is read from the same handle rather than from a second open.
+    fn file(&mut self, path: &Path) -> (bool, Option<Option<String>>) {
+        let Ok(file) = File::open(path) else {
+            return (true, None);
+        };
+        let Some((modified, len)) = file
+            .metadata()
+            .ok()
+            .and_then(|metadata| Some((modified_millis(&metadata)?, metadata.len())))
+        else {
+            return (true, None);
+        };
+        if modified >= self.threshold {
+            return (true, None);
+        }
+        let in_one_window = len <= TAIL_PROBE_BYTES + 1;
+        let recorded_session = if in_one_window {
+            None
+        } else {
+            head_recorded_session_id(&self.session_marker, &file, len)
+        };
+        // NOTE(2026-11-20, #2376): A restored or imported transcript can keep an mtime older than its records. Pruning on mtime alone silently drops in-window usage, so the latest timestamp in the tail must also be stale.
+        let Some(live) = self.tail_reaches(&file, len) else {
+            return (true, None);
+        };
+        let recorded_session = if in_one_window {
+            Some(lines(&self.tail).find_map(|line| recorded_session_id(&self.session_marker, line)))
+        } else {
+            recorded_session
+        };
+        (live, recorded_session)
+    }
+
+    // NOTE(2026-11-21, #2431): A tail without record timestamps proves nothing, and treating it as live revives the file's whole session group. Read further back until a record timestamp turns up; a file without any holds no dated usage. Reads stop growing at `PROBE_READ_LIMIT` so a large undated file doesn't pin its size in memory, and a line longer than that keeps the file unjudged.
+    fn tail_reaches(&mut self, file: &File, len: u64) -> Option<bool> {
+        let mut end = len;
+        let mut window = TAIL_PROBE_BYTES + 1;
+        self.partial_line.clear();
+        loop {
+            let start = end.saturating_sub(window);
+            let read = usize::try_from(end - start).ok()?;
+            self.tail.resize(read, 0);
+            read_exact_at(file, &mut self.tail, start).ok()?;
+            self.tail.extend_from_slice(&self.partial_line);
+            let (partial_end, whole_lines) = match memchr::memchr(b'\n', &self.tail) {
+                _ if start == 0 => (0, 0),
+                Some(newline) => (newline, newline + 1),
+                None => (self.tail.len(), self.tail.len()),
+            };
+            match self.judge_records(whole_lines) {
+                Records::Reach => return Some(true),
+                Records::Older => return Some(false),
+                Records::Absent if start == 0 => return Some(false),
+                Records::Absent => {}
+            }
+            if partial_end as u64 > PROBE_READ_LIMIT {
+                return None;
+            }
+            self.partial_line.clear();
+            self.partial_line
+                .extend_from_slice(&self.tail[..partial_end]);
+            end = start;
+            window = window.saturating_mul(2).min(PROBE_READ_LIMIT);
+        }
+    }
+
+    // NOTE(2026-11-21, #2431): Parsing every tail line dominated `--since` on logs where most files are stale. Only a `\u006x` or `\u007x` escape can spell a letter of `timestamp`; outside one, every `timestamp` key at any depth is spelled out. So only lines with an escape, or with a spelled value at or after the threshold or one that can't be read off the bytes, need parsing; otherwise the shortest line with a top-level timestamp is enough to call the tail older.
+    fn judge_records(&mut self, from: usize) -> Records {
+        let Self {
+            threshold,
+            timestamp_key,
+            escape,
+            tail,
+            escaped_lines,
+            older_lines,
+            ..
+        } = self;
+        let window = &tail[from..];
+        let mut older = false;
+        let mut judge = |line: &[u8]| match record_timestamp(line) {
+            Some(timestamp) if timestamp >= *threshold => true,
+            Some(_) => {
+                older = true;
+                false
+            }
+            None => false,
+        };
+        escaped_lines.clear();
+        for at in escape.find_iter(window) {
+            if escaped_lines.last().is_some_and(|&(_, end)| at < end)
+                || !matches!(window.get(at + escape.needle().len()), Some(b'6' | b'7'))
+            {
+                continue;
+            }
+            let (start, end) = line_around(window, at);
+            escaped_lines.push((start, end));
+            if judge(&window[start..end]) {
+                return Records::Reach;
+            }
+        }
+        older_lines.clear();
+        let mut escaped = escaped_lines.iter().peekable();
+        let mut parsed_through = 0;
+        for key in timestamp_key.find_iter(window) {
+            while escaped.next_if(|&&(_, end)| end < key).is_some() {}
+            if key < parsed_through || escaped.peek().is_some_and(|&&(start, _)| start <= key) {
+                continue;
+            }
+            match spelled_value(&window[key + timestamp_key.needle().len()..]) {
+                SpelledValue::NotKey => {}
+                SpelledValue::At(timestamp) if timestamp < *threshold => {
+                    if older_lines.last().is_none_or(|&(_, end)| end < key) {
+                        older_lines.push(line_around(window, key));
+                    }
+                }
+                SpelledValue::At(_) | SpelledValue::Unreadable => {
+                    let (start, end) = line_around(window, key);
+                    parsed_through = end;
+                    if judge(&window[start..end]) {
+                        return Records::Reach;
+                    }
+                }
+            }
+        }
+        if older {
+            return Records::Older;
+        }
+        older_lines.sort_unstable_by_key(|(start, end)| end - start);
+        if older_lines
+            .iter()
+            .any(|&(start, end)| record_timestamp(&window[start..end]).is_some())
+        {
+            Records::Older
+        } else {
+            Records::Absent
+        }
+    }
+}
+
+enum SpelledValue {
+    NotKey,
+    At(i64),
+    Unreadable,
+}
+
+fn spelled_value(after_key: &[u8]) -> SpelledValue {
+    let Some(value) = after_key.trim_ascii_start().strip_prefix(b":") else {
+        return SpelledValue::NotKey;
+    };
+    value
+        .trim_ascii_start()
+        .strip_prefix(b"\"")
+        .and_then(|value| Some(&value[..memchr::memchr(b'"', value)?]))
+        .filter(|value| !value.contains(&b'\\'))
+        .and_then(|value| std::str::from_utf8(value).ok())
+        .and_then(parse_ts_timestamp)
+        .map_or(SpelledValue::Unreadable, |timestamp| {
+            SpelledValue::At(timestamp.as_millis())
+        })
+}
+
+fn line_around(bytes: &[u8], at: usize) -> (usize, usize) {
+    let start = memchr::memrchr(b'\n', &bytes[..at]).map_or(0, |newline| newline + 1);
+    let end = memchr::memchr(b'\n', &bytes[at..]).map_or(bytes.len(), |newline| at + newline);
+    (start, end)
+}
+
+fn lines(bytes: &[u8]) -> impl Iterator<Item = &[u8]> {
+    let mut start = 0;
+    memchr::memchr_iter(b'\n', bytes)
+        .chain([bytes.len()])
+        .map(move |end| {
+            let line = &bytes[start..end];
+            start = end + 1;
+            line
+        })
+}
+
+enum Records {
+    Reach,
+    Older,
+    Absent,
+}
+
+#[cfg(unix)]
+fn read_exact_at(file: &File, buffer: &mut [u8], offset: u64) -> io::Result<()> {
+    std::os::unix::fs::FileExt::read_exact_at(file, buffer, offset)
+}
+
+#[cfg(not(unix))]
+fn read_exact_at(mut file: &File, buffer: &mut [u8], offset: u64) -> io::Result<()> {
+    io::Seek::seek(&mut file, io::SeekFrom::Start(offset))?;
+    io::Read::read_exact(&mut file, buffer)
+}
+
+fn record_timestamp(line: &[u8]) -> Option<i64> {
+    #[derive(Deserialize)]
+    struct TimestampProbe<'a> {
+        #[serde(borrow)]
+        timestamp: Option<Text<'a>>,
+    }
+
+    serde_json::from_slice::<TimestampProbe<'_>>(line)
+        .ok()?
+        .timestamp
+        .and_then(|timestamp| parse_ts_timestamp(&timestamp.0))
+        .map(|timestamp| timestamp.as_millis())
+}
+
+fn session_marker() -> LinePrefilter {
+    LinePrefilter::all(&[br#""sessionId""#])
+}
+
+fn first_recorded_session_id(path: &Path) -> Option<String> {
+    recorded_session_id_in(&session_marker(), &File::open(path).ok()?)
+}
+
+// NOTE(2026-11-21, #2431): Grouping needs the first recorded session only when some file is live, and a file without one would be read to its end. Read a bounded head here; past that, leave it to the lazy `first_recorded_session_id`.
+fn head_recorded_session_id(
+    marker: &LinePrefilter,
+    file: &File,
+    len: u64,
+) -> Option<Option<String>> {
+    let mut lines = BufReader::new(io::Read::take(file, HEAD_PROBE_BYTES));
+    let mut line = Vec::new();
+    while lines.read_until(b'\n', &mut line).ok()? > 0 {
+        if let Some(session_id) = recorded_session_id(marker, &line) {
+            return Some(Some(session_id));
+        }
+        line.clear();
+    }
+    (len <= HEAD_PROBE_BYTES).then_some(None)
+}
+
+fn recorded_session_id_in(marker: &LinePrefilter, file: &File) -> Option<String> {
+    let mut lines = BufReader::new(file);
+    let mut line = Vec::new();
+    while lines.read_until(b'\n', &mut line).ok()? > 0 {
+        if let Some(session_id) = recorded_session_id(marker, &line) {
+            return Some(session_id);
+        }
+        line.clear();
+    }
+    None
+}
+
+fn recorded_session_id(marker: &LinePrefilter, line: &[u8]) -> Option<String> {
     #[derive(Deserialize)]
     struct SessionIdProbe {
         #[serde(rename = "sessionId")]
         session_id: Option<String>,
     }
 
-    let mut reader = BufReader::new(fs::File::open(path).ok()?);
-    let mut line = Vec::new();
-    loop {
-        line.clear();
-        if reader.read_until(b'\n', &mut line).ok()? == 0 {
-            return None;
-        }
-        if memmem::find(&line, b"\"sessionId\"").is_none() {
-            continue;
-        }
-        if let Ok(SessionIdProbe {
-            session_id: Some(session_id),
-        }) = serde_json::from_slice(&line)
-        {
-            return Some(session_id);
-        }
+    if !marker.matches(line) {
+        return None;
     }
+    serde_json::from_slice::<SessionIdProbe>(line)
+        .ok()?
+        .session_id
 }
 
-fn file_modified_millis(path: &Path) -> Option<i64> {
-    fs::metadata(path)
-        .ok()?
+fn modified_millis(metadata: &fs::Metadata) -> Option<i64> {
+    metadata
         .modified()
         .ok()?
         .duration_since(UNIX_EPOCH)
@@ -253,49 +626,36 @@ pub(super) fn is_project_path_segment(value: &str) -> bool {
         && !value.contains('\\')
 }
 
-#[doc(hidden)]
-pub fn timestamp_from_line(line: &str) -> Option<TimestampMs> {
-    timestamp_from_line_bytes(line.as_bytes())
+fn below_projects<'a>(path: &'a Path, projects_root: Option<&Path>) -> Option<Vec<&'a str>> {
+    let relative = path.strip_prefix(projects_root?).ok()?;
+    Some(
+        relative
+            .components()
+            .filter_map(|component| component.as_os_str().to_str())
+            .collect(),
+    )
 }
 
-fn timestamp_from_line_bytes(line: &[u8]) -> Option<TimestampMs> {
-    let marker = br#""timestamp":""#;
-    let start = memmem::find(line, marker)? + marker.len();
-    let end = memchr::memchr(b'"', &line[start..])? + start;
-    let timestamp = std::str::from_utf8(&line[start..end]).ok()?;
-    parse_ts_timestamp(timestamp)
+pub(crate) fn extract_project(path: &Path, projects_root: Option<&Path>) -> String {
+    below_projects(path, projects_root)
+        .and_then(|parts| parts.first().copied())
+        .map_or_else(
+            || "unknown".to_string(),
+            |part| {
+                if part.trim().is_empty() {
+                    "unknown"
+                } else {
+                    part
+                }
+                .to_string()
+            },
+        )
 }
 
-pub fn extract_project(path: &Path) -> String {
-    let mut saw_projects = false;
-    for part in path
-        .components()
-        .filter_map(|component| component.as_os_str().to_str())
-    {
-        if saw_projects {
-            return if part.trim().is_empty() {
-                "unknown"
-            } else {
-                part
-            }
-            .to_string();
-        }
-        if part == "projects" {
-            saw_projects = true;
-        }
-    }
-    "unknown".to_string()
-}
-
-pub fn extract_session_parts(path: &Path) -> (String, String) {
-    let parts = path
-        .components()
-        .filter_map(|component| component.as_os_str().to_str())
-        .collect::<Vec<_>>();
-    let projects_index = parts.iter().position(|part| *part == "projects");
-    let relative = projects_index
-        .map(|index| &parts[index + 1..])
-        .unwrap_or(&parts);
+pub(crate) fn extract_session_parts(path: &Path, projects_root: Option<&Path>) -> (String, String) {
+    let Some(relative) = below_projects(path, projects_root) else {
+        return ("unknown".to_string(), "Unknown Project".to_string());
+    };
     let file_session_id = relative
         .last()
         .and_then(|file_name| file_name.strip_suffix(".jsonl"))
@@ -305,9 +665,15 @@ pub fn extract_session_parts(path: &Path) -> (String, String) {
     {
         return (session_id.to_string(), relative[0].to_string());
     }
-    if relative.len() >= 4 && relative.get(relative.len() - 2) == Some(&"subagents") {
-        let session_id = relative[relative.len() - 3].to_string();
-        let project_path = relative[..relative.len() - 3].join(std::path::MAIN_SEPARATOR_STR);
+    if let Some(subagents_index) = relative
+        .iter()
+        .enumerate()
+        .take(relative.len().saturating_sub(1))
+        .skip(2)
+        .find_map(|(index, part)| (*part == "subagents").then_some(index))
+    {
+        let session_id = relative[subagents_index - 1].to_string();
+        let project_path = relative[..subagents_index - 1].join(std::path::MAIN_SEPARATOR_STR);
         return (
             session_id,
             if project_path.is_empty() {
@@ -331,225 +697,4 @@ pub fn extract_session_parts(path: &Path) -> (String, String) {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::{
-        fs::{File, FileTimes},
-        path::{Path, PathBuf},
-        time::{Duration, UNIX_EPOCH},
-    };
-
-    use ccusage_test_support::fs_fixture;
-
-    use super::split_files_before_since;
-    use crate::{MILLIS_PER_DAY, TimestampMs, cli::SharedArgs, parse_ts_timestamp};
-
-    fn set_file_modified(path: &Path, timestamp: TimestampMs) {
-        let milliseconds = u64::try_from(timestamp.as_millis()).unwrap();
-        File::options()
-            .write(true)
-            .open(path)
-            .unwrap()
-            .set_times(
-                FileTimes::new().set_modified(UNIX_EPOCH + Duration::from_millis(milliseconds)),
-            )
-            .unwrap();
-    }
-
-    fn ts(value: &str) -> TimestampMs {
-        parse_ts_timestamp(value).unwrap()
-    }
-
-    fn shared_since(since: Option<&str>) -> SharedArgs {
-        SharedArgs {
-            since: since.map(str::to_string),
-            timezone: Some("UTC".to_string()),
-            ..SharedArgs::default()
-        }
-    }
-
-    fn file_names(files: &[PathBuf]) -> Vec<String> {
-        files
-            .iter()
-            .map(|file| file.file_name().unwrap().to_string_lossy().into_owned())
-            .collect()
-    }
-
-    fn fixture_files(root: &Path) -> Vec<PathBuf> {
-        let old = root.join("projects/p/old.jsonl");
-        let margin = root.join("projects/p/margin.jsonl");
-        let fresh = root.join("projects/p/fresh.jsonl");
-        set_file_modified(&old, ts("2026-09-18T12:00:00Z"));
-        set_file_modified(&margin, ts("2026-09-19T12:00:00Z"));
-        set_file_modified(&fresh, ts("2026-09-20T12:00:00Z"));
-        vec![fresh, margin, old]
-    }
-
-    #[test]
-    fn prunes_files_last_written_before_the_since_margin() {
-        let fixture = fs_fixture!({
-            "projects/p/old.jsonl": "{}",
-            "projects/p/margin.jsonl": "{}",
-            "projects/p/fresh.jsonl": "{}",
-        });
-        let files = fixture_files(fixture.root());
-
-        let kept = split_files_before_since(
-            files,
-            &shared_since(Some("20260920")),
-            ts("2026-09-24T00:00:00Z"),
-        )
-        .kept;
-
-        assert_eq!(file_names(&kept), ["fresh.jsonl", "margin.jsonl"]);
-    }
-
-    #[test]
-    fn keeps_every_file_without_a_since_bound() {
-        let fixture = fs_fixture!({
-            "projects/p/old.jsonl": "{}",
-            "projects/p/margin.jsonl": "{}",
-            "projects/p/fresh.jsonl": "{}",
-        });
-        let files = fixture_files(fixture.root());
-
-        let kept =
-            split_files_before_since(files, &shared_since(None), ts("2026-09-24T00:00:00Z")).kept;
-
-        assert_eq!(kept.len(), 3);
-    }
-
-    #[test]
-    fn keeps_every_file_when_the_window_opens_in_the_future() {
-        let fixture = fs_fixture!({
-            "projects/p/old.jsonl": "{}",
-            "projects/p/margin.jsonl": "{}",
-            "projects/p/fresh.jsonl": "{}",
-        });
-        let files = fixture_files(fixture.root());
-        let now = TimestampMs::from_millis(ts("2026-09-30T00:00:00Z").as_millis() - MILLIS_PER_DAY);
-
-        let kept = split_files_before_since(files, &shared_since(Some("20260930")), now).kept;
-
-        assert_eq!(kept.len(), 3);
-    }
-
-    #[test]
-    fn keeps_files_whose_metadata_cannot_be_read() {
-        let missing = PathBuf::from("/nonexistent/ccusage/projects/p/missing.jsonl");
-
-        let kept = split_files_before_since(
-            vec![missing.clone()],
-            &shared_since(Some("20260920")),
-            ts("2026-09-24T00:00:00Z"),
-        )
-        .kept;
-
-        assert_eq!(kept, [missing]);
-    }
-
-    #[test]
-    fn keeps_or_prunes_a_session_together_with_its_subagents() {
-        let fixture = fs_fixture!({
-            "projects/p/live.jsonl": "{}",
-            "projects/p/live/subagents/agent-a.jsonl": "{}",
-            "projects/p/stale.jsonl": "{}",
-            "projects/p/stale/subagents/agent-b.jsonl": "{}",
-        });
-        let root = fixture.root();
-        let live_parent = root.join("projects/p/live.jsonl");
-        let live_agent = root.join("projects/p/live/subagents/agent-a.jsonl");
-        let stale_parent = root.join("projects/p/stale.jsonl");
-        let stale_agent = root.join("projects/p/stale/subagents/agent-b.jsonl");
-        // Only the live session's subagent was written inside the window.
-        set_file_modified(&live_parent, ts("2026-09-01T12:00:00Z"));
-        set_file_modified(&live_agent, ts("2026-09-21T12:00:00Z"));
-        set_file_modified(&stale_parent, ts("2026-09-01T12:00:00Z"));
-        set_file_modified(&stale_agent, ts("2026-09-02T12:00:00Z"));
-
-        let split = split_files_before_since(
-            vec![
-                live_parent.clone(),
-                live_agent.clone(),
-                stale_parent.clone(),
-                stale_agent.clone(),
-            ],
-            &shared_since(Some("20260920")),
-            ts("2026-09-24T00:00:00Z"),
-        );
-
-        assert_eq!(split.kept, [live_parent, live_agent]);
-        assert_eq!(split.pruned, [stale_parent, stale_agent]);
-    }
-
-    #[test]
-    fn keeps_legacy_flat_agent_transcripts_and_config_root_copies_with_their_session() {
-        let fixture = fs_fixture!({
-            "a/projects/p/live.jsonl": "{}",
-            "a/projects/p/agent-1234.jsonl": r#"{"sessionId":"live","timestamp":"2026-09-01T12:00:00Z"}"#,
-            "a/projects/p/agent-5678.jsonl": r#"{"sessionId":"stale","timestamp":"2026-09-01T12:00:00Z"}"#,
-            "b/projects/p/live.jsonl": "{}",
-        });
-        let root = fixture.root();
-        let live = root.join("a/projects/p/live.jsonl");
-        let live_agent = root.join("a/projects/p/agent-1234.jsonl");
-        let stale_agent = root.join("a/projects/p/agent-5678.jsonl");
-        let other_root_copy = root.join("b/projects/p/live.jsonl");
-        set_file_modified(&live, ts("2026-09-21T12:00:00Z"));
-        for stale in [&live_agent, &stale_agent, &other_root_copy] {
-            set_file_modified(stale, ts("2026-09-01T12:00:00Z"));
-        }
-
-        let split = split_files_before_since(
-            vec![
-                live_agent.clone(),
-                stale_agent.clone(),
-                live.clone(),
-                other_root_copy.clone(),
-            ],
-            &shared_since(Some("20260920")),
-            ts("2026-09-24T00:00:00Z"),
-        );
-
-        assert_eq!(split.kept, [live_agent, live, other_root_copy]);
-        assert_eq!(split.pruned, [stale_agent]);
-    }
-
-    #[test]
-    fn keeps_sessions_linked_by_a_recorded_session_id_in_another_directory() {
-        let fixture = fs_fixture!({
-            "projects/p/session-y.jsonl": r#"{"sessionId":"session-y"}"#,
-            "projects/p/session-x/subagents/workflows/wf_1/agent-a.jsonl": "{\"type\":\"summary\"}\n{\"sessionId\" : \"session-y\"}",
-        });
-        let root = fixture.root();
-        let parent = root.join("projects/p/session-y.jsonl");
-        let workflow_agent =
-            root.join("projects/p/session-x/subagents/workflows/wf_1/agent-a.jsonl");
-        set_file_modified(&parent, ts("2026-09-01T12:00:00Z"));
-        set_file_modified(&workflow_agent, ts("2026-09-21T12:00:00Z"));
-
-        let split = split_files_before_since(
-            vec![parent.clone(), workflow_agent.clone()],
-            &shared_since(Some("20260920")),
-            ts("2026-09-24T00:00:00Z"),
-        );
-
-        assert_eq!(split.kept, [parent, workflow_agent]);
-        assert!(split.pruned.is_empty());
-    }
-
-    #[test]
-    fn reads_the_recorded_session_id_past_long_leading_lines() {
-        let padding = format!(
-            r#"{{"type":"summary","text":"{}"}}"#,
-            "x".repeat(100 * 1024)
-        );
-        let fixture = fs_fixture!({
-            "projects/p/agent-1.jsonl": format!("{padding}\n{{\"sessionId\":  \"parent\"}}"),
-        });
-
-        assert_eq!(
-            super::recorded_session_id(&fixture.root().join("projects/p/agent-1.jsonl")).as_deref(),
-            Some("parent")
-        );
-    }
-}
+mod tests;

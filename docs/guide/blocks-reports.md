@@ -1,6 +1,6 @@
 # Blocks
 
-Blocks reports show your Claude Code usage grouped by 5-hour billing windows, helping you understand Claude's billing cycle and track active session progress.
+Blocks reports show your Claude Code usage grouped by 5-hour billing windows, helping you understand Claude's billing cycle and track active session progress. `ccusage blocks` and `ccusage claude blocks` are the same report; no other source has billing blocks.
 
 ## Basic Usage
 
@@ -10,80 +10,92 @@ ccusage blocks
 
 ## Example Output
 
-```
-╭──────────────────────────────────────────────────╮
-│                                                  │
-│  Claude Code Token Usage Report - Session Blocks │
-│                                                  │
-╰──────────────────────────────────────────────────╯
+This excerpt of `ccusage claude blocks --offline` on the test fixtures keeps the last completed block, the gap after it, and the active block with its REMAINING and PROJECTED rows; earlier blocks are omitted:
 
-┌─────────────────────┬────────────────────┬────────┬─────────┬──────────────┬────────────┬──────────────┬────────────┐
-│ Block Start Time    │ Models             │ Input  │ Output  │ Cache Create │ Cache Read │ Total Tokens │ Cost (USD) │
-├─────────────────────┼────────────────────┼────────┼─────────┼──────────────┼────────────┼──────────────┼────────────┤
-│ 2026-05-16 09:00:00 │ • opus-4-1         │  4,512 │ 285,846 │          512 │      1,024 │      291,894 │    $156.40 │
-│ ⏰ Active (2h 15m)  │ • sonnet-4-5       │        │         │              │            │              │            │
-│ 🔥 Rate: 2.1k/min   │                  │        │         │              │            │              │            │
-│ 📊 Projected: 450k  │                  │        │         │              │            │              │            │
-├─────────────────────┼────────────────────┼────────┼─────────┼──────────────┼────────────┼──────────────┼────────────┤
-│ 2026-05-16 04:00:00 │ • sonnet-4-5       │  2,775 │ 186,645 │          256 │        768 │      190,444 │     $98.45 │
-│ ✅ Completed (3h 42m)│                  │        │         │              │            │              │            │
-├─────────────────────┼────────────────────┼────────┼─────────┼──────────────┼────────────┼──────────────┼────────────┤
-│ 2026-05-15 15:30:00 │ • opus-4-1         │  1,887 │ 183,055 │          128 │        512 │      185,582 │     $81.73 │
-│ ✅ Completed (4h 12m)│                  │        │         │              │            │              │            │
-├─────────────────────┼────────────────────┼────────┼─────────┼──────────────┼────────────┼──────────────┼────────────┤
-│ Total               │                  │  9,174 │ 655,546 │          896 │      2,304 │      667,920 │    $336.58 │
-└─────────────────────┴────────────────────┴────────┴─────────┴──────────────┴────────────┴──────────────┴────────────┘
+```text
+┌────────────────────────────────────────────────────────────┬─────────────────┬──────────────────────┬───────────┬───────────┬───────────┐
+│ Block Start                                                │ Duration/Status │ Models               │    Tokens │         % │      Cost │
+├────────────────────────────────────────────────────────────┼─────────────────┼──────────────────────┼───────────┼───────────┼───────────┤
+│ 1/1/2026, 12:00:00 PM (30m)                                │                 │ - mystery-model-9000 │     3,470 │     18.3% │     $0.01 │
+│                                                            │                 │ - opus-4             │           │           │           │
+│                                                            │                 │ - sonnet-4           │           │           │           │
+├────────────────────────────────────────────────────────────┼─────────────────┼──────────────────────┼───────────┼───────────┼───────────┤
+│ 1/1/2026, 5:30:00 PM - 1/2/2026, 8:00:00 AM (14h gap)      │ (inactive)      │ -                    │         - │         - │         - │
+├────────────────────────────────────────────────────────────┼─────────────────┼──────────────────────┼───────────┼───────────┼───────────┤
+│ 1/2/2026, 8:00:00 AM (4h 0m elapsed, 1h 0m remaining)      │ ACTIVE          │ - opus-4             │    10,950 │     57.9% │     $0.06 │
+│                                                            │                 │ - opus-5-fast        │           │           │           │
+│                                                            │                 │ - sonnet-4           │           │           │           │
+├────────────────────────────────────────────────────────────┼─────────────────┼──────────────────────┼───────────┼───────────┼───────────┤
+│                              (assuming 18,911 token limit) │ REMAINING       │                      │     7,961 │     42.1% │           │
+├────────────────────────────────────────────────────────────┼─────────────────┼──────────────────────┼───────────┼───────────┼───────────┤
+│                               (assuming current burn rate) │ PROJECTED       │                      │    14,600 │     77.2% │     $0.09 │
+└────────────────────────────────────────────────────────────┴─────────────────┴──────────────────────┴───────────┴───────────┴───────────┘
 ```
 
 ## Understanding Blocks
 
 ### Session Block Concept
 
-Claude Code uses **5-hour billing windows** for session tracking:
+ccusage estimates Claude Code blocks from usage timestamps, using a **5-hour window** by default:
 
-- **Block Start**: Triggered by your first message
-- **Block Duration**: Lasts exactly 5 hours from start time
-- **Rolling Windows**: New blocks start with activity after previous block expires
-- **Billing Relevance**: Matches Claude's internal session tracking
-- **UTC Time Handling**: Block boundaries are calculated in UTC to ensure consistent behavior across time zones
+- **Block Start**: Triggered by your first message, rounded down to the hour
+- **Block Duration**: Lasts 5 hours from the start time
+- **Rolling Windows**: New blocks start with activity after the previous block expires
 
-### Block Status Indicators
+The Block Start column shows the start time in the report timezone, followed by how long the block was in use. Without `--timezone`, block times use the system timezone. JSON timestamps remain UTC.
 
-- **⏰ Active**: Currently running block with time remaining
-- **✅ Completed**: Finished block that ran its full duration or ended naturally
-- **⌛ Gap**: Time periods with no activity (shown when relevant)
-- **🔥 Rate**: Token burn rate (tokens per minute) for active blocks
-- **📊 Projected**: Estimated total tokens if current rate continues
+### Rows
+
+- **Usage blocks**: One row per block with its models, total tokens, and cost.
+- **`ACTIVE`**: The block that is still running, with elapsed and remaining time.
+- **`(inactive)`**: A gap with no activity between two blocks.
+- **`REMAINING`**: Tokens left in the active block before it reaches the token limit.
+- **`PROJECTED`**: Tokens and cost the active block reaches if the current burn rate continues.
+
+The `%` column compares each block with the token limit. Without `--token-limit`, the limit is the largest completed block in the report, as with `--token-limit max`.
 
 ## Command Options
 
 ### Show Active Block Only
 
-Focus on your current session with detailed projections:
+Focus on your current session with detailed projections. The detail view prints Block Started in the report timezone, using the system timezone when `--timezone` is omitted:
 
 ```bash
 ccusage blocks --active
 ```
 
-This shows only the currently active block with:
+```
+Block Started:   2026-01-02 08:00:00
+Time Elapsed:    4h 0m
+Time Remaining:  1h 0m
 
-- Time remaining in the 5-hour window
-- Current token burn rate
-- Projected final token count and cost
+Current Usage:
+  Input Tokens:     1,150
+  Output Tokens:    950
+  Total Cost:       $0.06
+
+Burn Rate:
+  Tokens/minute:    61
+  Cost/hour:        $0.02
+
+Projected Usage (if current rate continues):
+  Total Tokens:     14,600
+  Total Cost:       $0.09
+```
+
+When a token limit applies, the detail view adds a Token Limit Status section that reports the projected usage as `OK`, `WARNING`, or `EXCEEDS LIMIT`.
 
 ### Show Recent Blocks
 
-Display blocks from the last 3 days (including active):
+Display blocks that started in the last 3 days, plus the active block:
 
 ```bash
 ccusage blocks --recent
 ```
 
-Perfect for understanding recent usage patterns without scrolling through all historical data.
-
 ### Token Limit Tracking
 
-Set token limits to monitor quota usage:
+Set the token limit the `%`, `REMAINING`, and `PROJECTED` rows compare against:
 
 ```bash
 # Set explicit token limit
@@ -95,34 +107,17 @@ ccusage blocks --token-limit max
 ccusage blocks -t max
 ```
 
-When limits are set, blocks display:
+The limit must be `max` or a positive integer; zero and invalid text are rejected. Percentages above 100% are highlighted in red.
 
-- ⚠️ **Warning indicators** when approaching limits
-- 🚨 **Alert indicators** when exceeding limits
-- **Progress bars** showing usage relative to limit
+### Live Monitoring
 
-### Live Monitoring (Removed)
-
-::: danger REMOVED IN v18
-The `blocks --live` monitor feature has been removed in v18.0.0. This feature is available in v17.x. Please use the [statusline command](/guide/statusline) instead for real-time monitoring.
-:::
-
-Previously available options (v17.x only):
-
-```bash
-# Basic live monitoring (uses -t max automatically)
-ccusage blocks --live
-
-# Live monitoring with explicit token limit
-ccusage blocks --live --token-limit 500000
-
-# Custom refresh interval (1-60 seconds)
-ccusage blocks --live --refresh-interval 5
-```
+`blocks --live` is not supported. Use the [statusline command](/guide/statusline) for real-time monitoring.
 
 ### Custom Session Duration
 
 Change the block duration (default is 5 hours):
+
+Session lengths must be finite, positive, and representable as at least one millisecond. Fractional hours are stored in whole milliseconds. For example, a `4.35`-hour block starting at `10:00:00` ends at `14:21:00.000`.
 
 ```bash
 # 3-hour blocks
@@ -147,11 +142,11 @@ ccusage blocks --since $(date -d '7 days ago' +%Y%m%d)
 ### Sort Order
 
 ```bash
-# Show newest blocks first (default)
-ccusage blocks --order desc
-
-# Show oldest blocks first
+# Show oldest blocks first (default)
 ccusage blocks --order asc
+
+# Show newest blocks first
+ccusage blocks --order desc
 ```
 
 ### Cost Calculation Modes
@@ -175,23 +170,79 @@ Export block data for analysis:
 ccusage blocks --json
 ```
 
+`blocks` holds every block, including gaps (`isGap: true`). `burnRate` and `projection` are set only on the active block, `tokenLimitStatus` appears on the active block when `--token-limit` is given, and `usageLimitResetTime` appears when Claude Code reported a usage-limit reset inside the block. There is no `totals` object. This excerpt of `ccusage claude blocks --json` on the test fixtures keeps the same three blocks as the table above:
+
 ```json
 {
 	"blocks": [
 		{
-			"id": "2026-05-16T09:00:00.000Z",
-			"startTime": "2026-05-16T09:00:00.000Z",
-			"endTime": "2026-05-16T14:00:00.000Z",
-			"actualEndTime": "2026-05-16T11:15:00.000Z",
-			"isActive": true,
+			"actualEndTime": "2026-01-01T12:30:00.000Z",
+			"burnRate": null,
+			"costUSD": 0.011850000000000001,
+			"endTime": "2026-01-01T17:00:00.000Z",
+			"entries": 3,
+			"id": "2026-01-01T12:00:00.000Z",
+			"isActive": false,
+			"isGap": false,
+			"models": ["claude-sonnet-4-20250514", "claude-opus-4-20250514", "mystery-model-9000"],
+			"projection": null,
+			"startTime": "2026-01-01T12:00:00.000Z",
 			"tokenCounts": {
-				"inputTokens": 4512,
-				"outputTokens": 285846,
-				"cacheCreationInputTokens": 512,
-				"cacheReadInputTokens": 1024
+				"cacheCreationInputTokens": 0,
+				"cacheReadInputTokens": 2300,
+				"inputTokens": 950,
+				"outputTokens": 220
 			},
-			"costUSD": 156.4,
-			"models": ["opus-4-1", "sonnet-4-5"]
+			"totalTokens": 3470
+		},
+		{
+			"actualEndTime": null,
+			"burnRate": null,
+			"costUSD": 0,
+			"endTime": "2026-01-02T08:00:00.000Z",
+			"entries": 0,
+			"id": "gap-2026-01-01T17:30:00.000Z",
+			"isActive": false,
+			"isGap": true,
+			"models": [],
+			"projection": null,
+			"startTime": "2026-01-01T17:30:00.000Z",
+			"tokenCounts": {
+				"cacheCreationInputTokens": 0,
+				"cacheReadInputTokens": 0,
+				"inputTokens": 0,
+				"outputTokens": 0
+			},
+			"totalTokens": 0
+		},
+		{
+			"actualEndTime": "2026-01-02T11:00:00.000Z",
+			"burnRate": {
+				"costPerHour": 0.021562500000000002,
+				"tokensPerMinute": 60.833333333333336,
+				"tokensPerMinuteForIndicator": 11.666666666666666
+			},
+			"costUSD": 0.06468750000000001,
+			"endTime": "2026-01-02T13:00:00.000Z",
+			"entries": 4,
+			"id": "2026-01-02T08:00:00.000Z",
+			"isActive": true,
+			"isGap": false,
+			"models": ["claude-opus-5-fast", "claude-sonnet-4-20250514", "claude-opus-4-20250514"],
+			"projection": {
+				"remainingMinutes": 60,
+				"totalCost": 0.09,
+				"totalTokens": 14600
+			},
+			"startTime": "2026-01-02T08:00:00.000Z",
+			"tokenCounts": {
+				"cacheCreationInputTokens": 50,
+				"cacheReadInputTokens": 8800,
+				"inputTokens": 1150,
+				"outputTokens": 950
+			},
+			"totalTokens": 10950,
+			"usageLimitResetTime": "2026-01-02T09:00:00.000Z"
 		}
 	]
 }
@@ -199,7 +250,7 @@ ccusage blocks --json
 
 ### Offline Mode
 
-Use cached pricing data without network access:
+Use embedded pricing data without network access:
 
 ```bash
 ccusage blocks --offline
@@ -278,7 +329,7 @@ Use blocks to optimize your Claude usage:
 
 Blocks help identify cost patterns:
 
-- **Model switching**: When to use Opus 4.1 vs Sonnet 4.5 within blocks
+- **Model switching**: When to use a larger model and when a smaller one is enough within blocks
 - **Cache efficiency**: How cache usage affects block costs
 - **Usage intensity**: Whether short focused sessions or long exploratory ones are more cost-effective
 
@@ -292,45 +343,7 @@ When working with token limits:
 
 ## Responsive Display
 
-Blocks reports adapt to your terminal width:
-
-- **Wide terminals (≥100 chars)**: Shows all columns with full timestamps
-- **Narrow terminals (<100 chars)**: Compact mode with abbreviated times and essential data
-
-## Advanced Features
-
-### Gap Detection
-
-Blocks reports automatically detect and display gaps:
-
-```
-┌─────────────────────┬────────────────────┬────────┬─────────┬────────────┐
-│ 2026-05-16 09:00:00 │ • opus-4-1         │  4,512 │ 285,846 │    $156.40 │
-│ ⏰ Active (2h 15m)  │ • sonnet-4-5       │        │         │            │
-├─────────────────────┼────────────────────┼────────┼─────────┼────────────┤
-│ 2026-05-15 22:00:00 │ ⌛ 11h gap       │      0 │       0 │      $0.00 │
-│ 2026-05-16 09:00:00 │                  │        │         │            │
-├─────────────────────┼────────────────────┼────────┼─────────┼────────────┤
-│ 2026-05-15 15:30:00 │ • opus-4-1         │  1,887 │ 183,055 │     $81.73 │
-│ ✅ Completed (4h 12m)│                  │        │         │            │
-└─────────────────────┴────────────────────┴────────┴─────────┴────────────┘
-```
-
-### Burn Rate Calculations
-
-For active blocks, the tool calculates:
-
-- **Tokens per minute**: Based on activity within the block
-- **Cost per hour**: Projected hourly spend rate
-- **Projected totals**: Estimated final tokens/cost if current rate continues
-
-### Progress Visualization
-
-When using token limits, blocks show visual progress:
-
-- **Green**: Usage well below limit (< 70%)
-- **Yellow**: Approaching limit (70-90%)
-- **Red**: At or exceeding limit (≥ 90%)
+Blocks reports adapt to your terminal width: narrow terminals switch to a compact layout with shorter times. Use `--compact` to force it.
 
 ## Related Commands
 

@@ -229,6 +229,64 @@
 			"description": "Display this version"
 		}
 	],
+	"codex_statusline_options": [
+		{
+			"flags": "--mcp",
+			"description": "Serve a local stdio MCP provider for Codex's native statusline (always offline)"
+		},
+		{
+			"flags": "-i, --id <id>",
+			"description": "Show one session instead of today's usage"
+		},
+		{
+			"flags": "-s, --since <since>",
+			"description": "Filter from date (YYYY-MM-DD or YYYYMMDD)"
+		},
+		{
+			"flags": "-u, --until <until>",
+			"description": "Filter until date (inclusive)"
+		},
+		{
+			"flags": "-z, --timezone <timezone>",
+			"description": "Timezone for today's date and date filtering (IANA or local)"
+		},
+		{
+			"flags": "-O, --offline",
+			"description": "Use embedded pricing without a network request",
+			"default": "true"
+		},
+		{
+			"flags": "--no-offline",
+			"description": "Allow fetching updated pricing"
+		},
+		{
+			"flags": "--speed [speed]",
+			"description": "Cost speed tier: auto uses recorded settings, then Codex config.toml",
+			"default": "auto",
+			"choices": ["auto", "standard", "flex", "fast"]
+		},
+		{
+			"flags": "--no-cost",
+			"description": "Hide cost information in text and JSON output"
+		},
+		{
+			"flags": "-j, --json",
+			"description": "Output the usage summary as JSON"
+		},
+		{
+			"flags": "-q, --jq <jq>",
+			"description": "Apply a jq filter to the JSON summary"
+		},
+		{
+			"flags": "--config <config>",
+			"description": "Path to configuration file",
+			"default": "auto-discovery"
+		},
+		{
+			"flags": "-h, --help",
+			"description": "Display this help message"
+		}
+	],
 	"daily_options": [
 		{
 			"flags": "-i, --instances",
@@ -236,18 +294,31 @@
 			"default": "false"
 		},
 		{
-			"flags": "-p, --project <project>",
-			"description": "Filter to specific project name"
-		},
-		{
 			"flags": "--project-aliases <project-aliases>",
 			"description": "Comma-separated project aliases (e.g., 'ccusage=Usage Tracker,myproject=My Project')"
+		}
+	],
+	"claude_project_options": [
+		{
+			"flags": "-p, --project <project>",
+			"description": "Filter Claude Code usage by project (ignored with session --id)"
 		}
 	],
 	"pi_options": [
 		{
 			"flags": "--pi-path <pi-path>",
 			"description": "Path or comma-separated paths to pi-agent sessions directories"
+		},
+		{
+			"flags": "--pi-agent-dir <pi-agent-dir>",
+			"description": "Path or comma-separated paths to pi agent directories; reads each directory's sessions store"
+		}
+	],
+	"opencode_options": [
+		{
+			"flags": "--include-claude-agent",
+			"description": "Include Claude Agent provider turns that Claude Code transcripts already count",
+			"default": "false"
 		}
 	],
 	"openclaw_options": [
@@ -425,6 +496,14 @@
 			"flags": "-w, --start-of-week [start-of-week]",
 			"description": "Start day of the week",
 			"default": "sunday",
+			"choices": ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
+		}
+	],
+	"all_weekly_options": [
+		{
+			"flags": "-w, --start-of-week [start-of-week]",
+			"description": "Start day of the week",
+			"default": "monday",
 			"choices": ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
 		}
 	]

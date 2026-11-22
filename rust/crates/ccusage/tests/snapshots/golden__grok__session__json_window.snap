@@ -1,0 +1,165 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage grok session --offline --json --since 20251231 --until 20260101
+---
+exit: 0
+--- stdout ---
+{
+  "sessions": [
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "firstActivity": "2026-01-01T12:30:00.000Z",
+      "inputTokens": 345,
+      "lastActivity": "2026-01-01T12:30:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 345,
+          "missingPricing": true,
+          "modelName": "unknown",
+          "outputTokens": 55
+        }
+      ],
+      "modelsUsed": [
+        "unknown"
+      ],
+      "outputTokens": 55,
+      "projectPath": "/work/beta",
+      "sessionId": "cccccccc-0000-4000-8000-000000000003",
+      "totalCost": 0.0,
+      "totalTokens": 400
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 600,
+      "firstActivity": "2026-01-01T00:10:00.000Z",
+      "inputTokens": 900,
+      "lastActivity": "2026-01-01T12:00:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 600,
+          "cost": 0.000325,
+          "inputTokens": 0,
+          "modelName": "grok-4.3-build",
+          "outputTokens": 100
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 900,
+          "missingPricing": true,
+          "modelName": "grok-mystery-1",
+          "outputTokens": 210
+        }
+      ],
+      "modelsUsed": [
+        "grok-4.3-build",
+        "grok-mystery-1"
+      ],
+      "outputTokens": 310,
+      "projectPath": "/summary/beta",
+      "sessionId": "line-session-gamma",
+      "totalCost": 0.000325,
+      "totalTokens": 1810
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 51000,
+      "firstActivity": "2025-12-31T15:30:00.000Z",
+      "inputTokens": 202300,
+      "lastActivity": "2026-01-01T12:30:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 51000,
+          "cost": 0.6000000000000001,
+          "inputTokens": 202000,
+          "modelName": "grok-4.5-build",
+          "outputTokens": 1500,
+          "storedCost": 0.6000000000000001
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00006,
+          "inputTokens": 0,
+          "modelName": "grok-code-fast-1",
+          "outputTokens": 40
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 300,
+          "missingPricing": true,
+          "modelName": "grok-mystery-1",
+          "outputTokens": 70
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 0,
+          "modelName": "grok-4.7-build",
+          "outputTokens": 0
+        }
+      ],
+      "modelsUsed": [
+        "grok-4.5-build",
+        "grok-mystery-1",
+        "grok-4.7-build",
+        "grok-code-fast-1"
+      ],
+      "outputTokens": 1610,
+      "projectPath": "/work/alpha",
+      "sessionId": "sess-alpha",
+      "totalCost": 0.60006,
+      "totalTokens": 254910
+    },
+    {
+      "cacheCreationTokens": 50,
+      "cacheReadTokens": 700,
+      "firstActivity": "2025-12-31T23:50:00.000Z",
+      "inputTokens": 150,
+      "lastActivity": "2025-12-31T23:50:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 50,
+          "cacheReadTokens": 700,
+          "cost": 0.003,
+          "inputTokens": 150,
+          "modelName": "grok-code-fast-1",
+          "outputTokens": 400,
+          "storedCost": 0.003
+        }
+      ],
+      "modelsUsed": [
+        "grok-code-fast-1"
+      ],
+      "outputTokens": 400,
+      "projectPath": "/summary/beta",
+      "sessionId": "summary-session-beta",
+      "totalCost": 0.003,
+      "totalTokens": 1300
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 50,
+    "cacheReadTokens": 52300,
+    "inputTokens": 203695,
+    "outputTokens": 2375,
+    "totalCost": 0.6033850000000001,
+    "totalTokens": 258420,
+    "unpricedModels": [
+      "grok-mystery-1",
+      "unknown"
+    ]
+  }
+}
+
+--- stderr ---

@@ -1,0 +1,7 @@
+{
+	"exact": {
+		"gpt-6-astra": 6.0,
+		"gpt-6.1-sol": 6.0
+	},
+	"normalized_prefix": {}
+}

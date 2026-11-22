@@ -18,7 +18,7 @@ export default defineConfig({
 			PINGS: bindings.analyticsEngineDataset({ name: 'ccusage_telemetry' }),
 			// Remote-only: there is no local simulation, so `cf dev` needs a Cloudflare
 			// login. In exchange the rollup reads the dataset without an API token secret.
-			ANALYTICS: bindings.analytics(),
+			ANALYTICS: bindings.analyticsSql(),
 			ROLLUPS: bindings.r2({ name: 'ccusage-telemetry-rollups' }),
 		},
 	},

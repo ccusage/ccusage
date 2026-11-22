@@ -1,5 +1,4 @@
 {
-  inputs,
   lib,
   ...
 }:
@@ -10,15 +9,20 @@ in
   perSystem =
     {
       config,
-      system,
+      pkgs,
+      rustToolchain,
       ...
     }:
     let
-      pkgs = import inputs.nixpkgs {
-        inherit system;
-        overlays = [ inputs.rust-overlay.overlays.default ];
-      };
-      rustToolchain = pkgs.rust-bin.fromRustupToolchainFile (root + /rust-toolchain.toml);
+      hookCommand =
+        name: runtimeInputs: text:
+        lib.getExe (
+          pkgs.writeShellApplication {
+            name = "ccusage-hook-${name}";
+            inherit runtimeInputs text;
+          }
+        );
+      inherit (config.checks.ccusage-clippy.passthru.clippyArgs) cargoExtraArgs cargoClippyExtraArgs;
     in
     {
       pre-commit = {
@@ -30,9 +34,6 @@ in
           hooks = {
             renovate-config-validator = {
               enable = true;
-              # `renovate config-validator` does not exist as a subcommand, and
-              # `--strict` is only understood by the standalone validator, so the
-              # hook silently failed with "unknown option" whenever it did run.
               entry = "${pkgs.renovate}/bin/renovate-config-validator --strict";
               files = "renovate\\.json5?$";
               pass_filenames = false;
@@ -45,16 +46,10 @@ in
             ccusage-treefmt = {
               enable = true;
               name = "treefmt";
-              # `--no-cache` keeps the hook safe under prek's parallel,
-              # file-batched invocations. Without it each concurrent treefmt
-              # process races for the shared eval-cache SQLite db and the loser
-              # dies with "failed to open cache: ... timeout" (notably during
-              # `just release`, which stages every package.json at once). prek
-              # already selects the changed files, so treefmt's own cache is
-              # redundant here anyway.
-              entry = "${lib.getExe config.treefmt.build.wrapper} --no-cache";
+              entry = lib.getExe config.treefmt.build.wrapper;
               files = ".*";
               pass_filenames = true;
+              require_serial = true;
               stages = [ "pre-commit" ];
               priority = 10;
             };
@@ -98,7 +93,7 @@ in
             ccusage-oxlint-check = {
               enable = true;
               name = "oxlint";
-              entry = "${lib.getExe pkgs.oxlint} .";
+              entry = "${lib.getExe config.packages.oxlint} .";
               files = "\\.(ts|tsx|js|jsx|mjs|cjs)$";
               pass_filenames = false;
               stages = [ "pre-push" ];
@@ -107,16 +102,44 @@ in
             ccusage-clippy = {
               enable = true;
               name = "clippy";
-              entry = "${lib.getExe' rustToolchain "cargo"} clippy --manifest-path rust/Cargo.toml --workspace --all-targets -- -D warnings";
+              entry = hookCommand "clippy" [
+                rustToolchain
+              ] "cargo clippy --manifest-path rust/Cargo.toml ${cargoExtraArgs} ${cargoClippyExtraArgs}";
               files = "^rust/.*\\.rs$";
               pass_filenames = false;
+              stages = [ "pre-push" ];
+              priority = 0;
+            };
+            ccusage-comments = {
+              enable = true;
+              name = "comments";
+              entry =
+                hookCommand "comments"
+                  [
+                    pkgs.nushell
+                    pkgs.ast-grep
+                    pkgs.just
+                    pkgs.git
+                    pkgs.gnutar
+                  ]
+                  ''
+                    if [[ -n "''${PRE_COMMIT_TO_REF:-}" ]]; then
+                      exec nu --no-config-file scripts/comments/check.nu --ref "$PRE_COMMIT_TO_REF"
+                    fi
+                    exec nu --no-config-file scripts/comments/check.nu
+                  '';
+              pass_filenames = false;
+              always_run = true;
               stages = [ "pre-push" ];
               priority = 0;
             };
             node-test = {
               enable = true;
               name = "node test";
-              entry = "${lib.getExe pkgs.nodejs} --test apps/ccusage/src/cli.test.ts apps/telemetry/src/v1/ping.test.ts apps/telemetry/src/rollup.test.ts apps/telemetry/src/stats.test.ts nix/tools/models-dev-gen/compact.test.ts";
+              entry = hookCommand "node-test" [
+                pkgs.just
+                pkgs.nodejs
+              ] "just test-node";
               files = "\\.(ts|tsx|js|jsx|mjs|cjs)$";
               pass_filenames = false;
               stages = [ "pre-push" ];
@@ -125,7 +148,10 @@ in
             cargo-test = {
               enable = true;
               name = "cargo test";
-              entry = "${lib.getExe' rustToolchain "cargo"} test --manifest-path rust/Cargo.toml --workspace --all-targets";
+              entry = hookCommand "cargo-test" [
+                pkgs.just
+                rustToolchain
+              ] "just rust::test";
               files = "^rust/(.*\\.rs|.*Cargo\\.toml|Cargo\\.lock)$";
               pass_filenames = false;
               stages = [ "pre-push" ];

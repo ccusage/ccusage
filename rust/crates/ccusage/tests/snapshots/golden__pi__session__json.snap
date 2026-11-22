@@ -1,0 +1,882 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage pi session --offline --json
+---
+exit: 0
+--- stdout ---
+{
+  "sessions": [
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "firstActivity": "2025-12-27T09:00:00.000Z",
+      "inputTokens": 21,
+      "lastActivity": "2025-12-27T09:00:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 21,
+          "missingPricing": true,
+          "modelName": "[pi] pi-mystery-1",
+          "outputTokens": 4
+        }
+      ],
+      "modelsUsed": [
+        "[pi] pi-mystery-1"
+      ],
+      "outputTokens": 4,
+      "projectPath": "--Users-dev-lab--",
+      "sessionId": "lab-badparent",
+      "totalCost": 0.0,
+      "totalTokens": 25
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "firstActivity": "2025-12-27T09:00:00.000Z",
+      "inputTokens": 21,
+      "lastActivity": "2025-12-27T09:00:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 21,
+          "missingPricing": true,
+          "modelName": "[pi] pi-mystery-1",
+          "outputTokens": 4
+        }
+      ],
+      "modelsUsed": [
+        "[pi] pi-mystery-1"
+      ],
+      "outputTokens": 4,
+      "projectPath": "--Users-dev-lab--",
+      "sessionId": "lab-badparent-child",
+      "totalCost": 0.0,
+      "totalTokens": 25
+    },
+    {
+      "cacheCreationTokens": 3,
+      "cacheReadTokens": 14,
+      "firstActivity": "2025-12-27T05:00:00.000Z",
+      "inputTokens": 120,
+      "lastActivity": "2025-12-27T06:00:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 3,
+          "cacheReadTokens": 14,
+          "cost": 0.0,
+          "inputTokens": 120,
+          "missingPricing": true,
+          "modelName": "[pi] pi-mystery-1",
+          "outputTokens": 12
+        }
+      ],
+      "modelsUsed": [
+        "[pi] pi-mystery-1"
+      ],
+      "outputTokens": 12,
+      "projectPath": "--Users-dev-lab--",
+      "sessionId": "lab-child-exact",
+      "totalCost": 0.0,
+      "totalTokens": 149
+    },
+    {
+      "cacheCreationTokens": 999,
+      "cacheReadTokens": 30,
+      "firstActivity": "2025-12-27T03:00:00.000Z",
+      "inputTokens": 271,
+      "lastActivity": "2025-12-27T06:30:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 999,
+          "cacheReadTokens": 30,
+          "cost": 0.0,
+          "inputTokens": 200,
+          "missingPricing": true,
+          "modelName": "[pi] pi-mystery-2",
+          "outputTokens": 20
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 71,
+          "missingPricing": true,
+          "modelName": "[pi] pi-mystery-1",
+          "outputTokens": 7
+        }
+      ],
+      "modelsUsed": [
+        "[pi] pi-mystery-2",
+        "[pi] pi-mystery-1"
+      ],
+      "outputTokens": 27,
+      "projectPath": "--Users-dev-lab--",
+      "sessionId": "lab-child-nearmiss",
+      "totalCost": 0.0,
+      "totalTokens": 1327
+    },
+    {
+      "cacheCreationTokens": 44,
+      "cacheReadTokens": 33,
+      "firstActivity": "2025-12-27T01:00:00.000Z",
+      "inputTokens": 11,
+      "lastActivity": "2025-12-27T01:40:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 44,
+          "cacheReadTokens": 33,
+          "cost": 2.25,
+          "inputTokens": 11,
+          "modelName": "[pi] pi-mystery-1",
+          "outputTokens": 22,
+          "storedCost": 2.25
+        }
+      ],
+      "modelsUsed": [
+        "[pi] pi-mystery-1"
+      ],
+      "outputTokens": 22,
+      "projectPath": "--Users-dev-lab--",
+      "sessionId": "lab-cost-child",
+      "totalCost": 2.25,
+      "totalTokens": 110
+    },
+    {
+      "cacheCreationTokens": 40,
+      "cacheReadTokens": 30,
+      "firstActivity": "2025-12-27T01:00:00.000Z",
+      "inputTokens": 10,
+      "lastActivity": "2025-12-27T01:00:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 40,
+          "cacheReadTokens": 30,
+          "cost": 1.0,
+          "inputTokens": 10,
+          "modelName": "[pi] pi-mystery-1",
+          "outputTokens": 20,
+          "storedCost": 1.0
+        }
+      ],
+      "modelsUsed": [
+        "[pi] pi-mystery-1"
+      ],
+      "outputTokens": 20,
+      "projectPath": "--Users-dev-lab--",
+      "sessionId": "lab-cost-root",
+      "totalCost": 1.0,
+      "totalTokens": 100
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "firstActivity": "2025-12-27T11:00:00.000Z",
+      "inputTokens": 24,
+      "lastActivity": "2025-12-27T11:00:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 24,
+          "missingPricing": true,
+          "modelName": "[pi] pi-mystery-1",
+          "outputTokens": 7
+        }
+      ],
+      "modelsUsed": [
+        "[pi] pi-mystery-1"
+      ],
+      "outputTokens": 7,
+      "projectPath": "--Users-dev-lab--",
+      "sessionId": "lab-cycle-a",
+      "totalCost": 0.0,
+      "totalTokens": 31
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "firstActivity": "2025-12-27T11:00:00.000Z",
+      "inputTokens": 24,
+      "lastActivity": "2025-12-27T11:00:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 24,
+          "missingPricing": true,
+          "modelName": "[pi] pi-mystery-1",
+          "outputTokens": 7
+        }
+      ],
+      "modelsUsed": [
+        "[pi] pi-mystery-1"
+      ],
+      "outputTokens": 7,
+      "projectPath": "--Users-dev-lab--",
+      "sessionId": "lab-cycle-b",
+      "totalCost": 0.0,
+      "totalTokens": 31
+    },
+    {
+      "cacheCreationTokens": 7,
+      "cacheReadTokens": 50,
+      "firstActivity": "2025-12-27T02:00:00.000Z",
+      "inputTokens": 300,
+      "lastActivity": "2025-12-27T03:00:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 3,
+          "cacheReadTokens": 20,
+          "cost": 0.0,
+          "inputTokens": 100,
+          "missingPricing": true,
+          "modelName": "[pi] pi-mystery-1",
+          "outputTokens": 10
+        },
+        {
+          "cacheCreationTokens": 4,
+          "cacheReadTokens": 30,
+          "cost": 0.0,
+          "inputTokens": 200,
+          "missingPricing": true,
+          "modelName": "[pi] pi-mystery-2",
+          "outputTokens": 20
+        }
+      ],
+      "modelsUsed": [
+        "[pi] pi-mystery-1",
+        "[pi] pi-mystery-2"
+      ],
+      "outputTokens": 30,
+      "projectPath": "--Users-dev-lab--",
+      "sessionId": "lab-dupid-child",
+      "totalCost": 0.0,
+      "totalTokens": 387
+    },
+    {
+      "cacheCreationTokens": 6,
+      "cacheReadTokens": 50,
+      "firstActivity": "2025-12-27T08:00:00.000Z",
+      "inputTokens": 400,
+      "lastActivity": "2025-12-27T08:00:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 6,
+          "cacheReadTokens": 50,
+          "cost": 0.0,
+          "inputTokens": 400,
+          "missingPricing": true,
+          "modelName": "[pi] pi-mystery-1",
+          "outputTokens": 40
+        }
+      ],
+      "modelsUsed": [
+        "[pi] pi-mystery-1"
+      ],
+      "outputTokens": 40,
+      "projectPath": "--Users-dev-lab--",
+      "sessionId": "lab-grandchild",
+      "totalCost": 0.0,
+      "totalTokens": 496
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "firstActivity": "2025-12-27T09:30:00.000Z",
+      "inputTokens": 22,
+      "lastActivity": "2025-12-27T09:30:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 22,
+          "missingPricing": true,
+          "modelName": "[pi] pi-mystery-1",
+          "outputTokens": 5
+        }
+      ],
+      "modelsUsed": [
+        "[pi] pi-mystery-1"
+      ],
+      "outputTokens": 5,
+      "projectPath": "--Users-dev-lab--",
+      "sessionId": "lab-nots-child",
+      "totalCost": 0.0,
+      "totalTokens": 27
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "firstActivity": "2025-12-27T09:30:00.000Z",
+      "inputTokens": 22,
+      "lastActivity": "2025-12-27T09:30:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 22,
+          "missingPricing": true,
+          "modelName": "[pi] pi-mystery-1",
+          "outputTokens": 5
+        }
+      ],
+      "modelsUsed": [
+        "[pi] pi-mystery-1"
+      ],
+      "outputTokens": 5,
+      "projectPath": "--Users-dev-lab--",
+      "sessionId": "lab-nots-root",
+      "totalCost": 0.0,
+      "totalTokens": 27
+    },
+    {
+      "cacheCreationTokens": 3,
+      "cacheReadTokens": 20,
+      "firstActivity": "2025-12-27T02:00:00.000Z",
+      "inputTokens": 100,
+      "lastActivity": "2025-12-27T02:00:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 3,
+          "cacheReadTokens": 20,
+          "cost": 0.0,
+          "inputTokens": 100,
+          "missingPricing": true,
+          "modelName": "[pi] pi-mystery-1",
+          "outputTokens": 10
+        }
+      ],
+      "modelsUsed": [
+        "[pi] pi-mystery-1"
+      ],
+      "outputTokens": 10,
+      "projectPath": "--Users-dev-lab--",
+      "sessionId": "lab-orphan",
+      "totalCost": 0.0,
+      "totalTokens": 133
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "firstActivity": "2025-12-27T11:30:00.000Z",
+      "inputTokens": 27,
+      "lastActivity": "2025-12-27T11:40:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 27,
+          "missingPricing": true,
+          "modelName": "[pi] pi-mystery-1",
+          "outputTokens": 9
+        }
+      ],
+      "modelsUsed": [
+        "[pi] pi-mystery-1"
+      ],
+      "outputTokens": 9,
+      "projectPath": "--Users-dev-lab--",
+      "sessionId": "lab-outside-child",
+      "totalCost": 0.0,
+      "totalTokens": 36
+    },
+    {
+      "cacheCreationTokens": 8,
+      "cacheReadTokens": 56,
+      "firstActivity": "2025-12-27T02:00:00.000Z",
+      "inputTokens": 350,
+      "lastActivity": "2025-12-27T05:00:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 4,
+          "cacheReadTokens": 26,
+          "cost": 0.0,
+          "inputTokens": 150,
+          "missingPricing": true,
+          "modelName": "[pi] pi-mystery-1",
+          "outputTokens": 15
+        },
+        {
+          "cacheCreationTokens": 4,
+          "cacheReadTokens": 30,
+          "cost": 0.0,
+          "inputTokens": 200,
+          "missingPricing": true,
+          "modelName": "[pi] pi-mystery-2",
+          "outputTokens": 20
+        }
+      ],
+      "modelsUsed": [
+        "[pi] pi-mystery-1",
+        "[pi] pi-mystery-2"
+      ],
+      "outputTokens": 35,
+      "projectPath": "--Users-dev-lab--",
+      "sessionId": "lab-root",
+      "totalCost": 0.0,
+      "totalTokens": 449
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "firstActivity": "2025-12-27T10:30:00.000Z",
+      "inputTokens": 23,
+      "lastActivity": "2025-12-27T10:30:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 23,
+          "missingPricing": true,
+          "modelName": "[pi] pi-mystery-1",
+          "outputTokens": 6
+        }
+      ],
+      "modelsUsed": [
+        "[pi] pi-mystery-1"
+      ],
+      "outputTokens": 6,
+      "projectPath": "--Users-dev-lab--",
+      "sessionId": "lab-self",
+      "totalCost": 0.0,
+      "totalTokens": 29
+    },
+    {
+      "cacheCreationTokens": 3,
+      "cacheReadTokens": 20,
+      "firstActivity": "2025-12-27T13:10:00.000Z",
+      "inputTokens": 500,
+      "lastActivity": "2025-12-27T13:10:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 3,
+          "cacheReadTokens": 20,
+          "cost": 0.0,
+          "inputTokens": 500,
+          "missingPricing": true,
+          "modelName": "[pi] pi-mystery-1",
+          "outputTokens": 10
+        }
+      ],
+      "modelsUsed": [
+        "[pi] pi-mystery-1"
+      ],
+      "outputTokens": 10,
+      "projectPath": "--Users-dev-lab--",
+      "sessionId": "lab-tree-child",
+      "totalCost": 0.0,
+      "totalTokens": 533
+    },
+    {
+      "cacheCreationTokens": 3,
+      "cacheReadTokens": 20,
+      "firstActivity": "2025-12-27T14:00:00.000Z",
+      "inputTokens": 53,
+      "lastActivity": "2025-12-27T14:10:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 3,
+          "cacheReadTokens": 20,
+          "cost": 0.0,
+          "inputTokens": 53,
+          "missingPricing": true,
+          "modelName": "[pi] pi-mystery-1",
+          "outputTokens": 19
+        }
+      ],
+      "modelsUsed": [
+        "[pi] pi-mystery-1"
+      ],
+      "outputTokens": 19,
+      "projectPath": "--Users-dev-lab--",
+      "sessionId": "lab-tree-partial",
+      "totalCost": 0.0,
+      "totalTokens": 95
+    },
+    {
+      "cacheCreationTokens": 3,
+      "cacheReadTokens": 20,
+      "firstActivity": "2025-12-27T14:00:00.000Z",
+      "inputTokens": 53,
+      "lastActivity": "2025-12-27T14:10:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 3,
+          "cacheReadTokens": 20,
+          "cost": 0.0,
+          "inputTokens": 53,
+          "missingPricing": true,
+          "modelName": "[pi] pi-mystery-1",
+          "outputTokens": 19
+        }
+      ],
+      "modelsUsed": [
+        "[pi] pi-mystery-1"
+      ],
+      "outputTokens": 19,
+      "projectPath": "--Users-dev-lab--",
+      "sessionId": "lab-tree-partial-child",
+      "totalCost": 0.0,
+      "totalTokens": 95
+    },
+    {
+      "cacheCreationTokens": 15,
+      "cacheReadTokens": 100,
+      "firstActivity": "2025-12-27T12:00:00.000Z",
+      "inputTokens": 1050,
+      "lastActivity": "2025-12-27T12:40:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 15,
+          "cacheReadTokens": 100,
+          "cost": 0.0,
+          "inputTokens": 1050,
+          "missingPricing": true,
+          "modelName": "[pi] pi-mystery-1",
+          "outputTokens": 50
+        }
+      ],
+      "modelsUsed": [
+        "[pi] pi-mystery-1"
+      ],
+      "outputTokens": 50,
+      "projectPath": "--Users-dev-lab--",
+      "sessionId": "lab-tree-root",
+      "totalCost": 0.0,
+      "totalTokens": 1215
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "firstActivity": "2025-12-27T14:30:00.000Z",
+      "inputTokens": 1010,
+      "lastActivity": "2025-12-27T14:50:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.125,
+          "inputTokens": 1010,
+          "modelName": "[pi] gpt-5",
+          "outputTokens": 101,
+          "storedCost": 0.125
+        }
+      ],
+      "modelsUsed": [
+        "[pi] gpt-5"
+      ],
+      "outputTokens": 101,
+      "projectPath": "--Users-dev-lab--",
+      "sessionId": "lab-zero-child",
+      "totalCost": 0.125,
+      "totalTokens": 1111
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "firstActivity": "2025-12-27T14:30:00.000Z",
+      "inputTokens": 1000,
+      "lastActivity": "2025-12-27T14:30:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0022500000000000003,
+          "inputTokens": 1000,
+          "modelName": "[pi] gpt-5",
+          "outputTokens": 100
+        }
+      ],
+      "modelsUsed": [
+        "[pi] gpt-5"
+      ],
+      "outputTokens": 100,
+      "projectPath": "--Users-dev-lab--",
+      "sessionId": "lab-zero-root",
+      "totalCost": 0.0022500000000000003,
+      "totalTokens": 1100
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "firstActivity": "2026-01-02T12:00:00.000Z",
+      "inputTokens": 30,
+      "lastActivity": "2026-01-02T12:00:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00006750000000000001,
+          "inputTokens": 30,
+          "modelName": "[pi] gpt-5",
+          "outputTokens": 3
+        }
+      ],
+      "modelsUsed": [
+        "[pi] gpt-5"
+      ],
+      "outputTokens": 3,
+      "projectPath": "unknown",
+      "sessionId": "loose",
+      "totalCost": 0.00006750000000000001,
+      "totalTokens": 33
+    },
+    {
+      "cacheCreationTokens": 200,
+      "cacheReadTokens": 7000,
+      "firstActivity": "2026-01-01T13:10:00.000Z",
+      "inputTokens": 1150,
+      "lastActivity": "2026-01-02T10:30:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 7000,
+          "cost": 0.03,
+          "inputTokens": 900,
+          "modelName": "[pi] claude-haiku-4-5-20251001",
+          "outputTokens": 400,
+          "storedCost": 0.03
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0015,
+          "inputTokens": 250,
+          "modelName": "[pi] claude-sonnet-4-20250514",
+          "outputTokens": 50
+        }
+      ],
+      "modelsUsed": [
+        "[pi] claude-haiku-4-5-20251001",
+        "[pi] claude-sonnet-4-20250514"
+      ],
+      "outputTokens": 450,
+      "projectPath": "--Users-dev-alpha--",
+      "sessionId": "sess-alpha-fork",
+      "totalCost": 0.0315,
+      "totalTokens": 8800
+    },
+    {
+      "cacheCreationTokens": 400,
+      "cacheReadTokens": 15000,
+      "firstActivity": "2025-12-30T10:00:00.000Z",
+      "inputTokens": 2920,
+      "lastActivity": "2026-01-02T09:00:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.9,
+          "inputTokens": 120,
+          "modelName": "[pi] claude-opus-4-20250514",
+          "outputTokens": 30,
+          "storedCost": 0.9
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 6000,
+          "cost": 0.5,
+          "inputTokens": 800,
+          "modelName": "[pi] gpt-5",
+          "outputTokens": 300,
+          "storedCost": 0.5
+        },
+        {
+          "cacheCreationTokens": 400,
+          "cacheReadTokens": 9000,
+          "cost": 0.07,
+          "inputTokens": 1700,
+          "modelName": "[pi] claude-sonnet-4-20250514",
+          "outputTokens": 350,
+          "storedCost": 0.07
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 300,
+          "missingPricing": true,
+          "modelName": "[pi] pi-mystery-1",
+          "outputTokens": 70
+        }
+      ],
+      "modelsUsed": [
+        "[pi] claude-sonnet-4-20250514",
+        "[pi] claude-opus-4-20250514",
+        "[pi] pi-mystery-1",
+        "[pi] gpt-5"
+      ],
+      "outputTokens": 750,
+      "projectPath": "--Users-dev-alpha--",
+      "sessionId": "sess-alpha-main",
+      "totalCost": 1.4700000000000002,
+      "totalTokens": 19070
+    },
+    {
+      "cacheCreationTokens": 400,
+      "cacheReadTokens": 18000,
+      "firstActivity": "2025-12-31T23:50:00.000Z",
+      "inputTokens": 5055,
+      "lastActivity": "2026-01-02T10:20:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 400,
+          "cacheReadTokens": 14000,
+          "cost": 4.00009,
+          "inputTokens": 1840,
+          "modelName": "[pi] claude-haiku-4-5-20251001",
+          "outputTokens": 811,
+          "storedCost": 4.0
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 3000,
+          "cost": 0.0081,
+          "inputTokens": 1100,
+          "modelName": "[pi] claude-sonnet-4-20250514",
+          "outputTokens": 260
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 1000,
+          "cost": 0.006749999999999999,
+          "inputTokens": 2100,
+          "modelName": "[pi] claude-opus-4-20250514",
+          "outputTokens": 550,
+          "storedCost": 0.0
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 0,
+          "modelName": "[pi] gpt-5",
+          "outputTokens": 0
+        }
+      ],
+      "modelsUsed": [
+        "[pi] claude-haiku-4-5-20251001",
+        "[pi] claude-sonnet-4-20250514",
+        "[pi] gpt-5",
+        "[pi] claude-opus-4-20250514"
+      ],
+      "outputTokens": 1626,
+      "projectPath": "--Users-dev-beta--",
+      "sessionId": "sess-beta-legacy",
+      "totalCost": 4.01494,
+      "totalTokens": 25831
+    },
+    {
+      "cacheCreationTokens": 50,
+      "cacheReadTokens": 2000,
+      "firstActivity": "2025-12-30T08:10:00.000Z",
+      "inputTokens": 400,
+      "lastActivity": "2025-12-30T08:10:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 50,
+          "cacheReadTokens": 2000,
+          "cost": 0.01,
+          "inputTokens": 400,
+          "modelName": "[pi] claude-sonnet-4-20250514",
+          "outputTokens": 80,
+          "storedCost": 0.01
+        }
+      ],
+      "modelsUsed": [
+        "[pi] claude-sonnet-4-20250514"
+      ],
+      "outputTokens": 80,
+      "projectPath": "--Users-dev-alpha--",
+      "sessionId": "sess-beta-shared",
+      "totalCost": 0.01,
+      "totalTokens": 2530
+    },
+    {
+      "cacheCreationTokens": 50,
+      "cacheReadTokens": 2000,
+      "firstActivity": "2025-12-30T08:10:00.000Z",
+      "inputTokens": 550,
+      "lastActivity": "2025-12-30T20:10:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.2,
+          "inputTokens": 150,
+          "modelName": "[pi] claude-opus-4-20250514",
+          "outputTokens": 60,
+          "storedCost": 0.2
+        },
+        {
+          "cacheCreationTokens": 50,
+          "cacheReadTokens": 2000,
+          "cost": 0.01,
+          "inputTokens": 400,
+          "modelName": "[pi] claude-sonnet-4-20250514",
+          "outputTokens": 80,
+          "storedCost": 0.01
+        }
+      ],
+      "modelsUsed": [
+        "[pi] claude-sonnet-4-20250514",
+        "[pi] claude-opus-4-20250514"
+      ],
+      "outputTokens": 140,
+      "projectPath": "--Users-dev-beta--",
+      "sessionId": "sess-beta-shared",
+      "totalCost": 0.21000000000000002,
+      "totalTokens": 2740
+    },
+    {
+      "cacheCreationTokens": 1,
+      "cacheReadTokens": 6,
+      "firstActivity": "2025-12-31T16:00:00.000Z",
+      "inputTokens": 50,
+      "lastActivity": "2025-12-31T16:00:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 1,
+          "cacheReadTokens": 6,
+          "cost": 0.00007685,
+          "inputTokens": 50,
+          "modelName": "[pi] claude-haiku-4-5-20251001",
+          "outputTokens": 5
+        }
+      ],
+      "modelsUsed": [
+        "[pi] claude-haiku-4-5-20251001"
+      ],
+      "outputTokens": 5,
+      "projectPath": "--Users-dev-alpha--",
+      "sessionId": "session",
+      "totalCost": 0.00007685,
+      "totalTokens": 62
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 2235,
+    "cacheReadTokens": 44449,
+    "inputTokens": 15567,
+    "outputTokens": 3596,
+    "totalCost": 9.11383435,
+    "totalTokens": 66597,
+    "unpricedModels": [
+      "[pi] pi-mystery-1",
+      "[pi] pi-mystery-2"
+    ]
+  }
+}
+
+--- stderr ---

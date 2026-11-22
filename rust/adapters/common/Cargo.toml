@@ -4,10 +4,21 @@ version.workspace = true
 edition.workspace = true
 publish.workspace = true
 
+[features]
+testing = []
+sqlite = ["dep:sqlite"]
+
 [dependencies]
 ccusage-core.workspace = true
+ccusage-zstd.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+simdutf8.workspace = true
+sqlite = { workspace = true, optional = true }
 
 [dev-dependencies]
 ccusage-test-support.workspace = true
+zstd.workspace = true
+
+[lints]
+workspace = true

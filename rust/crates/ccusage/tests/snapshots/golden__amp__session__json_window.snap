@@ -1,0 +1,89 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage amp session --offline --json --since 20251231 --until 20260101
+---
+exit: 0
+--- stdout ---
+{
+  "sessions": [
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 5000,
+      "credits": 1.7,
+      "inputTokens": 1700,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 5000,
+          "cost": 0.005375,
+          "inputTokens": 1400,
+          "modelName": "gpt-5",
+          "outputTokens": 300
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 300,
+          "missingPricing": true,
+          "modelName": "amp-mystery-1",
+          "outputTokens": 70
+        }
+      ],
+      "modelsUsed": [
+        "gpt-5",
+        "amp-mystery-1"
+      ],
+      "outputTokens": 370,
+      "sessionId": "T-aaaaaaaa-0000-4000-8000-000000000001",
+      "totalCost": 0.005375,
+      "totalTokens": 7415
+    },
+    {
+      "cacheCreationTokens": 200,
+      "cacheReadTokens": 10000,
+      "credits": 2.0,
+      "inputTokens": 1500,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 3000,
+          "cost": 0.0042,
+          "inputTokens": 600,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 100
+        },
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 7000,
+          "cost": 0.00385,
+          "inputTokens": 900,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 400
+        }
+      ],
+      "modelsUsed": [
+        "claude-haiku-4-5-20251001",
+        "claude-sonnet-4-20250514"
+      ],
+      "outputTokens": 500,
+      "sessionId": "T-bbbbbbbb-0000-4000-8000-000000000002",
+      "totalCost": 0.00805,
+      "totalTokens": 12200
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 200,
+    "cacheReadTokens": 15000,
+    "credits": 3.7,
+    "inputTokens": 3200,
+    "outputTokens": 870,
+    "totalCost": 0.013425,
+    "totalTokens": 19615,
+    "unpricedModels": [
+      "amp-mystery-1"
+    ]
+  }
+}
+
+--- stderr ---

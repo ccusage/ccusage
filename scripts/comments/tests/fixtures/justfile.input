@@ -1,0 +1,8 @@
+# Unattached prose.
+
+# Recipe documentation.
+[script('bash')]
+build:
+    echo "# string"
+    # Internal recipe note.
+    echo .#package

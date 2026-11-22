@@ -1,0 +1,89 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage kilo session --offline --json --since 20251231 --until 20260101
+---
+exit: 0
+--- stdout ---
+{
+  "sessions": [
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 2500,
+      "inputTokens": 1330,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.2,
+          "inputTokens": 330,
+          "missingPricing": true,
+          "modelName": "kilo-mystery-1",
+          "outputTokens": 77,
+          "storedCost": 0.2
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 2500,
+          "cost": 0.0330125,
+          "inputTokens": 1000,
+          "modelName": "gpt-5",
+          "outputTokens": 210,
+          "storedCost": 0.03
+        }
+      ],
+      "modelsUsed": [
+        "gpt-5",
+        "kilo-mystery-1"
+      ],
+      "outputTokens": 287,
+      "sessionId": "ses-alpha",
+      "totalCost": 0.2330125,
+      "totalTokens": 4542
+    },
+    {
+      "cacheCreationTokens": 200,
+      "cacheReadTokens": 10000,
+      "inputTokens": 1500,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 7000,
+          "cost": 2.0,
+          "inputTokens": 900,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 400,
+          "storedCost": 2.0
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 3000,
+          "cost": 0.0042,
+          "inputTokens": 600,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 100
+        }
+      ],
+      "modelsUsed": [
+        "claude-haiku-4-5-20251001",
+        "claude-sonnet-4-20250514"
+      ],
+      "outputTokens": 500,
+      "sessionId": "ses-beta",
+      "totalCost": 2.0042,
+      "totalTokens": 12200
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 200,
+    "cacheReadTokens": 12500,
+    "inputTokens": 2830,
+    "outputTokens": 787,
+    "totalCost": 2.2372125,
+    "totalTokens": 16742,
+    "unpricedModels": [
+      "kilo-mystery-1"
+    ]
+  }
+}
+
+--- stderr ---

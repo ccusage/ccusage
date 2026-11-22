@@ -1,0 +1,85 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage claude weekly --offline --json --since 20251231 --until 20260101
+---
+exit: 0
+--- stdout ---
+{
+  "totals": {
+    "cacheCreationTokens": 1550,
+    "cacheReadTokens": 22450,
+    "inputTokens": 5407,
+    "outputTokens": 1639,
+    "totalCost": 0.6297284999999999,
+    "totalTokens": 31046,
+    "unpricedModels": [
+      "mystery-model-9000"
+    ]
+  },
+  "weekly": [
+    {
+      "cacheCreationTokens": 1550,
+      "cacheReadTokens": 22450,
+      "inputTokens": 5407,
+      "modelBreakdowns": [
+        {
+          "cacheCreation1hTokens": 1000,
+          "cacheCreationTokens": 1350,
+          "cacheReadTokens": 14000,
+          "cost": 0.5384785,
+          "inputTokens": 1877,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 784,
+          "storedCost": 0.52
+        },
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 7500,
+          "cost": 0.06675,
+          "inputTokens": 1150,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 460
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0175,
+          "inputTokens": 2000,
+          "modelName": "claude-opus-5",
+          "outputTokens": 300
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 150,
+          "cost": 0.007,
+          "inputTokens": 80,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 25,
+          "storedCost": 0.007
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 800,
+          "cost": 0.0,
+          "inputTokens": 300,
+          "missingPricing": true,
+          "modelName": "mystery-model-9000",
+          "outputTokens": 70
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514",
+        "claude-haiku-4-5-20251001",
+        "claude-opus-4-20250514",
+        "mystery-model-9000",
+        "claude-opus-5"
+      ],
+      "outputTokens": 1639,
+      "totalCost": 0.6297284999999999,
+      "totalTokens": 31046,
+      "week": "2025-12-28"
+    }
+  ]
+}
+
+--- stderr ---

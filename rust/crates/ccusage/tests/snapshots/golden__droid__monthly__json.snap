@@ -1,0 +1,133 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage droid monthly --offline --json
+---
+exit: 0
+--- stdout ---
+{
+  "monthly": [
+    {
+      "cacheCreationTokens": 320,
+      "cacheReadTokens": 7000,
+      "inputTokens": 2570,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 300,
+          "cacheReadTokens": 4000,
+          "cost": 0.046125,
+          "inputTokens": 1000,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 200
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 2500,
+          "cost": 0.0029249999999999996,
+          "inputTokens": 770,
+          "modelName": "gpt-5",
+          "outputTokens": 165
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0014000000000000002,
+          "inputTokens": 400,
+          "modelName": "gemini-2-5-pro",
+          "outputTokens": 90
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0010500000000000002,
+          "inputTokens": 100,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 50
+        },
+        {
+          "cacheCreationTokens": 20,
+          "cacheReadTokens": 500,
+          "cost": 0.0,
+          "inputTokens": 300,
+          "missingPricing": true,
+          "modelName": "droid-mystery-1",
+          "outputTokens": 70
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514",
+        "claude-opus-4-20250514",
+        "gemini-2-5-pro",
+        "gpt-5",
+        "droid-mystery-1"
+      ],
+      "month": "2025-12",
+      "outputTokens": 575,
+      "totalCost": 0.051500000000000004,
+      "totalTokens": 10535
+    },
+    {
+      "cacheCreationTokens": 200,
+      "cacheReadTokens": 13000,
+      "inputTokens": 2840,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 6000,
+          "cost": 0.015300000000000001,
+          "inputTokens": 1900,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 520
+        },
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 7000,
+          "cost": 0.00385,
+          "inputTokens": 900,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 400
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 40,
+          "missingPricing": true,
+          "modelName": "grok-unknown",
+          "outputTokens": 10
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 0,
+          "modelName": "gpt-unknown",
+          "outputTokens": 0
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514",
+        "grok-unknown",
+        "gpt-unknown",
+        "claude-haiku-4-5-20251001"
+      ],
+      "month": "2026-01",
+      "outputTokens": 930,
+      "totalCost": 0.01915,
+      "totalTokens": 17345
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 520,
+    "cacheReadTokens": 20000,
+    "inputTokens": 5410,
+    "outputTokens": 1505,
+    "totalCost": 0.07065,
+    "totalTokens": 27880,
+    "unpricedModels": [
+      "droid-mystery-1",
+      "grok-unknown"
+    ]
+  }
+}
+
+--- stderr ---

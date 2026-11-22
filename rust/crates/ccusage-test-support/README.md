@@ -1,32 +1,9 @@
 # ccusage-test-support
 
-Test-only helpers: filesystem fixtures and environment-variable guards.
-
-## Owns
-
-- `Fixture` and the `fs_fixture!` macro — build a temporary directory tree from a
-  literal file map, so loader tests read real files instead of mocks.
-- `EnvVarGuard` and `EnvVarsGuard` — set the data-directory variables an adapter
-  reads and restore them when the test ends.
-- `zcode::create_fixture` — create the representative ZCode SQLite schema and
-  usage rows shared by adapter and unified report tests.
-
-Every crate that has tests uses this as a dev-dependency; nothing depends on it
-at runtime.
-
-## Public surface
-
-- `EnvVarGuard`
-- `EnvVarsGuard`
-- `Fixture`
-- `zcode::create_fixture`
-
-## Depends on
-
-- `assert_fs`
-- `jiff`
-- `sqlite`
+Use `ccusage-test-support` as a dev-dependency. See the `testing` skill for
+fixtures, environment guards, and pricing setup.
 
 ## Build layer
 
-Outside the Crane artifact layers: they build only the shipped binary's dependency graph, and this crate is a dev-dependency only, so it never reaches that binary. The test, clippy and hawk derivations compile it themselves.
+Compiled in the test and Clippy derivations, outside the cached layers for the
+shipped binary.

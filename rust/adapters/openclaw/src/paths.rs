@@ -1,75 +1,40 @@
-use std::{
-    collections::HashSet,
-    env, fs,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
-use crate::Result;
+use ccusage_adapter_common::roots::{self, RootsEnv};
+
+use ccusage_adapter_common::collect_files_matching;
+use ccusage_core::Diagnostics;
 
 const OPENCLAW_DIR_ENV: &str = "OPENCLAW_DIR";
 
 pub(super) fn paths(custom_path: Option<&str>) -> Vec<PathBuf> {
-    if let Some(custom_path) = custom_path.filter(|path| !path.trim().is_empty()) {
-        return existing_path_list(custom_path);
+    if let Some(paths) = custom_path.and_then(roots::from_list) {
+        return paths;
     }
-    if let Ok(env_paths) = env::var(OPENCLAW_DIR_ENV)
-        && !env_paths.trim().is_empty()
-    {
-        return existing_path_list(&env_paths);
-    }
-    let Some(home) = crate::home::home_dir() else {
-        return Vec::new();
-    };
-    [
-        home.join(".openclaw"),
-        home.join(".clawdbot"),
-        home.join(".moltbot"),
-        home.join(".moldbot"),
-    ]
-    .into_iter()
-    .filter(|path| path.is_dir())
-    .collect()
+    roots::resolve(RootsEnv::List(OPENCLAW_DIR_ENV), || {
+        crate::cli::home::home_dir()
+            .into_iter()
+            .flat_map(|home| {
+                [".openclaw", ".clawdbot", ".moltbot", ".moldbot"].map(|path| home.join(path))
+            })
+            .collect()
+    })
 }
 
-fn existing_path_list(raw: &str) -> Vec<PathBuf> {
-    let mut seen = HashSet::new();
-    raw.split(',')
-        .map(str::trim)
-        .filter(|path| !path.is_empty())
-        .map(PathBuf::from)
-        .filter(|path| path.is_dir() && seen.insert(path.clone()))
-        .collect()
-}
-
-pub(super) fn collect_session_files(root: &Path) -> Result<Vec<PathBuf>> {
+pub(super) fn collect_session_files(root: &Path, diagnostics: &Diagnostics) -> Vec<PathBuf> {
     let mut files = Vec::new();
-    collect_session_files_inner(root, &mut files)?;
-    files.sort();
-    Ok(files)
-}
-
-fn collect_session_files_inner(path: &Path, files: &mut Vec<PathBuf>) -> Result<()> {
-    for entry in fs::read_dir(path)? {
-        let entry = entry?;
-        let file_type = entry.file_type()?;
-        let path = entry.path();
-        if file_type.is_symlink() {
-            continue;
-        }
-        if file_type.is_dir() {
-            collect_session_files_inner(&path, files)?;
-            continue;
-        }
-        if file_type.is_file()
-            && path
-                .file_name()
+    collect_files_matching(
+        root,
+        &|path| {
+            path.file_name()
                 .and_then(|name| name.to_str())
                 .is_some_and(is_openclaw_session_file)
-        {
-            files.push(path);
-        }
-    }
-    Ok(())
+        },
+        &mut files,
+        diagnostics,
+    );
+    files.sort();
+    files
 }
 
 fn is_openclaw_session_file(name: &str) -> bool {
@@ -84,6 +49,11 @@ fn is_openclaw_session_file(name: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
+    use ccusage_core::{Diagnostics, SkipKind, cli::SharedArgs};
+    use ccusage_test_support::{fs_fixture, read_fixture_dir};
+
     use super::*;
 
     #[test]
@@ -93,5 +63,62 @@ mod tests {
             "a.jsonl.reset.2026-03-20T06-34-44.520Z"
         ));
         assert!(!is_openclaw_session_file("a.json"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn keeps_sibling_files_when_a_session_subdirectory_is_unreadable() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let fixture = fs_fixture!({
+            "blocked/hidden.jsonl": "{}",
+            "healthy/session.jsonl": "{}",
+        });
+        let blocked = fixture.path("blocked");
+        fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).unwrap();
+        let permission_denied = read_fixture_dir(&blocked).is_err();
+
+        let diagnostics = Diagnostics::new("openclaw");
+        let files = collect_session_files(fixture.root(), &diagnostics);
+
+        fs::set_permissions(&blocked, fs::Permissions::from_mode(0o700)).unwrap();
+
+        if !permission_denied {
+            return;
+        }
+        assert_eq!(files, [fixture.path("healthy/session.jsonl")]);
+        assert_eq!(diagnostics.skipped(SkipKind::Unreadable), 1);
+        let warnings = diagnostics
+            .warnings(&SharedArgs {
+                debug: true,
+                ..SharedArgs::default()
+            })
+            .join("\n");
+        assert!(warnings.contains(blocked.to_str().unwrap()));
+        assert!(warnings.contains("cannot read directory"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn follows_symlinked_session_directories() {
+        use std::os::unix::fs::symlink;
+
+        let fixture = fs_fixture!({
+            "sessions/real/session.jsonl": "{}",
+        });
+        let external = fs_fixture!({
+            "external/linked.jsonl": "{}",
+        });
+        symlink(external.path("external"), fixture.path("sessions/linked")).unwrap();
+
+        let files = collect_session_files(&fixture.path("sessions"), &Diagnostics::new("openclaw"));
+
+        assert_eq!(
+            files,
+            [
+                fixture.path("sessions/linked/linked.jsonl"),
+                fixture.path("sessions/real/session.jsonl"),
+            ]
+        );
     }
 }

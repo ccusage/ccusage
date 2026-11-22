@@ -1,0 +1,29 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage copilot monthly --offline
+---
+exit: 0
+--- stdout ---
+┌──────────┬─────────────────────┬───────────┬───────────┬───────────────┬─────────────┬───────────────┬─────────────┐
+│ Month    │ Models              │     Input │    Output │  Cache Create │  Cache Read │  Total Tokens │  Cost (USD) │
+├──────────┼─────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2025-12  │ - copilot-mystery-1 │     7,270 │     1,825 │           600 │       3,200 │        12,915 │       $1.00 │
+│          │ - gpt-5             │           │           │               │             │               │             │
+│          │ - haiku-4-5         │           │           │               │             │               │             │
+│          │ - opus-4            │           │           │               │             │               │             │
+│          │ - sonnet-4          │           │           │               │             │               │             │
+│          │ - unknown           │           │           │               │             │               │             │
+├──────────┼─────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2026-01  │ - copilot-mystery-1 │     3,820 │       486 │             0 │         600 │         5,473 │       $0.40 │
+│          │ - gpt-5             │           │           │               │             │               │             │
+│          │ - haiku-4-5         │           │           │               │             │               │             │
+│          │ - opus-4            │           │           │               │             │               │             │
+│          │ - sonnet-4          │           │           │               │             │               │             │
+│          │ - unknown           │           │           │               │             │               │             │
+├──────────┼─────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ Total    │                     │    11,090 │     2,311 │           600 │       3,800 │        18,388 │       $1.40 │
+└──────────┴─────────────────────┴───────────┴───────────┴───────────────┴─────────────┴───────────────┴─────────────┘
+
+--- stderr ---
+WARN  Missing embedded pricing for copilot-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for unknown; cost excludes this model. Run without --offline or update ccusage after pricing is added.

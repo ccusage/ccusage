@@ -1,0 +1,136 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage kilo monthly --offline --json --timezone Asia/Tokyo
+---
+exit: 0
+--- stdout ---
+{
+  "monthly": [
+    {
+      "cacheCreationTokens": 300,
+      "cacheReadTokens": 4000,
+      "inputTokens": 1393,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 300,
+          "cacheReadTokens": 4000,
+          "cost": 0.510405,
+          "inputTokens": 1160,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 265,
+          "storedCost": 0.51
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.03,
+          "inputTokens": 200,
+          "modelName": "gpt-5",
+          "outputTokens": 40,
+          "storedCost": 0.03
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00009300000000000001,
+          "inputTokens": 33,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 12
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514",
+        "claude-haiku-4-5-20251001",
+        "gpt-5"
+      ],
+      "month": "2025-12",
+      "outputTokens": 317,
+      "totalCost": 0.540498,
+      "totalTokens": 6060
+    },
+    {
+      "cacheCreationTokens": 250,
+      "cacheReadTokens": 18500,
+      "inputTokens": 3970,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 7000,
+          "cost": 2.0,
+          "inputTokens": 900,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 400,
+          "storedCost": 2.0
+        },
+        {
+          "cacheCreationTokens": 50,
+          "cacheReadTokens": 6000,
+          "cost": 1.25,
+          "inputTokens": 800,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 300,
+          "storedCost": 1.25
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.2,
+          "inputTokens": 330,
+          "missingPricing": true,
+          "modelName": "kilo-mystery-1",
+          "outputTokens": 77,
+          "storedCost": 0.2
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 3000,
+          "cost": 0.0042,
+          "inputTokens": 600,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 100
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 2500,
+          "cost": 0.0031624999999999995,
+          "inputTokens": 840,
+          "modelName": "gpt-5",
+          "outputTokens": 180
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.003,
+          "inputTokens": 500,
+          "modelName": "anthropic/claude-sonnet-4",
+          "outputTokens": 100
+        }
+      ],
+      "modelsUsed": [
+        "gpt-5",
+        "claude-haiku-4-5-20251001",
+        "claude-sonnet-4-20250514",
+        "kilo-mystery-1",
+        "claude-opus-4-20250514",
+        "anthropic/claude-sonnet-4"
+      ],
+      "month": "2026-01",
+      "outputTokens": 1157,
+      "totalCost": 3.4603625000000005,
+      "totalTokens": 24302
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 550,
+    "cacheReadTokens": 22500,
+    "inputTokens": 5363,
+    "outputTokens": 1474,
+    "totalCost": 4.000860500000001,
+    "totalTokens": 30362,
+    "unpricedModels": [
+      "kilo-mystery-1"
+    ]
+  }
+}
+
+--- stderr ---

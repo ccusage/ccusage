@@ -49,28 +49,27 @@ ccusage codex daily
 ccusage opencode weekly
 ccusage amp session
 ccusage pi monthly
+ccusage cline daily
 ccusage kilo daily
 ccusage kimi daily
 ccusage qwen daily
+ccusage dsh daily
 ```
 
 ## Your First Report
 
-When you run ccusage for the first time, you'll see a table showing detected coding CLI usage by date:
+When you run ccusage for the first time, you'll see a title box naming the detected sources, then a table of usage by date. Each date has an `All` row followed by one row per source. This excerpt of the table, taken from the test fixtures, keeps one date and the Total row:
 
 ```text
-╭──────────────────────────────────────────╮
-│                                          │
-│  Coding (Agent) CLI Usage Report - Daily │
-│                                          │
-╰──────────────────────────────────────────╯
-
-┌────────────┬────────┬────────────────┬────────┬────────┬────────────┐
-│ Date       │ Agent  │ Models         │ Input  │ Output │ Cost (USD) │
-├────────────┼────────┼────────────────┼────────┼────────┼────────────┤
-│ 2026-05-16 │ Claude │ • sonnet-4-5   │  1,234 │ 15,678 │     $12.34 │
-│ 2026-05-16 │ Codex  │ • gpt-5.5      │    890 │ 12,345 │     $18.92 │
-└────────────┴────────┴────────────────┴────────┴────────┴────────────┘
+┌────────────┬──────────────────────┬───────────────────────────┬────────────┬───────────┬───────────────┬─────────────┬───────────────┬─────────────┐
+│ Date       │ Agent                │ Models                    │      Input │    Output │  Cache Create │  Cache Read │  Total Tokens │  Cost (USD) │
+├────────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2026-04-21 │ All                  │                           │      1,000 │       500 │             0 │       2,000 │         3,500 │       $0.00 │
+├────────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│            │ - Kimi               │ - kimi-for-coding         │      1,000 │       500 │             0 │       2,000 │         3,500 │       $0.00 │
+├────────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ Total      │                      │                           │  1,347,424 │    58,720 │        17,765 │   1,309,967 │     2,737,293 │      $28.15 │
+└────────────┴──────────────────────┴───────────────────────────┴────────────┴───────────┴───────────────┴─────────────┴───────────────┴─────────────┘
 ```
 
 ## Understanding the Output
@@ -86,10 +85,11 @@ When you run ccusage for the first time, you'll see a table showing detected cod
 
 ### Cache Tokens
 
-If you have a wide terminal, you'll also see cache token columns:
+The cache columns and Total Tokens are dropped in the compact layout that narrow terminals and `--compact` use:
 
 - **Cache Create**: Tokens used to create cache entries
 - **Cache Read**: Tokens read from cache (typically cheaper)
+- **Total Tokens**: Input, output, cache tokens, and any extra tokens reported separately by the source, such as reasoning tokens
 
 ## Next Steps
 
@@ -101,6 +101,8 @@ Now that you have your first unified view, explore these features:
 4. **[Session Usage](/guide/session-reports)** - Analyze individual conversations
 5. **[Configuration](/guide/configuration)** - Customize ccusage behavior
 6. **[Claude Code](/guide/claude/)** - Claude Code-specific setup and features
+7. **[Cline](/guide/cline/)** - Cline extension and CLI data locations
+8. **[DeepSeek Harness](/guide/dsh/)** - DeepSeek Harness session log locations
 
 ## Common Use Cases
 
@@ -124,6 +126,7 @@ ccusage zcode daily
 ccusage claude daily --mode display
 ccusage codex daily --speed fast
 ccusage opencode weekly
+ccusage cline weekly
 ```
 
 ### Analyze Sessions
@@ -169,6 +172,7 @@ If ccusage shows no data, check:
    - Amp: `${AMP_DATA_DIR:-~/.local/share/amp}`
    - Droid: `${DROID_SESSIONS_DIR:-~/.factory/sessions}`
    - Codebuff: `${CODEBUFF_DATA_DIR:-~/.config/manicode}`
+   - Cline: `~/.cline/data/sessions/` and editor `globalStorage/saoudrizwan.claude-dev/tasks/`
    - Hermes Agent: `${HERMES_HOME:-~/.hermes}/state.db`
    - pi-agent: `${PI_AGENT_DIR:-~/.pi/agent/sessions}`
    - Goose: standard Goose data roots or `GOOSE_PATH_ROOT`
@@ -180,6 +184,7 @@ If ccusage shows no data, check:
    - Antigravity: `${ANTIGRAVITY_DATA_DIR:-~/.gemini/antigravity*}` or `~/.config/antigravity`
    - Grok Build CLI: `${GROK_HOME:-~/.grok}`
    - ZCode: `${ZCODE_HOME:-~/.zcode}/cli/db/db.sqlite`
+   - DeepSeek Harness: `${DSH_HOME:-~/.dsh}/sessions/`
 
 ### Custom Data Directory
 
@@ -192,6 +197,7 @@ export OPENCODE_DATA_DIR="/path/to/opencode"
 export AMP_DATA_DIR="/path/to/amp"
 export DROID_SESSIONS_DIR="/path/to/factory/sessions"
 export CODEBUFF_DATA_DIR="/path/to/manicode"
+export CLINE_DATA_DIR="/path/to/cline,/path/to/Code/User/globalStorage/saoudrizwan.claude-dev"
 export HERMES_HOME="/path/to/hermes"
 export PI_AGENT_DIR="/path/to/pi/sessions"
 export GOOSE_PATH_ROOT="/path/to/goose"
@@ -204,9 +210,10 @@ export ANTIGRAVITY_DATA_DIR="/path/to/antigravity"
 export COPILOT_OTEL_FILE_EXPORTER_PATH="/path/to/copilot-otel.jsonl"
 export GROK_HOME="/path/to/grok-home"
 export ZCODE_HOME="/path/to/zcode-home"
+export DSH_HOME="/path/to/dsh-home"
 ```
 
-Directory variables can contain comma-separated directories, except `COPILOT_HOME` and `GROK_HOME`, which take a single root. `COPILOT_OTEL_FILE_EXPORTER_PATH` points to one JSONL file, and `ZCODE_HOME` supports multiple roots and deduplicates them:
+Directory variables can contain comma-separated directories, except `COPILOT_HOME` and `GROK_HOME`, which take a single root. `COPILOT_OTEL_FILE_EXPORTER_PATH` points to one JSONL file, and `ZCODE_HOME` and `DSH_HOME` support multiple roots and deduplicate them:
 
 ```bash
 export CODEX_HOME="/path/to/codex,/archive/codex,/path/to/codex-exec-jsonl"
@@ -214,6 +221,7 @@ export OPENCODE_DATA_DIR="/path/to/opencode,/archive/opencode"
 export AMP_DATA_DIR="/path/to/amp,/archive/amp"
 export DROID_SESSIONS_DIR="/path/to/factory/sessions,/archive/factory/sessions"
 export CODEBUFF_DATA_DIR="/path/to/manicode,/archive/manicode"
+export CLINE_DATA_DIR="/path/to/cline,/archive/cline"
 export HERMES_HOME="/path/to/hermes,/archive/hermes"
 export PI_AGENT_DIR="/path/to/pi/sessions,/archive/pi/sessions"
 export GOOSE_PATH_ROOT="/path/to/goose,/archive/goose"
@@ -223,6 +231,7 @@ export KIMI_DATA_DIR="/path/to/kimi,/archive/kimi"
 export QWEN_DATA_DIR="/path/to/qwen,/archive/qwen"
 export ANTIGRAVITY_DATA_DIR="/path/to/antigravity,/archive/antigravity"
 export ZCODE_HOME="/path/to/zcode,/archive/zcode"
+export DSH_HOME="/path/to/dsh,/archive/dsh"
 ```
 
 ## Getting Help

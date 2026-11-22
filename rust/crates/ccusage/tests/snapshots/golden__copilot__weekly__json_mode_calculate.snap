@@ -1,0 +1,117 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage copilot weekly --offline --json --mode calculate
+---
+exit: 0
+--- stdout ---
+{
+  "totals": {
+    "cacheCreationTokens": 600,
+    "cacheReadTokens": 3800,
+    "inputTokens": 11090,
+    "outputTokens": 2311,
+    "totalCost": 0.0866075,
+    "totalTokens": 18388,
+    "unpricedModels": [
+      "copilot-mystery-1",
+      "unknown"
+    ]
+  },
+  "weekly": [
+    {
+      "cacheCreationTokens": 100,
+      "cacheReadTokens": 200,
+      "inputTokens": 300,
+      "messageCount": 4,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 100,
+          "cacheReadTokens": 200,
+          "cost": 0.017925000000000003,
+          "inputTokens": 300,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 150
+        }
+      ],
+      "modelsUsed": [
+        "claude-opus-4-20250514"
+      ],
+      "outputTokens": 150,
+      "totalCost": 0.017925000000000003,
+      "totalTokens": 750,
+      "week": "2025-12-22"
+    },
+    {
+      "cacheCreationTokens": 500,
+      "cacheReadTokens": 3600,
+      "inputTokens": 10790,
+      "messageCount": 28,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 500,
+          "cacheReadTokens": 2400,
+          "cost": 0.030720000000000004,
+          "inputTokens": 3800,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 1090
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.024749999999999998,
+          "inputTokens": 1100,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 110
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 1100,
+          "cost": 0.0107525,
+          "inputTokens": 3540,
+          "modelName": "gpt-5",
+          "outputTokens": 619
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 100,
+          "cost": 0.00246,
+          "inputTokens": 1410,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 208
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 40,
+          "missingPricing": true,
+          "modelName": "unknown",
+          "outputTokens": 4
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 900,
+          "missingPricing": true,
+          "modelName": "copilot-mystery-1",
+          "outputTokens": 130
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514",
+        "unknown",
+        "claude-haiku-4-5-20251001",
+        "gpt-5",
+        "copilot-mystery-1",
+        "claude-opus-4-20250514"
+      ],
+      "outputTokens": 2161,
+      "totalCost": 0.06868250000000001,
+      "totalTokens": 17638,
+      "week": "2025-12-29"
+    }
+  ]
+}
+
+--- stderr ---

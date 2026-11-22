@@ -1,0 +1,104 @@
+---
+source: adapters/dsh/src/report.rs
+expression: "ccusage_adapter_common::source::EntrySource::report_json(&crate::SOURCE,\n&rows, kind)"
+---
+{
+  "daily": [
+    {
+      "cacheCreationTokens": 600,
+      "cacheReadTokens": 17000,
+      "date": "2026-10-14",
+      "inputTokens": 1650,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 600,
+          "cacheReadTokens": 17000,
+          "cost": 0.0042526000000000005,
+          "inputTokens": 1650,
+          "modelName": "deepseek-v4-pro",
+          "outputTokens": 420
+        }
+      ],
+      "modelsUsed": [
+        "deepseek-v4-pro"
+      ],
+      "outputTokens": 420,
+      "totalCost": 0.0042526000000000005,
+      "totalTokens": 19670
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "date": "2026-10-15",
+      "inputTokens": 19000,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0033299999999999996,
+          "inputTokens": 19000,
+          "modelName": "deepseek-flash",
+          "outputTokens": 800
+        }
+      ],
+      "modelsUsed": [
+        "deepseek-flash"
+      ],
+      "outputTokens": 800,
+      "totalCost": 0.0033299999999999996,
+      "totalTokens": 19800
+    },
+    {
+      "cacheCreationTokens": 2000,
+      "cacheReadTokens": 0,
+      "date": "2026-10-20",
+      "inputTokens": 3000,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 2000,
+          "cacheReadTokens": 0,
+          "cost": 0.024,
+          "inputTokens": 3000,
+          "modelName": "claude-sonnet-4-5",
+          "outputTokens": 500
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-5"
+      ],
+      "outputTokens": 500,
+      "totalCost": 0.024,
+      "totalTokens": 5500
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 5000,
+      "date": "2026-10-27",
+      "inputTokens": 200,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 5000,
+          "cost": 0.00285,
+          "inputTokens": 200,
+          "modelName": "claude-sonnet-4-5",
+          "outputTokens": 50
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-5"
+      ],
+      "outputTokens": 50,
+      "totalCost": 0.00285,
+      "totalTokens": 5250
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 2600,
+    "cacheReadTokens": 22000,
+    "inputTokens": 23850,
+    "outputTokens": 1770,
+    "totalCost": 0.0344326,
+    "totalTokens": 50220
+  }
+}

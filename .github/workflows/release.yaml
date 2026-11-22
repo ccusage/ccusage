@@ -4,9 +4,6 @@ on:
   push:
     branches:
       - main
-  # Toggling tagpr:minor / tagpr:major labels on the release PR should update
-  # its proposed version right away, instead of waiting for the next push to
-  # main to make tagpr recompute it.
   pull_request:
     types:
       - labeled
@@ -15,10 +12,12 @@ on:
 
 concurrency: tagpr
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   tagpr:
-    # Label events only matter on tagpr's own release PR; skip the rest so
-    # ordinary PR labeling doesn't spend runner time.
     if: github.event_name != 'pull_request' || startsWith(github.head_ref, 'tagpr-from-')
     runs-on: blacksmith-32vcpu-ubuntu-2404
     timeout-minutes: 15
@@ -30,25 +29,19 @@ jobs:
       tag: ${{ steps.tagpr.outputs.tag }}
       pull_request: ${{ steps.tagpr.outputs.pull_request }}
     steps:
-      # persist-credentials stays on (default) so tagpr can push the release PR and tag
-      # ref: main because on pull_request events the default checkout is the
-      # PR merge ref, while tagpr always operates on the release branch.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: main
           fetch-depth: 0
       - id: tagpr
-        uses: Songmu/tagpr@1fcd7292d1fe8ea9a8313eef46b8d80b7a15d227 # v1.21.3
+        uses: Songmu/tagpr@047aec4b6c0ce166f52958b5a97f5a3d927fd65b # v1.22.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # pull_request runs on the release PR need approval because
-  # github-actions[bot] counts as an external contributor; workflow_dispatch
-  # does not.
   ci:
     needs: tagpr
     if: needs.tagpr.outputs.tag == '' && needs.tagpr.outputs.pull_request != ''
-    runs-on: ubuntu-slim
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 5
     permissions:
       actions: write
@@ -57,17 +50,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           HEAD_REF: ${{ fromJSON(needs.tagpr.outputs.pull_request).head.ref }}
-        run: gh workflow run ci.yaml --repo "$GITHUB_REPOSITORY" --ref "$HEAD_REF"
+        run: |
+          gh workflow run ci.yaml --repo "$GITHUB_REPOSITORY" --ref "$HEAD_REF"
+          gh workflow run check-pr-title.yaml --repo "$GITHUB_REPOSITORY" --ref "$HEAD_REF"
 
-  # The release jobs below run in this workflow instead of a tag-triggered one
-  # because tags pushed with GITHUB_TOKEN do not trigger `on: push: tags`
-  # workflows. They run only when tagpr just tagged a release-PR merge, and
-  # check out that tag explicitly. To retry a failed release, re-run only the
-  # failed jobs: a full re-run finds no new tag and skips everything.
   build-native-packages:
     name: ${{ matrix.name }}
     needs: tagpr
     if: needs.tagpr.outputs.tag != ''
+    permissions:
+      actions: read
+      contents: read
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
@@ -110,10 +103,6 @@ jobs:
         with:
           ref: ${{ needs.tagpr.outputs.tag }}
           persist-credentials: false
-      # Linux mounts the sticky disk CI commits on every push to main. Saving
-      # here would only race those commits on Linux, and on macOS the release's
-      # own cache entries are evicted long before the next release, while the
-      # save delays the npm job.
       - uses: ./.github/actions/build-linux-native-package
         if: matrix.platform == 'linux'
         with:
@@ -130,9 +119,6 @@ jobs:
           cache-scope: ${{ matrix.name }}
           save-nix-cache: false
           telemetry-enabled: 'true'
-      # CI saves the x64 Cargo cache on pushes to main. Nothing in CI builds
-      # Windows arm64, so its leg here is the only writer of its cache; it saves
-      # only when the dependency key changes.
       - uses: ./.github/actions/build-windows-native-package
         if: matrix.platform == 'win32'
         with:
@@ -149,6 +135,7 @@ jobs:
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 45
     permissions:
+      actions: read
       contents: read
       id-token: write
     steps:
@@ -163,9 +150,6 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
           node-version: lts/*
           package-manager-cache: false
-      # node comes from setup-node above (needed for the npm registry auth);
-      # Nushell package checks bring Nu through their Nix shebangs. `publint` is
-      # the flake's own pinned build, invoked by every package's prepack script.
       - run: nix profile install --inputs-from . .#pnpm .#publint
       - run: pnpm install --frozen-lockfile
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -178,7 +162,13 @@ jobs:
           for archive in "$RUNNER_TEMP"/native-packages/*.tar; do
             tar -xf "$archive"
           done
-      - run: pnpm --filter='./apps/ccusage' --filter='./packages/ccusage-*' publish --provenance --no-git-checks --access public
+      - name: Publish native packages
+        run: pnpm --recursive --filter='./packages/ccusage-*' publish --provenance --no-git-checks --access public
+      - name: Wait for native package registry availability
+        run: .github/scripts/npm-registry-gate.nu
+        timeout-minutes: 20
+      - name: Publish wrapper
+        run: pnpm --recursive --filter='./apps/ccusage' publish --provenance --no-git-checks --access public
 
   release:
     needs:
@@ -187,10 +177,9 @@ jobs:
     if: needs.tagpr.outputs.tag != ''
     runs-on: blacksmith-32vcpu-ubuntu-2404
     permissions:
+      actions: read
       contents: write
     steps:
-      # changelogithub resolves the release tag with `git tag --points-at HEAD`,
-      # so checking out the tag is what makes it pick the right release
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.tagpr.outputs.tag }}

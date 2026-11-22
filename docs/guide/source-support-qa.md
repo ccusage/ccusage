@@ -25,25 +25,6 @@ Devin CLI usage information appears to live in Devin's cloud service rather than
 ccusage is a local, read-only analyzer. It does not scrape private cloud services or depend on undocumented authenticated APIs for user usage history. If Devin adds a local export with timestamps, sessions, models, and token counts, support can be revisited.
 :::
 
-## Previously Unsupported, Now Supported
-
-::: details Antigravity
-Antigravity is now supported as its own source. ccusage reads the local
-`gen_metadata` SQLite databases, keeps Antigravity separate from Gemini CLI,
-and maps the input, cache-read, visible-output, and thinking-token buckets into
-the standard report shape. See [Antigravity](/guide/antigravity/).
-:::
-
-::: details Grok Build CLI
-Earlier investigations looked at local Grok data that did not expose usable token
-accounting (for example SQLite without per-turn usage). Grok Build CLI is now
-supported: ccusage reads completed turns from
-`${GROK_HOME:-~/.grok}/sessions/**/updates.jsonl` (`sessionUpdate == "turn_completed"`
-with `usage` / `modelUsage`). Costs come from Grok's own `costUsdTicks`, with
-LiteLLM estimates as the fallback. In-progress turns count only after
-`turn_completed`. See [Grok Build CLI](/guide/grok/).
-:::
-
 ## Can These Be Added Later?
 
 Yes. Open an issue if a tool starts writing local usage data with token counts or exposes an official export. Useful examples include:

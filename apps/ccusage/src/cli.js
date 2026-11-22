@@ -7,6 +7,9 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
+/** @type {{ optionalDependencies: Record<string, string>; version: string }} */
+const packageJson = require('../package.json');
+const wrapperVersion = packageJson.version;
 
 /**
  * @typedef {{ args: string[]; command: string } | { errorMessage: string }} CliRuntime
@@ -22,95 +25,79 @@ const require = createRequire(import.meta.url);
 /**
  * @param {string} [platform]
  * @param {string} [arch]
- * @returns {string | undefined}
  */
 function getNativePackageName(platform = process.platform, arch = process.arch) {
-	if (platform === 'darwin') {
-		if (arch === 'arm64') {
-			return '@ccusage/ccusage-darwin-arm64';
-		}
-		if (arch === 'x64') {
-			return '@ccusage/ccusage-darwin-x64';
-		}
-		return undefined;
-	}
-
-	if (platform === 'linux') {
-		if (arch === 'arm64') {
-			return '@ccusage/ccusage-linux-arm64';
-		}
-		if (arch === 'x64') {
-			return '@ccusage/ccusage-linux-x64';
-		}
-		return undefined;
-	}
-
-	if (platform === 'win32') {
-		if (arch === 'arm64') {
-			return '@ccusage/ccusage-win32-arm64';
-		}
-		if (arch === 'x64') {
-			return '@ccusage/ccusage-win32-x64';
-		}
-	}
-
-	return undefined;
+	const packageName = `@ccusage/ccusage-${platform}-${arch}`;
+	return Object.hasOwn(packageJson.optionalDependencies, packageName) ? packageName : undefined;
 }
 
 /**
  * @param {string} [platform]
- * @returns {string}
  */
 function getNativeBinarySubpath(platform = process.platform) {
 	return platform === 'win32' ? 'bin/ccusage.exe' : 'bin/ccusage';
 }
 
 /**
- * @param {{ arch?: string; platform?: string; resolvePath?: (id: string) => string }} [options]
- * @returns {string | undefined}
- */
-function resolveNativeBinary({
-	arch = process.arch,
-	platform = process.platform,
-	resolvePath = (id) => require.resolve(id),
-} = {}) {
-	const packageName = getNativePackageName(platform, arch);
-	if (packageName == null) {
-		return undefined;
-	}
-
-	try {
-		return resolvePath(`${packageName}/${getNativeBinarySubpath(platform)}`);
-	} catch {
-		return undefined;
-	}
-}
-
-/**
- * @param {{ arch?: string; argv: string[]; nativeBinaryPath?: string | null; platform?: string }} options
+ * @param {{ arch?: string; argv: string[]; platform?: string; resolvePath?: (id: string) => string }} options
  * @returns {CliRuntime}
  */
 function resolveCliRuntime({
 	argv,
 	arch = process.arch,
-	nativeBinaryPath = resolveNativeBinary(),
 	platform = process.platform,
+	resolvePath = (id) => require.resolve(id),
 }) {
-	if (nativeBinaryPath != null) {
+	const target = `${platform}-${arch}`;
+	const packageName = getNativePackageName(platform, arch);
+	if (packageName == null) {
 		return {
-			args: argv,
-			command: nativeBinaryPath,
+			errorMessage: `ccusage does not provide a native binary for ${target}.\n`,
 		};
 	}
 
+	const binarySubpath = getNativeBinarySubpath(platform);
+	try {
+		return { args: argv, command: resolvePath(`${packageName}/${binarySubpath}`) };
+	} catch (binaryError) {
+		if (!isModuleNotFound(binaryError)) {
+			return { errorMessage: cannotResolveMessage(packageName, target, binaryError) };
+		}
+	}
+
+	try {
+		resolvePath(`${packageName}/package.json`);
+	} catch (manifestError) {
+		if (isModuleNotFound(manifestError)) {
+			return {
+				errorMessage: `Missing optional native package "${packageName}@${wrapperVersion}" for ${target}. It may be absent because of npm --before/--min-release-age, mise minimum_release_age, or --omit=optional. Reinstall ccusage with optional dependencies enabled and no release-age cutoff.\n`,
+			};
+		}
+		return { errorMessage: cannotResolveMessage(packageName, target, manifestError) };
+	}
 	return {
-		errorMessage: `ccusage native binary is not available for ${platform}-${arch}. Reinstall ccusage so optional native dependencies are installed.\n`,
+		errorMessage: `Native package "${packageName}" for ${target} is installed, but its ${binarySubpath} is missing. Reinstall ccusage.\n`,
 	};
 }
 
 /**
+ * @param {string} packageName
+ * @param {string} target
  * @param {unknown} error
- * @returns {string}
+ */
+function cannotResolveMessage(packageName, target, error) {
+	return `Cannot resolve native package "${packageName}" for ${target}: ${errorMessage(error)}\n`;
+}
+
+/**
+ * @param {unknown} error
+ */
+function isModuleNotFound(error) {
+	return error instanceof Error && 'code' in error && error.code === 'MODULE_NOT_FOUND';
+}
+
+/**
+ * @param {unknown} error
  */
 function errorMessage(error) {
 	return error instanceof Error ? error.message : String(error);
@@ -118,7 +105,6 @@ function errorMessage(error) {
 
 /**
  * @param {{ binaryPath: string; chmodPath?: (path: string, mode: number) => void; platform?: string; statPath?: (path: string) => FileMode }} options
- * @returns {string | undefined}
  */
 function ensureNativeBinaryExecutable({
 	binaryPath,
@@ -144,7 +130,6 @@ function ensureNativeBinaryExecutable({
 
 /**
  * @param {MainModuleOptions} options
- * @returns {boolean}
  */
 function isMainModule({ argvEntry = process.argv[1], moduleUrl, realpathPath = realpathSync }) {
 	if (argvEntry == null) {
@@ -217,10 +202,8 @@ function createNativeSpawner({
 
 			for (const signal of forwardedSignals) {
 				const handler = () => handleSignal(signal);
-				try {
-					signalSource.on(signal, handler);
-					signalHandlers.set(signal, handler);
-				} catch {}
+				signalSource.on(signal, handler);
+				signalHandlers.set(signal, handler);
 			}
 		});
 }
@@ -228,7 +211,6 @@ function createNativeSpawner({
 /**
  * @param {string[]} argv
  * @param {NativeSpawner} [spawnNative]
- * @returns {Promise<number>}
  */
 async function runCli(argv, spawnNative = createNativeSpawner()) {
 	const runtime = resolveCliRuntime({ argv });
@@ -261,10 +243,4 @@ if (isMainModule({ moduleUrl: import.meta.url })) {
 	process.exitCode = await runCli(process.argv.slice(2));
 }
 
-export {
-	createNativeSpawner,
-	ensureNativeBinaryExecutable,
-	isMainModule,
-	resolveCliRuntime,
-	resolveNativeBinary,
-};
+export { createNativeSpawner, ensureNativeBinaryExecutable, isMainModule, resolveCliRuntime };

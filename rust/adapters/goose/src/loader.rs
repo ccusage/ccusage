@@ -1,10 +1,10 @@
-use std::{collections::HashSet, path::Path};
+use ccusage_core::cost::PriceTable;
+use std::path::PathBuf;
 
 use jiff::tz::TimeZone as JiffTimeZone;
 
-use crate::{
-    LoadedEntry, PricingMap, Result, cli::SharedArgs, debug_log, parse_tz, read_files_parallel,
-};
+use ccusage_adapter_common::{SqliteStage, UnitError, source::LoadContext, sqlite::sqlite_units};
+use ccusage_core::{Diagnostics, LoadedEntry, Result};
 
 use super::{parser::row_to_entry, paths::goose_db_paths};
 
@@ -25,96 +25,104 @@ WHERE model_config_json IS NOT NULL
     AND TRIM(model_config_json) != ''
 "#;
 
-pub fn load_entries(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
-    crate::progress::track_usage_load(
-        crate::progress::UsageLoadAgent("Goose"),
-        shared.json,
-        || load_entries_inner(shared, pricing),
+pub(crate) fn load_entries_with_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
+    let pricing = cx.pricing.table(cx.shared.mode);
+    let tz = cx.window.timezone();
+    let db_paths = goose_db_paths(cx.shared.debug)?;
+    let mut entries = load_entries_from_dbs(
+        &db_paths,
+        cx.shared.single_thread,
+        tz,
+        pricing,
+        cx.diagnostics,
+    );
+    LoadedEntry::sort_by_timestamp(&mut entries);
+    Ok(entries)
+}
+
+fn load_entries_from_dbs(
+    db_paths: &[PathBuf],
+    single_thread: bool,
+    tz: &JiffTimeZone,
+    pricing: PriceTable<'_>,
+    diagnostics: &Diagnostics,
+) -> Vec<LoadedEntry> {
+    sqlite_units(
+        db_paths,
+        single_thread,
+        diagnostics,
+        |connection, _| {
+            connection
+                .prepare(GOOSE_SESSION_QUERY)
+                .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))
+        },
+        |statement, _, _| {
+            row_to_entry(statement, tz, pricing)
+                .map_err(|rejection| UnitError::new(rejection.kind(), rejection.detail()))
+        },
     )
-}
-
-fn load_entries_inner(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
-    let tz = parse_tz(shared.timezone.as_deref());
-    let db_paths = goose_db_paths()?;
-    // Load each database in parallel (a fresh read-only connection per DB), then
-    // run the sequential per-db dedup over the original path order so the
-    // surviving session per key matches the single-threaded read.
-    let loaded = read_files_parallel(&db_paths, shared.single_thread, |db_path| {
-        load_entries_from_db(db_path, tz.as_ref(), pricing, shared).unwrap_or_else(|error| {
-            debug_log(
-                shared,
-                format!(
-                    "Failed to load Goose database {}: {error}",
-                    db_path.display()
-                ),
-            );
-            Vec::new()
-        })
-    });
-    let mut entries = Vec::new();
-    let mut seen = HashSet::new();
-    for (db_path, db_entries) in db_paths.iter().zip(loaded) {
-        for entry in db_entries {
-            let key = format!("{}:{}", db_path.display(), entry.session_id);
-            if seen.insert(key) {
-                entries.push(entry);
-            }
-        }
-    }
-    entries.sort_by_key(|entry| entry.timestamp);
-    Ok(entries)
-}
-
-fn load_entries_from_db(
-    db_path: &Path,
-    tz: Option<&JiffTimeZone>,
-    pricing: &PricingMap,
-    shared: &SharedArgs,
-) -> Result<Vec<LoadedEntry>> {
-    let Ok(connection) =
-        sqlite::Connection::open_with_flags(db_path, sqlite::OpenFlags::new().with_read_only())
-    else {
-        debug_log(
-            shared,
-            format!("Failed to open Goose database: {}", db_path.display()),
-        );
-        return Ok(Vec::new());
-    };
-    let Ok(mut statement) = connection.prepare(GOOSE_SESSION_QUERY) else {
-        debug_log(
-            shared,
-            format!("Failed to read Goose database: {}", db_path.display()),
-        );
-        return Ok(Vec::new());
-    };
-
-    let mut entries = Vec::new();
-    loop {
-        match statement.next() {
-            Ok(sqlite::State::Row) => {
-                if let Some(entry) = row_to_entry(&statement, tz, pricing) {
-                    entries.push(entry);
-                }
-            }
-            Ok(sqlite::State::Done) => break,
-            Err(_) => {
-                debug_log(
-                    shared,
-                    format!("Failed to query Goose database: {}", db_path.display()),
-                );
-                break;
-            }
-        }
-    }
-    Ok(entries)
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn uniform_cost_modes_do_not_calculate_in_display() {
+        ccusage_test_support::install_pricing_snapshots();
+        let fixture = fs_fixture!({});
+        let _sessions = fixture.create_dir_all("data/sessions");
+        let db_path = fixture.path("data/sessions/sessions.db");
+        create_goose_db(&db_path);
+        insert_session(
+            &db_path,
+            SessionFixture {
+                id: "s",
+                model_config: r#"{"model_name":"sample"}"#,
+                provider: None,
+                created_at: "2026-05-01 01:02:03",
+                total: 150,
+                input: 100,
+                output: 50,
+            },
+        );
+        Environment::with_var("GOOSE_PATH_ROOT", fixture.root()).run(|| {
+            let mut pricing = ccusage_core::PricingMap::default();
+            pricing.load_json(
+                r#"{"sample":{"input_cost_per_token":0.001,"output_cost_per_token":0.002}}"#,
+            );
+            for (mode, expected) in [
+                (crate::cli::CostMode::Auto, 0.2),
+                (crate::cli::CostMode::Calculate, 0.2),
+                (crate::cli::CostMode::Display, 0.0),
+            ] {
+                let shared = SharedArgs {
+                    mode,
+                    ..SharedArgs::default()
+                };
+                let entries = ccusage_adapter_common::testing::entries(
+                    &crate::SOURCE,
+                    &shared,
+                    Default::default(),
+                    Some(&pricing),
+                )
+                .unwrap();
+                assert_eq!(entries.len(), 1);
+                assert!(
+                    (entries[0].cost - expected).abs() < 1e-12,
+                    "{mode:?}: {} vs {expected}",
+                    entries[0].cost
+                );
+                assert_eq!(entries[0].missing_pricing_model, None);
+            }
+        })
+    }
+
+    use crate::cli::SharedArgs;
     use std::path::Path;
 
     use super::*;
-    use ccusage_test_support::fs_fixture;
+    use ccusage_adapter_common::{parity::assert_focused_matches_unified, source::SourceOptions};
+    use ccusage_core::{ReportWindow, SkipKind, cli::AgentReportKind};
+    use ccusage_test_support::{Environment, fs_fixture};
 
     fn create_goose_db(path: &Path) {
         let db = sqlite::open(path).unwrap();
@@ -176,6 +184,7 @@ INSERT INTO sessions (
 
     #[test]
     fn loads_accumulated_tokens_from_goose_sqlite() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({});
         let db_path = fixture.path(super::super::paths::GOOSE_DB_FILE_NAME);
         create_goose_db(&db_path);
@@ -192,20 +201,168 @@ INSERT INTO sessions (
             },
         );
 
-        let pricing = PricingMap::load_embedded();
-        let entries = load_entries_from_db(
-            &db_path,
-            Some(&jiff::tz::TimeZone::UTC),
-            &pricing,
-            &SharedArgs::default(),
-        )
-        .unwrap();
+        let pricing = ccusage_core::PricingMap::load_embedded();
+        let diagnostics = Diagnostics::new("goose");
+        let entries = load_entries_from_dbs(
+            std::slice::from_ref(&db_path),
+            true,
+            &jiff::tz::TimeZone::UTC,
+            PriceTable::Auto(&pricing),
+            &diagnostics,
+        );
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].date, "2026-05-01");
+        assert_eq!(entries[0].date.to_string(), "2026-05-01");
         assert_eq!(entries[0].session_id.as_ref(), "session-a");
-        assert_eq!(entries[0].data.message.usage.input_tokens, 100);
-        assert_eq!(entries[0].data.message.usage.output_tokens, 50);
+        assert_eq!(entries[0].usage.input_tokens, 100);
+        assert_eq!(entries[0].usage.output_tokens, 50);
         assert_eq!(entries[0].extra_total_tokens, 30);
+    }
+
+    #[test]
+    fn diagnoses_sessions_with_usage_it_cannot_place_or_attribute() {
+        let fixture = fs_fixture!({});
+        let db_path = fixture.path(super::super::paths::GOOSE_DB_FILE_NAME);
+        create_goose_db(&db_path);
+        let session = |id, model_config, created_at, total| SessionFixture {
+            id,
+            model_config,
+            provider: Some("openai"),
+            created_at,
+            total,
+            input: total,
+            output: 0,
+        };
+        let gpt = r#"{"model_name":"gpt-5"}"#;
+        insert_session(&db_path, session("healthy", gpt, "2026-05-01 01:02:03", 10));
+        insert_session(&db_path, session("bad-time", gpt, "SECRET_CANARY", 10));
+        insert_session(
+            &db_path,
+            session("no-model", "{}", "2026-05-01 01:02:03", 10),
+        );
+        insert_session(&db_path, session("idle", "{}", "SECRET_CANARY", 0));
+
+        let diagnostics = Diagnostics::new("goose");
+        let entries = load_entries_from_dbs(
+            std::slice::from_ref(&db_path),
+            true,
+            &jiff::tz::TimeZone::UTC,
+            PriceTable::Auto(&ccusage_core::PricingMap::default()),
+            &diagnostics,
+        );
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].session_id.as_ref(), "healthy");
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 1);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+        let warnings = diagnostics
+            .warnings(&SharedArgs {
+                debug: true,
+                ..SharedArgs::default()
+            })
+            .join("\n");
+        assert!(!warnings.contains("SECRET_CANARY"));
+    }
+
+    #[test]
+    fn a_database_without_the_session_columns_is_an_unsupported_schema() {
+        let fixture = fs_fixture!({});
+        let db_path = fixture.path("sessions.db");
+        sqlite::open(&db_path)
+            .unwrap()
+            .execute("CREATE TABLE sessions (id TEXT)")
+            .unwrap();
+
+        let diagnostics = Diagnostics::new("goose");
+        let entries = load_entries_from_dbs(
+            std::slice::from_ref(&db_path),
+            true,
+            &jiff::tz::TimeZone::UTC,
+            PriceTable::Auto(&ccusage_core::PricingMap::default()),
+            &diagnostics,
+        );
+        assert!(entries.is_empty());
+
+        assert_eq!(diagnostics.skipped(SkipKind::Invariant), 1);
+    }
+
+    #[test]
+    fn a_failed_session_database_does_not_hide_healthy_sessions() {
+        ccusage_test_support::install_pricing_snapshots();
+        let fixture = fs_fixture!({
+            ".local/share/goose/sessions/sessions.db": "",
+            ".local/share/Block/goose/sessions/sessions.db": "not a SQLite database",
+        });
+        let good_db = fixture.path(".local/share/goose/sessions/sessions.db");
+        create_goose_db(&good_db);
+        insert_session(
+            &good_db,
+            SessionFixture {
+                id: "session-a",
+                model_config: r#"{"model_name":"gpt-5"}"#,
+                provider: Some("openai"),
+                created_at: "2026-05-01 01:02:03",
+                total: 150,
+                input: 100,
+                output: 50,
+            },
+        );
+        Environment::with_vars([
+            ("HOME", Some(fixture.root().to_path_buf().into_os_string())),
+            ("GOOSE_PATH_ROOT", Some(std::ffi::OsString::new())),
+        ])
+        .run(|| {
+            let shared = SharedArgs::default();
+            let pricing = ccusage_core::PricingMap::load_embedded();
+            let window = ReportWindow::from_shared(&shared);
+            let diagnostics = Diagnostics::new("goose");
+            let cx = LoadContext {
+                shared: &shared,
+                kind: AgentReportKind::Daily,
+                window: &window,
+                pricing: ccusage_adapter_common::source::ReportPricing::Supplied(&pricing),
+                options: SourceOptions::default(),
+                diagnostics: &diagnostics,
+            };
+
+            let entries = load_entries_with_context(&cx).unwrap();
+
+            assert_eq!(entries.len(), 1);
+            assert_eq!(entries[0].session_id.as_ref(), "session-a");
+            assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+        })
+    }
+
+    #[test]
+    fn focused_and_unified_reports_agree() {
+        ccusage_test_support::install_pricing_snapshots();
+        let fixture = fs_fixture!({"data/sessions/sessions.db": ""});
+        let db_path = fixture.path("data/sessions/sessions.db");
+        create_goose_db(&db_path);
+        insert_session(
+            &db_path,
+            SessionFixture {
+                id: "session-a",
+                model_config: r#"{"model_name":"gpt-5"}"#,
+                provider: Some("openai"),
+                created_at: "2026-05-01 01:02:03",
+                total: 150,
+                input: 100,
+                output: 50,
+            },
+        );
+        Environment::with_var("GOOSE_PATH_ROOT", fixture.root()).run(|| {
+            let shared = SharedArgs {
+                offline: true,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                ..SharedArgs::default()
+            };
+
+            assert_focused_matches_unified(
+                &crate::SOURCE,
+                ccusage_core::cli::AgentId::Goose,
+                &shared,
+            );
+        })
     }
 }

@@ -1,0 +1,26 @@
+name: Hestia cache GC
+
+on:
+  schedule:
+    - cron: '41 4 * * *'
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: Plan only; do not repack, touch, or delete anything.
+        type: boolean
+        default: true
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  gc:
+    permissions:
+      actions: write
+      contents: read
+    uses: x-ryoppippi/setup-nix/.github/workflows/gc.yaml@f3480576f3ae7660b286c4ea88245925d91fb672 # v0.0.2
+    with:
+      dry-run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run }}

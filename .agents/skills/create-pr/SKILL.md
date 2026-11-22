@@ -1,32 +1,42 @@
 ---
 name: create-pr
-description: Runs the full PR lifecycle. Use when creating a branch, committing, pushing, opening a PR, requesting AI review, replying to review threads, and driving CI to green.
+description: Branches, commits, pushes, and opens a pull request or a stack of PRs. Use before opening any PR, whether the user asks for one or the task calls for it.
 ---
 
 # Create PR
 
-This skill owns PR work in this repository: branch setup, opening the PR, AI review requests, reviewer thread replies, follow-up pushes, CI inspection, and merge.
-
-A PR is one reviewable responsibility and may hold several atomic commits. A branch is not a PR boundary — split independent work into separate PRs and stack only dependent work.
+A PR is one reviewable responsibility and may hold several commits. Split
+independent work into separate PRs; stack only work that depends on another PR.
 
 ## Workflow
 
-1. Branch. Pushing to `main` needs explicit permission from the user; everything else goes through a feature branch named after the change (existing branches read `<type>/<description>`). Commits come from the `commit` skill, so they stay atomic and independently revertable. Leave unrelated formatter churn, generated files, and user edits outside the task unstaged.
-2. Push and open the PR — `references/open-pr.md`. A squash merge writes the PR title as the commit subject on `main`, so CI holds the title to the same Conventional Commit scope rules the `commit` skill describes.
-3. Request and handle AI review — `references/ai-review.md`, with the `gh` reply and thread-state calls in `references/gh-review.md`.
-4. Watch CI after opening and after every push with `gh pr checks`. Read the failing step logs and annotations rather than the summary, then use the `fix-ci` skill for the fix, and ask the bots for another pass if they do not rerun on their own.
-5. Merge only when the user explicitly asks and the conditions below hold: `gh pr merge <pr> --squash --delete-branch`. Squash is the repository's normal flow.
-
-## Ready means
-
-- The branch is pushed, the PR exists, and its body describes the change and the validation that ran.
-- CodeRabbit — and Cubic when it is available on the PR — reviewed the latest pushed commit, with no unresolved actionable feedback.
-- Every required check passes. Queued, cancelled, failing, or missing required checks all mean not ready.
-- The user has the PR URL plus any residual risk or pending external state.
-
-When a bot or CI system stays silent past a reasonable polling window, state exactly what is pending instead of claiming completion, and leave the visible PR comment or CI state for follow-up.
-
-## Context
-
-- Reviewer bots act on a comment only when their handle is mentioned — in the initial request and in every reply asking them to do something.
-- Amending or force-pushing after reviewers have read the PR needs an explicit request from the user.
+1. Read `git status --short`, `git branch --show-current`, and `git diff --stat`,
+   and check whether a PR for this branch already exists (`gh pr view`).
+   Work on the user’s named branch, creating or switching to it as needed.
+   Otherwise create a `feature/`, `fix/`, or `chore/` branch when on `main`.
+2. Leave out unrelated changes, temporary files, secrets, and debug edits, then
+   commit with the `commit` skill.
+3. Title: follow the repository's convention (check recent merged PRs; default
+   to a Conventional Commit type). State why the change matters, not the
+   mechanism:
+   - ❌ `perf(server): negotiate permessage-deflate on the websocket`
+   - ✅ `perf(server): cut websocket frame size by 70%+ with gzipping`
+4. Start the body with the attribution note from the `leaving-pr-comments`
+   skill, worded `🤖 **<model> opened this on behalf of <user>**`; its
+   exclusion of PR descriptions does not apply here. Omit it only when the
+   user supplies the body verbatim.
+   Then, in proportion to the change: open with the problem as the user saw it,
+   then the root cause and why this fix; never lead with an inventory of edits. Add a Testing section only for tests actually run. Pass multi-line
+   bodies with `--body-file -`.
+5. For a visible change, attach real screenshots or short videos with
+   `gh pr create --attach` (see `gh pr create --help`); never invent media.
+6. Publish:
+   - Ordinary PR: `git push -u origin <branch>` and `gh pr create --base <target-branch>`
+     using the requested target, or the repository default when unspecified.
+     Open it ready for review, not as a draft, so review bots run. If GraphQL is
+     rate limited, use `gh api repos/<owner>/<repo>/pulls -f title=... -f head=... -f base=... -F body=@<file>`.
+   - Stacked PRs (when asked, or the branch is already stacked): use the
+     `gh-stack` skill, verifying parent-child ancestry, and report every PR URL
+     from bottom to top.
+7. Report the PR URL. Don't call it ready until checks and review feedback have
+   been looked at; to watch them, use the `babysit-pr` skill.

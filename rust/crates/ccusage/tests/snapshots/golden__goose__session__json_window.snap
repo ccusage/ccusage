@@ -1,0 +1,134 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage goose session --offline --json --since 20251231 --until 20260101
+---
+exit: 0
+--- stdout ---
+{
+  "sessions": [
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 300,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 300,
+          "missingPricing": true,
+          "modelName": "goose-mystery-1",
+          "outputTokens": 70
+        }
+      ],
+      "modelsUsed": [
+        "goose-mystery-1"
+      ],
+      "outputTokens": 70,
+      "sessionId": "s-mystery",
+      "totalCost": 0.0,
+      "totalTokens": 370
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 500,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00025,
+          "inputTokens": 500,
+          "modelName": "qwen/qwen3-coder",
+          "outputTokens": 100
+        }
+      ],
+      "modelsUsed": [
+        "qwen/qwen3-coder"
+      ],
+      "outputTokens": 100,
+      "sessionId": "s-prefixed",
+      "totalCost": 0.00025,
+      "totalTokens": 600
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 900,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0029,
+          "inputTokens": 900,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 400
+        }
+      ],
+      "modelsUsed": [
+        "claude-haiku-4-5-20251001"
+      ],
+      "outputTokens": 400,
+      "sessionId": "s-replayed",
+      "totalCost": 0.0029,
+      "totalTokens": 1300
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 900,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0029,
+          "inputTokens": 900,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 400
+        }
+      ],
+      "modelsUsed": [
+        "claude-haiku-4-5-20251001"
+      ],
+      "outputTokens": 400,
+      "sessionId": "s-replayed-fork",
+      "totalCost": 0.0029,
+      "totalTokens": 1350
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 2000,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.052500000000000005,
+          "inputTokens": 2000,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 300
+        }
+      ],
+      "modelsUsed": [
+        "claude-opus-4-20250514"
+      ],
+      "outputTokens": 300,
+      "sessionId": "s-tokyo",
+      "totalCost": 0.052500000000000005,
+      "totalTokens": 2500
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 0,
+    "cacheReadTokens": 0,
+    "inputTokens": 4600,
+    "outputTokens": 1270,
+    "totalCost": 0.058550000000000005,
+    "totalTokens": 6120,
+    "unpricedModels": [
+      "goose-mystery-1"
+    ]
+  }
+}
+
+--- stderr ---

@@ -3,38 +3,19 @@
 The Kimi CLI adapter: it turns per-session `wire.jsonl` files
 into the usage entries the reports render.
 
-## Owns
-
-- `loader.rs` — reading the source, dedupe, and date filtering.
-- `parser.rs` — raw record parsing, token mapping, and model naming.
-- `paths.rs` — environment variables, default directories, and file discovery.
-- `report.rs` — the JSON and table shapes where they differ from the shared ones.
-
-Anything that is not specific to this source belongs in `ccusage-core` or
-`ccusage-adapter-common` instead.
-
 ## Data source
 
 - `${KIMI_DATA_DIR:-~/.kimi}/sessions/**/wire.jsonl`, and the same layout under `~/.kimi-code`
 
-Reads plain files through `ccusage-adapter-common`, which handles walking, size-balanced
-chunking, and ordered parallel reads.
+Of the `usage.record` entries, only turn-scoped records count. Legacy
+`token_usage` records also count. Usage records without a valid timestamp are
+skipped with a diagnostic.
 
-## Public surface
-
-- `loader::load_entries`
-- `report::report_from_rows`
-- `report::summarize_entries`
-- `run`
-
-## Depends on
-
-- `ccusage-adapter-common`
-- `ccusage-core`
-- `jiff`
-- `serde`
-- `serde_json`
+Duplicates with matching session, message ID (when present), timestamp, model,
+and token counts keep the copy with the most recorded output tokens. If a copy
+lacks output tokens, the remainder can match the output count on a complete
+copy. The remainder contributes only to the usage total.
 
 ## Build layer
 
-Built in the `adapters` Crane artifact layer; the layer compiles all adapters in one Cargo invocation, so they build concurrently.
+Built in the `adapters` Crane artifact layer.

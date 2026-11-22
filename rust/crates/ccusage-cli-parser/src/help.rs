@@ -1,6 +1,7 @@
-use std::{path::Path, process};
+use ccusage_cli::command_tokens;
 
-use crate::parser::command_tokens;
+#[cfg(test)]
+mod codegen;
 
 struct HelpPage {
     path: &'static [&'static str],
@@ -12,44 +13,14 @@ struct HelpPage {
 
 include!(concat!(env!("OUT_DIR"), "/cli-help.rs"));
 
-pub(crate) fn print_version_and_exit(version: &str) -> ! {
-    println!("ccusage {version}");
-    process::exit(0);
-}
-
-pub(crate) fn print_help_and_exit(args: &[String]) -> ! {
-    println!("{}", help_text_for_args(args));
-    process::exit(0);
-}
-
 #[cfg(test)]
 pub(crate) fn help_text() -> String {
     root_help_text()
 }
 
 pub(crate) fn help_text_for_args(args: &[String]) -> String {
-    let args = strip_program_name(args);
     let tokens = command_tokens(args);
     help_text_for_tokens(&tokens)
-}
-
-fn strip_program_name(args: &[String]) -> &[String] {
-    if args.first().is_some_and(|arg| is_program_name(arg)) {
-        &args[1..]
-    } else {
-        args
-    }
-}
-
-fn is_program_name(arg: &str) -> bool {
-    let name = Path::new(arg)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or(arg)
-        .rsplit('\\')
-        .next()
-        .unwrap_or(arg);
-    matches!(name, "ccusage" | "ccusage.exe")
 }
 
 fn help_text_for_tokens(tokens: &[String]) -> String {
@@ -81,7 +52,7 @@ fn root_help_text() -> String {
         lines.push(format!("  ccusage {command} --help"));
     }
     lines.push(String::new());
-    lines.push(all_agent_options().to_string());
+    lines.push(ROOT_OPTIONS.to_string());
     lines.join("\n")
 }
 

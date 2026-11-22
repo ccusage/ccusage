@@ -9,7 +9,7 @@ use std::{
     time::Duration,
 };
 
-use ccusage_core::pricing::PricingEndpoint;
+use ccusage_cli::environment::Environment;
 
 mod tls;
 
@@ -18,32 +18,13 @@ const PRICING_FETCH_MAX_BYTES: u64 = 64 * 1024 * 1024;
 const CACHE_ETAG_MAX_BYTES: u64 = 4096;
 const CACHE_FILE_MAX_BYTES: u64 = PRICING_FETCH_MAX_BYTES + CACHE_ETAG_MAX_BYTES + 1;
 
-/// Fetches a validated pricing document for the refresh.
-///
-/// This lives in the binary so that `ureq` and its TLS stack are not dependencies
-/// of `ccusage-core`, which every adapter builds against; `main` installs it
-/// through `ccusage_core::pricing::set_json_fetcher`.
-///
-/// Each response body is kept on disk next to its ETag, and later fetches
-/// revalidate with `If-None-Match`. A cached body is used only after the server
-/// confirms it with a 304 and the body passes the endpoint's pricing validator.
-pub(crate) fn fetch_json(url: &str) -> io::Result<String> {
-    let endpoint = PricingEndpoint::for_url(url).ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::InvalidInput,
-            format!("unsupported pricing URL: {url}"),
-        )
-    })?;
+pub(crate) fn fetch_json(url: &str, load: &mut dyn FnMut(&str) -> bool) -> io::Result<()> {
     let cache_dir = default_cache_dir();
-    fetch_json_with_cache_dir(url, cache_dir.as_deref(), endpoint)
+    fetch_json_with_cache_dir(url, cache_dir.as_deref(), load)
 }
 
-/// Sends a JSON body with a POST and reports only whether the server accepted it.
-///
-/// Telemetry is the only caller; it ignores the result, so the error carries no
-/// detail beyond what a debug print would need.
 pub(crate) fn post_json(url: &str, body: &str, timeout: Duration) -> io::Result<()> {
-    let status = agent(timeout)
+    let status = http_agent(timeout)
         .post(url)
         .header("content-type", "application/json")
         .send(body)
@@ -57,23 +38,12 @@ pub(crate) fn post_json(url: &str, body: &str, timeout: Duration) -> io::Result<
     }
 }
 
-fn agent(timeout: Duration) -> ureq::Agent {
-    ureq::Agent::config_builder()
-        .timeout_global(Some(timeout))
-        .tls_config(
-            ureq::tls::TlsConfig::builder()
-                .unversioned_rustls_crypto_provider(Arc::new(tls::provider()))
-                .build(),
-        )
-        .build()
-        .new_agent()
-}
-
-/// Returns a per-user cache directory, or `None` when no safe directory exists.
 fn default_cache_dir() -> Option<PathBuf> {
     cache_dir_under(
-        std::env::var_os("XDG_CACHE_HOME").map(PathBuf::from),
-        ccusage_core::home::home_dir(),
+        Environment::current()
+            .var_os("XDG_CACHE_HOME")
+            .map(PathBuf::from),
+        ccusage_core::cli::home::home_dir(),
     )
 }
 
@@ -90,25 +60,13 @@ fn cache_dir_under(xdg_cache_home: Option<PathBuf>, home: Option<PathBuf>) -> Op
 fn fetch_json_with_cache_dir(
     url: &str,
     cache_dir: Option<&Path>,
-    endpoint: PricingEndpoint,
-) -> io::Result<String> {
-    fetch_json_with_cache_dir_inner(url, cache_dir, endpoint, true)
-}
-
-fn fetch_json_with_cache_dir_inner(
-    url: &str,
-    cache_dir: Option<&Path>,
-    endpoint: PricingEndpoint,
-    revalidate: bool,
-) -> io::Result<String> {
+    load: &mut dyn FnMut(&str) -> bool,
+) -> io::Result<()> {
     let cache = cache_dir.map(|dir| CacheEntry::for_url(dir, url));
-    let cached = if revalidate {
-        cache.as_ref().and_then(CacheEntry::read)
-    } else {
-        None
-    };
+    let cached = cache.as_ref().and_then(CacheEntry::read);
 
-    let mut request = agent(Duration::from_secs(PRICING_FETCH_TIMEOUT_SECONDS)).get(url);
+    let agent = http_agent(Duration::from_secs(PRICING_FETCH_TIMEOUT_SECONDS));
+    let mut request = agent.get(url);
     if let Some(cached) = cached.as_ref() {
         request = request.header("if-none-match", &cached.etag);
     }
@@ -121,13 +79,12 @@ fn fetch_json_with_cache_dir_inner(
         let Some(cached) = cached else {
             return Err(io::Error::other("HTTP 304 without a cached body"));
         };
-        if endpoint.validates(&cached.body) {
-            return Ok(cached.body);
-        }
-        if let Some(cache) = cache.as_ref() {
+        if !load(&cached.body)
+            && let Some(cache) = cache.as_ref()
+        {
             cache.invalidate();
         }
-        return fetch_json_with_cache_dir_inner(url, cache_dir, endpoint, false);
+        return Ok(());
     }
     if status != 200 {
         return Err(io::Error::other(format!("HTTP {status}")));
@@ -150,22 +107,28 @@ fn fetch_json_with_cache_dir_inner(
         PRICING_FETCH_MAX_BYTES,
     )
     .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error.to_string()))?;
-    if !endpoint.validates_shape(&body) {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("pricing response failed {endpoint:?} validation"),
-        ));
-    }
-
-    if let Some(etag) = response
-        .headers()
-        .get("etag")
-        .and_then(|value| value.to_str().ok())
+    if load(&body)
+        && let Some(etag) = response
+            .headers()
+            .get("etag")
+            .and_then(|value| value.to_str().ok())
         && let Some(cache) = cache.as_ref()
     {
         cache.write(etag, &body);
     }
-    Ok(body)
+    Ok(())
+}
+
+fn http_agent(timeout: Duration) -> ureq::Agent {
+    ureq::Agent::config_builder()
+        .timeout_global(Some(timeout))
+        .tls_config(
+            ureq::tls::TlsConfig::builder()
+                .unversioned_rustls_crypto_provider(Arc::new(tls::provider()))
+                .build(),
+        )
+        .build()
+        .new_agent()
 }
 
 fn read_bounded_body(mut reader: impl Read, max_bytes: u64) -> io::Result<String> {
@@ -182,8 +145,6 @@ fn read_bounded_body(mut reader: impl Read, max_bytes: u64) -> io::Result<String
     Ok(body)
 }
 
-/// The ETag and body are replaced by one rename so concurrent readers never
-/// observe a mixed pair from different refreshes.
 struct CacheEntry {
     path: PathBuf,
 }
@@ -215,11 +176,7 @@ impl CacheEntry {
             return None;
         }
         let etag = etag.trim();
-        if etag.is_empty()
-            || etag.len() as u64 > CACHE_ETAG_MAX_BYTES
-            || !etag.is_ascii()
-            || etag.bytes().any(|byte| byte.is_ascii_control())
-        {
+        if !valid_etag(etag) {
             return None;
         }
         Some(CachedResponse {
@@ -229,11 +186,7 @@ impl CacheEntry {
     }
 
     fn write(&self, etag: &str, body: &str) {
-        if etag.is_empty()
-            || etag.len() as u64 > CACHE_ETAG_MAX_BYTES
-            || !etag.is_ascii()
-            || etag.bytes().any(|byte| byte.is_ascii_control())
-        {
+        if !valid_etag(etag) {
             return;
         }
         static TMP_SEQ: AtomicU64 = AtomicU64::new(0);
@@ -265,7 +218,13 @@ impl CacheEntry {
     }
 }
 
-/// Derives a filesystem-safe, collision-resistant file stem from a URL.
+fn valid_etag(etag: &str) -> bool {
+    !etag.is_empty()
+        && etag.len() as u64 <= CACHE_ETAG_MAX_BYTES
+        && etag.is_ascii()
+        && !etag.bytes().any(|byte| byte.is_ascii_control())
+}
+
 fn cache_file_stem(url: &str) -> String {
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
     for byte in url.bytes() {
@@ -291,24 +250,30 @@ fn cache_file_stem(url: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        CacheEntry, PRICING_FETCH_MAX_BYTES, PricingEndpoint, cache_dir_under, cache_file_stem,
+        CacheEntry, PRICING_FETCH_MAX_BYTES, cache_dir_under, cache_file_stem,
         fetch_json_with_cache_dir, read_bounded_body,
     };
-    use ccusage_test_support::Fixture;
+    use ccusage_test_support::{Fixture, read_fixture_dir};
     use std::{
         fs,
         io::{self, Cursor, Read as _, Write as _},
         net::{TcpListener, TcpStream},
-        path::PathBuf,
+        path::{Path, PathBuf},
         thread,
         time::{Duration, Instant},
     };
 
-    const LITELLM_BODY: &str =
-        r#"{"gpt-test":{"input_cost_per_token":0.000001,"output_cost_per_token":0.000002}}"#;
-    const MODELS_DEV_BODY: &str =
-        r#"{"openai":{"models":{"gpt-test":{"cost":{"input":1.0,"output":2.0}}}}}"#;
-    const ZERO_LOADED_MODELS_DEV_BODY: &str = r#"{"openai":{"models":{"unpriced":{"modalities":{"input":[],"output":["text"]},"cost":{"input":1.0,"output":2.0}}}}}"#;
+    const CACHED_BODY: &str = r#"{"cached":true}"#;
+    const FRESH_BODY: &str = r#"{"fresh":true}"#;
+
+    fn fetch(url: &str, dir: &Path, accept: bool) -> (io::Result<()>, Vec<String>) {
+        let mut bodies = Vec::new();
+        let result = fetch_json_with_cache_dir(url, Some(dir), &mut |body| {
+            bodies.push(body.to_string());
+            accept
+        });
+        (result, bodies)
+    }
 
     fn accept_with_timeout(listener: &TcpListener) -> io::Result<TcpStream> {
         let deadline = Instant::now() + Duration::from_secs(5);
@@ -342,7 +307,7 @@ mod tests {
             }
             request.push(byte[0]);
         }
-        Ok(String::from_utf8_lossy(&request).into_owned())
+        Ok(String::from_utf8_lossy_owned(request))
     }
 
     fn serve_responses(
@@ -356,63 +321,10 @@ mod tests {
             "http://{}/pricing.json",
             listener.local_addr().expect("test server address")
         );
-        let handle = thread::spawn(move || {
+        let handle = ccusage_core::parallel::spawn_worker(move || {
             let mut requests = Vec::new();
             for response in responses {
                 let mut stream = accept_with_timeout(&listener)?;
-                requests.push(read_request(&mut stream)?);
-                stream.write_all(response.as_bytes())?;
-            }
-            Ok(requests)
-        });
-        (url, handle)
-    }
-
-    fn accept_until_idle(
-        listener: &TcpListener,
-        idle_timeout: Duration,
-    ) -> io::Result<Option<TcpStream>> {
-        let deadline = Instant::now() + idle_timeout;
-        loop {
-            match listener.accept() {
-                Ok((stream, _)) => {
-                    stream.set_nonblocking(false)?;
-                    return Ok(Some(stream));
-                }
-                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
-                    if Instant::now() >= deadline {
-                        return Ok(None);
-                    }
-                    thread::sleep(Duration::from_millis(1));
-                }
-                Err(error) => return Err(error),
-            }
-        }
-    }
-
-    fn serve_responses_allowing_missing_tail(
-        responses: Vec<String>,
-    ) -> (String, thread::JoinHandle<io::Result<Vec<String>>>) {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("bind test server");
-        listener
-            .set_nonblocking(true)
-            .expect("make test server nonblocking");
-        let url = format!(
-            "http://{}/pricing.json",
-            listener.local_addr().expect("test server address")
-        );
-        let handle = thread::spawn(move || {
-            let mut requests = Vec::new();
-            for (response_index, response) in responses.into_iter().enumerate() {
-                let mut stream = if response_index == 0 {
-                    accept_with_timeout(&listener)?
-                } else {
-                    let Some(stream) = accept_until_idle(&listener, Duration::from_millis(250))?
-                    else {
-                        break;
-                    };
-                    stream
-                };
                 requests.push(read_request(&mut stream)?);
                 stream.write_all(response.as_bytes())?;
             }
@@ -430,7 +342,7 @@ mod tests {
             "http://{}/pricing.json",
             listener.local_addr().expect("test server address")
         );
-        let handle = thread::spawn(move || {
+        let handle = ccusage_core::parallel::spawn_worker(move || {
             let mut stream = accept_with_timeout(&listener)?;
             read_request(&mut stream)
         });
@@ -513,21 +425,21 @@ mod tests {
         let fixture = Fixture::new();
         let dir = fixture.path("http-cache");
         let url = "https://example.com/pricing.json";
-        let pairs: Vec<_> = (0..8)
-            .map(|index| {
-                (
-                    format!("\"etag-{index}\""),
-                    format!("body-{index}\nwith-newlines"),
-                )
-            })
-            .collect();
+        let pairs = Vec::from_fn(8, |index| {
+            (
+                format!("\"etag-{index}\""),
+                format!("body-{index}\nwith-newlines"),
+            )
+        });
         let handles: Vec<_> = pairs
             .iter()
             .cloned()
             .map(|(etag, body)| {
                 let dir = dir.clone();
                 let url = url.to_string();
-                thread::spawn(move || CacheEntry::for_url(&dir, &url).write(&etag, &body))
+                ccusage_core::parallel::spawn_worker(move || {
+                    CacheEntry::for_url(&dir, &url).write(&etag, &body)
+                })
             })
             .collect();
         for handle in handles {
@@ -543,11 +455,10 @@ mod tests {
             "read a torn cache pair: {:?}",
             (cached.etag, cached.body)
         );
-        let cache_path = entry.path.clone();
-        let leftovers: Vec<_> = fs::read_dir(&dir)
-            .expect("cache dir")
-            .filter_map(Result::ok)
-            .filter(|entry| entry.path() != cache_path)
+        let leftovers: Vec<_> = read_fixture_dir(&dir)
+            .expect("open HTTP cache directory")
+            .map(|result| result.expect("read HTTP cache directory entry").path())
+            .filter(|path| *path != entry.path)
             .collect();
         assert!(
             leftovers.is_empty(),
@@ -556,160 +467,95 @@ mod tests {
     }
 
     #[test]
-    fn reuses_a_validated_cache_body_after_304() {
+    fn hands_the_cached_body_to_the_loader_after_304() {
         let fixture = Fixture::new();
         let dir = fixture.path("http-cache");
         let (url, server) = serve_responses(vec![not_modified_response()]);
         let entry = CacheEntry::for_url(&dir, &url);
-        entry.write("\"cached\"", LITELLM_BODY);
+        entry.write("\"cached\"", CACHED_BODY);
 
-        let body = fetch_json_with_cache_dir(&url, Some(&dir), PricingEndpoint::LiteLlm)
-            .expect("304 should reuse validated cache");
+        let (result, bodies) = fetch(&url, &dir, true);
         let requests = server
             .join()
             .expect("test server")
             .expect("server response");
 
-        assert_eq!(body, LITELLM_BODY);
+        result.expect("304 should reuse the cached body");
+        assert_eq!(bodies, [CACHED_BODY]);
         let request = requests.first().expect("one request").to_ascii_lowercase();
         assert!(request.contains("if-none-match: \"cached\""));
         assert!(request.contains("accept-encoding: gzip"));
+        assert_eq!(entry.read().expect("cache kept").body, CACHED_BODY);
     }
 
     #[test]
-    fn invalid_cached_body_after_304_retries_without_validator() {
+    fn drops_a_cached_body_the_loader_rejects_after_304() {
         let fixture = Fixture::new();
         let dir = fixture.path("http-cache");
         let (url, server) = serve_responses(vec![
             not_modified_response(),
-            ok_response("\"fresh\"", LITELLM_BODY),
+            ok_response("\"fresh\"", FRESH_BODY),
         ]);
         let entry = CacheEntry::for_url(&dir, &url);
-        entry.write("\"poisoned\"", "{}");
+        entry.write("\"stale\"", CACHED_BODY);
 
-        let body = fetch_json_with_cache_dir(&url, Some(&dir), PricingEndpoint::LiteLlm)
-            .expect("invalid 304 body should trigger a fresh fetch");
+        let (rejected, rejected_bodies) = fetch(&url, &dir, false);
+        assert!(
+            entry.read().is_none(),
+            "a rejected cached body must not be revalidated again"
+        );
+        let (fresh, fresh_bodies) = fetch(&url, &dir, true);
         let requests = server
             .join()
             .expect("test server")
             .expect("server response");
 
-        assert_eq!(body, LITELLM_BODY);
+        rejected.expect("a 304 for a rejected body is still a response");
+        fresh.expect("the next fetch should succeed");
+        assert_eq!(rejected_bodies, [CACHED_BODY]);
+        assert_eq!(fresh_bodies, [FRESH_BODY]);
         assert!(
             requests[0]
                 .to_ascii_lowercase()
-                .contains("if-none-match: \"poisoned\"")
+                .contains("if-none-match: \"stale\"")
         );
         assert!(!requests[1].to_ascii_lowercase().contains("if-none-match"));
         let cached = entry.read().expect("fresh cache entry");
         assert_eq!(cached.etag, "\"fresh\"");
-        assert_eq!(cached.body, LITELLM_BODY);
+        assert_eq!(cached.body, FRESH_BODY);
     }
 
     #[test]
-    fn recovers_after_a_200_models_dev_body_loads_zero_entries_before_304() {
-        let fixture = Fixture::new();
-        let dir = fixture.path("http-cache");
-        let (url, server) = serve_responses_allowing_missing_tail(vec![
-            ok_response("\"poisoned\"", ZERO_LOADED_MODELS_DEV_BODY),
-            not_modified_response(),
-            ok_response("\"fresh\"", MODELS_DEV_BODY),
-        ]);
-
-        let first = fetch_json_with_cache_dir(&url, Some(&dir), PricingEndpoint::ModelsDev)
-            .expect("structurally valid 200 should reach the loader");
-        assert_eq!(first, ZERO_LOADED_MODELS_DEV_BODY);
-        assert!(PricingEndpoint::ModelsDev.validates_shape(&first));
-        assert!(!PricingEndpoint::ModelsDev.validates(&first));
-
-        let second = fetch_json_with_cache_dir(&url, Some(&dir), PricingEndpoint::ModelsDev)
-            .expect("a zero-loaded cache body must be refreshed after 304");
-        let requests = server
-            .join()
-            .expect("test server")
-            .expect("server response");
-
-        assert_eq!(second, MODELS_DEV_BODY);
-        assert_eq!(requests.len(), 3, "200 -> 304 -> unconditional 200");
-        assert!(!requests[0].to_ascii_lowercase().contains("if-none-match"));
-        assert!(
-            requests[1]
-                .to_ascii_lowercase()
-                .contains("if-none-match: \"poisoned\"")
-        );
-        assert!(!requests[2].to_ascii_lowercase().contains("if-none-match"));
-    }
-
-    #[test]
-    fn does_not_reuse_a_models_dev_body_for_a_litellm_304() {
+    fn does_not_cache_a_200_body_the_loader_rejects() {
         let fixture = Fixture::new();
         let dir = fixture.path("http-cache");
         let (url, server) = serve_responses(vec![
-            not_modified_response(),
-            ok_response("\"fresh\"", LITELLM_BODY),
+            ok_response("\"unusable\"", CACHED_BODY),
+            ok_response("\"fresh\"", FRESH_BODY),
         ]);
-        let entry = CacheEntry::for_url(&dir, &url);
-        entry.write("\"models-dev\"", MODELS_DEV_BODY);
 
-        let body = fetch_json_with_cache_dir(&url, Some(&dir), PricingEndpoint::LiteLlm)
-            .expect("wrong-schema cache must be refreshed");
-        let requests = server
-            .join()
-            .expect("test server")
-            .expect("server response");
-
-        assert_eq!(body, LITELLM_BODY);
-        assert!(
-            requests[0]
-                .to_ascii_lowercase()
-                .contains("if-none-match: \"models-dev\"")
-        );
-        assert!(!requests[1].to_ascii_lowercase().contains("if-none-match"));
-    }
-
-    #[test]
-    fn does_not_reuse_a_litellm_body_for_a_models_dev_304() {
-        let fixture = Fixture::new();
-        let dir = fixture.path("http-cache");
-        let (url, server) = serve_responses(vec![
-            not_modified_response(),
-            ok_response("\"fresh\"", MODELS_DEV_BODY),
-        ]);
-        let entry = CacheEntry::for_url(&dir, &url);
-        entry.write("\"litellm\"", LITELLM_BODY);
-
-        let body = fetch_json_with_cache_dir(&url, Some(&dir), PricingEndpoint::ModelsDev)
-            .expect("wrong-schema cache must be refreshed");
-        let requests = server
-            .join()
-            .expect("test server")
-            .expect("server response");
-
-        assert_eq!(body, MODELS_DEV_BODY);
-        assert!(
-            requests[0]
-                .to_ascii_lowercase()
-                .contains("if-none-match: \"litellm\"")
-        );
-        assert!(!requests[1].to_ascii_lowercase().contains("if-none-match"));
-    }
-
-    #[test]
-    fn rejects_a_fresh_body_for_the_wrong_endpoint_and_does_not_cache_it() {
-        let fixture = Fixture::new();
-        let dir = fixture.path("http-cache");
-        let (url, server) = serve_responses(vec![ok_response("\"wrong\"", MODELS_DEV_BODY)]);
-
-        let error = fetch_json_with_cache_dir(&url, Some(&dir), PricingEndpoint::LiteLlm)
-            .expect_err("models.dev body must not be accepted as LiteLLM pricing");
-        let requests = server
-            .join()
-            .expect("test server")
-            .expect("server response");
-
-        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
-        assert!(!requests[0].to_ascii_lowercase().contains("if-none-match"));
+        let (rejected, rejected_bodies) = fetch(&url, &dir, false);
         assert!(CacheEntry::for_url(&dir, &url).read().is_none());
+        let (fresh, fresh_bodies) = fetch(&url, &dir, true);
+        let requests = server
+            .join()
+            .expect("test server")
+            .expect("server response");
+
+        rejected.expect("a rejected body is still a response");
+        fresh.expect("the next fetch should succeed");
+        assert_eq!(rejected_bodies, [CACHED_BODY]);
+        assert_eq!(fresh_bodies, [FRESH_BODY]);
+        assert_eq!(requests.len(), 2);
+        assert!(
+            !requests[1].to_ascii_lowercase().contains("if-none-match"),
+            "no conditional request may follow a rejected body"
+        );
+        let cached = CacheEntry::for_url(&dir, &url)
+            .read()
+            .expect("accepted body is cached");
+        assert_eq!(cached.etag, "\"fresh\"");
+        assert_eq!(cached.body, FRESH_BODY);
     }
 
     #[test]
@@ -718,12 +564,14 @@ mod tests {
         let dir = fixture.path("http-cache");
         let (url, server) = close_after_request();
         let entry = CacheEntry::for_url(&dir, &url);
-        entry.write("\"cached\"", LITELLM_BODY);
+        entry.write("\"cached\"", CACHED_BODY);
 
+        let (result, bodies) = fetch(&url, &dir, true);
         assert!(
-            fetch_json_with_cache_dir(&url, Some(&dir), PricingEndpoint::LiteLlm).is_err(),
+            result.is_err(),
             "a transport failure must not turn an unbounded-age cache into a response"
         );
+        assert!(bodies.is_empty());
         let request = server.join().expect("test server").expect("server request");
         assert!(
             request
@@ -731,7 +579,7 @@ mod tests {
                 .contains("if-none-match: \"cached\"")
         );
         let cached = entry.read().expect("transport failure keeps cache on disk");
-        assert_eq!(cached.body, LITELLM_BODY);
+        assert_eq!(cached.body, CACHED_BODY);
     }
 
     #[test]
@@ -744,17 +592,19 @@ mod tests {
         );
         let (url, server) = serve_responses(vec![response]);
         let entry = CacheEntry::for_url(&dir, &url);
-        entry.write("\"cached\"", LITELLM_BODY);
+        entry.write("\"cached\"", CACHED_BODY);
 
+        let (result, bodies) = fetch(&url, &dir, true);
         assert!(
-            fetch_json_with_cache_dir(&url, Some(&dir), PricingEndpoint::LiteLlm).is_err(),
+            result.is_err(),
             "an oversized response must not reuse cached pricing"
         );
+        assert!(bodies.is_empty());
         let _ = server
             .join()
             .expect("test server")
             .expect("server response");
-        assert_eq!(entry.read().expect("cache remains").body, LITELLM_BODY);
+        assert_eq!(entry.read().expect("cache remains").body, CACHED_BODY);
     }
 
     #[test]

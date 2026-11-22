@@ -1,58 +1,73 @@
-(require '[babashka.cli :as cli]
-         '[babashka.fs :as fs]
-         '[babashka.process :as process]
-         '[cheshire.core :as json]
-         '[clojure.string :as str])
+(ns compare-pr-performance.data
+  (:require [babashka.cli :as cli]
+            [cheshire.core :as json]
+            [clojure.string :as str]))
+
+(def default-commands ["claude daily" "claude session" "codex daily" "daily"])
+
+(def shape-fixtures
+  [{:fixture :many-files :option :many-files-fixture-dir :label "many small files"
+    :desc "Claude logs spread as many small files over many project directories, so discovery dominates"}
+   {:fixture :proxy :option :proxy-fixture-dir :label "requestless proxy"
+    :desc "Claude logs written through a gateway that drops `requestId`, so responses are deduplicated along `uuid`/`parentUuid` chains"}
+   {:fixture :small :option :small-fixture-dir :label "tiny"
+    :desc "a few MiB of Claude logs, so fixed startup cost such as building the pricing map dominates"}
+   {:fixture :opencode :option :opencode-fixture-dir :label "large OpenCode database" :env-var "OPENCODE_DATA_DIR"
+    :desc "a WAL-mode `opencode.db` whose `session_message` payloads, up to 48 KiB, hold long content before their token counts, so reading payloads dominates"}])
+
+(def median-mtime "{median-mtime}")
+(def recent-mtime "{recent-mtime}")
+
+(def shape-commands
+  [{:fixture :large :command (str "claude daily --since " median-mtime)}
+   {:fixture :large :command (str "claude daily --since " recent-mtime)}
+   {:fixture :large :command "codex session"}
+   {:fixture :many-files :command "claude daily"}
+   {:fixture :proxy :command "claude daily"}
+   {:fixture :small :command "daily"}
+   {:fixture :opencode :command "opencode daily"}])
 
 (def cli-spec
-  {:base-dir {:ref "DIR"}
-   :base-package-url {:ref "URL"}
+  {:base-bin {:ref "FILE" :desc "Base ccusage binary, built from the PR's base commit"}
    :base-sha {:ref "SHA"}
-   :head-dir {:ref "DIR"}
-   :head-runtime {:default "package" :ref "package|rust"}
-   :fixture-dir {:ref "DIR"}
-   :codex-fixture-dir {:ref "DIR"}
+   :head-bin {:ref "FILE" :desc "PR ccusage binary, built the same way as the base"}
+   :head-sha {:ref "SHA"}
+   :fixture-dir {:ref "DIR" :desc "Claude fixture (CLAUDE_CONFIG_DIR)"}
+   :codex-fixture-dir {:ref "DIR" :desc "Codex fixture (CODEX_HOME)"}
+   :grok-fixture-dir {:ref "DIR" :desc "Grok fixture (GROK_HOME); optional"}
+   :many-files-fixture-dir {:ref "DIR" :desc "Claude fixture generated with --claude-shape many-small-files; optional"}
+   :proxy-fixture-dir {:ref "DIR" :desc "Claude fixture generated with --claude-shape requestless-proxy; optional"}
+   :small-fixture-dir {:ref "DIR" :desc "Claude fixture of a few MiB; optional"}
+   :opencode-fixture-dir {:ref "DIR" :desc "OpenCode fixture (OPENCODE_DATA_DIR) generated with --opencode-output-dir; optional"}
    :output {:ref "FILE"}
-   :runs {:coerce :long :default 7 :ref "N"}
-   :warmup {:coerce :long :default 2 :ref "N"}
-   :large-fixture-dir {:ref "DIR"}
-   :large-codex-fixture-dir {:ref "DIR"}
-   :large-runs {:coerce :long :default 1 :ref "N"}
-   :large-warmup {:coerce :long :default 0 :ref "N"}
-   :memory-runs {:coerce :long :default 1 :ref "N"}
-   :head-package-url {:ref "URL"}
-   :package-runner-timeout-ms {:coerce :long :default 120000 :ref "MS"}
+   :runs {:coerce :long :default 11 :ref "N" :desc "Interleaved measured rounds; at least 3"}
+   :warmup {:coerce :long :default 2 :ref "N" :desc "Interleaved warmup rounds"}
+   :threshold {:coerce :double :default 0.1 :ref "RATIO" :desc "CPU-time and RSS change that counts as a regression"}
+;; NOTE(2026-11-21, #2449): Three 11-round byte-copy control runs on the Linux runner kept all 33 rows' median wall ratios within 4% of 1.00. Twice that stays clear of that noise and still catches #2407's 1.3x.
+   :wall-threshold {:coerce :double :default 0.08 :ref "RATIO" :desc "Wall-time change that counts as a regression"}
    :help {:alias :h :coerce :boolean}})
 
 (defn fail! [message data]
   (throw (ex-info message data)))
 
-(defn parse-head-runtime [value]
-  (if (#{"package" "rust"} value)
-    value
-    (fail! (format "Invalid head runtime: %s. Use package or rust." value)
-           {:kind :invalid-runtime :value value})))
-
-(defn assert-sample-options [runs warmup label]
-  (when (< runs 1)
-    (fail! (format "--%sruns must be a positive integer" label) {:kind :invalid-cli}))
+(defn assert-sample-options [{:keys [runs warmup threshold wall-threshold]}]
+  (when (< runs 3)
+    (fail! "--runs must be at least 3" {:kind :invalid-cli}))
   (when (< warmup 0)
-    (fail! (format "--%swarmup must be a non-negative integer" label) {:kind :invalid-cli})))
+    (fail! "--warmup must be a non-negative integer" {:kind :invalid-cli}))
+  (when-not (< 0 threshold 1)
+    (fail! "--threshold must be between 0 and 1" {:kind :invalid-cli}))
+  (when-not (< 0 wall-threshold 1)
+    (fail! "--wall-threshold must be between 0 and 1" {:kind :invalid-cli})))
 
 (defn parse-cli [argv]
   (let [options (cli/parse-opts argv {:spec cli-spec :restrict true})]
     (when-not (:help options)
-      (doseq [required [:head-dir :fixture-dir :codex-fixture-dir]]
+      (doseq [required [:base-bin :head-bin :fixture-dir :codex-fixture-dir]]
         (when-not (get options required)
-          (fail! (str "--" (str/replace (name required) "_" "-") " is required")
+          (fail! (str "--" (name required) " is required")
                  {:kind :invalid-cli :option required})))
-      (assert-sample-options (:runs options) (:warmup options) "")
-      (assert-sample-options (:large-runs options) (:large-warmup options) "large-")
-      (when (< (:memory-runs options) 0)
-        (fail! "--memory-runs must be a non-negative integer" {:kind :invalid-cli}))
-      (when-not (or (:base-dir options) (:base-package-url options))
-        (fail! "Either --base-dir or --base-package-url is required" {:kind :invalid-cli}))
-      (parse-head-runtime (:head-runtime options)))
+      (assert-sample-options options))
     options))
 
 (defn help-text []
@@ -61,24 +76,16 @@
 
 (defn format-sha [sha] (subs sha 0 (min 12 (count sha))))
 
-(defn package-url-sha [url]
-  (if-let [[_ sha] (re-find #"@([0-9a-fA-F]{7,40})(?:$|[/?#])" url)]
-    (format-sha sha)
-    url))
-
 (defn format-duration [milliseconds]
   (if (>= milliseconds 1000)
-    (format "%.3fs" (/ (double milliseconds) 1000))
-    (format "%.1fms" (double milliseconds))))
+    (format "%.2fs" (/ (double milliseconds) 1000))
+    (format "%.0fms" (double milliseconds))))
 
 (defn format-size [bytes] (format "%.2f KiB" (/ (double bytes) 1024)))
 (defn format-optional-size [bytes] (if (nil? bytes) "-" (format-size bytes)))
 (defn format-size-delta [base head]
   (if (or (nil? base) (nil? head)) "-"
       (let [delta (- head base)] (str (when (>= delta 0) "+") (format-size delta)))))
-(defn format-size-ratio [base head]
-  (if (or (nil? base) (nil? head) (zero? head)) "-"
-      (format "%.2fx" (/ (double base) head))))
 (defn format-data-size [bytes]
   (if (>= bytes (* 1024 1024 1024))
     (format "%.2f GiB" (/ (double bytes) 1024 1024 1024))
@@ -86,31 +93,39 @@
 (defn format-memory-size [bytes]
   (cond
     (>= bytes (* 1024 1024 1024)) (format "%.2f GiB" (/ (double bytes) 1024 1024 1024))
-    (>= bytes (* 1024 1024)) (format "%.2f MiB" (/ (double bytes) 1024 1024))
-    :else (format "%.2f KiB" (/ (double bytes) 1024))))
-(defn format-optional-memory [m] (if m (format-memory-size (:peak-rss-bytes m)) "-"))
-(defn format-memory-ratio [base head]
-  (if (or (nil? base) (nil? head) (zero? (:peak-rss-bytes base))) "-"
-      (format "%.2fx" (/ (double (:peak-rss-bytes head)) (:peak-rss-bytes base)))))
-(defn format-throughput [bytes milliseconds]
-  (let [mibps (/ (double bytes) 1024 1024 (/ milliseconds 1000.0))]
-    (if (>= mibps 1024) (format "%.2f GiB/s" (/ mibps 1024)) (format "%.2f MiB/s" mibps))))
+    (>= bytes (* 1024 1024)) (format "%.0f MiB" (/ (double bytes) 1024 1024))
+    :else (format "%.0f KiB" (/ (double bytes) 1024))))
+(defn format-ratio [ratio] (format "%.2fx" (double ratio)))
 
-(defn measurement-from-milliseconds [times]
-  (when (empty? times) (fail! "Cannot summarize zero measurements" {:kind :empty-measurement}))
-  (let [sorted (vec (sort times))]
-    {:max (peek sorted) :median (nth sorted (quot (count sorted) 2))
-     :min (first sorted) :samples (count sorted)}))
+(defn median [values]
+  (when (empty? values) (fail! "Cannot summarize zero measurements" {:kind :empty-measurement}))
+  (let [sorted (vec (sort values)) n (count sorted)]
+    (if (odd? n)
+      (nth sorted (quot n 2))
+      (/ (+ (nth sorted (dec (quot n 2))) (nth sorted (quot n 2))) 2.0))))
 
-(defn measurement-from-hyperfine [result]
-  {:max (* 1000 (:max result)) :median (* 1000 (:median result))
-   :min (* 1000 (:min result)) :samples (count (:times result))})
+(defn summarize [values]
+  {:median (median values) :min (apply min values) :max (apply max values) :samples (count values)})
+
+(defn classify-ratios
+  [ratios threshold]
+  (let [n (count ratios)
+        agreeing (- n (quot n 5))
+        middle (median ratios)
+        above (count (filter #(> % 1.0) ratios))
+        below (count (filter #(< % 1.0) ratios))]
+    (cond
+      (and (> middle (+ 1.0 threshold)) (>= above agreeing)) :regression
+      (and (< middle (- 1.0 threshold)) (>= below agreeing)) :improvement
+      :else :unchanged)))
 
 (def safe-arg-pattern #"^[A-Za-z0-9_@%+=:,./-]+$")
 (defn command-text-arg [value]
   (let [text (str value)]
     (if (re-matches safe-arg-pattern text) text (json/generate-string text))))
-(defn benchmark-command-text [env argv]
-  (->> (concat ["env"] (map (fn [[k v]] (str k "=" v)) env) argv)
-       (map command-text-arg)
-       (str/join " ")))
+(defn benchmark-argv
+  [{:keys [vars clean?]} argv]
+  (vec (concat ["env"] (when clean? ["-i"]) (map (fn [[k v]] (str k "=" v)) vars) argv)))
+(defn benchmark-command-text
+  [env argv]
+  (str/join " " (map command-text-arg (benchmark-argv env argv))))

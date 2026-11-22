@@ -1,0 +1,28 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage gemini monthly --offline
+---
+exit: 0
+--- stdout ---
+┌──────────┬──────────────────────────┬───────────┬───────────┬───────────────┬─────────────┬───────────────┬─────────────┐
+│ Month    │ Models                   │     Input │    Output │  Cache Create │  Cache Read │  Total Tokens │  Cost (USD) │
+├──────────┼──────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2025-12  │ - gemini-2.5-flash       │     4,827 │     1,165 │             0 │       3,280 │        10,146 │       $0.02 │
+│          │ - gemini-2.5-pro         │           │           │               │             │               │             │
+│          │ - gemini-3-flash-preview │           │           │               │             │               │             │
+│          │ - gemini-mystery-1       │           │           │               │             │               │             │
+│          │ - sonnet-4               │           │           │               │             │               │             │
+│          │ - unknown                │           │           │               │             │               │             │
+├──────────┼──────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2026-01  │ - gemini-2.5-flash       │   301,672 │     1,350 │             0 │     152,133 │       455,230 │       $0.81 │
+│          │ - gemini-2.5-pro         │           │           │               │             │               │             │
+│          │ - gemini-3-flash-preview │           │           │               │             │               │             │
+│          │ - gemini-mystery-1       │           │           │               │             │               │             │
+│          │ - sonnet-4               │           │           │               │             │               │             │
+├──────────┼──────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ Total    │                          │   306,499 │     2,515 │             0 │     155,413 │       465,376 │       $0.82 │
+└──────────┴──────────────────────────┴───────────┴───────────┴───────────────┴─────────────┴───────────────┴─────────────┘
+
+--- stderr ---
+WARN  Missing embedded pricing for gemini-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for unknown; cost excludes this model. Run without --offline or update ccusage after pricing is added.

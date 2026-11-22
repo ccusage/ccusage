@@ -1,32 +1,35 @@
-use std::{fs, path::Path, sync::Arc};
+use ccusage_core::cost::PriceTable;
+use ccusage_core::{
+    cost::{EntryPricing, UsageGranularity},
+    pricing::{AgentModel, MatchKind},
+};
+use std::{path::Path, sync::Arc};
 
+use ccusage_adapter_common::{
+    billing::{host_provider, price_entry_for_provider},
+    jsonl,
+    units::UnitError,
+};
+use ccusage_core::{Diagnostics, Skip, SkipKind};
 use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
-    LoadedEntry, PricingMap, Result, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
-    apply_total_token_fallback, calculate_cost_for_usage_at, cli::CostMode, fast::LinePrefilter,
-    format_date_tz, missing_pricing_model_for_usage, stored_cost_for_mode,
+    LoadedEntry, TimestampMs, TokenUsageRaw, cli::CostMode, date_at, fast::LinePrefilter,
+    stored_cost_for_mode,
 };
-use ccusage_adapter_common::jsonl;
 
-/// A single parsed OpenClaw session line. Only the fields ccusage consumes are
-/// declared; serde skips everything else. Both `model_change`/`model-snapshot`
-/// records and assistant `message` records share this struct so the stateful
-/// model/provider tracking can read either shape in order.
 #[derive(Debug, Default, Deserialize)]
 pub(super) struct OpenClawLine {
     #[serde(default)]
     r#type: Option<String>,
-    // Stable transcript event id. SQLite-era rows always carry one (the insert
-    // path generates it when the caller omits it); JSONL-era records predate
-    // it, so it stays optional.
+    // NOTE(2026-09-16, #1727): OpenClaw generates an event ID when inserting a SQLite transcript row without one. Older JSONL records can lack that ID, so the parser accepts both.
     #[serde(default, deserialize_with = "jsonl::non_empty_string")]
     id: Option<String>,
     #[serde(rename = "customType", default)]
     custom_type: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_model_source")]
+    #[serde(default, deserialize_with = "jsonl::lenient_object")]
     data: Option<OpenClawModelSource>,
     #[serde(
         rename = "modelId",
@@ -38,36 +41,64 @@ pub(super) struct OpenClawLine {
     model: Option<String>,
     #[serde(default, deserialize_with = "jsonl::non_empty_string")]
     provider: Option<String>,
-    // A non-object `message` previously navigated to no usage without dropping
-    // the line, so deserialize it leniently. Otherwise a malformed `message` on
-    // a model-tracking line would fail the whole record and lose the
-    // model/provider state update for subsequent usage entries.
-    #[serde(default, deserialize_with = "jsonl::lenient_object")]
-    message: Option<OpenClawMessage>,
+    #[serde(default, deserialize_with = "deserialize_message")]
+    message: DecodedMessage,
     timestamp: Option<Value>,
 }
 
-/// Deserialize the `data` block of a model-change record, mirroring the
-/// historical `Value::as_object` navigation: only JSON objects yield a source,
-/// while any other shape (or a missing key) becomes `None` instead of failing
-/// the whole line.
-fn deserialize_model_source<'de, D>(
-    deserializer: D,
-) -> std::result::Result<Option<OpenClawModelSource>, D::Error>
+#[derive(Debug, Default)]
+struct DecodedMessage {
+    value: Option<OpenClawMessage>,
+    rejected: bool,
+    usage_envelope: bool,
+}
+
+fn deserialize_message<'de, D>(deserializer: D) -> std::result::Result<DecodedMessage, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
-    let value = Option::<Value>::deserialize(deserializer)?;
-    Ok(value.and_then(|value| {
-        value
-            .is_object()
-            .then(|| serde_json::from_value(value).ok())
-            .flatten()
-    }))
+    match Option::<Value>::deserialize(deserializer)? {
+        Some(value @ Value::Object(_)) => {
+            let usage_envelope = value.get("role").and_then(Value::as_str) == Some("assistant")
+                && value.get("usage").is_some();
+            Ok(match serde_json::from_value(value) {
+                Ok(message) => DecodedMessage {
+                    value: Some(message),
+                    ..Default::default()
+                },
+                Err(_) => DecodedMessage {
+                    rejected: true,
+                    usage_envelope,
+                    ..Default::default()
+                },
+            })
+        }
+        _ => Ok(DecodedMessage::default()),
+    }
 }
 
-/// Model/provider fields carried either at the root of a `model_change` record
-/// or nested under its `data` key.
+fn record_message_error(
+    record: &OpenClawLine,
+    path: &Path,
+    number: u32,
+    diagnostics: &Diagnostics,
+) {
+    if !record.message.rejected {
+        return;
+    }
+    let kind = if record.r#type.as_deref() == Some("message") && record.message.usage_envelope {
+        SkipKind::InvalidData
+    } else {
+        SkipKind::UndecodedUsage
+    };
+    diagnostics.record(Skip::record(
+        path,
+        number,
+        kind,
+        "message object did not decode",
+    ));
+}
+
 #[derive(Debug, Default, Deserialize)]
 struct OpenClawModelSource {
     #[serde(
@@ -82,13 +113,6 @@ struct OpenClawModelSource {
     provider: Option<String>,
 }
 
-/// Assistant message payload carrying token usage and per-message metadata.
-///
-/// This is also the shape OpenClaw persists inside SQLite `transcript_events`
-/// rows: each row's `event_json` is a transcript record whose nested `message`
-/// carries `role`, `usage`, and the model/provider labels. The SQLite reader in
-/// `sqlite.rs` reuses this struct by parsing `event_json` into an
-/// [`OpenClawLine`], so changes here apply to both the JSONL and SQLite paths.
 #[derive(Debug, Default, Deserialize)]
 struct OpenClawMessage {
     #[serde(default)]
@@ -107,7 +131,6 @@ struct OpenClawMessage {
     provider: Option<String>,
 }
 
-/// Token usage block carried by OpenClaw assistant messages.
 #[derive(Debug, Default, Deserialize)]
 struct OpenClawUsage {
     #[serde(default, deserialize_with = "jsonl::lenient_u64")]
@@ -128,28 +151,10 @@ struct OpenClawUsage {
         deserialize_with = "jsonl::lenient_u64"
     )]
     total_tokens: u64,
-    #[serde(default, deserialize_with = "deserialize_cost")]
+    #[serde(default, deserialize_with = "jsonl::lenient_object")]
     cost: Option<OpenClawCost>,
 }
 
-/// Deserialize the `cost` block, mirroring the historical
-/// `usage.get("cost").and_then(|cost| cost.get("total"))` navigation: only JSON
-/// objects yield a cost, while any other shape (or a missing key) becomes `None`
-/// instead of failing the whole line.
-fn deserialize_cost<'de, D>(deserializer: D) -> std::result::Result<Option<OpenClawCost>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let value = Option::<Value>::deserialize(deserializer)?;
-    Ok(value.and_then(|value| {
-        value
-            .is_object()
-            .then(|| serde_json::from_value(value).ok())
-            .flatten()
-    }))
-}
-
-/// Precomputed cost block carried alongside OpenClaw usage.
 #[derive(Debug, Default, Deserialize)]
 struct OpenClawCost {
     #[serde(default, deserialize_with = "jsonl::lenient_f64")]
@@ -159,9 +164,8 @@ struct OpenClawCost {
 #[derive(Debug, Clone)]
 pub(super) struct OpenClawEntry {
     timestamp: TimestampMs,
-    timestamp_text: String,
+
     session_id: String,
-    pricing_model: String,
     model: String,
     provider: Option<String>,
     input_tokens: u64,
@@ -170,50 +174,135 @@ pub(super) struct OpenClawEntry {
     cache_read_tokens: u64,
     total_tokens: u64,
     cost: Option<f64>,
+    event_id: Option<String>,
+}
+
+pub(super) struct TranscriptReader {
+    session_id: String,
+    keeps_event_ids: bool,
+    model: Option<String>,
+    provider: Option<String>,
+}
+
+impl TranscriptReader {
+    fn jsonl(session_id: String) -> Self {
+        Self::new(session_id, false)
+    }
+
+    pub(super) fn sqlite(session_id: String) -> Self {
+        Self::new(session_id, true)
+    }
+
+    fn new(session_id: String, keeps_event_ids: bool) -> Self {
+        Self {
+            session_id,
+            keeps_event_ids,
+            model: None,
+            provider: None,
+        }
+    }
+
+    pub(super) fn session_id(&self) -> &str {
+        &self.session_id
+    }
+
+    pub(super) fn read(
+        &mut self,
+        record: &OpenClawLine,
+        unit: &Path,
+        number: u32,
+        fallback_timestamp: Option<TimestampMs>,
+        diagnostics: &Diagnostics,
+    ) -> Option<OpenClawEntry> {
+        record_message_error(record, unit, number, diagnostics);
+        if is_model_change(record) {
+            let (model, provider) = model_change_source(record);
+            if model.is_some() {
+                self.model = model;
+            }
+            if provider.is_some() {
+                self.provider = provider;
+            }
+            return None;
+        }
+        let mut entry = match parse_transcript_message(
+            record,
+            &self.session_id,
+            self.model.as_deref(),
+            self.provider.as_deref(),
+            fallback_timestamp,
+        )? {
+            Ok(entry) => entry,
+            Err(TranscriptIssue::MissingTimestamp) => {
+                diagnostics.record(Skip::record(
+                    unit,
+                    number,
+                    SkipKind::InvalidTimestamp,
+                    "OpenClaw usage record has no timestamp",
+                ));
+                return None;
+            }
+            Err(TranscriptIssue::UnrepresentableTokens) => {
+                diagnostics.record(Skip::record(
+                    unit,
+                    number,
+                    SkipKind::InvalidData,
+                    "OpenClaw token counts exceed the u64 range",
+                ));
+                return None;
+            }
+        };
+        if !self.keeps_event_ids {
+            entry.event_id = None;
+        }
+        Some(entry)
+    }
 }
 
 pub(super) fn parse_session_file(
     path: &Path,
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     mode: CostMode,
-    pricing: Option<&PricingMap>,
-) -> Result<Vec<LoadedEntry>> {
-    let session_id = extract_session_id(path);
-    let fallback_timestamp = file_modified_timestamp(path);
-    let content = fs::read(path)?;
-    // OpenClaw lines that matter are either model-tracking records
-    // (`model_change`/`model-snapshot`) or assistant records carrying `usage`,
-    // so admit lines containing any of those substrings before JSON parsing.
-    let prefilter =
-        LinePrefilter::any(&[br#""model_change""#, br#""model-snapshot""#, br#""usage""#]);
-    let mut current_model = None::<String>;
-    let mut current_provider = None::<String>;
+    pricing: PriceTable<'_>,
+    diagnostics: &Diagnostics,
+) -> std::result::Result<Vec<LoadedEntry>, UnitError> {
+    let mut reader = TranscriptReader::jsonl(extract_session_id(path));
+    let prefilter = record_prefilter();
     let mut entries = Vec::new();
-    for record in jsonl::records::<OpenClawLine>(&content, Some(&prefilter)) {
-        if is_model_change(&record) {
-            let (model, provider) = model_change_source(&record);
-            if let Some(model) = model {
-                current_model = Some(model);
-            }
-            if let Some(provider) = provider {
-                current_provider = Some(provider);
-            }
-            continue;
-        }
-        if let Some(entry) = parse_message_entry(
-            &record,
-            &session_id,
-            current_model.as_deref(),
-            current_provider.as_deref(),
-            fallback_timestamp,
-        ) {
-            entries.push(openclaw_entry_to_loaded(entry, tz, mode, pricing));
-        }
-    }
+    jsonl::read_records::<OpenClawLine>(
+        path,
+        Some(&prefilter),
+        diagnostics,
+        is_usage_envelope,
+        |number, record, diagnostics| {
+            entries.extend(
+                reader
+                    .read(&record, path, number, None, diagnostics)
+                    .map(|entry| entry_to_loaded(entry, tz, mode, pricing)),
+            );
+        },
+    )?;
     Ok(entries)
 }
 
-pub(super) fn is_model_change(record: &OpenClawLine) -> bool {
+pub(super) fn record_prefilter() -> LinePrefilter {
+    LinePrefilter::any(&[br#""model_change""#, br#""model-snapshot""#, br#""usage""#])
+}
+
+pub(super) fn is_usage_envelope(value: &Value) -> bool {
+    value.get("type").and_then(Value::as_str) == Some("message")
+        && value
+            .get("message")
+            .and_then(|message| message.get("role"))
+            .and_then(Value::as_str)
+            == Some("assistant")
+        && value
+            .get("message")
+            .and_then(|message| message.get("usage"))
+            .is_some()
+}
+
+fn is_model_change(record: &OpenClawLine) -> bool {
     if record.r#type.as_deref() == Some("model_change") {
         return true;
     }
@@ -221,10 +310,7 @@ pub(super) fn is_model_change(record: &OpenClawLine) -> bool {
         && record.custom_type.as_deref() == Some("model-snapshot")
 }
 
-/// Model/provider carried by a `model_change`/`model-snapshot` record, either
-/// at the root or nested under its `data` key. Shared by the JSONL file reader
-/// and the SQLite transcript reader so both track the active model identically.
-pub(super) fn model_change_source(record: &OpenClawLine) -> (Option<String>, Option<String>) {
+fn model_change_source(record: &OpenClawLine) -> (Option<String>, Option<String>) {
     let (source_model_id, source_model, source_provider) = match record.data.as_ref() {
         Some(source) => (
             source.model_id.clone(),
@@ -240,41 +326,17 @@ pub(super) fn model_change_source(record: &OpenClawLine) -> (Option<String>, Opt
     (source_model_id.or(source_model), source_provider)
 }
 
-fn parse_message_entry(
+fn parse_transcript_message(
     record: &OpenClawLine,
     session_id: &str,
     current_model: Option<&str>,
     current_provider: Option<&str>,
-    fallback_timestamp: TimestampMs,
-) -> Option<OpenClawEntry> {
-    parse_transcript_message(
-        record,
-        session_id,
-        current_model,
-        current_provider,
-        fallback_timestamp,
-    )
-    .map(|(entry, _)| entry)
-}
-
-/// Parse one transcript record into usage plus its stable identity.
-///
-/// The identity is the event `id` when present; JSONL-era records predate
-/// stable ids, so those return `None` and the loader falls back to its
-/// content-based entry id. SQLite-era rows always carry an `id` (the insert
-/// path generates one when the caller omits it), which the loader uses to
-/// prefer SQLite rows over migrated JSONL duplicates of the same event.
-pub(super) fn parse_transcript_message(
-    record: &OpenClawLine,
-    session_id: &str,
-    current_model: Option<&str>,
-    current_provider: Option<&str>,
-    fallback_timestamp: TimestampMs,
-) -> Option<(OpenClawEntry, Option<String>)> {
+    fallback_timestamp: Option<TimestampMs>,
+) -> Option<Result<OpenClawEntry, TranscriptIssue>> {
     if record.r#type.as_deref() != Some("message") {
         return None;
     }
-    let message = record.message.as_ref()?;
+    let message = record.message.value.as_ref()?;
     if message.role.as_deref() != Some("assistant") {
         return None;
     }
@@ -292,13 +354,19 @@ pub(super) fn parse_transcript_message(
         speed: None,
         cache_creation: None,
     };
-    let (raw_usage, extra_total_tokens) = apply_total_token_fallback(raw_usage, 0, total_tokens);
-    if crate::total_usage_tokens(raw_usage) + extra_total_tokens == 0 {
+    let Some(counted_tokens) = ccusage_core::checked_total_usage_tokens(raw_usage, 0) else {
+        return Some(Err(TranscriptIssue::UnrepresentableTokens));
+    };
+    let total_tokens = total_tokens.max(counted_tokens);
+    if total_tokens == 0 {
         return None;
     }
-    let total_tokens = total_tokens.max(crate::total_usage_tokens(raw_usage) + extra_total_tokens);
-    let timestamp = timestamp_from_value(message.timestamp.as_ref().or(record.timestamp.as_ref()))
-        .unwrap_or(fallback_timestamp);
+    let Some(timestamp) = timestamp_from_value(message.timestamp.as_ref())
+        .or_else(|| timestamp_from_value(record.timestamp.as_ref()))
+        .or(fallback_timestamp)
+    else {
+        return Some(Err(TranscriptIssue::MissingTimestamp));
+    };
     let model = message
         .model_id
         .clone()
@@ -309,12 +377,11 @@ pub(super) fn parse_transcript_message(
         .provider
         .clone()
         .or_else(|| current_provider.map(str::to_string));
-    let entry = OpenClawEntry {
+    Some(Ok(OpenClawEntry {
         timestamp,
-        timestamp_text: crate::format_rfc3339_millis(timestamp),
+
         session_id: session_id.to_string(),
-        pricing_model: model.clone(),
-        model: format!("[openclaw] {model}"),
+        model,
         provider,
         input_tokens: raw_usage.input_tokens,
         output_tokens: raw_usage.output_tokens,
@@ -322,41 +389,17 @@ pub(super) fn parse_transcript_message(
         cache_read_tokens: raw_usage.cache_read_input_tokens,
         total_tokens,
         cost: usage.cost.as_ref().and_then(|cost| cost.total),
-    };
-    let message_id = transcript_event_id(record);
-    Some((entry, message_id))
+        event_id: record.id.clone(),
+    }))
 }
 
-fn transcript_event_id(record: &OpenClawLine) -> Option<String> {
-    record.id.clone().filter(|id| !id.trim().is_empty())
-}
-
-fn openclaw_entry_to_loaded(
+pub(super) fn entry_to_loaded(
     entry: OpenClawEntry,
-    tz: Option<&JiffTimeZone>,
+    tz: &JiffTimeZone,
     mode: CostMode,
-    pricing: Option<&PricingMap>,
+    pricing: PriceTable<'_>,
 ) -> LoadedEntry {
-    openclaw_entry_to_loaded_inner(entry, tz, mode, pricing, None)
-}
-
-pub(super) fn sqlite_entry_to_loaded(
-    entry: OpenClawEntry,
-    message_id: Option<String>,
-    tz: Option<&JiffTimeZone>,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
-) -> LoadedEntry {
-    openclaw_entry_to_loaded_inner(entry, tz, mode, pricing, message_id)
-}
-
-fn openclaw_entry_to_loaded_inner(
-    entry: OpenClawEntry,
-    tz: Option<&JiffTimeZone>,
-    mode: CostMode,
-    pricing: Option<&PricingMap>,
-    message_id: Option<String>,
-) -> LoadedEntry {
+    let identity = AgentModel::new("openclaw", &entry.model);
     let usage = TokenUsageRaw {
         input_tokens: entry.input_tokens,
         output_tokens: entry.output_tokens,
@@ -365,56 +408,51 @@ fn openclaw_entry_to_loaded_inner(
         speed: None,
         cache_creation: None,
     };
-    let data = UsageEntry {
-        session_id: Some(entry.session_id.clone()),
-        timestamp: entry.timestamp_text.clone(),
-        version: entry.provider.clone(),
-        message: UsageMessage {
-            usage,
-            model: Some(entry.model.clone()),
-            id: message_id,
-        },
-        cost_usd: entry.cost,
-        request_id: None,
-        is_api_error_message: None,
-        is_sidechain: None,
-    };
-    let pricing_model = if pricing.is_some_and(|pricing| pricing.find_exact(&entry.model).is_some())
-    {
-        &entry.model
-    } else {
-        &entry.pricing_model
-    };
-    let cost = calculate_cost_for_usage_at(
-        Some(pricing_model),
+    let additional = ccusage_core::AdditionalTokens::from_total(usage, 0, entry.total_tokens);
+    let host_model = entry
+        .provider
+        .as_deref()
+        .and_then(host_provider)
+        .map(|host| format!("{host}/{}", entry.model));
+    let [display, raw] = identity.candidates();
+    let candidates: Vec<_> = std::iter::once(display)
+        .chain(host_model.as_deref().map(|name| (name, MatchKind::Exact)))
+        .chain(std::iter::once(raw))
+        .collect();
+    let entry_pricing = EntryPricing {
+        granularity: UsageGranularity::Request,
         usage,
-        entry.cost,
-        Some(entry.timestamp),
-        mode,
-        pricing,
-    );
-    let missing_pricing_model =
-        missing_pricing_model_for_usage(Some(pricing_model), usage, entry.cost, mode, pricing);
+        reasoning_tokens: 0,
+        reported_model: Some(identity.display()),
+        candidates: &candidates,
+        stored_cost: entry.cost,
+        timestamp: Some(entry.timestamp),
+    };
+    let priced = price_entry_for_provider(entry_pricing, entry.provider.as_deref(), pricing);
+    let cost = priced.cost;
+    let estimated_pricing = priced.estimated;
+    let missing_pricing_model = priced
+        .missing_pricing
+        .then(|| crate::model_aliases::resolve_model_name(&entry.model).into_owned());
     let stored_cost = stored_cost_for_mode(entry.cost, mode);
     LoadedEntry {
-        date: format_date_tz(entry.timestamp, tz),
+        date: date_at(entry.timestamp, tz),
         timestamp: entry.timestamp,
         project: Arc::from("openclaw"),
         session_id: Arc::from(entry.session_id),
         project_path: Arc::from("OpenClaw"),
         cost,
-        extra_total_tokens: entry.total_tokens.saturating_sub(
-            entry.input_tokens
-                + entry.output_tokens
-                + entry.cache_creation_tokens
-                + entry.cache_read_tokens,
-        ),
+        extra_total_tokens: additional.report_remainder,
         credits: None,
         message_count: None,
-        model: Some(entry.model),
-        data,
+        model: Some(identity.into_display()),
+        usage,
+        message_id: entry.event_id,
+        version: entry.provider.clone(),
+        recorded_cost: entry.cost,
         usage_limit_reset_time: None,
         missing_pricing_model,
+        estimated_pricing,
         stored_cost,
     }
 }
@@ -428,18 +466,20 @@ fn timestamp_from_value(value: Option<&Value>) -> Option<TimestampMs> {
         return timestamp_from_millis(i64::try_from(raw).ok()?);
     }
     if let Some(raw) = value.as_f64() {
-        return timestamp_from_millis(raw.trunc() as i64);
+        return millis_from_f64(raw).and_then(timestamp_from_millis);
     }
     crate::parse_ts_timestamp(value.as_str()?)
 }
 
-/// OpenClaw writes `created_at` and message timestamps as Unix milliseconds
-/// (`readEventTimestamp` falls back to `Date.now()`), so accept any finite
-/// non-negative value here. Non-finite, negative, or overflowing inputs return
-/// `None` and let the caller fall back to the file mtime, matching the JSONL
-/// path.
-fn timestamp_from_millis(raw: i64) -> Option<TimestampMs> {
-    (raw >= 0).then(|| TimestampMs::from_millis(raw))
+// NOTE(2026-09-16, #1727): OpenClaw stores SQLite `created_at` and numeric message timestamps in Unix milliseconds. Both timestamp sources use the same conversion.
+pub(super) fn timestamp_from_millis(raw: i64) -> Option<TimestampMs> {
+    (raw >= 0)
+        .then_some(raw)
+        .and_then(TimestampMs::from_instant_millis)
+}
+
+fn millis_from_f64(raw: f64) -> Option<i64> {
+    (raw.is_finite() && raw.abs() < i64::MAX as f64).then(|| raw.trunc() as i64)
 }
 
 fn extract_session_id(path: &Path) -> String {
@@ -458,71 +498,257 @@ fn extract_session_id(path: &Path) -> String {
     }
 }
 
-fn file_modified_timestamp(path: &Path) -> TimestampMs {
-    fs::metadata(path)
-        .and_then(|metadata| metadata.modified())
-        .ok()
-        .and_then(|modified| modified.duration_since(std::time::UNIX_EPOCH).ok())
-        .and_then(|duration| i64::try_from(duration.as_millis()).ok())
-        .map(TimestampMs::from_millis)
-        .unwrap_or(TimestampMs::UNIX_EPOCH)
+#[derive(Debug)]
+enum TranscriptIssue {
+    MissingTimestamp,
+    UnrepresentableTokens,
 }
 
-pub(super) fn entry_id(entry: &LoadedEntry) -> String {
-    format!("{}:{}", migration_id(entry), entry.cost)
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(super) struct ContentId {
+    migration: MigrationId,
+    cost_bits: u64,
 }
 
-/// Identity shared by a legacy JSONL event and its migrated SQLite copy.
-///
-/// SQLite can carry a corrected provider-billed cost, so cost must not prevent
-/// the migrated copy from replacing the legacy event.
-pub(super) fn migration_id(entry: &LoadedEntry) -> String {
-    let usage = entry.data.message.usage;
-    [
-        "openclaw".to_string(),
-        entry.session_id.to_string(),
-        entry.data.timestamp.clone(),
-        entry.model.clone().unwrap_or_default(),
-        usage.input_tokens.to_string(),
-        usage.output_tokens.to_string(),
-        usage.cache_creation_input_tokens.to_string(),
-        usage.cache_read_input_tokens.to_string(),
-        entry.extra_total_tokens.to_string(),
-    ]
-    .join(":")
+pub(super) fn content_id(entry: &LoadedEntry) -> ContentId {
+    ContentId {
+        migration: migration_id(entry),
+        cost_bits: entry.cost.to_bits(),
+    }
+}
+
+// NOTE(2026-09-16, #1727): An OpenClaw migration can correct the billed cost in SQLite. The cost difference must still allow the migrated event to match its JSONL copy.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(super) struct MigrationId {
+    session_id: Arc<str>,
+    timestamp: TimestampMs,
+    model: Option<String>,
+    tokens: [u64; 5],
+}
+
+pub(super) fn migration_id(entry: &LoadedEntry) -> MigrationId {
+    let usage = entry.usage;
+    MigrationId {
+        session_id: Arc::clone(&entry.session_id),
+        timestamp: entry.timestamp,
+        model: entry.model.clone(),
+        tokens: [
+            usage.input_tokens,
+            usage.output_tokens,
+            usage.cache_creation_input_tokens,
+            usage.cache_read_input_tokens,
+            entry.extra_total_tokens,
+        ],
+    }
 }
 
 #[cfg(test)]
 mod tests {
+
     use ccusage_test_support::fs_fixture;
 
     use super::*;
 
     #[test]
+    fn diagnoses_jsonl_usage_without_a_timestamp() {
+        let fixture = ccusage_test_support::fs_fixture!({
+            "session.jsonl": r#"{"type":"message","message":{"role":"assistant","model":"gpt-5.2","usage":{"input":10,"output":2}}}"#,
+        });
+        let diagnostics = Diagnostics::new("openclaw");
+        let events = parse_session_file(
+            &fixture.path("session.jsonl"),
+            &JiffTimeZone::UTC,
+            CostMode::Display,
+            PriceTable::Display,
+            &diagnostics,
+        )
+        .unwrap();
+        assert!(events.is_empty());
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 1);
+    }
+
+    #[test]
+    fn uses_a_valid_envelope_timestamp_when_the_message_timestamp_is_invalid() {
+        let fixture = ccusage_test_support::fs_fixture!({
+            "session.jsonl": r#"{"type":"message","timestamp":"2026-01-02T00:00:00Z","message":{"role":"assistant","timestamp":"invalid","usage":{"input":10,"output":2}}}"#,
+        });
+        let diagnostics = Diagnostics::new("openclaw");
+        let entries = parse_session_file(
+            &fixture.path("session.jsonl"),
+            &JiffTimeZone::UTC,
+            CostMode::Display,
+            PriceTable::Display,
+            &diagnostics,
+        )
+        .unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].timestamp.as_millis(), 1_767_312_000_000);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 0);
+    }
+    #[test]
+    fn diagnoses_nested_usage_failure_and_skips_lines_without_markers() {
+        let fixture = fs_fixture!({
+            "session.jsonl": concat!(
+                r#"{"type":"message","message":{"role":"assistant","usage":"SECRET_CANARY"}}"#,
+                "\n",
+                r#"{"type":"message","message":{"role":"toolResult","content":"\u001b[31mred\u001b[0m C:\\users"#,
+                "\n",
+                r#"{"type":"message","message":{"role":"assistant","model":"gpt-5.2","timestamp":"2026-01-02T00:00:00Z","usage":{"input":10,"output":20}}}"#,
+                "\n",
+            ),
+        });
+        let diagnostics = Diagnostics::new("openclaw");
+
+        let entries = parse_session_file(
+            &fixture.path("session.jsonl"),
+            &jiff::tz::TimeZone::UTC,
+            CostMode::Auto,
+            PriceTable::for_map(CostMode::Auto, &ccusage_core::PricingMap::default()),
+            &diagnostics,
+        )
+        .unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].usage.input_tokens, 10);
+        assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
+        assert!(
+            !diagnostics
+                .warnings(&ccusage_core::cli::SharedArgs {
+                    debug: true,
+                    ..Default::default()
+                })
+                .join("\n")
+                .contains("SECRET_CANARY")
+        );
+    }
+
+    #[test]
+    fn diagnoses_malformed_usage_line_and_keeps_later_usage() {
+        let fixture = fs_fixture!({
+            "session.jsonl": concat!(
+                r#"{"type":"message","customType":{"secret":"SECRET_CANARY"},"message":{"role":"assistant","usage":{"input":1}}}"#,
+                "\n",
+                r#"{"type":"message","message":{"role":"assistant","model":"gpt-5.2","usage":{"input":10,"output":20},"timestamp":1769753935279}}"#,
+                "\n",
+            ),
+        });
+        let diagnostics = Diagnostics::new("openclaw");
+
+        let entries = parse_session_file(
+            &fixture.path("session.jsonl"),
+            &jiff::tz::TimeZone::UTC,
+            CostMode::Auto,
+            PriceTable::for_map(CostMode::Auto, &ccusage_core::PricingMap::default()),
+            &diagnostics,
+        )
+        .unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(diagnostics.skipped(ccusage_core::SkipKind::InvalidData), 1);
+        let warnings = diagnostics
+            .warnings(&ccusage_core::cli::SharedArgs {
+                debug: true,
+                ..Default::default()
+            })
+            .join("\n");
+        assert!(!warnings.contains("SECRET_CANARY"));
+    }
+
+    #[test]
     fn malformed_message_does_not_drop_model_tracking_line() {
-        // A `model_change` line whose `message` field is a non-object must still
-        // deserialize and update the tracked model/provider, instead of being
-        // dropped by `records().ok()` and losing state for later usage entries.
         let fixture = fs_fixture!({
             "session.jsonl": concat!(
                 r#"{"type":"model_change","modelId":"gpt-5.2","provider":"openai","message":"not-an-object"}"#,
                 "\n",
-                r#"{"type":"message","message":{"role":"assistant","usage":{"input":10,"output":20}}}"#,
+                r#"{"type":"message","message":{"role":"assistant","timestamp":"2026-01-02T00:00:00Z","usage":{"input":10,"output":20}}}"#,
                 "\n",
             ),
         });
         let file = fixture.path("session.jsonl");
 
-        let entries = parse_session_file(&file, None, CostMode::Auto, None).unwrap();
+        let entries = parse_session_file(
+            &file,
+            &jiff::tz::TimeZone::UTC,
+            CostMode::Auto,
+            PriceTable::for_map(CostMode::Auto, &ccusage_core::PricingMap::default()),
+            &Diagnostics::new("openclaw"),
+        )
+        .unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].model.as_deref(), Some("[openclaw] gpt-5.2"));
-        assert_eq!(entries[0].data.version.as_deref(), Some("openai"));
-        assert_eq!(entries[0].data.message.usage.input_tokens, 10);
+        assert_eq!(entries[0].version.as_deref(), Some("openai"));
+        assert_eq!(entries[0].usage.input_tokens, 10);
     }
 
     #[test]
-    fn falls_back_to_total_tokens_when_openclaw_parts_are_missing() {
+    fn malformed_message_object_keeps_model_state_and_its_own_diagnostic() {
+        let fixture = fs_fixture!({
+            "session.jsonl": concat!(
+                "{}\n\n",
+                r#"{"type":"model_change","modelId":"gpt-5.2","provider":"openai","message":{"role":1,"secret":"SECRET_CANARY"}}"#,
+                "\n",
+                r#"{"type":"message","message":{"role":"assistant","timestamp":"2026-01-02T00:00:00Z","usage":{"input":10,"output":20}}}"#,
+                "\n",
+            ),
+        });
+        let diagnostics = Diagnostics::new("openclaw");
+        let entries = parse_session_file(
+            &fixture.path("session.jsonl"),
+            &jiff::tz::TimeZone::UTC,
+            CostMode::Auto,
+            PriceTable::for_map(CostMode::Auto, &ccusage_core::PricingMap::default()),
+            &diagnostics,
+        )
+        .unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].model.as_deref(), Some("[openclaw] gpt-5.2"));
+        assert_eq!(entries[0].version.as_deref(), Some("openai"));
+        assert_eq!(
+            diagnostics.skipped(ccusage_core::SkipKind::UndecodedUsage),
+            1
+        );
+        let warnings = diagnostics
+            .warnings(&ccusage_core::cli::SharedArgs {
+                debug: true,
+                ..Default::default()
+            })
+            .join("\n");
+        assert!(warnings.contains("session.jsonl:3:"));
+        assert!(!warnings.contains("SECRET_CANARY"));
+    }
+
+    #[test]
+    fn skips_and_diagnoses_token_counts_that_exceed_the_u64_range() {
+        let fixture = fs_fixture!({
+            "session.jsonl": concat!(
+                r#"{"type":"message","message":{"role":"assistant","model":"gpt-5.2","usage":{"input":18446744073709551615,"output":1},"timestamp":"2026-08-17T01:00:00Z"}}"#,
+                "\n",
+                r#"{"type":"message","message":{"role":"assistant","model":"gpt-5.2","usage":{"input":10,"output":1},"timestamp":"2026-08-17T01:01:00Z"}}"#,
+                "\n",
+            ),
+        });
+        let diagnostics = Diagnostics::new("openclaw");
+
+        let entries = parse_session_file(
+            &fixture.path("session.jsonl"),
+            &jiff::tz::TimeZone::UTC,
+            CostMode::Display,
+            PriceTable::Display,
+            &diagnostics,
+        )
+        .unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].usage.input_tokens, 10);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+    }
+
+    #[test]
+    fn keeps_total_only_usage_out_of_output_tokens() {
+        ccusage_test_support::install_pricing_snapshots();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         let record = serde_json::from_value::<OpenClawLine>(serde_json::json!({
             "type": "message",
             "message": {
@@ -534,25 +760,72 @@ mod tests {
             }
         }))
         .unwrap();
-        let entry =
-            parse_message_entry(&record, "session-a", None, None, TimestampMs::UNIX_EPOCH).unwrap();
+        let entry = parse_transcript_message(
+            &record,
+            "session-a",
+            None,
+            None,
+            Some(TimestampMs::UNIX_EPOCH),
+        )
+        .unwrap()
+        .unwrap();
 
-        assert_eq!(entry.output_tokens, 222);
         assert_eq!(entry.total_tokens, 222);
+        let loaded = entry_to_loaded(
+            entry,
+            &JiffTimeZone::UTC,
+            CostMode::Calculate,
+            PriceTable::Calculate(&pricing),
+        );
+        assert_eq!(loaded.usage.output_tokens, 0);
+        assert_eq!(loaded.extra_total_tokens, 222);
+        assert_eq!(loaded.cost, 0.0);
+    }
+
+    #[test]
+    fn falls_back_for_a_timestamp_beyond_the_millisecond_range() {
+        let record_value = serde_json::json!({
+            "type": "message",
+            "message": {
+                "role": "assistant",
+                "model": "gpt-5.2",
+                "usage": { "input": 10, "output": 20 },
+                "timestamp": null
+            }
+        });
+        let fallback = TimestampMs::from_millis(1_769_753_935_279);
+
+        for timestamp in [
+            serde_json::json!(1e300),
+            serde_json::json!(9e18),
+            serde_json::json!(9_000_000_000_000_000_000_i64),
+        ] {
+            let mut record = record_value.clone();
+            record["message"]["timestamp"] = timestamp.clone();
+            let record = serde_json::from_value::<OpenClawLine>(record).unwrap();
+
+            let entry = parse_transcript_message(&record, "session-a", None, None, Some(fallback))
+                .unwrap()
+                .unwrap();
+
+            assert_eq!(entry.timestamp, fallback, "{timestamp}");
+        }
     }
 
     #[test]
     fn calculates_decorated_deepseek_models_with_the_raw_pricing_identity() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({
             "session.jsonl": r#"{"type":"message","message":{"role":"assistant","model":"deepseek-v4-flash","usage":{"input":1000000,"output":0,"totalTokens":1000000},"timestamp":"2026-08-17T01:00:00Z"}}"#,
         });
-        let pricing = PricingMap::load_embedded();
+        let pricing = ccusage_core::PricingMap::load_embedded();
 
         let entries = parse_session_file(
             &fixture.path("session.jsonl"),
-            None,
+            &jiff::tz::TimeZone::UTC,
             CostMode::Calculate,
-            Some(&pricing),
+            PriceTable::Calculate(&pricing),
+            &Diagnostics::new("openclaw"),
         )
         .unwrap();
 
@@ -562,9 +835,107 @@ mod tests {
             Some("[openclaw] deepseek-v4-flash")
         );
         assert_eq!(
-            entries[0].data.message.model.as_deref(),
+            entries[0].model.as_deref(),
             Some("[openclaw] deepseek-v4-flash")
         );
         assert!((entries[0].cost - 0.44).abs() < 1e-12);
+    }
+}
+
+#[cfg(test)]
+mod pricing_identity_tests {
+    use super::*;
+
+    #[test]
+    fn adapter_pricing_identity() {
+        ccusage_test_support::install_pricing_snapshots();
+        let fixture = ccusage_test_support::fs_fixture!({
+            "s.jsonl": r#"{"type":"message","message":{"role":"assistant","model":"deepseek.v4.flash","usage":{"input":1000,"output":0,"totalTokens":1000},"timestamp":"2026-11-17T10:00:00Z"}}"#
+        });
+        let pricing = ccusage_core::PricingMap::load_embedded();
+        let rows = parse_session_file(
+            &fixture.path("s.jsonl"),
+            &JiffTimeZone::UTC,
+            CostMode::Calculate,
+            PriceTable::Calculate(&pricing),
+            &Diagnostics::new("openclaw"),
+        )
+        .unwrap();
+        assert_eq!(
+            rows[0].model.as_deref(),
+            Some("[openclaw] deepseek.v4.flash")
+        );
+        assert!((rows[0].cost - 0.00015).abs() < 1e-12);
+    }
+
+    #[test]
+    fn prices_a_foreign_router_without_the_deepseek_schedule() {
+        ccusage_test_support::install_pricing_snapshots();
+        let pricing = ccusage_core::PricingMap::load_embedded();
+        let fixture = ccusage_test_support::fs_fixture!({
+            "router.jsonl": r#"{"type":"message","message":{"role":"assistant","model":"deepseek-v4-flash","provider":"openrouter","usage":{"input":1000,"output":1000,"totalTokens":2000},"timestamp":"2026-11-17T10:00:00Z"}}"#,
+            "deepseek.jsonl": r#"{"type":"message","message":{"role":"assistant","model":"deepseek-v4-flash","provider":"deepseek","usage":{"input":1000,"output":1000,"totalTokens":2000},"timestamp":"2026-11-17T10:00:00Z"}}"#
+        });
+        for (name, expected) in [("router.jsonl", 0.0015), ("deepseek.jsonl", 0.00075)] {
+            let rows = parse_session_file(
+                &fixture.path(name),
+                &JiffTimeZone::UTC,
+                CostMode::Calculate,
+                PriceTable::Calculate(&pricing),
+                &Diagnostics::new("openclaw"),
+            )
+            .unwrap();
+            assert_eq!(rows.len(), 1, "{name}");
+            assert!(
+                (rows[0].cost - expected).abs() < 1e-12,
+                "{name}: {}",
+                rows[0].cost
+            );
+            assert_eq!(rows[0].missing_pricing_model, None, "{name}");
+        }
+    }
+
+    #[test]
+    fn a_vertex_provider_bills_the_vertex_listing_in_every_spelling() {
+        ccusage_test_support::install_pricing_snapshots();
+        let mut pricing = ccusage_core::PricingMap::default();
+        pricing.load_json(
+            r#"{
+                "gemini/gemini-4-argon": {"litellm_provider": "gemini", "input_cost_per_token": 2e-6, "output_cost_per_token": 1e-5},
+                "vertex_ai/gemini-4-argon": {"litellm_provider": "vertex_ai-language-models", "input_cost_per_token": 2.5e-6, "output_cost_per_token": 1.2e-5}
+            }"#,
+        );
+        for logged in [
+            "vertex",
+            "vertex_ai",
+            "Vertex-AI",
+            "google-vertex",
+            "google_vertex",
+        ] {
+            let entry = OpenClawEntry {
+                timestamp: ccusage_core::parse_ts_timestamp("2026-11-02T00:00:00Z").unwrap(),
+                session_id: "session".to_string(),
+                model: "gemini-4-argon".to_string(),
+                provider: Some(logged.to_string()),
+                input_tokens: 1_000_000,
+                output_tokens: 0,
+                cache_creation_tokens: 0,
+                cache_read_tokens: 0,
+                total_tokens: 1_000_000,
+                cost: None,
+                event_id: None,
+            };
+            let loaded = entry_to_loaded(
+                entry,
+                &JiffTimeZone::UTC,
+                CostMode::Calculate,
+                PriceTable::Calculate(&pricing),
+            );
+            assert!(
+                (loaded.cost - 2.5).abs() < 1e-9,
+                "{logged}: {}",
+                loaded.cost
+            );
+        }
     }
 }

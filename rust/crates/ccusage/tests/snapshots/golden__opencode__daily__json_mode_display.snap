@@ -1,0 +1,229 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage opencode daily --offline --json --mode display
+---
+exit: 0
+--- stdout ---
+{
+  "daily": [
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "date": "2025-12-27",
+      "inputTokens": 100,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 100,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 50
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514"
+      ],
+      "outputTokens": 50,
+      "totalCost": 0.0,
+      "totalTokens": 150
+    },
+    {
+      "cacheCreationTokens": 500,
+      "cacheReadTokens": 5000,
+      "date": "2025-12-30",
+      "inputTokens": 1547,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 300,
+          "cacheReadTokens": 4000,
+          "cost": 0.5,
+          "inputTokens": 1030,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 203
+        },
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 1000,
+          "cost": 0.25,
+          "inputTokens": 500,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 100
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 17,
+          "modelName": "gpt-5",
+          "outputTokens": 7
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514",
+        "claude-opus-4-20250514",
+        "gpt-5"
+      ],
+      "outputTokens": 310,
+      "totalCost": 0.75,
+      "totalTokens": 7357
+    },
+    {
+      "cacheCreationTokens": 200,
+      "cacheReadTokens": 9500,
+      "date": "2025-12-31",
+      "inputTokens": 2990,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 7000,
+          "cost": 2.0,
+          "inputTokens": 900,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 400
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 1300,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 260
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 2500,
+          "cost": 0.0,
+          "inputTokens": 790,
+          "modelName": "gpt-5",
+          "outputTokens": 159
+        }
+      ],
+      "modelsUsed": [
+        "claude-opus-4-20250514",
+        "gpt-5",
+        "claude-haiku-4-5-20251001"
+      ],
+      "outputTokens": 819,
+      "totalCost": 2.0,
+      "totalTokens": 13559
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 3000,
+      "date": "2026-01-01",
+      "inputTokens": 2141,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 3000,
+          "cost": 0.0,
+          "inputTokens": 1480,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 268
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 94,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 9
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 60,
+          "modelName": "gpt-5",
+          "outputTokens": 6
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 300,
+          "modelName": "opencode-mystery-1",
+          "outputTokens": 70
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 7,
+          "modelName": "opus",
+          "outputTokens": 1
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 200,
+          "modelName": "gemini-3-pro-high",
+          "outputTokens": 20
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514",
+        "claude-opus-4-20250514",
+        "gpt-5",
+        "opencode-mystery-1",
+        "opus",
+        "gemini-3-pro-high"
+      ],
+      "outputTokens": 374,
+      "totalCost": 0.0,
+      "totalTokens": 5515
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "date": "2026-01-02",
+      "inputTokens": 408,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 250,
+          "modelName": "k2p6",
+          "outputTokens": 25
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 100,
+          "modelName": "claude-haiku-4.5",
+          "outputTokens": 0
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 58,
+          "modelName": "gpt-5",
+          "outputTokens": 8
+        }
+      ],
+      "modelsUsed": [
+        "k2p6",
+        "claude-haiku-4.5",
+        "gpt-5"
+      ],
+      "outputTokens": 33,
+      "totalCost": 0.0,
+      "totalTokens": 686
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 700,
+    "cacheReadTokens": 17500,
+    "inputTokens": 7186,
+    "outputTokens": 1586,
+    "totalCost": 2.75,
+    "totalTokens": 27267
+  }
+}
+
+--- stderr ---

@@ -1,0 +1,21 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage codex statusline --offline --json --since 20251231 --until 20260101
+---
+exit: 0
+--- stdout ---
+{
+  "cacheCreationTokens": 300,
+  "cacheReadTokens": 9250,
+  "costUSD": 0.038784875,
+  "inputTokens": 8500,
+  "outputTokens": 1805,
+  "reasoningOutputTokens": 94,
+  "scope": "range",
+  "totalTokens": 19855,
+  "unpricedModels": [
+    "codex-mystery-1"
+  ]
+}
+
+--- stderr ---

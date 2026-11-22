@@ -30,6 +30,8 @@ Put frequently used options in `defaults`:
 
 ### 3. Override for Specific Commands
 
+Only daily reports show the breakdown here:
+
 ```json
 {
 	"$schema": "https://ccusage.com/config-schema.json",
@@ -38,11 +40,13 @@ Put frequently used options in `defaults`:
 	},
 	"commands": {
 		"daily": {
-			"breakdown": true // Only daily needs breakdown
+			"breakdown": true
 		}
 	}
 }
 ```
+
+Configuration files are plain JSON: comments are not allowed, and a file with a syntax error is skipped as if it did not exist.
 
 ### 4. Convert CLI Arguments to Config
 
@@ -50,14 +54,13 @@ If you find yourself repeating CLI arguments:
 
 ```bash
 # Before (repeated CLI arguments)
-ccusage daily --breakdown --instances --timezone UTC
+ccusage claude daily --breakdown --instances --timezone UTC
 ccusage monthly --breakdown --timezone UTC
 ```
 
-Convert them to a config file:
+Convert them to a `ccusage.json` config file:
 
 ```json
-// ccusage.json
 {
 	"$schema": "https://ccusage.com/config-schema.json",
 	"defaults": {
@@ -75,21 +78,24 @@ Convert them to a config file:
 Now simpler commands:
 
 ```bash
-ccusage daily
+ccusage claude daily
 ccusage monthly
 ```
 
 ## Configuration File Locations
 
-ccusage searches for configuration files in these locations (in priority order):
+ccusage searches for configuration files in these locations, in order:
 
-1. **Local project**: `.ccusage/ccusage.json` (higher priority)
-2. **User config**: `~/.claude/ccusage.json` or `~/.config/claude/ccusage.json` (lower priority)
+1. **Local project**: `.ccusage/ccusage.json` in the current directory
+2. **User config**: `ccusage.json` in the Claude Code directories, described below
 
-Configuration files are merged in priority order, with local project settings overriding user settings.
-If you pass a custom config file using `--config`, it will override both local and user configs.
-Note that configuration files are not required; if none are found, ccusage will use built-in defaults.
-Also, if you have multiple config files, only the first one found will be used.
+The user config lives in the same Claude Code directories ccusage reads usage logs from: `$XDG_CONFIG_HOME/claude/ccusage.json` (`~/.config/claude/ccusage.json` when `XDG_CONFIG_HOME` is unset or empty), then `~/.claude/ccusage.json`. If `CLAUDE_CONFIG_DIR` is set, ccusage looks for `ccusage.json` in each of its comma-separated directories instead, in the order they are listed. An entry of `~` or starting with `~/` is resolved against your home directory (`~user` and `~\` are not expanded), and an entry pointing at an existing `projects/` directory is read as its parent.
+
+ccusage tries the paths in order. It warns and continues if a discovered file contains malformed JSON or the top-level value is anything other than an object. ccusage loads a single configuration file. A valid local project config takes precedence over your user config.
+
+For a discovered JSON object, recoverable field errors produce a warning naming the file and JSON path. The valid settings in that file still apply. An unreadable file stops discovery. Invalid date bounds, invalid `pi.stores`, and an invalid effective `timezone` are errors for reports that use them. Statusline can recover from errors in discovered configuration and still render. With `--config`, malformed JSON and invalid settings are errors.
+
+Unknown keys warn. Set `LOG_LEVEL=0` to suppress warnings. When discovery finds no usable file, ccusage uses the built-in defaults.
 
 ## Basic Configuration
 
@@ -131,7 +137,7 @@ You can also reference a local schema file after installing ccusage:
 
 ### Global Defaults
 
-The `defaults` section sets shared default values for unified reports and legacy Claude commands:
+The `defaults` section sets shared default values for unified and source-focused reports:
 
 ```json
 {
@@ -156,7 +162,7 @@ Set `noCost` to `true` to hide cost columns in tables and remove cost fields fro
 
 ### Command-Specific Configuration
 
-Override shared defaults for specific unified reports and legacy Claude commands using the `commands` section:
+Override shared defaults for specific unified and source-focused reports using the `commands` section:
 
 ```json
 {
@@ -180,7 +186,7 @@ Override shared defaults for specific unified reports and legacy Claude commands
 
 ### Source-Specific Configuration
 
-Use data source namespaces to set defaults and report overrides. Supported namespaces are `claude`, `codex`, `opencode`, `amp`, `droid`, `codebuff`, `hermes`, `pi`, `goose`, `openclaw`, `kilo`, `kimi`, `qwen`, `copilot`, `gemini`, `antigravity`, `grok`, and `zcode`.
+Use data source namespaces to set defaults and report overrides. Supported namespaces are `claude`, `codex`, `opencode`, `amp`, `droid`, `codebuff`, `cline`, `hermes`, `pi`, `goose`, `openclaw`, `kilo`, `kimi`, `qwen`, `copilot`, `gemini`, `antigravity`, `grok`, `zcode`, and `dsh`.
 
 ```json
 {
@@ -220,6 +226,13 @@ Use data source namespaces to set defaults and report overrides. Supported names
 			}
 		}
 	},
+	"cline": {
+		"commands": {
+			"daily": {
+				"timezone": "UTC"
+			}
+		}
+	},
 	"pi": {
 		"stores": [
 			{
@@ -228,7 +241,8 @@ Use data source namespaces to set defaults and report overrides. Supported names
 			}
 		],
 		"defaults": {
-			"piPath": "/path/to/pi/sessions,/archive/pi/sessions"
+			"piPath": "/path/to/pi/sessions,/archive/pi/sessions",
+			"piAgentDir": "~/.pi-work/agent"
 		}
 	},
 	"openclaw": {
@@ -265,6 +279,11 @@ Use data source namespaces to set defaults and report overrides. Supported names
 		"defaults": {
 			"offline": true
 		}
+	},
+	"dsh": {
+		"defaults": {
+			"offline": true
+		}
 	}
 }
 ```
@@ -276,6 +295,7 @@ ccusage codex daily
 ccusage opencode weekly
 ccusage droid daily
 ccusage codebuff daily
+ccusage cline daily
 ccusage pi daily
 ccusage openclaw daily
 ccusage kilo daily
@@ -285,19 +305,34 @@ ccusage copilot monthly
 ccusage gemini daily
 ccusage antigravity daily
 ccusage zcode daily
+ccusage dsh daily
 ```
 
-Source-specific settings are also applied when running unified reports such as `ccusage daily`. In that case, each source receives its own merged options before data is loaded.
+Source-specific settings are also applied when running unified reports such as `ccusage daily`. Each source uses the same merged options as its focused command: global `defaults`, `commands.<report>`, `commands."<source> <report>"`, `commands."<source>:<report>"`, `<source>.defaults`, and `<source>.commands.<report>`, with command-line flags taking precedence for every source. Set `offline` and `pricingOverrides` globally to share them across sources, or in a source section to specialize them. Unified weekly reports use the unified command's `startOfWeek` for every source and for `--last` calculation; source-level `startOfWeek` values are ignored. Each source groups dates with its resolved timezone before rows are combined, so sources with different timezones can place the same event on adjacent calendar dates.
 
-Use `pi.stores` for additional pi-format session stores, such as tools or forks that write sessions outside `~/.pi/agent/sessions`. Named stores are additive to the default `pi` agent in unified reports, use their own agent name in JSON and tables, and prefix models with `[name]` followed by a space. Store names must match `^[a-z][a-z0-9_-]{0,31}$`, must be unique, and cannot use a built-in agent name. Each store path can be one sessions directory or a comma-separated list; `~` is expanded for store paths, nonexistent paths are treated as empty, and resolved paths that overlap the default `pi` store or another named store — including one path nested inside another — are rejected. They do not create focused commands such as `ccusage omp daily`; `PI_AGENT_DIR`, `--pi-path`, and `pi.defaults.piPath` still affect only the default `pi` agent.
+Use `pi.stores` for additional pi-format session stores, such as tools or forks that write sessions outside `~/.pi/agent/sessions`. Named stores are additive to the default `pi` agent in unified reports, use their own agent name in JSON and tables, and prefix models with `[name]` followed by a space. Store names must match `^[a-z][a-z0-9_-]{0,31}$`, must be unique, and cannot use a built-in agent name. Each store path can be one sessions directory or a comma-separated list; `~` is expanded for store paths, nonexistent paths are treated as empty, and resolved paths that overlap the default `pi` store or another named store — including one path nested inside another — are rejected. They do not create focused commands such as `ccusage omp daily`; `PI_AGENT_DIR`, `--pi-path`, `--pi-agent-dir`, `pi.defaults.piPath`, and `pi.defaults.piAgentDir` still affect only the default `pi` agent. A store path names the sessions directory itself; ccusage does not switch to a `sessions` child.
 
-For a namespaced command, options are applied in this order:
+Named stores use the unified report's options and pricing overrides; `pi.defaults` and `pi.commands` apply only to the default `pi` source.
+
+For a source-focused command, or each source within a unified report, options are applied in this order:
 
 1. `defaults`
 2. `commands.<report>`
-3. `<source>.defaults`
-4. `<source>.commands.<report>`
-5. Command-line arguments
+3. `commands."<source> <report>"`
+4. `commands."<source>:<report>"`
+5. `<source>.defaults`
+6. `<source>.commands.<report>`
+7. Command-line arguments
+
+`commands."codex daily"` and `commands."codex:daily"` both override `commands.daily`; if both are set, the colon form wins.
+
+### Filter Claude Code by project
+
+Set `claude.defaults.project` or `defaults.project` to filter Claude Code usage in daily, weekly, monthly, session, and blocks reports. Unified totals combine project-filtered Claude usage with usage from other agents. The table and JSON include a note when this filter is active, including in reports with multiple sections.
+
+Set `claude.commands.<report>.project` or `commands.<report>.project` to configure a filter for a specific report. The `--project <name>` flag overrides that value on focused Claude daily, weekly, monthly, session, and blocks reports, as well as on `ccusage blocks` and `ccusage session`. In the unified session report, it filters the Claude Code rows.
+
+`ccusage blocks` and `ccusage session --id <id>` use the same config sections as their `ccusage claude` equivalents. An explicit Claude session lookup with `--id` searches across projects regardless of the `--project` flag or configured `project`.
 
 ## Command-Specific Options
 
@@ -317,7 +352,11 @@ For a namespaced command, options are applied in this order:
 }
 ```
 
+`instances` and `projectAliases` apply to `ccusage claude daily`.
+
 ### Weekly Command
+
+Set `startOfWeek` in `defaults` to share a week start across unified and focused reports, or in `commands.weekly` to override the default for weekly reports. Use a source's `defaults` or `commands.weekly` to set the week start for its focused report. The usual [source configuration precedence](#source-specific-configuration) applies, with `--start-of-week` taking priority.
 
 ```json
 {
@@ -350,9 +389,8 @@ For a namespaced command, options are applied in this order:
 {
 	"commands": {
 		"session": {
-			"id": "abc123-session",
-			"project": "my-project",
-			"json": true
+			"json": true,
+			"order": "desc"
 		}
 	}
 }
@@ -367,13 +405,13 @@ For a namespaced command, options are applied in this order:
 			"active": true,
 			"recent": false,
 			"tokenLimit": "max",
-			"sessionLength": 5,
-			"live": false,
-			"refreshInterval": 1
+			"sessionLength": 5
 		}
 	}
 }
 ```
+
+The `tokenLimit` value accepts `"max"` or a positive integer, written as a number or a string.
 
 ### Statusline
 
@@ -406,7 +444,7 @@ ccusage blocks --config /path/to/team-config.json
 
 ## Pricing Overrides
 
-ccusage looks up token costs from a LiteLLM pricing snapshot embedded in the binary, optionally refreshed at runtime (or skipped with `--offline`). When a model is missing from LiteLLM (private deployments, internal wrappers like Pi's `[pi] gpt-5.4`, custom proxies), or when the snapshot price differs from your contract, set `pricingOverrides` under `defaults` to supply per-model values.
+When a catalogue lacks your model or its price differs from your contract, set `pricingOverrides` under `defaults`. The [pricing lookup order](/guide/cost-modes) is shared by the adapters.
 
 ```json
 {
@@ -430,7 +468,7 @@ ccusage looks up token costs from a LiteLLM pricing snapshot embedded in the bin
 
 ### Raw Model Names
 
-Keys in `pricingOverrides` should match the model label reported by ccusage, including any adapter prefix:
+Use the model label shown in the report, including any adapter prefix. The override also applies to separator respellings of that label and to every label that ends in it after a provider or host path, such as `zai/glm-4.7` or `azure/gpt-5.5` for a `glm-4.7` or `gpt-5.5` key, even when that host has its own catalog rate. A bare override also applies when the source records an explicit provider, such as a Droid `providerLock` or a Hermes provider.
 
 | Adapter                                | Prefix    | Example key                    |
 | -------------------------------------- | --------- | ------------------------------ |
@@ -438,25 +476,33 @@ Keys in `pricingOverrides` should match the model label reported by ccusage, inc
 | Named Pi store                         | `[name] ` | `[omp] gpt-5.4`                |
 | Others (Claude, Codex, OpenCode, etc.) | none      | `claude-sonnet-4-5`, `gpt-5.5` |
 
-To find the exact name, run `ccusage <agent> daily --json` and look at the `model` field in the per-row breakdown.
+ccusage tries override keys with the reported case first, then ignores ASCII case. In each pass, a key for the full label, such as `azure/gpt-5.5`, wins over the bare key for that label. A case-insensitive override still takes precedence over a catalogue price with the exact case.
+
+To find the exact name, run `ccusage <agent> daily --json` and look at the `modelName` field in each row's `modelBreakdowns`.
 Pi also accepts a bare model name as an override key; that key applies to the default store and any named Pi store using the same model. Use the prefixed label to price one store separately.
+A model alias can inherit unspecified fields from its target. An override that sets a token rate (`inputCostPerToken`, `outputCostPerToken`, or a cache rate) is the price at every context size: the model's published long-context tier is dropped, and requests above its threshold use the long-context rates only when the override sets its own `*Above200kTokens` fields, at the model's published threshold (200K tokens when it has none). In a whole-request tier with a long-context input rate, ccusage derives omitted cache-read, five-minute write, and one-hour write rates from that input rate and the model vendor's cache multipliers, with the base-tier cache rates as a minimum. Omitted above-threshold input and output rates fall back to the base rates. An override that builds on another override, such as one keyed by a model alias, keeps the `*Above200kTokens` rates that the other override sets. An override that sets only `*Above200kTokens` fields changes those rates and keeps the rest of the published tier; one that sets no rates, such as `maxInputTokens` alone, keeps the whole tier. A models.dev base supplies its flat rates and context limit. If no catalog row matches, ccusage uses the model family's cache defaults for any omitted cache-write rates. For an OpenAI-family model such as `gpt-5.5-private`, cache writes default to the input rate.
+
+For Anthropic, Google Gemini and xAI models, the override's `*Above200kTokens` rates apply to the entire request once the prompt crosses the threshold. The prompt includes cached input and cache writes. A published xAI tier for prompts of at least 200,000 tokens applies at exactly 200,000. Published whole-request tiers from other vendors keep their billing mode. Otherwise, the rates apply marginally to the tokens in each category that exceed the threshold. If the model has no published threshold, the rates apply above 200,000 tokens. This includes an xAI model that only appears in `pricingOverrides`.
 
 ### Supported Fields
 
-All fields are optional. Unspecified fields keep existing values. Without a pricing entry, token rates default to `0.0` and speed multipliers to `1.0`.
+All fields are optional. Unspecified fields keep existing values. Without a pricing entry, token rates default to `0.0`, and speed multipliers use the published Fast, Flex, or Ultrafast rate for that model name or its alias target, or `1.0` if none is published.
 
 - `inputCostPerToken`, `outputCostPerToken` — base per-token rates
 - `cacheCreationInputTokenCost`, `cacheReadInputTokenCost` — cache pricing
-- `inputCostPerTokenAbove200kTokens`, `outputCostPerTokenAbove200kTokens`, `cacheCreationInputTokenCostAbove200kTokens`, `cacheReadInputTokenCostAbove200kTokens` — tiered pricing past 200k tokens
+- `cacheCreationInputTokenCostAbove1hr` — one-hour cache write pricing, including an explicit zero rate
+- `inputCostPerTokenAbove200kTokens`, `outputCostPerTokenAbove200kTokens`, `cacheCreationInputTokenCostAbove200kTokens`, `cacheReadInputTokenCostAbove200kTokens` — per-token rates for the long-context tier
 - `maxInputTokens` — context window limit (used by the Claude statusline hook)
 - `fastMultiplier` applies when Codex usage uses Fast pricing.
 - `flexMultiplier` applies when Codex usage uses Flex pricing.
+
+The Ultrafast multiplier comes only from published rates and cannot be set in `pricingOverrides`; there is no `ultrafastMultiplier` field.
 
 ### Overrides vs Offline Mode
 
 `--offline` and `pricingOverrides` are independent:
 
-- `--offline` controls the **data source** — skip the network refresh and use the embedded LiteLLM snapshot only.
+- `--offline` controls the **data source** — skip the network refresh and use embedded LiteLLM and models.dev pricing.
 - `pricingOverrides` controls **specific entries** — patch in or replace prices for individual models.
 
 Overrides apply in both online and offline modes.
@@ -471,27 +517,23 @@ This is useful for:
 
 ## Configuration Example
 
-For a complete configuration example, see [`/ccusage.example.json`](/ccusage.example.json) in the repository root, which demonstrates:
+For a complete configuration example, see [`ccusage.example.json`](https://github.com/ccusage/ccusage/blob/main/ccusage.example.json) in the repository root, which demonstrates:
 
 - Global defaults configuration
 - Command-specific overrides
-- All available options with proper types
+- Examples of supported options and types
 
 ## Configuration Priority
 
 Settings are applied in this priority order (highest to lowest):
 
 1. **Command-line arguments** (e.g., `--json`, `--offline`)
-2. **Custom config file** (specified with `--config /path/to/config.json`)
-3. **Local project config** (`.ccusage/ccusage.json`)
-4. **User config** (`~/.config/claude/ccusage.json`)
-5. **Legacy config** (`~/.claude/ccusage.json`)
-6. **Built-in defaults**
+2. **The one configuration file ccusage reads**: the `--config` file, or else the first existing file among `.ccusage/ccusage.json`, `~/.config/claude/ccusage.json`, and `~/.claude/ccusage.json` (see [Configuration File Locations](#configuration-file-locations))
+3. **Built-in defaults**
 
-Example:
+Example, in `.ccusage/ccusage.json`:
 
 ```json
-// .ccusage/ccusage.json
 {
 	"defaults": {
 		"mode": "calculate"
@@ -505,52 +547,6 @@ ccusage daily  # Uses mode: calculate
 
 # But CLI argument overrides it
 ccusage daily --mode display  # Uses mode: display
-```
-
-## Debugging Configuration
-
-Use the `--debug` flag to see configuration loading details:
-
-```bash
-# Debug configuration loading
-ccusage daily --debug
-
-# Debug custom config file
-ccusage daily --debug --config ./my-config.json
-```
-
-Debug output shows:
-
-- Which config files are checked and found
-- Schema and option details from loaded configs
-- How options are merged from different sources
-- Final values used for each option
-
-Example debug output:
-
-```
-[ccusage] ℹ Debug mode enabled - showing config loading details
-
-[ccusage] ℹ Searching for config files:
-  • Checking: .ccusage/ccusage.json (found ✓)
-  • Checking: ~/.config/claude/ccusage.json (found ✓)
-  • Checking: ~/.claude/ccusage.json (not found)
-
-[ccusage] ℹ Loaded config from: .ccusage/ccusage.json
-  • Schema: https://ccusage.com/config-schema.json
-  • Has defaults: yes (3 options)
-  • Has command configs: yes (daily)
-
-[ccusage] ℹ Merging options for 'daily' command:
-  • From defaults: mode="auto", offline=false
-  • From command config: instances=true
-  • From CLI args: debug=true
-  • Final merged options: {
-      mode: "auto" (from defaults),
-      offline: false (from defaults),
-      instances: true (from command config),
-      debug: true (from CLI)
-    }
 ```
 
 ## Best Practices
@@ -579,10 +575,14 @@ team-configs/
 
 ### Config Not Being Applied
 
-1. Check file location is correct
-2. Verify JSON syntax is valid
-3. Use `--debug` to see loading details
-4. Ensure option names match exactly
+Check the diagnostic and the selected file:
+
+1. Check that no earlier file in the [search order](#configuration-file-locations) shadows it.
+2. Validate JSON syntax; unreadable files and invalid JSON stop loading.
+3. Check exact option names; unknown keys produce warnings.
+4. In discovered files, correct each invalid field named in a warning. Other valid settings remain effective. Invalid date bounds and named Pi stores stop the command.
+
+Warnings follow `LOG_LEVEL`; use a value above `0` to see them.
 
 ### Invalid JSON
 
@@ -595,14 +595,19 @@ jq . < ccusage.json
 
 ### Schema Validation Errors
 
-Ensure option values match expected types:
+Add `$schema` and let your editor check option names and value types against it:
 
 ```json
 {
-	"defaults": {
-		"tokenLimit": "500000", // ✅ String or number
-		"active": true, // ✅ Boolean
-		"refreshInterval": 2 // ✅ Number
+	"$schema": "https://ccusage.com/config-schema.json",
+	"commands": {
+		"blocks": {
+			"tokenLimit": "500000",
+			"active": true
+		},
+		"statusline": {
+			"refreshInterval": 2
+		}
 	}
 }
 ```

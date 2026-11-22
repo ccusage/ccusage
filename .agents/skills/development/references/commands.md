@@ -2,30 +2,40 @@
 
 ## Commands
 
-`just` is the single entry point (`just --list`). Each workspace package owns a
-justfile imported as a module, so package recipes are `just <module>::<recipe>`
-and `just <module>::--list` lists one module. Whole-repo jobs the Nix flake owns
-(`fmt`, `check`, `schema`) stay at the root.
+Use `just` as the project entry point.
 
-`just fmt` mutates files, so run it before the read-only checks.
+Work inside the pinned Nix dev shell. Run `direnv allow` when initializing it;
+prefix one-offs with `direnv exec .` from outside it.
+
+Use `ccusage` with agent subcommands, such as `ccusage codex daily`, in code,
+tests, and examples.
+
+Choose Rust for production binaries and CPU- or memory-intensive tooling,
+Nushell for small orchestration, Babashka for automation with a reusable data
+model, substantial transformations, reporting, or its own tests, and TypeScript
+for JavaScript APIs or work that benefits from the npm ecosystem.
 
 ## Adding A Dependency Or Tool
+
+Runtime libraries for bundled packages go in `devDependencies` unless the user
+asks otherwise.
 
 `comma` and `nix run` are fine for one-off investigation, but anything used
 repeatedly belongs in the repo: system and dev-shell CLIs in `flake.nix`
 (`nix/dev-shell.nix` is the current list), JS/TS tooling and scripts in
 `package.json`. Land the matching lockfile update — `flake.lock`,
 `pnpm-lock.yaml` — in the same commit so the addition stays independently
-revertable.
+revertable. Keep Cargo's `global-min-publish-age` in `.cargo/config.toml` aligned
+with `minimumReleaseAge` in `pnpm-workspace.yaml`.
 
 ## Validation
 
-Git hooks and CI cover the standard path: `.pre-commit-config.yaml` is generated
-from `nix/git-hooks.nix` and shows exactly which hook runs at which stage.
+Edit `nix/git-hooks.nix` to change Git hooks.
 
-Run `just typecheck` and `just test` yourself when the change touches behavior,
-types, or package code, or when the hooks and CI do not cover the edited files.
-Narrower package recipes are useful while iterating; finish with the root ones.
+Let Git hooks and CI run the checks they enforce; do not repeat them manually
+as a routine prerequisite to committing or pushing. Choose focused local checks
+when they help develop a change or cover a gap in that automation. Prose-only
+and license-only changes need no runtime tests or type checks.
 
 ## Releases
 

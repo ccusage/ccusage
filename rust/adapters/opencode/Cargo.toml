@@ -5,7 +5,7 @@ edition.workspace = true
 publish.workspace = true
 
 [dependencies]
-ccusage-adapter-common.workspace = true
+ccusage-adapter-common = { workspace = true, features = ["sqlite"] }
 ccusage-core.workspace = true
 jiff.workspace = true
 serde.workspace = true
@@ -13,6 +13,8 @@ serde_json.workspace = true
 sqlite.workspace = true
 
 [dev-dependencies]
-ccusage-core = { workspace = true, features = ["test-snapshots"] }
 ccusage-test-support.workspace = true
 insta.workspace = true
+
+[lints]
+workspace = true

@@ -1,30 +1,24 @@
 [workspace]
-# adapters/ holds the per-source adapters plus the helpers they share; crates/ holds
-# everything that is not tied to a single source, including the unified report.
-# Both are globs so a layer can be built from a filtered source tree containing
-# only some crates — a glob that matches nothing is an error, which is why
-# ccusage-adapter-common lives with the adapters: every layer includes it.
 members = ["adapters/*", "crates/*"]
 resolver = "2"
 
-# Every workspace crate inherits these, so a version or edition bump is one edit.
 [workspace.package]
 version = "0.0.0"
 edition = "2024"
 publish = false
 
-# Shared dependency specs. Crates opt in with `<dep>.workspace = true`, which keeps
-# the per-crate manifests to a list of what that crate actually uses.
 [workspace.dependencies]
 ccusage-adapter-all = { path = "crates/ccusage-adapter-all" }
 ccusage-adapter-amp = { path = "adapters/amp" }
 ccusage-adapter-antigravity = { path = "adapters/antigravity" }
 ccusage-adapter-claude = { path = "adapters/claude" }
+ccusage-adapter-cline = { path = "adapters/cline" }
 ccusage-adapter-codebuff = { path = "adapters/codebuff" }
 ccusage-adapter-codex = { path = "adapters/codex" }
 ccusage-adapter-common = { path = "adapters/common" }
 ccusage-adapter-copilot = { path = "adapters/copilot" }
 ccusage-adapter-droid = { path = "adapters/droid" }
+ccusage-adapter-dsh = { path = "adapters/dsh" }
 ccusage-adapter-gemini = { path = "adapters/gemini" }
 ccusage-adapter-goose = { path = "adapters/goose" }
 ccusage-adapter-grok = { path = "adapters/grok" }
@@ -40,52 +34,95 @@ ccusage-cli = { path = "crates/ccusage-cli" }
 ccusage-cli-parser = { path = "crates/ccusage-cli-parser" }
 ccusage-config = { path = "crates/ccusage-config" }
 ccusage-core = { path = "crates/ccusage-core" }
+ccusage-environment = { path = "crates/ccusage-environment" }
 ccusage-pricing-snapshots = { path = "crates/ccusage-pricing-snapshots" }
 ccusage-telemetry = { path = "crates/ccusage-telemetry" }
 ccusage-terminal = { path = "crates/ccusage-terminal" }
-ccusage-test-support = { path = "crates/ccusage-test-support" }
+ccusage-test-support = { path = "crates/ccusage-test-support", features = ["test-environment"] }
+ccusage-zstd = { path = "crates/ccusage-zstd" }
 assert_fs = "1.1.4"
 compact_str = "0.10.0"
 insta = { version = "1.49.0", features = ["json"] }
-jiff = { version = "0.2.38", default-features = false, features = [
+jiff = { version = "0.2.46", default-features = false, features = [
 	"std",
 	"tz-system",
 	"tzdb-zoneinfo",
 	"tzdb-bundle-platform",
 ] }
 memchr = "2.8.3"
-# Inflate-only consumer of the deflated pricing snapshots ccusage-pricing-snapshots
-# embeds; the compression side is a build-dependency of that crate.
+simdutf8 = "0.1.5"
 miniz_oxide = { version = "0.9.1", default-features = false, features = ["with-alloc"] }
 mimalloc = "0.1.52"
 minreq = { version = "3.0.0", default-features = false, features = ["https-rustls"] }
-# The pricing client's crypto: rustls over ring, with the provider assembled in
-# the binary (rust/crates/ccusage/src/http/tls.rs) rather than rustls' own.
+percent-encoding = "2.3.2"
 ring = { version = "0.17.14", default-features = false }
 rustc-hash = "2.1.3"
+rustix = { version = "1.1.6", features = ["process"] }
 rustls = { version = "0.23.46", default-features = false, features = ["ring", "std"] }
-rustls-webpki = { version = "0.103.15", default-features = false, features = ["ring"] }
+rustls-webpki = { version = "0.103.17", default-features = false, features = ["ring"] }
 schemars = "0.8"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
-smallvec = "1.16.3"
+smallvec = { version = "1.16.6", features = ["union"] }
 sqlite = { version = "0.37.4", default-features = false, features = ["bundled", "linkage"] }
+stats_alloc = "0.1.10"
 terminal_size = "0.4.4"
-toml = { version = "1.1.8", default-features = false, features = ["parse", "serde", "std"] }
-unicode-width = "0.2.2"
-ureq = { version = "3.4.2", default-features = false, features = [
+toml = { version = "1.2.1", default-features = false, features = ["parse", "serde", "std"] }
+unicode-width = "0.2.3"
+ureq = { version = "3.5.2", default-features = false, features = [
 	"gzip",
 	"rustls-no-provider",
 	"rustls-webpki-roots",
 ] }
-zstd = { version = "0.14.3", default-features = false }
+zstd = { version = "0.14.4", default-features = false }
+zstd-sys = { version = "2.1.3", default-features = false, features = ["experimental"] }
 
 [profile.release]
 codegen-units = 1
 lto = "fat"
-opt-level = "z"
+opt-level = 3
 panic = "abort"
 strip = "symbols"
 
-[profile.release.package."*"]
+[profile.release.package.sqlite]
 opt-level = "s"
+
+[profile.release.package.sqlite3-src]
+opt-level = "s"
+
+[profile.release.package.sqlite3-sys]
+opt-level = "s"
+
+[workspace.lints.cargo]
+unused_dependencies = "deny"
+unused_workspace_dependencies = "deny"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+unsafe_op_in_unsafe_fn = "deny"
+unfulfilled_lint_expectations = "deny"
+elided_lifetimes_in_paths = "deny"
+unreachable_pub = "deny"
+
+[workspace.lints.clippy]
+undocumented_unsafe_blocks = "deny"
+multiple_unsafe_ops_per_block = "deny"
+allow_attributes = "deny"
+allow_attributes_without_reason = "deny"
+dbg_macro = "deny"
+todo = "deny"
+unimplemented = "deny"
+unwrap_used = "deny"
+match_wildcard_for_single_variants = "deny"
+mod_module_files = "deny"
+clone_on_ref_ptr = "deny"
+implicit_clone = "deny"
+cast_lossless = "deny"
+cast_possible_wrap = "deny"
+float_cmp = "deny"
+disallowed_methods = "deny"
+wildcard_imports = "deny"
+wildcard_enum_match_arm = "deny"
+panic = "deny"
+print_stderr = "deny"
+print_stdout = "deny"

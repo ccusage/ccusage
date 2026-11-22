@@ -1,18 +1,10 @@
 # Installation
 
-ccusage can be installed and used in several ways depending on your preferences and use case.
-
-## Why Direct Execution Works Well
-
-You do not need to install ccusage globally before trying it. Direct package runners work well for ad hoc usage:
-
-- ✅ No global package to manage
-- ✅ Easy access to the latest published version
-- ✅ Cached package downloads after the first run
+You can run ccusage directly or install it globally.
 
 ## Quick Start (Recommended)
 
-The fastest way to use ccusage is to run it directly:
+Run ccusage directly with a package runner:
 
 ::: code-group
 
@@ -33,20 +25,6 @@ bunx -p https://pkg.pr.new/ccusage@<pr-number-or-commit-sha> ccusage --offline
 ```
 
 :::
-
-::: tip Speed Recommendation
-We recommend [bunx](https://bun.com/docs/pm/bunx) for everyday use. It caches the downloaded package, so repeated runs are faster after the first launch.
-:::
-
-### Performance Comparison
-
-Here's why runtime choice matters:
-
-| Runtime  | First Run | Subsequent Runs | Notes                        |
-| -------- | --------- | --------------- | ---------------------------- |
-| bunx     | Fast      | **Instant**     | Recommended for everyday use |
-| pnpm dlx | Fast      | Fast            | Good alternative             |
-| npx      | Slow      | Moderate        | Widely available             |
 
 ## Global Installation (Optional)
 
@@ -77,7 +55,7 @@ After global installation, run commands directly:
 ```bash
 ccusage daily
 ccusage monthly --breakdown
-ccusage blocks --live
+ccusage blocks --active
 ```
 
 ## Development Installation
@@ -105,15 +83,18 @@ just test
 # Run static checks
 just check
 
-# Build distribution
+# Build the documentation site and lint the npm package manifest
 just build
+
+# Build the native CLI in release mode
+cargo build --manifest-path rust/Cargo.toml --release --bin ccusage
 ```
 
 You can also run the package directly from source:
 
 ```bash
-pnpm --filter ccusage start daily
-pnpm --filter ccusage start monthly --json
+just ccusage::start daily
+just ccusage::start monthly --json
 ```
 
 ## Runtime Requirements
@@ -121,13 +102,11 @@ pnpm --filter ccusage start monthly --json
 ### Node.js
 
 - Needed when using Node-based package runners or npm-style global installs
-- Use Bun for direct execution when available
+- The package launcher also supports Bun
 
-### Bun
+### Native Binary
 
-- **Minimum**: Bun 1.3+
-- **Recommended**: Latest stable release
-- Recommended for `bunx ccusage` and for the fastest warm startup
+The npm launcher runs the native binary for your operating system and architecture. The package provides binaries for macOS, Linux, and Windows on x64 and arm64.
 
 ## Verification
 
@@ -148,7 +127,7 @@ ccusage daily
 
 ### Direct Execution (npx/bunx)
 
-Always gets the latest version automatically.
+An unversioned package name can reuse a locally installed or cached copy. When the runner needs to fetch ccusage from the registry, it uses the default `latest` dist-tag. To request that dist-tag explicitly, run `npx ccusage@latest` or `bunx ccusage@latest`. For reproducible runs, specify an exact version.
 
 ### Global Installation
 
@@ -212,16 +191,6 @@ npx ccusage@latest
 # Or configure npm to use a different directory
 npm config set prefix ~/.npm-global
 export PATH=~/.npm-global/bin:$PATH
-```
-
-```bash [Node Version Managers]
-# Use nvm
-nvm install 22
-npm install -g ccusage
-
-# Or use fnm
-fnm install 22
-npm install -g ccusage
 ```
 
 :::

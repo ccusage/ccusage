@@ -1,39 +1,32 @@
 # Agent Adapters
 
-This directory holds one crate per usage source, plus `common/`, the helpers they
-share. The binary reaches them through thin alias modules in
-`rust/crates/ccusage/src/adapter/`.
+Use one crate per source. Keep source-specific discovery, parsing, token and
+model mapping, and pricing in that crate. Share discovery, aggregation, dates,
+pricing lifecycle, progress, and rendering through `ccusage-core` or
+`ccusage-adapter-common`. Keep adapters independent of one another.
 
-Each agent adapter owns source-specific log discovery, parsing, token mapping,
-model mapping, source metadata, and source-specific pricing behavior. Shared
-report rendering, date handling, progress, pricing fetcher lifecycle, file
-walking, dedupe, and aggregation should stay in `ccusage-core` or
-`ccusage-adapter-common` when the source data allows it.
+Use these modules inside each adapter:
 
-Use one crate per agent, in `adapters/<agent>/`. The usual shape is:
+- `paths.rs` owns environment variables, default directories, and path discovery.
+- `parser.rs` parses raw records and maps tokens and models.
+- `loader.rs` owns file walking, SQLite reads, deduplication, and date-filtering entry points.
+- `report.rs` shapes JSON and table rows when the source needs its own output.
+- `types.rs` holds types local to the adapter.
 
-- `Cargo.toml` - narrow shared and source-specific dependencies.
-- `src/lib.rs` - public adapter surface and command wiring.
-- `paths.rs` - environment variables, default directories, and path discovery.
-- `parser.rs` - raw record parsing and token/model mapping.
-- `loader.rs` - file walking, SQLite reads, dedupe, and date filtering entry points.
-- `report.rs` - JSON/table row shaping when agent-specific.
-- `types.rs` - source-local types when they are not shared outside the adapter.
+When a source normalizes or maps a model ID, pass the logged ID first as an
+`Exact` candidate and use the normalized form for fuzzy matches. Preserve the
+original match kind when the ID is unchanged. Use source provider information
+for provider-qualified candidates.
 
-Use `apps/ccusage/src` only for the remaining npm launcher, package scripts,
-schema artifacts, and benchmarks. Do not add new TypeScript runtime adapter
-logic unless the work is explicitly scoped to the package layer.
+Use `EntrySource` for loaders that already produce `Vec<LoadedEntry>` and
+`UsageSource` for source-specific pipelines. Keep source identity and table policy
+on the descriptor. Override report hooks only for source-specific semantics.
 
-Treat "same foundation as Claude" as more than shared file walking. JSONL
-adapters should use shared scanning helpers when stable row markers exist, and
-high-volume paths should avoid returning large intermediate object vectors when
-worker-side aggregation or typed transfer payloads can preserve the same output.
+Share JSONL scanning when the source has stable record markers. On high-volume
+paths, prefer worker-side aggregation or typed transfer to large intermediate
+vectors. Keep typed read and decode errors up to the `common::units` and
+`common::jsonl` boundaries. Include categories and locations in diagnostics and
+omit raw log values.
 
-When several adapters expose the same raw-log shape, prefer a small shared Rust
-helper over duplicating period/session aggregation. Keep highly specialized
-loaders such as Codex parsing separate when their file format or pricing
-semantics require it.
-
-Agent-specific source notes live in each adapter's `README.md` when the source
-has non-obvious paths, record shapes, token semantics, model fallback behavior,
-or command differences.
+Document non-obvious source paths, record shapes, and accounting rules in the
+adapter README or its `src/README.md`.

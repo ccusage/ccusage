@@ -1,63 +1,27 @@
-use ccusage_adapter_common::{
-    collect_files_with_extension, filter_loaded_entries_by_date, read_files_parallel,
+use ccusage_adapter_common::source::{EntryDescriptor, EntrySource, LoadContext};
+use ccusage_core::{
+    LoadedEntry, Result, TimestampMs, TokenUsageRaw, cli, cli::AgentCommandArgs, date_at,
+    model_aliases, parse_ts_timestamp,
 };
-use ccusage_core::*;
 
 mod loader;
 mod parser;
 mod paths;
-mod report;
 
-use crate::{
-    PricingMap, Result, cli::AgentCommandArgs, print_json_or_jq, print_usage_table, sort_summaries,
-    wants_json,
-};
+pub struct Gemini;
 
-pub use loader::load_entries;
-pub(crate) use report::report_from_rows;
-pub use report::summarize_entries;
+pub static SOURCE: Gemini = Gemini;
 
-#[cfg(test)]
-struct GeminiDataDirEnvGuard {
-    _guard: ccusage_test_support::EnvVarGuard,
-}
+impl EntrySource for Gemini {
+    fn descriptor(&self) -> EntryDescriptor {
+        EntryDescriptor::standard("gemini", "Gemini CLI")
+    }
 
-#[cfg(test)]
-impl GeminiDataDirEnvGuard {
-    fn set(path: &std::path::Path) -> Self {
-        Self {
-            _guard: ccusage_test_support::EnvVarGuard::set(paths::GEMINI_DATA_DIR_ENV, path),
-        }
+    fn load_entries(&self, cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
+        loader::load_entries(cx)
     }
 }
 
 pub fn run(args: AgentCommandArgs) -> Result<()> {
-    let shared = args.shared;
-    let pricing = PricingMap::load_with_overrides(
-        shared.offline,
-        crate::log_level() != Some(0),
-        shared.pricing_overrides.iter(),
-    );
-    let mut entries = load_entries(&shared, &pricing)?;
-    filter_loaded_entries_by_date(&mut entries, &shared);
-    let mut rows = summarize_entries(&entries, args.kind)?;
-    sort_summaries(&mut rows, &shared.order, |row| {
-        ccusage_core::summary_period(row)
-    });
-    if wants_json(&shared) {
-        return print_json_or_jq(
-            report_from_rows(&rows, args.kind),
-            shared.jq.as_deref(),
-            shared.no_cost,
-        );
-    }
-    print_usage_table(
-        "Gemini CLI Token Usage Report",
-        ccusage_core::first_column(args.kind),
-        &rows,
-        &shared,
-        false,
-        None,
-    )?;
-    Ok(())
+    SOURCE.run_focused(args)
 }

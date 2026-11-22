@@ -1,16 +1,16 @@
 use std::{
     borrow::Cow,
     collections::BTreeMap,
-    env,
     sync::{OnceLock, RwLock},
 };
+
+use crate::cli::environment::Environment;
 
 const MODEL_ALIASES_ENV: &str = "CCUSAGE_MODEL_ALIASES";
 
 static MODEL_ALIASES: OnceLock<RwLock<BTreeMap<String, String>>> = OnceLock::new();
 static TEST_MODEL_ALIASES_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-/// Resolves a model name through `CCUSAGE_MODEL_ALIASES`, including `-fast` variants.
 pub fn resolve_model_name(model: &str) -> Cow<'_, str> {
     let aliases = model_aliases();
     let aliases = aliases.read().unwrap_or_else(|error| error.into_inner());
@@ -30,7 +30,8 @@ fn model_aliases() -> &'static RwLock<BTreeMap<String, String>> {
 }
 
 fn load_model_aliases_from_env() -> BTreeMap<String, String> {
-    env::var(MODEL_ALIASES_ENV)
+    Environment::current()
+        .var(MODEL_ALIASES_ENV)
         .ok()
         .map(|raw| parse_model_aliases(&raw))
         .unwrap_or_default()
@@ -49,15 +50,14 @@ fn parse_model_aliases(raw: &str) -> BTreeMap<String, String> {
         .and_then(|inner| inner.strip_suffix('}'))
         .unwrap_or(trimmed);
 
-    stripped
-        .split([',', ';', '\n'])
-        .filter_map(|pair| {
-            let (from, to) = pair.split_once('=')?;
-            let from = from.trim();
-            let to = to.trim();
-            (!from.is_empty() && !to.is_empty()).then(|| (from.to_string(), to.to_string()))
-        })
-        .collect()
+    let mut aliases = BTreeMap::new();
+    aliases.extend(stripped.split([',', ';', '\n']).filter_map(|pair| {
+        let (from, to) = pair.split_once('=')?;
+        let from = from.trim();
+        let to = to.trim();
+        (!from.is_empty() && !to.is_empty()).then(|| (from.to_string(), to.to_string()))
+    }));
+    aliases
 }
 
 #[doc(hidden)]

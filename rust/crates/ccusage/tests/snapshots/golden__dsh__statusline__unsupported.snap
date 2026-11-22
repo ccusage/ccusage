@@ -1,0 +1,11 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage dsh statusline --offline --json
+---
+exit: 2
+--- stdout ---
+
+--- stderr ---
+The "statusline" command is available for Claude Code and Codex usage.
+Use "ccusage dsh daily" for DeepSeek Harness usage reports.
+Run 'ccusage --help' for usage.

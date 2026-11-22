@@ -1,0 +1,9 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage statusline --offline --no-cache
+---
+exit: 1
+--- stdout ---
+
+--- stderr ---
+Error: CliError("❌ No input provided")

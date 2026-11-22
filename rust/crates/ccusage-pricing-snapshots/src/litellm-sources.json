@@ -1,0 +1,92 @@
+{
+	"directProviders": [
+		"anthropic",
+		"openai",
+		"text-completion-openai",
+		"deepseek",
+		"zai",
+		"moonshot",
+		"xai",
+		"dashscope",
+		"gemini"
+	],
+	"zeroTokenRateUnpricedProviders": ["gemini"],
+	"embedded": [
+		{
+			"keyPrefix": "claude-"
+		},
+		{
+			"keyPrefix": "anthropic."
+		},
+		{
+			"keyPrefix": "anthropic/"
+		},
+		{
+			"keyPrefix": "us.anthropic."
+		},
+		{
+			"keyPrefix": "eu.anthropic."
+		},
+		{
+			"keyPrefix": "global.anthropic."
+		},
+		{
+			"keyPrefix": "jp.anthropic."
+		},
+		{
+			"keyPrefix": "au.anthropic."
+		},
+		{
+			"keyPrefix": "gpt-"
+		},
+		{
+			"key": "o3"
+		},
+		{
+			"keyPrefix": "o3-"
+		},
+		{
+			"key": "o4-mini"
+		},
+		{
+			"keyPrefix": "o4-mini-"
+		},
+		{
+			"keyPrefix": "openai/"
+		},
+		{
+			"keyPrefix": "azure/"
+		},
+		{
+			"keyPrefix": "zai/"
+		},
+		{
+			"keyPrefix": "xai/"
+		},
+		{
+			"keyPrefix": "openrouter/openai/"
+		},
+		{
+			"provider": "deepseek"
+		},
+		{
+			"provider": "gemini"
+		},
+		{
+			"provider": "bedrock_converse",
+			"unqualified": true,
+			"modes": ["chat"]
+		},
+		{
+			"provider": "bedrock",
+			"unqualified": true,
+			"modes": ["chat"]
+		},
+		{
+			"provider": "bedrock",
+			"keyPrefix": "bedrock/",
+			"unqualified": true,
+			"modes": ["chat"]
+		}
+	]
+}

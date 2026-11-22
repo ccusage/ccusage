@@ -1,0 +1,28 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage pi monthly --offline
+---
+exit: 0
+--- stdout ---
+┌──────────┬─────────────────────────┬───────────┬───────────┬───────────────┬─────────────┬───────────────┬─────────────┐
+│ Month    │ Models                  │     Input │    Output │  Cache Create │  Cache Read │  Total Tokens │  Cost (USD) │
+├──────────┼─────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2025-12  │ - [pi] claude-haiku-4-5 │    10,032 │     1,948 │         2,035 │      27,449 │        41,464 │       $8.57 │
+│          │ - [pi] claude-opus-4    │           │           │               │             │               │             │
+│          │ - [pi] claude-sonnet-4  │           │           │               │             │               │             │
+│          │ - [pi] gpt-5            │           │           │               │             │               │             │
+│          │ - [pi] pi-mystery-1     │           │           │               │             │               │             │
+│          │ - [pi] pi-mystery-2     │           │           │               │             │               │             │
+├──────────┼─────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2026-01  │ - [pi] claude-haiku-4-5 │     5,535 │     1,648 │           200 │      17,000 │        25,133 │       $0.55 │
+│          │ - [pi] claude-opus-4    │           │           │               │             │               │             │
+│          │ - [pi] claude-sonnet-4  │           │           │               │             │               │             │
+│          │ - [pi] gpt-5            │           │           │               │             │               │             │
+│          │ - [pi] pi-mystery-1     │           │           │               │             │               │             │
+├──────────┼─────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ Total    │                         │    15,567 │     3,596 │         2,235 │      44,449 │        66,597 │       $9.11 │
+└──────────┴─────────────────────────┴───────────┴───────────┴───────────────┴─────────────┴───────────────┴─────────────┘
+
+--- stderr ---
+WARN  Missing embedded pricing for [pi] pi-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for [pi] pi-mystery-2; cost excludes this model. Run without --offline or update ccusage after pricing is added.

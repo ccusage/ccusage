@@ -1,94 +1,43 @@
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use crate::{
-    BucketKind, LoadedEntry, Result, SessionAccumulator, agent_summary_json,
+    LoadedEntry, Result,
     cli::{AgentReportKind, SortOrder, WeekDay},
-    sort_summaries, summarize_by_key, summarize_summaries_by_bucket, summary_period, totals_json,
+    sort_summaries, summary_period,
+};
+
+use ccusage_adapter_common::{
+    rows,
+    source::{SessionScope, SessionShape, SummaryKind},
 };
 
 pub fn report_json(
     entries: &[LoadedEntry],
     kind: AgentReportKind,
     order: &SortOrder,
+    start_of_week: WeekDay,
 ) -> Result<Value> {
-    let mut rows = summarize_entries(entries, kind)?;
-    sort_summaries(&mut rows, order, |row| summary_period(row));
-    Ok(report_from_rows(&rows, kind))
+    let mut rows = summarize_entries(entries, kind, start_of_week)?;
+    sort_summaries(&mut rows, order, &summary_period);
+    Ok(ccusage_adapter_common::report::report_json(
+        &rows, kind, false,
+    ))
 }
 
-fn report_from_rows(rows: &[crate::UsageSummary], kind: AgentReportKind) -> Value {
-    let rows_json = rows
-        .iter()
-        .map(|row| agent_summary_json(row, kind, false))
-        .collect::<Vec<_>>();
-    json!({
-        rows_key(kind): rows_json,
-        "totals": totals_json(rows),
-    })
-}
-
-pub fn summarize_entries(
+pub(crate) fn summarize_entries(
     entries: &[LoadedEntry],
     kind: AgentReportKind,
+    start_of_week: WeekDay,
 ) -> Result<Vec<crate::UsageSummary>> {
-    match kind {
-        AgentReportKind::Daily => summarize_by_key(
-            entries,
-            |entry| entry.date.clone(),
-            |date| (date.to_string(), None),
-        ),
-        AgentReportKind::Weekly => {
-            let daily = summarize_by_key(
-                entries,
-                |entry| entry.date.clone(),
-                |date| (date.to_string(), None),
-            )?;
-            Ok(summarize_summaries_by_bucket(
-                &daily,
-                BucketKind::Weekly,
-                WeekDay::Monday,
-            ))
-        }
-        AgentReportKind::Monthly => {
-            let daily = summarize_by_key(
-                entries,
-                |entry| entry.date.clone(),
-                |date| (date.to_string(), None),
-            )?;
-            Ok(summarize_summaries_by_bucket(
-                &daily,
-                BucketKind::Monthly,
-                WeekDay::Sunday,
-            ))
-        }
-        AgentReportKind::Session => {
-            let mut grouped: Vec<SessionAccumulator> = Vec::new();
-            let mut group_indexes = std::collections::HashMap::new();
-            for entry in entries {
-                let key = &entry.session_id;
-                let index = *group_indexes.entry(key.clone()).or_insert_with(|| {
-                    let index = grouped.len();
-                    grouped.push(SessionAccumulator::default());
-                    index
-                });
-                grouped[index].add_entry(entry);
-            }
-            let mut rows = Vec::with_capacity(grouped.len());
-            for group in grouped {
-                rows.push(group.into_summary()?);
-            }
-            Ok(rows)
-        }
+    if kind == AgentReportKind::Session {
+        return rows::summarize_source_sessions_in_order(entries);
     }
-}
-
-fn rows_key(kind: AgentReportKind) -> &'static str {
-    match kind {
-        AgentReportKind::Daily => "daily",
-        AgentReportKind::Weekly => "weekly",
-        AgentReportKind::Monthly => "monthly",
-        AgentReportKind::Session => "sessions",
-    }
+    rows::summarize_entries(
+        entries,
+        SummaryKind::for_report(kind, start_of_week),
+        SessionShape::WithActivity,
+        SessionScope::Source,
+    )
 }
 
 #[cfg(test)]
@@ -96,9 +45,9 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::{
-        LoadedEntry, ModelBreakdown, TimestampMs, TokenUsageRaw, UsageEntry, UsageMessage,
-        UsageSummary, cli::AgentReportKind, format_rfc3339_millis,
+    use ccusage_core::{
+        LoadedEntry, ModelBreakdown, TimestampMs, TokenUsageRaw, UsageSummary, agent_summary_json,
+        cli::AgentReportKind,
     };
 
     #[test]
@@ -120,8 +69,8 @@ mod tests {
             "weekly": agent_summary_json(&weekly, AgentReportKind::Weekly, false),
             "monthly": agent_summary_json(&monthly, AgentReportKind::Monthly, false),
             "session": agent_summary_json(&session, AgentReportKind::Session, true),
-            "dailyReport": report_from_rows(std::slice::from_ref(&daily), AgentReportKind::Daily),
-            "sessionReport": report_from_rows(&[session], AgentReportKind::Session),
+            "dailyReport": ccusage_adapter_common::report::report_json(std::slice::from_ref(&daily), AgentReportKind::Daily, false),
+            "sessionReport": ccusage_adapter_common::report::report_json(&[session], AgentReportKind::Session, false),
         }));
     }
 
@@ -132,7 +81,7 @@ mod tests {
             loaded_entry("session-a", 1_767_402_000_000, 20),
         ];
 
-        let rows = summarize_entries(&entries, AgentReportKind::Session).unwrap();
+        let rows = summarize_entries(&entries, AgentReportKind::Session, WeekDay::Monday).unwrap();
 
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].session_id.as_deref(), Some("session-a"));
@@ -144,6 +93,19 @@ mod tests {
             rows[0].last_activity.as_deref(),
             Some("2026-01-03T01:00:00.000Z")
         );
+    }
+
+    #[test]
+    fn weekly_report_uses_the_requested_week_start() {
+        let entries = vec![loaded_entry("session-a", 1_767_316_800_000, 100)];
+        for (start, expected) in [
+            (WeekDay::Monday, "2025-12-29"),
+            (WeekDay::Sunday, "2025-12-28"),
+        ] {
+            let rows = summarize_entries(&entries, AgentReportKind::Weekly, start).unwrap();
+            assert_eq!(rows[0].week.as_deref(), Some(expected));
+            assert_eq!(rows[0].input_tokens, 100);
+        }
     }
 
     fn snapshot_row() -> UsageSummary {
@@ -173,10 +135,12 @@ mod tests {
                 output_tokens: 50,
                 cache_creation_tokens: 10,
                 cache_read_tokens: 5,
+                cache_creation_1h_tokens: None,
                 extra_total_tokens: 7,
                 cost: 0.25,
                 missing_pricing: false,
                 stored_cost: None,
+                estimated_pricing: false,
             }],
             project: None,
             versions: Some(vec!["1.0.0".to_string()]),
@@ -186,29 +150,19 @@ mod tests {
     fn loaded_entry(session_id: &str, timestamp_millis: i64, input_tokens: u64) -> LoadedEntry {
         let timestamp = TimestampMs::from_millis(timestamp_millis);
         LoadedEntry {
-            data: UsageEntry {
-                session_id: Some(session_id.to_string()),
-                timestamp: format_rfc3339_millis(timestamp),
-                version: None,
-                message: UsageMessage {
-                    usage: TokenUsageRaw {
-                        input_tokens,
-                        output_tokens: 0,
-                        cache_creation_input_tokens: 0,
-                        cache_read_input_tokens: 0,
-                        cache_creation: None,
-                        speed: None,
-                    },
-                    model: Some("gpt-5.2-codex".to_string()),
-                    id: Some(format!("msg-{timestamp_millis}")),
-                },
-                cost_usd: None,
-                request_id: None,
-                is_api_error_message: None,
-                is_sidechain: None,
+            usage: TokenUsageRaw {
+                input_tokens,
+                output_tokens: 0,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
+                cache_creation: None,
+                speed: None,
             },
+            message_id: Some(format!("msg-{timestamp_millis}")),
+            version: None,
+            recorded_cost: None,
             timestamp,
-            date: "2026-01-02".to_string(),
+            date: ccusage_core::cli::IsoDate::parse("2026-01-02").unwrap(),
             project: Arc::from("opencode"),
             session_id: Arc::from(session_id),
             project_path: Arc::from("/workspace/api"),
@@ -220,6 +174,7 @@ mod tests {
             usage_limit_reset_time: None,
             missing_pricing_model: None,
             stored_cost: None,
+            estimated_pricing: false,
         }
     }
 }

@@ -1,0 +1,9 @@
+# NOTE(2024-02-29): The compiler checks this feature on macOS. Pass the flag explicitly.
+[build]
+# Cargo config syntax below is data.
+rustflags = ["-C", "link-arg=#"]
+details = """
+# text
+""" # Trailing.
+# NOTE(2026-02-29): This is impossible. Correct the month.
+# NOTE(2026-11-19): The reason is missing.

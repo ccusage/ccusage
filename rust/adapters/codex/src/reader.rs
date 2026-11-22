@@ -1,10 +1,16 @@
+use ccusage_adapter_common::{
+    UnitError,
+    jsonl::{Interruption, ReadFailure, ReadPolicy},
+};
+use ccusage_core::SkipKind;
 use std::{
-    fs::File,
-    io::{self, BufRead, BufReader},
+    io,
     path::{Path, PathBuf},
 };
 
-const READ_BUFFER_SIZE: usize = 128 * 1024;
+pub(super) const READ_BUFFER_SIZE: usize = 128 * 1024;
+// NOTE(2026-11-16, #2102): Codex embeds `base_instructions` in the first `session_meta` line. A 64 KiB probe fits the observed first lines of up to 49.4 KB without growing.
+pub(super) const PROBE_BUFFER_SIZE: usize = 64 * 1024;
 
 pub(super) fn is_rollout_file(path: &Path) -> bool {
     path.extension().is_some_and(|ext| ext == "jsonl") || is_compressed_rollout(path)
@@ -19,23 +25,11 @@ fn is_compressed_rollout(path: &Path) -> bool {
         })
 }
 
-/// The `.jsonl` path a rollout has regardless of its encoding.
 pub(super) fn uncompressed_rollout_path(path: &Path) -> PathBuf {
     if is_compressed_rollout(path) {
         path.with_extension("")
     } else {
         path.to_path_buf()
-    }
-}
-
-pub(super) fn open_rollout_reader(path: &Path) -> io::Result<(Box<dyn BufRead>, PathBuf)> {
-    match open_encoded_rollout(path) {
-        // Codex may compress or restore the rollout between discovery and this open.
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            let other = other_encoding_path(path);
-            Ok((open_encoded_rollout(&other)?, other))
-        }
-        result => Ok((result?, path.to_path_buf())),
     }
 }
 
@@ -49,17 +43,41 @@ fn other_encoding_path(path: &Path) -> PathBuf {
     }
 }
 
-fn open_encoded_rollout(path: &Path) -> io::Result<Box<dyn BufRead>> {
-    let file = File::open(path)?;
-    if is_compressed_rollout(path) {
-        let decoder = zstd::stream::read::Decoder::new(file)?;
-        Ok(Box::new(BufReader::with_capacity(
-            READ_BUFFER_SIZE,
-            decoder,
-        )))
-    } else {
-        Ok(Box::new(BufReader::with_capacity(READ_BUFFER_SIZE, file)))
+pub(super) fn rollout_policy(path: &Path, capacity: usize, keep_records: bool) -> ReadPolicy {
+    ReadPolicy {
+        capacity,
+        compressed: is_compressed_rollout(path),
+        // NOTE(2026-10-14, #1890): Codex can compress or restore a rollout after discovery. The other encoding can still hold the same rollout.
+        retry_missing: Some(other_encoding_path),
+        open_failure: Some("rollout open failed"),
+        interrupted: if keep_records {
+            keep_interruption
+        } else {
+            reject_interruption
+        },
+        ..ReadPolicy::PLAIN
     }
+}
+
+fn keep_interruption(failure: ReadFailure) -> Interruption {
+    if failure.complete_lines == 0 {
+        return reject_interruption(failure);
+    }
+    if failure.error.kind() == io::ErrorKind::UnexpectedEof {
+        Interruption::KeepUnit(
+            failure.incomplete("zstd stream ends inside a frame; earlier records were kept"),
+        )
+    } else {
+        Interruption::KeepRecords(SkipKind::ReadInterrupted, "rollout read failed")
+    }
+}
+
+fn reject_interruption(failure: ReadFailure) -> Interruption {
+    Interruption::RejectRecords(if failure.error.kind() == io::ErrorKind::UnexpectedEof {
+        failure.incomplete("zstd stream ends inside its first frame")
+    } else {
+        UnitError::new(SkipKind::ReadInterrupted, "rollout read failed")
+    })
 }
 
 #[cfg(test)]

@@ -1,4 +1,3 @@
-# PULLFROG ACTION — DO NOT EDIT EXCEPT WHERE INDICATED
 name: Pullfrog
 run-name: ${{ inputs.name || github.workflow }}
 on:
@@ -18,6 +17,7 @@ jobs:
   pullfrog:
     runs-on: blacksmith-32vcpu-ubuntu-2404
     permissions:
+      actions: read
       id-token: write
       contents: read
     steps:
@@ -29,13 +29,12 @@ jobs:
       - name: Setup Nix
         uses: ./.github/actions/setup-nix-cache
       - name: Run agent
-        uses: pullfrog/pullfrog@ad4283a862b8377cb525a0f5bf30f17c023b18ea # v0.1.98
+        uses: pullfrog/pullfrog@9eb4e93d38160a21b0e85b759ab8ea9fecaf5e58 # v0.1.138
         with:
           prompt: ${{ inputs.prompt }}
           push: restricted
           shell: restricted
         env:
-          # add at least one provider API key
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -46,17 +45,3 @@ jobs:
           MOONSHOT_API_KEY: ${{ secrets.MOONSHOT_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
-
-          # for Amazon Bedrock (https://docs.pullfrog.com/bedrock)
-          # AWS_BEARER_TOKEN_BEDROCK: ${{ secrets.AWS_BEARER_TOKEN_BEDROCK }}
-          # AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          # AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          # AWS_REGION: us-east-1
-          # BEDROCK_MODEL_ID: <bedrock-model-id>
-
-          # for Google Vertex AI (https://docs.pullfrog.com/vertex)
-          # VERTEX_SERVICE_ACCOUNT_JSON: >-
-          #   ${{ secrets.VERTEX_SERVICE_ACCOUNT_JSON }}
-          # GOOGLE_CLOUD_PROJECT: my-project
-          # VERTEX_LOCATION: global
-          # VERTEX_MODEL_ID: <vertex-model-id>

@@ -1,13 +1,18 @@
-use std::{collections::HashSet, env, path::PathBuf};
+use std::path::PathBuf;
 
-use crate::{Result, collect_files_with_extension};
+use ccusage_adapter_common::roots::{self, RootsEnv};
+
+use crate::Result;
+use ccusage_adapter_common::collect_files_with_extension;
+use ccusage_core::Diagnostics;
 
 pub(super) const DROID_SESSIONS_DIR_ENV: &str = "DROID_SESSIONS_DIR";
 
-pub(super) fn discover_settings_files() -> Result<Vec<PathBuf>> {
+// NOTE(2026-05-19, #1028): Factory Droid stores cumulative session counters in .settings.json snapshots alongside its JSONL transcripts. Read the snapshots as the source of token totals.
+pub(super) fn discover_settings_files(diagnostics: &Diagnostics) -> Result<Vec<PathBuf>> {
     let mut files = Vec::new();
     for root in droid_session_paths()? {
-        collect_files_with_extension(&root, "json", &mut files);
+        collect_files_with_extension(&root, "json", &mut files, diagnostics);
     }
     Ok(files
         .into_iter()
@@ -20,22 +25,13 @@ pub(super) fn discover_settings_files() -> Result<Vec<PathBuf>> {
 }
 
 fn droid_session_paths() -> Result<Vec<PathBuf>> {
-    let raw_paths = if let Ok(paths) = env::var(DROID_SESSIONS_DIR_ENV) {
-        paths
-            .split(',')
-            .map(str::trim)
-            .filter(|path| !path.is_empty())
-            .map(PathBuf::from)
-            .collect::<Vec<_>>()
-    } else {
-        let home =
-            crate::home::home_dir().ok_or_else(|| crate::cli_error("home directory is not set"))?;
-        vec![home.join(".factory").join("sessions")]
-    };
-    let mut seen = HashSet::new();
-    Ok(raw_paths
-        .into_iter()
-        .filter(|path| path.is_dir())
-        .filter(|path| seen.insert(path.clone()))
-        .collect())
+    Ok(roots::resolve(
+        RootsEnv::List(DROID_SESSIONS_DIR_ENV),
+        || {
+            crate::cli::home::home_dir()
+                .into_iter()
+                .flat_map(|home| [".factory/sessions"].map(|path| home.join(path)))
+                .collect()
+        },
+    ))
 }

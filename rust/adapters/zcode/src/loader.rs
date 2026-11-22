@@ -1,16 +1,25 @@
-use std::{collections::HashSet, path::Path};
+use ccusage_core::cost::PriceTable;
+use std::{collections::HashSet, path::PathBuf};
 
 use jiff::tz::TimeZone as JiffTimeZone;
 
-use ccusage_adapter_common::read_files_parallel;
+use ccusage_adapter_common::{
+    SqliteStage,
+    dedupe::dedupe_first_wins,
+    source::LoadContext,
+    sqlite::{read_count, read_i64, sqlite_units},
+    units::UnitError,
+};
+use ccusage_core::{Diagnostics, SkipKind};
 
-use crate::{LoadedEntry, PricingMap, Result, cli::SharedArgs, debug_log, parse_tz};
+use crate::{LoadedEntry, Result, cli::SharedArgs, debug_log};
 
 use super::{
-    parser::{ZcodeUsageRow, row_to_entry},
+    parser::{RowRejection, ZcodeUsageRow, row_to_entry},
     paths::db_paths,
 };
 
+// NOTE(2026-08-31, ZCode 0.16.3, #1675): ZCode records model calls in model_usage and the project directory in session. Cache counters, provider ID and session version may be absent from compatible databases.
 const REQUIRED_MODEL_COLUMNS: &[&str] = &[
     "id",
     "session_id",
@@ -24,7 +33,6 @@ const REQUIRED_SESSION_COLUMNS: &[&str] = &["id", "directory"];
 
 #[derive(Debug, Clone, Copy)]
 struct Schema {
-    version: SchemaVersion,
     has_provider_id: bool,
     has_cache_creation: bool,
     has_cache_read: bool,
@@ -32,95 +40,65 @@ struct Schema {
     has_session_version: bool,
 }
 
-#[derive(Debug, Clone, Copy)]
-enum SchemaVersion {
-    Legacy,
-    SessionVersioned,
-}
-
-impl SchemaVersion {
-    fn label(self) -> &'static str {
-        match self {
-            Self::Legacy => "legacy",
-            Self::SessionVersioned => "session-versioned",
-        }
-    }
-}
-
-pub fn load_entries(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
-    crate::progress::track_usage_load(
-        crate::progress::UsageLoadAgent("ZCode"),
-        shared.json,
-        || load_entries_inner(shared, pricing),
-    )
-}
-
-fn load_entries_inner(shared: &SharedArgs, pricing: &PricingMap) -> Result<Vec<LoadedEntry>> {
-    let tz = parse_tz(shared.timezone.as_deref());
+pub(crate) fn load_entries_for_context(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
+    let shared = cx.shared;
+    let pricing = cx.pricing.table(cx.shared.mode);
+    let tz = cx.window.timezone();
     let db_paths = db_paths(shared)?;
-    let loaded = read_files_parallel(&db_paths, shared.single_thread, |db_path| {
-        load_entries_from_database(db_path, tz.as_ref(), shared, pricing)
-    });
-
-    let mut entries = Vec::new();
-    let mut seen = HashSet::new();
-    for db_entries in loaded {
-        for entry in db_entries {
-            let id = entry
-                .data
-                .message
-                .id
-                .as_deref()
-                .expect("ZCode entries always have message IDs");
-            if seen.insert(id.to_string()) {
-                entries.push(entry);
-            }
-        }
-    }
-    entries.sort_by_key(|entry| entry.timestamp);
+    let loaded = load_entries_from_databases(&db_paths, tz, shared, pricing, cx.diagnostics);
+    let mut entries: Vec<_> = dedupe_first_wins(loaded, |(id, _)| id.clone())
+        .into_iter()
+        .map(|(_, entry)| entry)
+        .collect();
+    LoadedEntry::sort_by_timestamp(&mut entries);
     Ok(entries)
 }
 
-fn load_entries_from_database(
-    db_path: &Path,
-    tz: Option<&JiffTimeZone>,
+fn load_entries_from_databases(
+    db_paths: &[PathBuf],
+    tz: &JiffTimeZone,
     shared: &SharedArgs,
-    pricing: &PricingMap,
-) -> Vec<LoadedEntry> {
-    let Ok(connection) =
-        sqlite::Connection::open_with_flags(db_path, sqlite::OpenFlags::new().with_read_only())
-    else {
-        debug_log(
-            shared,
-            format!("Failed to open ZCode database: {}", db_path.display()),
-        );
-        return Vec::new();
-    };
+    pricing: PriceTable<'_>,
+    diagnostics: &Diagnostics,
+) -> Vec<(String, LoadedEntry)> {
+    sqlite_units(
+        db_paths,
+        shared.single_thread,
+        diagnostics,
+        |connection, db_path| prepare_usage_query(connection, db_path, shared),
+        |statement, _, _| {
+            row_to_entry(
+                read_usage_row(statement),
+                tz,
+                shared.mode,
+                pricing,
+                &shared.pricing_overrides,
+            )
+            .map_err(|rejection| match rejection {
+                RowRejection::InvalidIdentity => UnitError::new(
+                    SkipKind::InvalidData,
+                    "completed ZCode usage row has no id, session id or model",
+                ),
+                RowRejection::InvalidTimestamp => UnitError::new(
+                    SkipKind::InvalidTimestamp,
+                    "completed ZCode usage row has an invalid start time",
+                ),
+            })
+        },
+    )
+}
 
-    if let Err(error) = connection.execute("PRAGMA busy_timeout = 5000") {
-        debug_log(
-            shared,
-            format!("Failed to configure ZCode database locking: {error}"),
-        );
-        return Vec::new();
-    }
-    if let Err(error) = connection.execute("PRAGMA query_only = ON") {
-        debug_log(
-            shared,
-            format!("Failed to configure ZCode read-only mode: {error}"),
-        );
-        return Vec::new();
-    }
-
-    let Some(schema) = read_schema(&connection, db_path, shared) else {
-        return Vec::new();
-    };
+fn prepare_usage_query<'a>(
+    connection: &'a sqlite::Connection,
+    db_path: &std::path::Path,
+    shared: &SharedArgs,
+) -> std::result::Result<sqlite::Statement<'a>, UnitError> {
+    let schema = read_schema(connection)?;
     debug_log(
         shared,
         format!(
-            "Reading ZCode SQLite schema at {} (layout={}, cache_creation={}, cache_read={}, computed_total={}, provider_id={}, session_version={})",
+            "Reading ZCode SQLite schema at {} (cache_creation={}, cache_read={}, computed_total={}, provider_id={}, session_version={})",
             db_path.display(),
-            schema.version.label(),
             schema.has_cache_creation,
             schema.has_cache_read,
             schema.has_computed_total,
@@ -157,71 +135,14 @@ fn load_entries_from_database(
     let query = format!(
         "SELECT m.id, m.session_id, m.started_at, m.model_id, m.input_tokens, m.output_tokens, {cache_creation}, {cache_read}, {computed_total}, {provider_id}, s.directory, {version} FROM model_usage m LEFT JOIN session s ON s.id = m.session_id WHERE m.status = 'completed'"
     );
-    let Ok(mut statement) = connection.prepare(&query) else {
-        debug_log(
-            shared,
-            format!("Failed to query ZCode database: {}", db_path.display()),
-        );
-        return Vec::new();
-    };
-
-    let mut entries = Vec::new();
-    loop {
-        match statement.next() {
-            Ok(sqlite::State::Row) => {
-                if let Some(entry) = read_usage_row(&statement).and_then(|row| {
-                    row_to_entry(row, tz, shared.mode, pricing, &shared.pricing_overrides)
-                }) {
-                    entries.push(entry);
-                }
-            }
-            Ok(sqlite::State::Done) => break,
-            Err(error) => {
-                debug_log(
-                    shared,
-                    format!(
-                        "Failed to read ZCode database {}: {error}",
-                        db_path.display()
-                    ),
-                );
-                break;
-            }
-        }
-    }
-    entries
+    connection
+        .prepare(&query)
+        .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))
 }
 
-fn read_schema(
-    connection: &sqlite::Connection,
-    db_path: &Path,
-    shared: &SharedArgs,
-) -> Option<Schema> {
-    let model_columns = match table_columns(connection, "model_usage") {
-        Ok(columns) => columns,
-        Err(error) => {
-            debug_log(
-                shared,
-                format!(
-                    "Failed to inspect ZCode model_usage schema at {}: {error}",
-                    db_path.display()
-                ),
-            );
-            return None;
-        }
-    };
-    let session_columns = match table_columns(connection, "session") {
-        Ok(columns) => columns,
-        Err(error) => {
-            debug_log(
-                shared,
-                format!(
-                    "Failed to inspect ZCode session schema at {}: {error}",
-                    db_path.display()
-                ),
-            );
-            return None;
-        }
-    };
+fn read_schema(connection: &sqlite::Connection) -> std::result::Result<Schema, UnitError> {
+    let model_columns = table_columns(connection, "model_usage")?;
+    let session_columns = table_columns(connection, "session")?;
     let missing_model = missing_columns(&model_columns, REQUIRED_MODEL_COLUMNS);
     let missing_session = missing_columns(&session_columns, REQUIRED_SESSION_COLUMNS);
     if !missing_model.is_empty() || !missing_session.is_empty() {
@@ -232,23 +153,16 @@ fn read_schema(
         if !missing_session.is_empty() {
             details.push(format!("session: {}", missing_session.join(", ")));
         }
-        debug_log(
-            shared,
+        return Err(UnitError::new(
+            SkipKind::Invariant,
             format!(
-                "Unsupported ZCode SQLite schema at {}: missing {}",
-                db_path.display(),
+                "database schema is not supported: missing {}",
                 details.join("; ")
             ),
-        );
-        return None;
+        ));
     }
 
-    Some(Schema {
-        version: if session_columns.contains("version") {
-            SchemaVersion::SessionVersioned
-        } else {
-            SchemaVersion::Legacy
-        },
+    Ok(Schema {
         has_provider_id: model_columns.contains("provider_id"),
         has_cache_creation: model_columns.contains("cache_creation_input_tokens"),
         has_cache_read: model_columns.contains("cache_read_input_tokens"),
@@ -257,11 +171,13 @@ fn read_schema(
     })
 }
 
-fn table_columns(connection: &sqlite::Connection, table: &str) -> sqlite::Result<HashSet<String>> {
-    // LIMIT 0 obtains column metadata without materializing any row values,
-    // including prompt or content fields that may be present in future schemas.
-    let query = format!("SELECT * FROM \"{table}\" LIMIT 0");
-    let statement = connection.prepare(query)?;
+fn table_columns(
+    connection: &sqlite::Connection,
+    table: &str,
+) -> std::result::Result<HashSet<String>, UnitError> {
+    let statement = connection
+        .prepare(format!("SELECT * FROM \"{table}\" LIMIT 0"))
+        .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))?;
     Ok(statement.column_names().iter().cloned().collect())
 }
 
@@ -273,56 +189,37 @@ fn missing_columns(columns: &HashSet<String>, required: &[&str]) -> Vec<String> 
         .collect()
 }
 
-fn read_usage_row(statement: &sqlite::Statement<'_>) -> Option<ZcodeUsageRow> {
-    Some(ZcodeUsageRow {
-        id: statement.read::<String, _>(0).ok()?,
-        session_id: statement.read::<String, _>(1).ok()?,
-        started_at: read_timestamp_ms(statement, 2)?,
-        model_id: statement.read::<String, _>(3).ok()?,
-        input_tokens: read_token_column(statement, 4),
-        output_tokens: read_token_column(statement, 5),
-        cache_creation_input_tokens: read_token_column(statement, 6),
-        cache_read_input_tokens: read_token_column(statement, 7),
-        computed_total_tokens: read_token_column(statement, 8),
-        provider_id: statement.read::<Option<String>, _>(9).ok().flatten(),
-        directory: statement.read::<Option<String>, _>(10).ok().flatten(),
-        version: statement.read::<Option<String>, _>(11).ok().flatten(),
-    })
-}
-
-fn read_token_column(statement: &sqlite::Statement<'_>, index: usize) -> u64 {
-    statement
-        .read::<i64, _>(index)
-        .map(|value| value.max(0) as u64)
-        .or_else(|_| {
-            statement.read::<f64, _>(index).map(|value| {
-                if value.is_finite() && value > 0.0 {
-                    value.min(u64::MAX as f64).round() as u64
-                } else {
-                    0
-                }
-            })
-        })
-        .unwrap_or(0)
-}
-
-fn read_timestamp_ms(statement: &sqlite::Statement<'_>, index: usize) -> Option<i64> {
-    if let Ok(value) = statement.read::<i64, _>(index) {
-        return Some(value);
+fn read_usage_row(statement: &sqlite::Statement<'_>) -> ZcodeUsageRow {
+    ZcodeUsageRow {
+        id: read_text_column(statement, 0),
+        session_id: read_text_column(statement, 1),
+        started_at: read_i64(statement, 2),
+        model_id: read_text_column(statement, 3),
+        input_tokens: read_count(statement, 4),
+        output_tokens: read_count(statement, 5),
+        cache_creation_input_tokens: read_count(statement, 6),
+        cache_read_input_tokens: read_count(statement, 7),
+        computed_total_tokens: read_count(statement, 8),
+        provider_id: read_text_column(statement, 9),
+        directory: read_text_column(statement, 10),
+        version: read_text_column(statement, 11),
     }
-    let value = statement.read::<f64, _>(index).ok()?;
-    (value.is_finite() && value >= i64::MIN as f64 && value <= i64::MAX as f64)
-        .then_some(value.round() as i64)
+}
+
+fn read_text_column(statement: &sqlite::Statement<'_>, index: usize) -> Option<String> {
+    statement.read::<Option<String>, _>(index).ok().flatten()
 }
 
 #[cfg(test)]
 mod tests {
     use std::path::Path;
 
-    use ccusage_test_support::{EnvVarGuard, fs_fixture};
+    use ccusage_adapter_common::source::{EntrySource, LoadContext, SourceOptions};
+    use ccusage_core::{ReportWindow, cli::AgentReportKind};
+    use ccusage_test_support::{Environment, fs_fixture};
 
     use super::*;
-    use crate::{PricingMap, cli::CostMode};
+    use crate::cli::CostMode;
 
     fn create_db(path: &Path, legacy: bool) {
         let db = sqlite::open(path).unwrap();
@@ -373,6 +270,43 @@ mod tests {
         statement.next().unwrap();
     }
 
+    fn insert_usage_record(
+        db: &sqlite::Connection,
+        id: &str,
+        session_id: &str,
+        started_at: i64,
+        model_id: &str,
+        usage: [i64; 5],
+    ) {
+        let [
+            input_tokens,
+            output_tokens,
+            cache_creation_input_tokens,
+            cache_read_input_tokens,
+            computed_total_tokens,
+        ] = usage;
+        let mut statement = db
+            .prepare(
+                "INSERT INTO model_usage
+                 (id, session_id, started_at, model_id, provider_id, status, input_tokens,
+                  output_tokens, cache_creation_input_tokens, cache_read_input_tokens,
+                  computed_total_tokens)
+                 VALUES (?1, ?2, ?3, ?4, 'builtin:zai-coding-plan', 'completed',
+                         ?5, ?6, ?7, ?8, ?9)",
+            )
+            .unwrap();
+        statement.bind((1, id)).unwrap();
+        statement.bind((2, session_id)).unwrap();
+        statement.bind((3, started_at)).unwrap();
+        statement.bind((4, model_id)).unwrap();
+        statement.bind((5, input_tokens)).unwrap();
+        statement.bind((6, output_tokens)).unwrap();
+        statement.bind((7, cache_creation_input_tokens)).unwrap();
+        statement.bind((8, cache_read_input_tokens)).unwrap();
+        statement.bind((9, computed_total_tokens)).unwrap();
+        statement.next().unwrap();
+    }
+
     fn journal_mode(db: &sqlite::Connection) -> String {
         let mut statement = db.prepare("PRAGMA journal_mode").unwrap();
         assert_eq!(statement.next().unwrap(), sqlite::State::Row);
@@ -380,13 +314,20 @@ mod tests {
     }
 
     fn load_with_mode(root: &Path, mode: CostMode) -> Vec<LoadedEntry> {
-        let _guard = EnvVarGuard::set(super::super::paths::ZCODE_HOME_ENV, root);
-        let shared = SharedArgs {
-            mode,
-            timezone: Some("UTC".to_string()),
-            ..SharedArgs::default()
-        };
-        load_entries(&shared, &PricingMap::load_embedded()).unwrap()
+        Environment::with_var(super::super::paths::ZCODE_HOME_ENV, root).run(|| {
+            let shared = SharedArgs {
+                mode,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                ..SharedArgs::default()
+            };
+            ccusage_adapter_common::testing::entries(
+                &crate::SOURCE,
+                &shared,
+                Default::default(),
+                Some(&ccusage_core::PricingMap::load_embedded()),
+            )
+            .unwrap()
+        })
     }
 
     fn load(root: &Path) -> Vec<LoadedEntry> {
@@ -395,8 +336,9 @@ mod tests {
 
     #[test]
     fn loads_completed_rows_with_millisecond_precision() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({});
-        let _ = fixture.create_dir_all("cli/db");
+        fixture.create_dir_all("cli/db");
         let db_path = fixture.path(super::super::paths::ZCODE_DB_RELATIVE_PATH);
         create_db(&db_path, false);
         let db = sqlite::open(&db_path).unwrap();
@@ -408,15 +350,233 @@ mod tests {
         let entries = load(fixture.root());
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.message.id.as_deref(), Some("usage-1"));
-        assert_eq!(entries[0].data.timestamp, "2026-08-16T19:37:22.666Z");
+        assert_eq!(entries[0].message_id.as_deref(), Some("usage-1"));
+        assert_eq!(
+            entries[0].timestamp,
+            ccusage_core::parse_ts_timestamp("2026-08-16T19:37:22.666Z").unwrap()
+        );
         assert_eq!(entries[0].project_path.as_ref(), "/project");
     }
 
     #[test]
-    fn preserves_opaque_provider_for_loader_pricing() {
+    fn keeps_healthy_databases_when_another_database_has_no_supported_schema() {
+        ccusage_test_support::install_pricing_snapshots();
+        let broken = fs_fixture!({
+            "cli/db/db.sqlite": "not a ZCode database",
+        });
+        let healthy = fs_fixture!({});
+        healthy.create_dir_all("cli/db");
+        let database = healthy.path(super::super::paths::ZCODE_DB_RELATIVE_PATH);
+        create_db(&database, false);
+        let db = sqlite::open(&database).unwrap();
+        db.execute("INSERT INTO session VALUES ('session-1', '/project', '0.16.3')")
+            .unwrap();
+        insert_current_usage(&database, "usage-1", "completed");
+        drop(db);
+        Environment::with_var(
+            super::super::paths::ZCODE_HOME_ENV,
+            format!("{},{}", broken.root().display(), healthy.root().display()),
+        )
+        .run(|| {
+            let shared = SharedArgs {
+                single_thread: true,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                ..SharedArgs::default()
+            };
+
+            let (entries, diagnostics) = ccusage_adapter_common::testing::load_entries(
+                &crate::SOURCE,
+                &shared,
+                ccusage_adapter_common::source::SourceOptions::default(),
+                Some(&ccusage_core::PricingMap::load_embedded()),
+            )
+            .unwrap();
+
+            assert_eq!(entries.len(), 1);
+            assert_eq!(entries[0].message_id.as_deref(), Some("usage-1"));
+            assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+        })
+    }
+
+    #[test]
+    fn separates_invalid_databases_from_unsupported_schemas() {
+        ccusage_test_support::install_pricing_snapshots();
+        let fixture = fs_fixture!({"broken.db": "SECRET_CANARY"});
+        sqlite::open(fixture.path("unsupported.db"))
+            .unwrap()
+            .execute("CREATE TABLE other (id TEXT)")
+            .unwrap();
+        let diagnostics = Diagnostics::new("zcode");
+        let shared = SharedArgs::default();
+        let pricing = ccusage_core::PricingMap::load_embedded();
+        let loaded = load_entries_from_databases(
+            &[fixture.path("broken.db"), fixture.path("unsupported.db")],
+            &jiff::tz::TimeZone::UTC,
+            &shared,
+            PriceTable::for_map(shared.mode, &pricing),
+            &diagnostics,
+        );
+
+        assert!(loaded.is_empty());
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+        assert_eq!(diagnostics.skipped(SkipKind::Invariant), 1);
+    }
+
+    #[test]
+    fn names_the_missing_columns_of_an_incomplete_schema() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({});
-        let _ = fixture.create_dir_all("cli/db");
+        let path = fixture.path("incomplete.db");
+        let db = sqlite::open(&path).unwrap();
+        db.execute("CREATE TABLE model_usage (id TEXT, session_id TEXT)")
+            .unwrap();
+        db.execute("CREATE TABLE session (id TEXT)").unwrap();
+        drop(db);
+
+        let diagnostics = Diagnostics::new("zcode");
+        load_entries_from_databases(
+            std::slice::from_ref(&path),
+            &jiff::tz::TimeZone::UTC,
+            &SharedArgs::default(),
+            PriceTable::Auto(&ccusage_core::PricingMap::load_embedded()),
+            &diagnostics,
+        );
+
+        assert_eq!(diagnostics.skipped(SkipKind::Invariant), 1);
+        let warnings = diagnostics
+            .warnings(&SharedArgs {
+                debug: true,
+                ..SharedArgs::default()
+            })
+            .join("\n");
+        assert!(
+            warnings.contains(
+                "database schema is not supported: missing model_usage: started_at, model_id, \
+                 status, input_tokens, output_tokens; session: directory"
+            ),
+            "{warnings}"
+        );
+    }
+
+    #[test]
+    fn diagnoses_rejected_completed_usage_and_keeps_healthy_rows() {
+        ccusage_test_support::install_pricing_snapshots();
+        let fixture = fs_fixture!({});
+        let path = fixture.path("usage.db");
+        create_db(&path, false);
+        insert_current_usage(&path, "healthy", "completed");
+        insert_current_usage(&path, "broken", "completed");
+        sqlite::open(&path)
+            .unwrap()
+            .execute("UPDATE model_usage SET model_id = NULL WHERE id = 'broken'")
+            .unwrap();
+        let diagnostics = Diagnostics::new("zcode");
+        let entries = load_entries_from_databases(
+            std::slice::from_ref(&path),
+            &jiff::tz::TimeZone::UTC,
+            &SharedArgs::default(),
+            PriceTable::Auto(&ccusage_core::PricingMap::load_embedded()),
+            &diagnostics,
+        );
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 1);
+    }
+
+    #[test]
+    fn diagnoses_malformed_usage_identity_only_when_the_row_has_usage() {
+        ccusage_test_support::install_pricing_snapshots();
+        let fixture = fs_fixture!({});
+        fixture.create_dir_all("cli/db");
+        let db_path = fixture.path(super::super::paths::ZCODE_DB_RELATIVE_PATH);
+        create_db(&db_path, false);
+        let db = sqlite::open(&db_path).unwrap();
+        db.execute("INSERT INTO session VALUES ('session-1', '/project', '0.16.3')")
+            .unwrap();
+        insert_current_usage_on_connection(&db, "healthy", "completed");
+        insert_usage_record(
+            &db,
+            "",
+            "session-1",
+            1_786_909_042_667,
+            "GLM-5.3",
+            [100, 10, 15, 25, 110],
+        );
+        insert_usage_record(
+            &db,
+            "blank-session",
+            "",
+            1_786_909_042_668,
+            "GLM-5.3",
+            [100, 10, 15, 25, 110],
+        );
+        insert_usage_record(
+            &db,
+            "blank-model",
+            "session-1",
+            1_786_909_042_669,
+            "",
+            [100, 10, 15, 25, 110],
+        );
+        insert_usage_record(
+            &db,
+            "bad-timestamp",
+            "session-1",
+            0,
+            "GLM-5.3",
+            [100, 10, 15, 25, 110],
+        );
+        insert_usage_record(&db, "zero-token", "session-1", 0, "", [0; 5]);
+        db.execute(
+            "INSERT INTO model_usage
+             (id, session_id, started_at, model_id, status, input_tokens, output_tokens)
+             VALUES ('null-model', 'session-1', 1786909042670, NULL, 'completed', 100, 10),
+                    ('zero-token-null-identity', NULL, NULL, NULL, 'completed', 0, 0)",
+        )
+        .unwrap();
+        drop(db);
+
+        Environment::with_var(super::super::paths::ZCODE_HOME_ENV, fixture.root()).run(|| {
+            let shared = SharedArgs {
+                single_thread: true,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                ..SharedArgs::default()
+            };
+            let window = ReportWindow::from_shared(&shared);
+            let pricing = ccusage_core::PricingMap::load_embedded();
+            let diagnostics = Diagnostics::new("zcode");
+            let cx = LoadContext {
+                shared: &shared,
+                kind: AgentReportKind::Daily,
+                window: &window,
+                pricing: ccusage_adapter_common::source::ReportPricing::Supplied(&pricing),
+                options: SourceOptions::default(),
+                diagnostics: &diagnostics,
+            };
+
+            let entries = crate::SOURCE.load_entries(&cx).unwrap();
+
+            assert_eq!(entries.len(), 1);
+            assert_eq!(entries[0].message_id.as_deref(), Some("healthy"));
+            assert_eq!(diagnostics.skipped(SkipKind::InvalidData), 4);
+            assert_eq!(diagnostics.skipped(SkipKind::InvalidTimestamp), 1);
+            let warnings = diagnostics
+                .warnings(&SharedArgs {
+                    debug: true,
+                    ..SharedArgs::default()
+                })
+                .join("\n");
+            assert!(!warnings.contains("blank-session"));
+            assert!(!warnings.contains("blank-model"));
+            assert!(!warnings.contains("bad-timestamp"));
+        })
+    }
+
+    #[test]
+    fn preserves_opaque_provider_for_loader_pricing() {
+        ccusage_test_support::install_pricing_snapshots();
+        let fixture = fs_fixture!({});
+        fixture.create_dir_all("cli/db");
         let db_path = fixture.path(super::super::paths::ZCODE_DB_RELATIVE_PATH);
         create_db(&db_path, false);
         let db = sqlite::open(&db_path).unwrap();
@@ -439,8 +599,9 @@ mod tests {
 
     #[test]
     fn accepts_legacy_schema_without_optional_columns() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({});
-        let _ = fixture.create_dir_all("cli/db");
+        fixture.create_dir_all("cli/db");
         let db_path = fixture.path(super::super::paths::ZCODE_DB_RELATIVE_PATH);
         create_db(&db_path, true);
         let db = sqlite::open(&db_path).unwrap();
@@ -457,16 +618,17 @@ mod tests {
         let entries = load(fixture.root());
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.version, None);
+        assert_eq!(entries[0].version, None);
         assert_eq!(entries[0].project_path.as_ref(), "ZCode");
-        assert_eq!(entries[0].data.message.usage.input_tokens, 75);
-        assert_eq!(entries[0].data.message.usage.cache_read_input_tokens, 25);
+        assert_eq!(entries[0].usage.input_tokens, 75);
+        assert_eq!(entries[0].usage.cache_read_input_tokens, 25);
     }
 
     #[test]
     fn reads_from_wal_database_without_changing_journal_mode() {
+        ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({});
-        let _ = fixture.create_dir_all("cli/db");
+        fixture.create_dir_all("cli/db");
         let db_path = fixture.path(super::super::paths::ZCODE_DB_RELATIVE_PATH);
         create_db(&db_path, false);
 
@@ -484,14 +646,15 @@ mod tests {
         let entries = load(fixture.root());
 
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].data.message.id.as_deref(), Some("usage-1"));
+        assert_eq!(entries[0].message_id.as_deref(), Some("usage-1"));
         assert_eq!(journal_mode(&db), "wal");
     }
 
     #[test]
     fn skips_unrelated_schema_and_deduplicates_multiple_homes() {
+        ccusage_test_support::install_pricing_snapshots();
         let first = fs_fixture!({});
-        let _ = first.create_dir_all("cli/db");
+        first.create_dir_all("cli/db");
         let first_db = first.path(super::super::paths::ZCODE_DB_RELATIVE_PATH);
         create_db(&first_db, false);
         let db = sqlite::open(&first_db).unwrap();
@@ -501,7 +664,7 @@ mod tests {
         drop(db);
 
         let second = fs_fixture!({});
-        let _ = second.create_dir_all("cli/db");
+        second.create_dir_all("cli/db");
         let second_db = second.path(super::super::paths::ZCODE_DB_RELATIVE_PATH);
         std::fs::copy(&first_db, &second_db).unwrap();
         let db = sqlite::open(&second_db).unwrap();
@@ -519,23 +682,30 @@ mod tests {
         drop(statement);
         drop(db);
 
-        let _guard = EnvVarGuard::set(
+        Environment::with_var(
             super::super::paths::ZCODE_HOME_ENV,
             format!("{},{}", first.root().display(), second.root().display()),
-        );
-        let shared = SharedArgs {
-            mode: CostMode::Display,
-            timezone: Some("UTC".to_string()),
-            ..SharedArgs::default()
-        };
-        let entries = load_entries(&shared, &PricingMap::load_embedded()).unwrap();
-        assert_eq!(entries.len(), 2);
-        assert_eq!(entries[0].data.message.id.as_deref(), Some("usage-1"));
-        assert_eq!(entries[1].data.message.id.as_deref(), Some("usage-2"));
-        drop(_guard);
+        )
+        .run(|| {
+            let shared = SharedArgs {
+                mode: CostMode::Display,
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                ..SharedArgs::default()
+            };
+            let entries = ccusage_adapter_common::testing::entries(
+                &crate::SOURCE,
+                &shared,
+                Default::default(),
+                Some(&ccusage_core::PricingMap::load_embedded()),
+            )
+            .unwrap();
+            assert_eq!(entries.len(), 2);
+            assert_eq!(entries[0].message_id.as_deref(), Some("usage-1"));
+            assert_eq!(entries[1].message_id.as_deref(), Some("usage-2"));
+        });
 
         let invalid = fs_fixture!({});
-        let _ = invalid.create_dir_all("cli/db");
+        invalid.create_dir_all("cli/db");
         let invalid_db = invalid.path(super::super::paths::ZCODE_DB_RELATIVE_PATH);
         let db = sqlite::open(&invalid_db).unwrap();
         db.execute("CREATE TABLE unrelated (id TEXT)").unwrap();

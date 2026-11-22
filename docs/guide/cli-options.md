@@ -1,6 +1,6 @@
 # Command-Line Options
 
-ccusage provides extensive command-line options to customize its behavior. These options take precedence over configuration files and environment variables.
+ccusage provides extensive command-line options to customize its behavior. These options take precedence over configuration files.
 
 ## Global Options
 
@@ -21,7 +21,7 @@ ccusage monthly --since 20260101
 ccusage session --until 20260531
 ```
 
-Both bounds accept `YYYY-MM-DD` or `YYYYMMDD` and are inclusive. Any other spelling, or a value that is not a real calendar date such as `2026-02-30`, is rejected with a non-zero exit code instead of silently changing which rows the report keeps. The same check applies to `since` and `until` in a [configuration file](/guide/config-files). A window whose `--since` date is later than its `--until` date is rejected the same way, whether the bounds come from flags, a configuration file, or a mix of both. `statusline` is exempt because it ignores report date filters, including configured defaults.
+Both bounds accept `YYYY-MM-DD` or `YYYYMMDD` and are inclusive. Any other spelling, or a value that is not a real calendar date such as `2026-02-30`, is rejected with a non-zero exit code instead of silently changing which rows the report keeps. The same check applies to `since` and `until` in a [configuration file](/guide/config-files). A window whose `--since` date is later than its `--until` date is rejected the same way, whether the bounds come from flags, a configuration file, or a mix of both. `statusline` ignores report date filters, including configured defaults, but configuration files are still validated in full.
 
 ### Recent Periods
 
@@ -42,9 +42,9 @@ ccusage daily --last 7
 ccusage monthly --last 3
 ```
 
-The count is inclusive of the current period, so `--last 2` on a daily report covers yesterday and today. Weeks start on the same day the report buckets by, which is Monday everywhere except `ccusage claude weekly`, where `--start-of-week` decides.
+The count is inclusive of the current period, so `--last 2` on a daily report covers yesterday and today. The window also ends with the current period, so records dated after the end of today, this week, or this month, such as logs merged from a machine whose clock runs ahead, are left out. Weeks start on the same day the report buckets by: Monday by default and Sunday for `ccusage claude weekly`, unless `commands.weekly.startOfWeek` in a [configuration file](/guide/config-files) or `--start-of-week` on `ccusage weekly` or `ccusage claude weekly` sets another day, with the flag taking precedence.
 
-`--last` works on every daily, weekly, and monthly report, including the per-agent ones such as `ccusage codex daily --last 1`. It is not available on `session`, `blocks`, or `statusline`, which have no calendar period, and it cannot be combined with `--since`, `--until`, or `--sections`.
+`--last` works on every daily, weekly, and monthly report, including the per-agent ones such as `ccusage codex daily --last 1`. It is not available on `session`, `blocks`, or `statusline`, which have no calendar period, and it cannot be combined with `--since`, `--until`, or `--sections`. A `since` or `until` set in a [configuration file](/guide/config-files) is not a conflict: `--last` replaces that window.
 
 ### Output Format
 
@@ -89,12 +89,14 @@ ccusage daily --mode display
 Control the ordering of results:
 
 ```bash
-# Newest first (default)
-ccusage daily --order desc
-
-# Oldest first
+# Oldest first (default)
 ccusage daily --order asc
+
+# Newest first
+ccusage daily --order desc
 ```
+
+Unified session reports are the exception: without an order option they list the most expensive session first. See [Session Usage](/guide/session-reports#sorting).
 
 ### Offline Mode
 
@@ -137,12 +139,21 @@ The timezone affects how usage is grouped by date. For example, usage at 11 PM U
 Get detailed debugging information:
 
 ```bash
-# Debug mode - show pricing mismatches and config loading
+# Debug mode - show skipped input and loader details on stderr
 ccusage daily --debug
-
-# Show sample discrepancies
-ccusage daily --debug --debug-samples 10
 ```
+
+Skipped-input warnings summarize files or usage records left out of a report;
+healthy input continues to count. `--debug` adds a bounded sample of file paths
+and record locations, including usage lines that could not be decoded. JSON
+decoding details show the error category and location without echoing log
+contents. These diagnostics go to stderr, keeping JSON output on stdout.
+
+A log that ends part-way through a record is treated as still being written
+when the file changes while ccusage reads it, and only `--debug` mentions it;
+the next run reads the record whole. A log that ends part-way through a record
+and does not change during the read, for example after an agent crash, is
+reported as invalid data however recently it was modified.
 
 ### Configuration File
 
@@ -170,21 +181,26 @@ ccusage daily --by-agent --json
 
 `--sections` accepts a comma-separated list of `daily`, `weekly`, `monthly`, and `session`. The invoked report section is always included. For table output, each requested section is printed as a separate table. `--by-agent` is JSON-only; session rows are already per-agent.
 
-### Daily Command
+### Claude Project Options
 
-Additional options for daily reports:
+`--project <name>` overrides the configured project on Claude daily, weekly, monthly, session, and blocks reports. The top-level `blocks` and `session` commands also accept it. In unified session reports it filters Claude Code usage. A Claude session lookup with `--id` searches across projects.
+
+`--instances` and `--project-aliases` are options for `ccusage claude daily`.
 
 ```bash
 # Group by project
-ccusage daily --instances
-ccusage daily -i
+ccusage claude daily --instances
+ccusage claude daily -i
 
 # Filter to specific project
-ccusage daily --project myproject
-ccusage daily -p myproject
+ccusage claude weekly --project myproject
+ccusage claude daily -p myproject
 
 # Combine project filtering
-ccusage daily --instances --project myproject
+ccusage claude daily --instances --project myproject
+
+# Rename projects in the table
+ccusage claude daily --instances --project-aliases "uuid-project=Frontend App"
 ```
 
 ### Weekly Command
@@ -202,12 +218,9 @@ ccusage weekly --start-of-week sunday
 Options for session reports:
 
 ```bash
-# Filter by session ID
+# Look up one session by ID
 ccusage claude session --id abc123-session
 ccusage codex session --id 01a0bb8c-c7c0-7630-9d82-860b875930f0
-
-# Filter by project
-ccusage session --project myproject
 ```
 
 ### Blocks Command
@@ -226,10 +239,6 @@ ccusage blocks -r
 # Set token limit for warnings
 ccusage blocks --token-limit 500000
 ccusage blocks --token-limit max
-
-# Live monitoring mode
-ccusage blocks --live
-ccusage blocks --live --refresh-interval 2
 
 # Customize session length
 ccusage blocks --session-length 5
@@ -263,22 +272,15 @@ ccusage daily --json
 ccusage daily --json --no-cost
 
 # Pipe JSON output to jq
-ccusage daily --json | jq ".data[]"
+ccusage daily --json | jq ".daily[]"
 
 # Extract specific fields
-ccusage session --json | jq ".data[] | {date, cost}"
+ccusage session --json | jq ".session[] | {period, agent, totalCost}"
 ```
 
 ## Option Precedence
 
-Options are applied in this order (highest to lowest priority):
-
-1. **Command-line arguments** - Direct CLI options
-2. **Custom config file** - Via `--config` flag
-3. **Local project config** - `.ccusage/ccusage.json`
-4. **User config** - `~/.config/claude/ccusage.json`
-5. **Legacy config** - `~/.claude/ccusage.json`
-6. **Built-in defaults**
+Command-line arguments override the [configuration file](/guide/config-files#configuration-priority), which overrides the built-in defaults. ccusage reads one configuration file: the `--config` file when given, otherwise the first of `.ccusage/ccusage.json` and the user config files that exists and holds a JSON object. Settings from different files are never merged.
 
 ## Examples
 
@@ -286,10 +288,10 @@ Options are applied in this order (highest to lowest priority):
 
 ```bash
 # Daily development check
-ccusage daily --instances --breakdown
+ccusage claude daily --instances --breakdown
 
 # Check specific project costs
-ccusage daily --project myapp --since 20260101
+ccusage claude daily --project myapp --since 20260101
 
 # Export for reporting
 ccusage monthly --json > monthly-report.json
@@ -312,7 +314,7 @@ ccusage weekly --json
 
 ```bash
 # Monitor active usage
-ccusage blocks --active --live
+ccusage blocks --active
 
 # Check if approaching limits
 ccusage blocks --token-limit 500000
@@ -324,11 +326,8 @@ ccusage monthly --mode calculate --breakdown
 ### Debugging Issues
 
 ```bash
-# Debug configuration loading
+# Debug a run with a test configuration
 ccusage daily --debug --config ./test-config.json
-
-# Check pricing discrepancies
-ccusage daily --debug --debug-samples 20
 
 # Silent mode for scripts
 LOG_LEVEL=0 ccusage daily --json
@@ -338,16 +337,17 @@ LOG_LEVEL=0 ccusage daily --json
 
 Many options have short aliases for convenience:
 
-| Long Option   | Short | Description         |
-| ------------- | ----- | ------------------- |
-| `--json`      | `-j`  | JSON output         |
-| `--breakdown` | `-b`  | Per-model breakdown |
-| `--offline`   | `-O`  | Offline mode        |
-| `--timezone`  | `-z`  | Set timezone        |
-| `--instances` | `-i`  | Group by project    |
-| `--project`   | `-p`  | Filter project      |
-| `--active`    | `-a`  | Active block only   |
-| `--recent`    | `-r`  | Recent blocks       |
+| Long Option   | Short | Description                               |
+| ------------- | ----- | ----------------------------------------- |
+| `--json`      | `-j`  | JSON output                               |
+| `--breakdown` | `-b`  | Per-model breakdown                       |
+| `--offline`   | `-O`  | Offline mode                              |
+| `--timezone`  | `-z`  | Set timezone                              |
+| `--instances` | `-i`  | Group by project (`ccusage claude daily`) |
+| `--project`   | `-p`  | Filter Claude Code usage by project       |
+| `--id`        | `-i`  | Session lookup (`session`)                |
+| `--active`    | `-a`  | Active block only (`blocks`)              |
+| `--recent`    | `-r`  | Recent blocks (`blocks`)                  |
 
 ## Related Documentation
 

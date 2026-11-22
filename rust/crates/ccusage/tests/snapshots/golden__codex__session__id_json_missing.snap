@@ -1,0 +1,9 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage codex session --offline --json --id sess-missing
+---
+exit: 1
+--- stdout ---
+
+--- stderr ---
+Error: CliError("No Codex session found with ID: sess-missing")

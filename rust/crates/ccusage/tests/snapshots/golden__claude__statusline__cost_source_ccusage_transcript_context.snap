@@ -1,0 +1,9 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage claude statusline --offline --no-cache --cost-source ccusage
+---
+exit: 0
+--- stdout ---
+🤖 Sonnet 4 (high) | 💰 $0.20 session / $0.06 today / $0.06 block (1h 0m left) | 🔥 $0.02/hr | 🧠 0 (0%)
+
+--- stderr ---

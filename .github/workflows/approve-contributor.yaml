@@ -5,10 +5,14 @@ on:
     types:
       - created
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   approve:
     if: ${{ !github.event.issue.pull_request }}
-    runs-on: ubuntu-slim
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     permissions:
       contents: write
       issues: write
@@ -18,123 +22,14 @@ jobs:
         with:
           ref: ${{ github.event.repository.default_branch }}
 
+      - name: Set up Nix
+        uses: ./.github/actions/setup-nix-cache
+
       - name: Update contributor approval
         id: update
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-        with:
-          script: |
-            const fs = require('fs');
-
-            const APPROVED_FILE = '.github/APPROVED_CONTRIBUTORS';
-            const VALID_CAPABILITIES = new Set(['issue', 'pr']);
-            const issueAuthor = context.payload.issue.user.login;
-            const commenter = context.payload.comment.user.login;
-            const commentBody = (context.payload.comment.body || '').trim();
-
-            let targetCapability;
-            if (/\blgtmi\b/i.test(commentBody)) {
-              targetCapability = 'issue';
-            } else if (/\blgtm\b/i.test(commentBody)) {
-              targetCapability = 'pr';
-            } else {
-              console.log('Comment does not match lgtm or lgtmi');
-              core.setOutput('status', 'skipped');
-              return;
-            }
-
-            try {
-              const { data: permissionLevel } = await github.rest.repos.getCollaboratorPermissionLevel({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                username: commenter,
-              });
-
-              if (!['admin', 'maintain', 'write'].includes(permissionLevel.permission)) {
-                console.log(`${commenter} does not have write access`);
-                core.setOutput('status', 'skipped');
-                return;
-              }
-            } catch {
-              console.log(`${commenter} does not have collaborator access`);
-              core.setOutput('status', 'skipped');
-              return;
-            }
-
-            function parseApprovedUsers(content) {
-              const lines = content.split('\n');
-              const entries = [];
-              const users = new Map();
-
-              for (const line of lines) {
-                const trimmed = line.trim();
-                if (!trimmed || trimmed.startsWith('#')) {
-                  entries.push({ type: 'other', line });
-                  continue;
-                }
-
-                const parts = trimmed.split(/\s+/);
-                if (parts.length !== 2) {
-                  console.log(`Skipping malformed line: ${line}`);
-                  entries.push({ type: 'other', line });
-                  continue;
-                }
-
-                const [username, capability] = parts;
-                const normalizedCapability = capability.toLowerCase();
-                if (!VALID_CAPABILITIES.has(normalizedCapability)) {
-                  console.log(`Skipping line with invalid capability: ${line}`);
-                  entries.push({ type: 'other', line });
-                  continue;
-                }
-
-                const normalizedUser = username.toLowerCase();
-                const entry = { type: 'user', username, normalizedUser, capability: normalizedCapability };
-                entries.push(entry);
-                users.set(normalizedUser, entry);
-              }
-
-              return { entries, users };
-            }
-
-            function stringifyApprovedUsers(entries) {
-              const normalizedEntries = [...entries];
-
-              while (normalizedEntries.length > 0) {
-                const lastEntry = normalizedEntries[normalizedEntries.length - 1];
-                if (lastEntry.type !== 'other' || lastEntry.line.trim() !== '') {
-                  break;
-                }
-                normalizedEntries.pop();
-              }
-
-              return `${normalizedEntries
-                .map((entry) => (entry.type === 'user' ? `${entry.username} ${entry.capability}` : entry.line))
-                .join('\n')}\n`;
-            }
-
-            const content = fs.readFileSync(APPROVED_FILE, 'utf8');
-            const { entries, users } = parseApprovedUsers(content);
-            const normalizedAuthor = issueAuthor.toLowerCase();
-            const existingEntry = users.get(normalizedAuthor);
-            const existingCapability = existingEntry?.capability ?? null;
-
-            if (existingCapability === 'pr' || existingCapability === targetCapability) {
-              core.setOutput('status', 'already');
-              core.setOutput('capability', existingCapability);
-              console.log(`${issueAuthor} is already approved for ${existingCapability}`);
-              return;
-            }
-
-            if (existingEntry) {
-              existingEntry.capability = targetCapability;
-            } else {
-              entries.push({ type: 'user', username: issueAuthor, normalizedUser: normalizedAuthor, capability: targetCapability });
-            }
-
-            fs.writeFileSync(APPROVED_FILE, stringifyApprovedUsers(entries));
-            core.setOutput('status', existingCapability ? 'updated' : 'added');
-            core.setOutput('capability', targetCapability);
-            console.log(`Set ${issueAuthor} capability to ${targetCapability}`);
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .github/scripts/contribution-gate.nu approve-contributor
 
       - name: Commit and push
         if: steps.update.outputs.status == 'added' || steps.update.outputs.status == 'updated'
@@ -149,33 +44,8 @@ jobs:
 
       - name: Comment on issue
         if: steps.update.outputs.status == 'added' || steps.update.outputs.status == 'updated' || steps.update.outputs.status == 'already'
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-        with:
-          script: |
-            const issueAuthor = context.payload.issue.user.login;
-            const capability = '${{ steps.update.outputs.capability }}';
-            const defaultBranch = context.payload.repository.default_branch;
-            let body;
-
-            if ('${{ steps.update.outputs.status }}' === 'already') {
-              body = `@${issueAuthor} is already approved.`;
-            } else if (capability === 'issue') {
-              body = [
-                `@${issueAuthor} approved for issues. Your future issues will bypass the contribution gate. PRs still require \`lgtm\`.`,
-                '',
-                `See [CONTRIBUTING.md](https://github.com/${context.repo.owner}/${context.repo.repo}/blob/${defaultBranch}/CONTRIBUTING.md).`,
-              ].join('\n');
-            } else {
-              body = [
-                `@${issueAuthor} approved for issues and PRs. Your future issues and PRs will bypass the contribution gate.`,
-                '',
-                `See [CONTRIBUTING.md](https://github.com/${context.repo.owner}/${context.repo.repo}/blob/${defaultBranch}/CONTRIBUTING.md).`,
-              ].join('\n');
-            }
-
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-              body,
-            });
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APPROVAL_STATUS: ${{ steps.update.outputs.status }}
+          APPROVAL_CAPABILITY: ${{ steps.update.outputs.capability }}
+        run: .github/scripts/contribution-gate.nu approve-contributor-comment

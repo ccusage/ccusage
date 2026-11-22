@@ -6,11 +6,11 @@ Official ccusage releases collect minimal usage data so the project can understa
 
 Every part of the pipeline is public, so you never have to take this page's word for it:
 
-- **Client source** - the code that decides what to send and when lives in [`rust/crates/ccusage/src/telemetry.rs`](https://github.com/ryoppippi/ccusage/blob/main/rust/crates/ccusage/src/telemetry.rs).
-- **Server source** - the collector that receives the ping is a small Cloudflare Worker in [`apps/telemetry`](https://github.com/ryoppippi/ccusage/tree/main/apps/telemetry), in the same repository. You can read exactly what it validates and stores.
+- **Client source** - the code that decides what to send and when lives in [`rust/crates/ccusage/src/telemetry.rs`](https://github.com/ccusage/ccusage/blob/main/rust/crates/ccusage/src/telemetry.rs).
+- **Server source** - the collector that receives the ping is a small Cloudflare Worker in [`apps/telemetry`](https://github.com/ccusage/ccusage/tree/main/apps/telemetry), in the same repository. You can read exactly what it validates and stores.
 - **Public statistics** - the [usage dashboard](https://telemetry.ccusage.com/) publishes the daily aggregates used to understand adoption. Its [JSON endpoint](https://telemetry.ccusage.com/v1/stats) is public too; neither exposes installation IDs.
-- **One definition of the payload** - the ping's format is defined once, as the Rust [`Ping`](https://github.com/ryoppippi/ccusage/blob/main/rust/crates/ccusage-telemetry/src/lib.rs) type. The Worker's validation schema is generated from it, and CI fails if the two ever disagree, so the CLI cannot quietly start sending a field the collector does not document.
-- **Builds and npm publishing** - release binaries are built and published to npm by the public [release workflow](https://github.com/ryoppippi/ccusage/blob/main/.github/workflows/release.yaml) on GitHub Actions, never from a developer machine. Every package is published with [npm provenance](https://docs.npmjs.com/generating-provenance-statements), so the npm page for each version links to the exact commit and workflow run that produced it.
+- **One definition of the payload** - the ping's format is defined once, as the Rust [`Ping`](https://github.com/ccusage/ccusage/blob/main/rust/crates/ccusage-telemetry/src/lib.rs) type. The Worker's validation schema is generated from it, and CI fails if the two ever disagree, so the CLI cannot quietly start sending a field the collector does not document.
+- **Builds and npm publishing** - release binaries are built and published to npm by the public [release workflow](https://github.com/ccusage/ccusage/blob/main/.github/workflows/release.yaml) on GitHub Actions, never from a developer machine. Every package is published with [npm provenance](https://docs.npmjs.com/generating-provenance-statements), so the npm page for each version links to the exact commit and workflow run that produced it.
 
 Builds you compile yourself with `cargo build` contain no collector address and never send anything; only official release builds do.
 

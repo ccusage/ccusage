@@ -16,6 +16,16 @@
 	},
 	"minimumReleaseAge": "3 days",
 	"mode": "full",
+	"customManagers": [
+		{
+			"description": "Bump the pkg-pr-new version pinned in `pnpm dlx` workflow commands.",
+			"customType": "regex",
+			"managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.ya?ml$/"],
+			"matchStrings": ["pnpm dlx pkg-pr-new@(?<currentValue>[0-9][^\\s]*)"],
+			"depNameTemplate": "pkg-pr-new",
+			"datasourceTemplate": "npm"
+		}
+	],
 	"packageRules": [
 		{
 			"description": "Keep bun2nix lockfile v2/v3 support pinned until released.",
@@ -35,9 +45,16 @@
 			"allowedVersions": "<0.9.0"
 		},
 		{
-			"description": "The Rust compiler must stay paired with the pinned cargo-hawk binary and rust-overlay.",
+			"description": "A Rust toolchain bump needs a matching cargo-hawk archive and rust-overlay revision.",
 			"matchManagers": ["rust-toolchain"],
 			"matchDepTypes": ["toolchain"],
+			"enabled": false
+		},
+		{
+			"description": "The flake's nixpkgs owns the pnpm version; checks.pnpm-version requires packageManager to follow it.",
+			"matchManagers": ["npm"],
+			"matchDepTypes": ["packageManager"],
+			"matchPackageNames": ["pnpm"],
 			"enabled": false
 		},
 		{

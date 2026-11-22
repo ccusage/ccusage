@@ -1,0 +1,25 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage dsh monthly --offline
+---
+exit: 0
+--- stdout ---
+┌──────────┬───────────────────┬───────────┬───────────┬───────────────┬─────────────┬───────────────┬─────────────┐
+│ Month    │ Models            │     Input │    Output │  Cache Create │  Cache Read │  Total Tokens │  Cost (USD) │
+├──────────┼───────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2025-12  │ - deepseek-v4-pro │     7,730 │     1,884 │         1,200 │      32,000 │        42,814 │       $0.00 │
+│          │ - dsh-mystery-1   │           │           │               │             │               │             │
+│          │ - sonnet-4.5      │           │           │               │             │               │             │
+│          │ - unknown         │           │           │               │             │               │             │
+├──────────┼───────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2026-01  │ - deepseek-flash  │    23,090 │     1,540 │           540 │       7,000 │        32,852 │       $0.02 │
+│          │ - deepseek-v4-pro │           │           │               │             │               │             │
+│          │ - sonnet-4.5      │           │           │               │             │               │             │
+│          │ - unknown         │           │           │               │             │               │             │
+├──────────┼───────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ Total    │                   │    30,820 │     3,424 │         1,740 │      39,000 │        75,666 │       $0.02 │
+└──────────┴───────────────────┴───────────┴───────────┴───────────────┴─────────────┴───────────────┴─────────────┘
+
+--- stderr ---
+WARN  Missing embedded pricing for dsh-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for unknown; cost excludes this model. Run without --offline or update ccusage after pricing is added.

@@ -156,9 +156,13 @@ def patch-comment [
 }
 
 export def is-contribution-gate-comment [comment: record]: nothing -> bool {
+    is-bot-comment $comment $COMMENT_MARKER
+}
+
+def is-bot-comment [comment: record, marker: string]: nothing -> bool {
     (
         (($comment | get --optional user.login) == 'github-actions[bot]')
-        and (($comment | get --optional body | default '') | str contains $COMMENT_MARKER)
+        and (($comment | get --optional body | default '') | str contains $marker)
     )
 }
 
@@ -167,6 +171,7 @@ export def upsert-comment [
     number: int
     body: string
     --require-open-issue
+    --marker: string = $COMMENT_MARKER
 ]: nothing -> nothing {
     let comments = (
         gh-api-json [
@@ -178,9 +183,10 @@ export def upsert-comment [
     )
     let existing = (
         $comments
-        | where {|comment| is-contribution-gate-comment $comment}
+        | where {|comment| is-bot-comment $comment $marker}
         | sort-by created_at
-        | last
+        | reverse
+        | get --optional 0
     )
 
     match ($existing | get --optional id) {
@@ -188,7 +194,13 @@ export def upsert-comment [
             create-comment $repo $number $body $require_open_issue
         }
         $comment_id => {
-            patch-comment $repo $number $comment_id $body $require_open_issue
+            (patch-comment
+                $repo
+                $number
+                $comment_id
+                $body
+                $require_open_issue
+            )
         }
     }
 }

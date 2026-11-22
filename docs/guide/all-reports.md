@@ -32,9 +32,11 @@ ccusage daily --by-agent --json
 
 `--sections` accepts `daily`, `weekly`, `monthly`, and `session`. The invoked report section is always included, and table output prints each requested section as a separate table. `--by-agent` adds an `agents` array to daily, weekly, and monthly JSON rows; session rows are already source-specific.
 
+Every section uses the options resolved for the invoked command. For example, `ccusage daily --sections weekly,monthly` applies the `daily` configuration to all three sections; each source's configured date window and timezone are applied while its data is loaded.
+
 ## How Unified Views Work
 
-ccusage detects local usage files from Claude Code, Codex, OpenCode, Amp, Droid, Codebuff, Hermes Agent, pi-agent, Goose, OpenClaw, Kilo, Kimi, Qwen, GitHub Copilot CLI, Gemini CLI, Antigravity, Grok Build CLI, and ZCode. The same daily, weekly, monthly, and session views can run in two modes:
+ccusage detects local usage files from Claude Code, Codex, OpenCode, Amp, Droid, Codebuff, Cline, Hermes Agent, pi-agent, Goose, OpenClaw, Kilo, Kimi, Qwen, GitHub Copilot CLI, Gemini CLI, Antigravity, Grok Build CLI, ZCode, and DeepSeek Harness. The same daily, weekly, monthly, and session views can run in two modes:
 
 | Mode    | Command example        | What it shows                           |
 | ------- | ---------------------- | --------------------------------------- |
@@ -44,28 +46,32 @@ ccusage detects local usage files from Claude Code, Codex, OpenCode, Amp, Droid,
 
 Unified tables include an **Agent** column so you can compare sources in one view. Focused views remove that comparison layer and show the selected source in more detail where applicable.
 
+When one tool runs another, usage can be logged by both. OpenCode's Claude Agent provider is one example: unified views and `ccusage opencode` skip the OpenCode copy of turns that Claude Code's own log has, matching them by session and, in daily views, by day, so a turn that runs across midnight can still be counted twice or partly left out. See [OpenCode](./opencode/#claude-agent-provider).
+
 ## Supported Sources
 
-| Source         | Namespace     | Example focused view        |
-| -------------- | ------------- | --------------------------- |
-| Claude Code    | `claude`      | `ccusage claude daily`      |
-| Codex          | `codex`       | `ccusage codex daily`       |
-| OpenCode       | `opencode`    | `ccusage opencode weekly`   |
-| Amp            | `amp`         | `ccusage amp session`       |
-| Droid          | `droid`       | `ccusage droid daily`       |
-| Codebuff       | `codebuff`    | `ccusage codebuff daily`    |
-| Hermes Agent   | `hermes`      | `ccusage hermes daily`      |
-| pi-agent       | `pi`          | `ccusage pi monthly`        |
-| Goose          | `goose`       | `ccusage goose daily`       |
-| OpenClaw       | `openclaw`    | `ccusage openclaw daily`    |
-| Kilo           | `kilo`        | `ccusage kilo daily`        |
-| Kimi           | `kimi`        | `ccusage kimi daily`        |
-| Qwen           | `qwen`        | `ccusage qwen daily`        |
-| Copilot CLI    | `copilot`     | `ccusage copilot daily`     |
-| Gemini CLI     | `gemini`      | `ccusage gemini daily`      |
-| Antigravity    | `antigravity` | `ccusage antigravity daily` |
-| Grok Build CLI | `grok`        | `ccusage grok daily`        |
-| ZCode          | `zcode`       | `ccusage zcode daily`       |
+| Source           | Namespace     | Example focused view        |
+| ---------------- | ------------- | --------------------------- |
+| Claude Code      | `claude`      | `ccusage claude daily`      |
+| Codex            | `codex`       | `ccusage codex daily`       |
+| OpenCode         | `opencode`    | `ccusage opencode weekly`   |
+| Amp              | `amp`         | `ccusage amp session`       |
+| Droid            | `droid`       | `ccusage droid daily`       |
+| Codebuff         | `codebuff`    | `ccusage codebuff daily`    |
+| Cline            | `cline`       | `ccusage cline daily`       |
+| Hermes Agent     | `hermes`      | `ccusage hermes daily`      |
+| pi-agent         | `pi`          | `ccusage pi monthly`        |
+| Goose            | `goose`       | `ccusage goose daily`       |
+| OpenClaw         | `openclaw`    | `ccusage openclaw daily`    |
+| Kilo             | `kilo`        | `ccusage kilo daily`        |
+| Kimi             | `kimi`        | `ccusage kimi daily`        |
+| Qwen             | `qwen`        | `ccusage qwen daily`        |
+| Copilot CLI      | `copilot`     | `ccusage copilot daily`     |
+| Gemini CLI       | `gemini`      | `ccusage gemini daily`      |
+| Antigravity      | `antigravity` | `ccusage antigravity daily` |
+| Grok Build CLI   | `grok`        | `ccusage grok daily`        |
+| ZCode            | `zcode`       | `ccusage zcode daily`       |
+| DeepSeek Harness | `dsh`         | `ccusage dsh daily`         |
 
 ## When to Focus a Source
 
@@ -75,9 +81,11 @@ Use a source namespace when you want source-specific options or when you are deb
 ccusage codex daily --speed fast
 ccusage claude daily --mode display
 ccusage opencode session --json
+ccusage opencode daily --include-claude-agent
 ccusage amp monthly --compact
 ccusage droid session
 ccusage codebuff daily
+ccusage cline daily
 ccusage pi session --pi-path /path/to/sessions
 ccusage openclaw daily --open-claw-path /path/to/openclaw
 ccusage kilo session
@@ -86,6 +94,7 @@ ccusage copilot daily --json
 ccusage gemini session --json
 ccusage grok daily --json
 ccusage zcode daily --json
+ccusage dsh session --json
 ```
 
 ## Next Steps

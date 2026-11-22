@@ -1,0 +1,32 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage antigravity session --offline
+---
+exit: 0
+--- stdout ---
+┌───────────────┬──────────────────────────┬───────────┬───────────┬───────────────┬─────────────┬───────────────┬─────────────┬───────────────┐
+│ Session       │ Models                   │     Input │    Output │  Cache Create │  Cache Read │  Total Tokens │  Cost (USD) │ Last Activity │
+├───────────────┼──────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┼───────────────┤
+│ session-alpha │ - gemini-2.5-pro         │   253,091 │     1,460 │           250 │     109,500 │       364,451 │       $0.68 │ 2026-01-02    │
+│               │ - gemini-3-pro           │           │           │               │             │               │             │               │
+│               │ - gemini-3.5-flash-high  │           │           │               │             │               │             │               │
+│               │ - gemini-3.6-flash-high  │           │           │               │             │               │             │               │
+│               │ - sonnet-4               │           │           │               │             │               │             │               │
+├───────────────┼──────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┼───────────────┤
+│ session-beta  │ - antigravity-mystery-1  │     1,290 │       284 │             0 │       1,000 │         2,594 │       $0.01 │ 2026-01-02    │
+│               │ - gpt-5                  │           │           │               │             │               │             │               │
+│               │ - model_placeholder_m499 │           │           │               │             │               │             │               │
+│               │ - sonnet-4               │           │           │               │             │               │             │               │
+├───────────────┼──────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┼───────────────┤
+│ session-delta │ - antigravity-model-77   │        10 │         5 │             0 │           0 │            15 │       $0.00 │ 2025-12-27    │
+├───────────────┼──────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┼───────────────┤
+│ session-gamma │ - gpt-5                  │     3,025 │       931 │           200 │      17,000 │        21,156 │       $0.01 │ 2026-01-01    │
+│               │ - haiku-4-5              │           │           │               │             │               │             │               │
+├───────────────┼──────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┼───────────────┤
+│ Total         │                          │   257,416 │     2,680 │           450 │     127,500 │       388,216 │       $0.70 │               │
+└───────────────┴──────────────────────────┴───────────┴───────────┴───────────────┴─────────────┴───────────────┴─────────────┴───────────────┘
+
+--- stderr ---
+WARN  Missing embedded pricing for antigravity-model-77; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for antigravity-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for model_placeholder_m499; cost excludes this model. Run without --offline or update ccusage after pricing is added.

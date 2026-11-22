@@ -1,42 +1,30 @@
-use std::{collections::HashSet, env, path::PathBuf};
+use std::path::PathBuf;
 
-use crate::{Result, collect_files_with_extension};
+use ccusage_adapter_common::roots::{self, RootsEnv};
+
+use ccusage_adapter_common::collect_files_matching;
+use ccusage_core::Diagnostics;
+
+use crate::Result;
 
 pub(super) const GEMINI_DATA_DIR_ENV: &str = "GEMINI_DATA_DIR";
-/// Returns all discovery candidate directories for Gemini CLI logs.
 fn paths() -> Result<Vec<PathBuf>> {
-    let mut paths = Vec::new();
-    let mut seen = HashSet::new();
-
-    if let Ok(env_paths) = env::var(GEMINI_DATA_DIR_ENV) {
-        for raw in env_paths
-            .split(',')
-            .map(str::trim)
-            .filter(|path| !path.is_empty())
-        {
-            let path = PathBuf::from(raw);
-            if path.is_dir() && seen.insert(path.clone()) {
-                paths.push(path);
-            }
-        }
-        return Ok(paths);
-    }
-
-    if let Some(home) = crate::home::home_dir() {
-        let path = home.join(".gemini").join("tmp");
-        if path.is_dir() && seen.insert(path.clone()) {
-            paths.push(path);
-        }
-    }
-    Ok(paths)
+    Ok(roots::resolve(RootsEnv::List(GEMINI_DATA_DIR_ENV), || {
+        crate::cli::home::home_dir()
+            .into_iter()
+            .flat_map(|home| [".gemini/tmp"].map(|path| home.join(path)))
+            .collect()
+    }))
 }
 
-/// Discovers all `.json` and `.jsonl` log files across known directories.
-pub(super) fn discover_log_files() -> Result<Vec<PathBuf>> {
+pub(super) fn discover_log_files(diagnostics: &Diagnostics) -> Result<Vec<PathBuf>> {
     let mut files = Vec::new();
+    let is_log = |path: &std::path::Path| {
+        path.extension()
+            .is_some_and(|extension| extension == "json" || extension == "jsonl")
+    };
     for path in paths()? {
-        collect_files_with_extension(&path, "json", &mut files);
-        collect_files_with_extension(&path, "jsonl", &mut files);
+        collect_files_matching(&path, &is_log, &mut files, diagnostics);
     }
     files.sort();
     files.dedup();
@@ -48,7 +36,7 @@ mod tests {
     use std::ffi::OsString;
 
     use super::*;
-    use ccusage_test_support::{EnvVarsGuard, fs_fixture};
+    use ccusage_test_support::{Environment, fs_fixture};
 
     #[test]
     fn discovers_json_and_jsonl_logs() {
@@ -57,13 +45,37 @@ mod tests {
             "chats/b.jsonl": "{}\n",
             "chats/ignore.txt": "no",
         });
-        let _env_guard = super::super::GeminiDataDirEnvGuard::set(fixture.root());
-        let files = discover_log_files().unwrap();
+        ccusage_test_support::Environment::with_var(
+            crate::paths::GEMINI_DATA_DIR_ENV,
+            fixture.root(),
+        )
+        .run(|| {
+            let files = discover_log_files(&Diagnostics::new("gemini")).unwrap();
 
-        assert_eq!(
-            files,
-            vec![fixture.path("chats/a.json"), fixture.path("chats/b.jsonl")]
-        );
+            assert_eq!(
+                files,
+                vec![fixture.path("chats/a.json"), fixture.path("chats/b.jsonl")]
+            );
+        })
+    }
+
+    #[test]
+    fn discovers_logs_outside_chat_directories() {
+        let fixture = fs_fixture!({
+            "overflow.jsonl": "{}\n",
+            "abc/chats/a.json": "{}",
+        });
+        Environment::with_var(crate::paths::GEMINI_DATA_DIR_ENV, fixture.root()).run(|| {
+            let files = discover_log_files(&Diagnostics::new("gemini")).unwrap();
+
+            assert_eq!(
+                files,
+                vec![
+                    fixture.path("abc/chats/a.json"),
+                    fixture.path("overflow.jsonl")
+                ]
+            );
+        });
     }
 
     #[test]
@@ -72,7 +84,7 @@ mod tests {
             "gemini/chats/a.json": "{}",
             "antigravity/conversations/a.db": "not a Gemini log",
         });
-        let _guard = EnvVarsGuard::set_many([
+        Environment::with_vars([
             (
                 GEMINI_DATA_DIR_ENV,
                 Some(OsString::from(fixture.path("gemini"))),
@@ -81,10 +93,11 @@ mod tests {
                 "ANTIGRAVITY_DATA_DIR",
                 Some(OsString::from(fixture.path("antigravity"))),
             ),
-        ]);
+        ])
+        .run(|| {
+            let files = discover_log_files(&Diagnostics::new("gemini")).unwrap();
 
-        let files = discover_log_files().unwrap();
-
-        assert_eq!(files, vec![fixture.path("gemini/chats/a.json")]);
+            assert_eq!(files, vec![fixture.path("gemini/chats/a.json")]);
+        })
     }
 }

@@ -1,0 +1,16 @@
+ruleDirs:
+  - rules
+languageGlobs:
+  Bash:
+    - .envrc
+    - '*.bash'
+    - '*.zsh'
+  Json:
+    - '*.jsonc'
+  JavaScript:
+    - '*.jsx'
+    - '*.mjs'
+    - '*.cjs'
+  TypeScript:
+    - '*.mts'
+    - '*.cts'

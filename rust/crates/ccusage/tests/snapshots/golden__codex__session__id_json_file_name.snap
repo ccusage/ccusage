@@ -1,0 +1,41 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage codex session --offline --json --id headless-run.jsonl
+---
+exit: 0
+--- stdout ---
+{
+  "cacheCreationTokens": 300,
+  "cacheReadTokens": 540,
+  "directory": "exec",
+  "inputTokens": 1550,
+  "lastActivity": "2026-01-02T05:00:00.000Z",
+  "models": {
+    "gpt-5": {
+      "cacheCreationTokens": 300,
+      "cacheReadTokens": 500,
+      "inputTokens": 950,
+      "isFallback": false,
+      "outputTokens": 175,
+      "reasoningOutputTokens": 9,
+      "totalTokens": 1925
+    },
+    "gpt-5.2-codex": {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 40,
+      "inputTokens": 600,
+      "isFallback": true,
+      "outputTokens": 64,
+      "reasoningOutputTokens": 0,
+      "totalTokens": 704
+    }
+  },
+  "outputTokens": 239,
+  "reasoningOutputTokens": 9,
+  "sessionFile": "headless-run",
+  "sessionId": "exec/headless-run",
+  "totalCost": 0.0036405,
+  "totalTokens": 2629
+}
+
+--- stderr ---

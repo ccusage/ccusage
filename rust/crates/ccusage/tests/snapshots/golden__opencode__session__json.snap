@@ -1,0 +1,501 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage opencode session --offline --json
+---
+exit: 0
+--- stdout ---
+{
+  "sessions": [
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 0,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.33,
+          "inputTokens": 0,
+          "modelName": "gpt-5",
+          "outputTokens": 0,
+          "storedCost": 0.33
+        }
+      ],
+      "modelsUsed": [
+        "gpt-5"
+      ],
+      "outputTokens": 0,
+      "sessionId": "ses-agg-cost-only",
+      "totalCost": 0.33,
+      "totalTokens": 0
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 80,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00036,
+          "inputTokens": 80,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 8
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514"
+      ],
+      "outputTokens": 8,
+      "sessionId": "ses-agg-json",
+      "totalCost": 0.00036,
+      "totalTokens": 88
+    },
+    {
+      "cacheCreationTokens": 100,
+      "cacheReadTokens": 900,
+      "inputTokens": 400,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 100,
+          "cacheReadTokens": 900,
+          "cost": 0.4,
+          "inputTokens": 400,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 80,
+          "storedCost": 0.4
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514"
+      ],
+      "outputTokens": 80,
+      "sessionId": "ses-agg-only",
+      "totalCost": 0.4,
+      "totalTokens": 1500
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 30,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.000135,
+          "inputTokens": 30,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 3
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514"
+      ],
+      "outputTokens": 3,
+      "sessionId": "ses-agg-xdir",
+      "totalCost": 0.000135,
+      "totalTokens": 33
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 17,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00009125000000000001,
+          "inputTokens": 17,
+          "modelName": "gpt-5",
+          "outputTokens": 7
+        }
+      ],
+      "modelsUsed": [
+        "gpt-5"
+      ],
+      "outputTokens": 7,
+      "sessionId": "ses-broken",
+      "totalCost": 0.00009125000000000001,
+      "totalTokens": 24
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 3000,
+      "inputTokens": 850,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 3000,
+          "cost": 0.0042,
+          "inputTokens": 600,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 100
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0003375,
+          "inputTokens": 250,
+          "modelName": "k2p6",
+          "outputTokens": 25
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514",
+        "k2p6"
+      ],
+      "outputTokens": 125,
+      "sessionId": "ses-ch-gamma",
+      "totalCost": 0.0045375,
+      "totalTokens": 3975
+    },
+    {
+      "cacheCreationTokens": 200,
+      "cacheReadTokens": 7000,
+      "inputTokens": 1000,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 7000,
+          "cost": 2.0,
+          "inputTokens": 900,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 400,
+          "storedCost": 2.0
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0010500000000000002,
+          "inputTokens": 100,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 50
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514",
+        "claude-haiku-4-5-20251001"
+      ],
+      "outputTokens": 450,
+      "sessionId": "ses-json-beta",
+      "totalCost": 2.00105,
+      "totalTokens": 8650
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 70,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 70,
+          "missingPricing": true,
+          "modelName": "opencode-mystery-1",
+          "outputTokens": 7
+        }
+      ],
+      "modelsUsed": [
+        "opencode-mystery-1"
+      ],
+      "outputTokens": 7,
+      "sessionId": "ses-legacy-agg",
+      "totalCost": 0.0,
+      "totalTokens": 77
+    },
+    {
+      "cacheCreationTokens": 300,
+      "cacheReadTokens": 6500,
+      "inputTokens": 2300,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 300,
+          "cacheReadTokens": 4000,
+          "cost": 0.5,
+          "inputTokens": 1000,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 200,
+          "storedCost": 0.5
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 2500,
+          "cost": 0.0031875,
+          "inputTokens": 700,
+          "modelName": "gpt-5",
+          "outputTokens": 150
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0006399999999999999,
+          "inputTokens": 200,
+          "modelName": "gemini-3-pro-high",
+          "outputTokens": 20
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00009999999999999999,
+          "inputTokens": 100,
+          "modelName": "claude-haiku-4.5",
+          "outputTokens": 0
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 300,
+          "missingPricing": true,
+          "modelName": "opencode-mystery-1",
+          "outputTokens": 70
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514",
+        "gpt-5",
+        "opencode-mystery-1",
+        "gemini-3-pro-high",
+        "claude-haiku-4.5"
+      ],
+      "outputTokens": 440,
+      "sessionId": "ses-v1-alpha",
+      "totalCost": 0.5039275,
+      "totalTokens": 9835
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 7,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 7,
+          "missingPricing": true,
+          "modelName": "opus",
+          "outputTokens": 1
+        }
+      ],
+      "modelsUsed": [
+        "opus"
+      ],
+      "outputTokens": 1,
+      "sessionId": "ses-v2-agent",
+      "totalCost": 0.0,
+      "totalTokens": 8
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 160,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00036,
+          "inputTokens": 160,
+          "modelName": "gpt-5",
+          "outputTokens": 16
+        }
+      ],
+      "modelsUsed": [
+        "gpt-5"
+      ],
+      "outputTokens": 16,
+      "sessionId": "ses-v2-compact",
+      "totalCost": 0.00036,
+      "totalTokens": 176
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 33,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0007199999999999999,
+          "inputTokens": 33,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 3
+        }
+      ],
+      "modelsUsed": [
+        "claude-opus-4-20250514"
+      ],
+      "outputTokens": 3,
+      "sessionId": "ses-v2-fork-before",
+      "totalCost": 0.0007199999999999999,
+      "totalTokens": 36
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 55,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.05,
+          "inputTokens": 55,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 5,
+          "storedCost": 0.05
+        }
+      ],
+      "modelsUsed": [
+        "claude-opus-4-20250514"
+      ],
+      "outputTokens": 5,
+      "sessionId": "ses-v2-fork-idle",
+      "totalCost": 0.05,
+      "totalTokens": 60
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 21,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.000465,
+          "inputTokens": 21,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 2
+        }
+      ],
+      "modelsUsed": [
+        "claude-opus-4-20250514"
+      ],
+      "outputTokens": 2,
+      "sessionId": "ses-v2-fork-lost",
+      "totalCost": 0.000465,
+      "totalTokens": 23
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 40,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0009,
+          "inputTokens": 40,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 4
+        }
+      ],
+      "modelsUsed": [
+        "claude-opus-4-20250514"
+      ],
+      "outputTokens": 4,
+      "sessionId": "ses-v2-fork-through",
+      "totalCost": 0.0009,
+      "totalTokens": 44
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 45,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00010625000000000001,
+          "inputTokens": 45,
+          "modelName": "gpt-5",
+          "outputTokens": 5
+        }
+      ],
+      "modelsUsed": [
+        "gpt-5"
+      ],
+      "outputTokens": 5,
+      "sessionId": "ses-v2-misc",
+      "totalCost": 0.00010625000000000001,
+      "totalTokens": 50
+    },
+    {
+      "cacheCreationTokens": 200,
+      "cacheReadTokens": 1000,
+      "inputTokens": 2690,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 1000,
+          "cost": 0.28900000000000003,
+          "inputTokens": 1800,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 360,
+          "storedCost": 0.25
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0048000000000000004,
+          "inputTokens": 800,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 160
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00020250000000000002,
+          "inputTokens": 90,
+          "modelName": "gpt-5",
+          "outputTokens": 9
+        }
+      ],
+      "modelsUsed": [
+        "claude-opus-4-20250514",
+        "gpt-5",
+        "claude-sonnet-4-20250514"
+      ],
+      "outputTokens": 529,
+      "sessionId": "ses-v2-parent",
+      "totalCost": 0.29400250000000006,
+      "totalTokens": 4419
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 13,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.000046250000000000006,
+          "inputTokens": 13,
+          "modelName": "gpt-5",
+          "outputTokens": 3
+        }
+      ],
+      "modelsUsed": [
+        "gpt-5"
+      ],
+      "outputTokens": 3,
+      "sessionId": "unknown",
+      "totalCost": 0.000046250000000000006,
+      "totalTokens": 16
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 800,
+    "cacheReadTokens": 18400,
+    "inputTokens": 7811,
+    "outputTokens": 1688,
+    "totalCost": 3.5867012500000004,
+    "totalTokens": 29014,
+    "unpricedModels": [
+      "opencode-mystery-1",
+      "opus"
+    ]
+  }
+}
+
+--- stderr ---

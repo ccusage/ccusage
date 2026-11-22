@@ -1,0 +1,25 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage grok weekly --offline
+---
+exit: 0
+--- stdout ---
+┌────────────┬────────────────────┬───────────┬───────────┬───────────────┬─────────────┬───────────────┬─────────────┐
+│ Week       │ Models             │     Input │    Output │  Cache Create │  Cache Read │  Total Tokens │  Cost (USD) │
+├────────────┼────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2025-12-22 │ - grok-4.5-build   │       600 │       200 │             0 │         400 │         1,200 │       $0.01 │
+├────────────┼────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2025-12-29 │ - grok-4.3-build   │   206,815 │     3,235 │           850 │      53,000 │       263,900 │       $0.62 │
+│            │ - grok-4.5-build   │           │           │               │             │               │             │
+│            │ - grok-4.7-build   │           │           │               │             │               │             │
+│            │ - grok-code-fast-1 │           │           │               │             │               │             │
+│            │ - grok-mystery-1   │           │           │               │             │               │             │
+│            │ - sonnet-4         │           │           │               │             │               │             │
+│            │ - unknown          │           │           │               │             │               │             │
+├────────────┼────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ Total      │                    │   207,415 │     3,435 │           850 │      53,400 │       265,100 │       $0.62 │
+└────────────┴────────────────────┴───────────┴───────────┴───────────────┴─────────────┴───────────────┴─────────────┘
+
+--- stderr ---
+WARN  Missing embedded pricing for grok-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for unknown; cost excludes this model. Run without --offline or update ccusage after pricing is added.

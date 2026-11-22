@@ -1,0 +1,10 @@
+# NOTE(2026-11-19, #19): The archive paths are relative. Keep the build root.
+{
+  text = ''
+    # data inside a Nix string
+  '';
+  # Stray prose.
+  shellHook = ''
+    # A shell hook comment.
+  '';
+}

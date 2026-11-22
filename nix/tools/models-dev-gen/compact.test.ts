@@ -31,8 +31,6 @@ const index = buildModelsDevCatalogIndex(
 		},
 	},
 	{
-		// Anthropic prices its own fast mode, which lives in the provider catalog
-		// rather than in the authored metadata.
 		anthropic: { models: { 'claude-opus-5': { experimental: { modes: { fast: {} } } } } },
 		venice: { models: { 'claude-opus-5-fast': {} } },
 	},
@@ -95,9 +93,6 @@ void it('ranks unknown catalogs as resellers', () => {
 });
 
 void it('never lets a richer reseller entry replace the authoring catalog', () => {
-	// Regression fence: models.dev lists kimi-k2.7-code at the MoonshotAI list
-	// price and at a discounted OpenRouter price, and the reseller entry used to
-	// win whenever it carried more fields.
 	assert.equal(
 		shouldReplaceModelsDevPricingCandidate(
 			{
@@ -176,38 +171,20 @@ void it('uses a stable source ordering tie-break within one trust tier', () => {
 });
 
 void it('recognizes separately priced tiers of a model already carried', () => {
-	// kimi-k2.7-code-nitro is its own cheaper route, so a lookup for the base
-	// model must not reach it: the snapshot marks these exact-only.
 	assert.equal(isTierVariantOfAuthoredModel('kimi-k2.7-code-nitro', index), true);
 	assert.equal(isTierVariantOfAuthoredModel('kimi-k2.7-code-flex', index), true);
-	// Dotted and dashed spellings name the same base model.
 	assert.equal(isTierVariantOfAuthoredModel('kimi-k2-7-code-highspeed', index), true);
-	// A provider path makes it that provider's entry for the model, not a tier.
 	assert.equal(isTierVariantOfAuthoredModel('moonshotai/kimi-k2.7-code-nitro', index), false);
-	// Unrelated ids that merely share a prefix boundary must not qualify.
 	assert.equal(isTierVariantOfAuthoredModel('kimi-k4-preview', index), false);
 });
 
 void it('marks a tier the author prices itself as exact-only too', () => {
-	// A log naming claude-opus-5-fast still needs a rate, and only one reseller
-	// lists it (12 USD/Mtok against Anthropic's own fast rate of 10). Keeping it
-	// reachable by the fuzzy lookup is the hazard, because it would then answer a
-	// lookup for plain claude-opus-5.
-	assert.equal(
-		isTierVariantOfAuthoredModel('claude-opus-5-fast', index, { includeAuthorPricedModes: true }),
-		true,
-	);
-	// Without that flag it is not treated as a reseller-invented tier, because the
-	// author publishes the mode itself.
-	assert.equal(isTierVariantOfAuthoredModel('claude-opus-5-fast', index), false);
+	assert.equal(isTierVariantOfAuthoredModel('claude-opus-5-fast', index), true);
 });
 
 void it('recognizes ids that name no particular model', () => {
-	// `auto` is a routing label, so as a fuzzy candidate it answered
-	// `codex-auto-review`: ids with no version digit are marked exact-only.
 	assert.equal(isUnversionedModelId('auto'), true);
 	assert.equal(isUnversionedModelId('claude-opus-latest'), true);
-	// Any digit anywhere counts as a version, in either spelling.
 	assert.equal(isUnversionedModelId('kimi-k2.7-code'), false);
 	assert.equal(isUnversionedModelId('kimi-k2-7-code'), false);
 	assert.equal(isUnversionedModelId('claude-3-5-haiku-20241022'), false);
@@ -221,8 +198,6 @@ void it('rejects flat-fee catalogs that publish all-zero token costs', () => {
 });
 
 void it('accepts chat models whose audio and video inputs are tokenised', () => {
-	// kimi-k2.7-code takes video input and gemini takes audio, both billed per
-	// token, so a non-text input modality cannot disqualify a model on its own.
 	assert.equal(
 		isTokenPricedModel({ sourceModelId: 'claude-opus-5', modalities: undefined, index }),
 		true,
@@ -238,9 +213,6 @@ void it('accepts chat models whose audio and video inputs are tokenised', () => 
 });
 
 void it('rejects duration-priced models however the serving catalog describes them', () => {
-	// whisper-large-v3 accepts no text at all and prices per second, but the
-	// catalogs serving it advertise text output, so its rate would read as a token
-	// rate.
 	assert.equal(
 		isTokenPricedModel({
 			sourceModelId: 'whisper-large-v3',
@@ -252,8 +224,6 @@ void it('rejects duration-priced models however the serving catalog describes th
 });
 
 void it('rejects image-output models a reseller catalog describes as text-only', () => {
-	// google authors gemini-2.5-flash-image with image output; 302ai lists the same
-	// model as text-only, which would embed a per-image rate as an output rate.
 	assert.equal(
 		isTokenPricedModel({
 			sourceModelId: 'gemini-2-5-flash-image',
@@ -293,8 +263,6 @@ void it('exports the rules the runtime loader cannot derive from a live response
 			'google-vertex',
 			'google-vertex-anthropic',
 		],
-		// Carried so the online path makes the same call the snapshot did, even
-		// though the live response never says who authored a model.
 		authoredModelIds: [
 			'claude-3-5-haiku-20241022',
 			'claude-opus-5',
@@ -304,9 +272,6 @@ void it('exports the rules the runtime loader cannot derive from a live response
 			'kimi-k2-7-code',
 			'whisper-large-v3',
 		],
-		// Anthropic prices its own fast mode, so a reseller's `claude-opus-5-fast`
-		// rate is a markup rather than the tier's only rate, and the runtime needs
-		// to know that to skip it the way generation does.
 		authoredModes: { 'claude-opus-5': ['fast'] },
 		assetPricedModelIds: ['gemini-2-5-flash-image', 'whisper-large-v3'],
 	});

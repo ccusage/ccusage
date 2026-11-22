@@ -1,3 +1,11 @@
+export const REASON_MAX_LENGTH = 1200
+export const TITLE_MAX_LENGTH = 240
+export const BODY_MAX_LENGTH = 20000
+export const DECISIONS = [keep_open close needs_human]
+export const IMPLEMENTATIONS = [create_pr none]
+export const IMPLEMENTATION_RESULTS = [prepared none]
+export const APPROVAL_CAPABILITIES = [issue pr]
+
 export const PRIORITY_LABELS = [
     'priority:critical'
     'priority:high'

@@ -1,0 +1,146 @@
+---
+source: crates/ccusage-adapter-all/src/tests/fixtures.rs
+expression: "serde_json::to_string_pretty(&table_snapshot(&result.rows, kind,\n&result.detected_agents,)).unwrap()"
+---
+{
+  "headers": [
+    "Date",
+    "Agent",
+    "Models",
+    "Input",
+    "Output",
+    "Cache Create",
+    "Cache Read",
+    "Total Tokens",
+    "Cost (USD)"
+  ],
+  "rows": [
+    {
+      "cells": [
+        "2026-10-14",
+        "All",
+        "",
+        "1,650",
+        "420",
+        "600",
+        "17,000",
+        "19,670",
+        "$0.00"
+      ],
+      "kind": "row"
+    },
+    {
+      "cells": [
+        "",
+        "- DeepSeek Harness",
+        "- deepseek-v4-pro",
+        "1,650",
+        "420",
+        "600",
+        "17,000",
+        "19,670",
+        "$0.00"
+      ],
+      "kind": "agent-breakdown"
+    },
+    {
+      "cells": [
+        "2026-10-15",
+        "All",
+        "",
+        "19,000",
+        "800",
+        "0",
+        "0",
+        "19,800",
+        "$0.00"
+      ],
+      "kind": "row"
+    },
+    {
+      "cells": [
+        "",
+        "- DeepSeek Harness",
+        "- deepseek-flash",
+        "19,000",
+        "800",
+        "0",
+        "0",
+        "19,800",
+        "$0.00"
+      ],
+      "kind": "agent-breakdown"
+    },
+    {
+      "cells": [
+        "2026-10-20",
+        "All",
+        "",
+        "3,000",
+        "500",
+        "2,000",
+        "0",
+        "5,500",
+        "$0.02"
+      ],
+      "kind": "row"
+    },
+    {
+      "cells": [
+        "",
+        "- DeepSeek Harness",
+        "- sonnet-4-5",
+        "3,000",
+        "500",
+        "2,000",
+        "0",
+        "5,500",
+        "$0.02"
+      ],
+      "kind": "agent-breakdown"
+    },
+    {
+      "cells": [
+        "2026-10-27",
+        "All",
+        "",
+        "200",
+        "50",
+        "0",
+        "5,000",
+        "5,250",
+        "$0.00"
+      ],
+      "kind": "row"
+    },
+    {
+      "cells": [
+        "",
+        "- DeepSeek Harness",
+        "- sonnet-4-5",
+        "200",
+        "50",
+        "0",
+        "5,000",
+        "5,250",
+        "$0.00"
+      ],
+      "kind": "agent-breakdown"
+    },
+    {
+      "cells": [
+        "Total",
+        "",
+        "",
+        "23,850",
+        "1,770",
+        "2,600",
+        "22,000",
+        "50,220",
+        "$0.03"
+      ],
+      "kind": "total"
+    }
+  ],
+  "title": "Coding (Agent) CLI Usage Report - Daily\nDetected: DeepSeek Harness"
+}

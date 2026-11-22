@@ -1,0 +1,22 @@
+jobs:
+  build:
+    steps:
+      - run: |
+          cat <<'DATA'
+          # Payload data
+          DATA
+          # A shell comment.
+      - env:
+          PAYLOAD: |
+            # YAML scalar data.
+        run: echo "$PAYLOAD"
+      - uses: actions/checkout@0123456789abcdef0123456789abcdef01234567 # v1.2.3
+      - uses: 'owner/repo/sub/action@0123456789abcdef0123456789abcdef01234567' # 1.2.3
+      - uses: owner/repo@0123456789abcdef0123456789abcdef01234567 # v3.30
+      - uses: owner/repo@0123456789abcdef0123456789abcdef01234567 # v2
+      - uses: actions/checkout@0123456789abcdef0123456789abcdef01234567 # ordinary trailing comment
+      - uses: actions/checkout@main # v1.2.3
+      - uses: actions/checkout@0123456 # v1.2.3
+      - name: Build # v1.2.3
+        run: echo done
+      - uses: actions/checkout@0123456789abcdef0123456789abcdef01234567 # v1.2.3 update metadata

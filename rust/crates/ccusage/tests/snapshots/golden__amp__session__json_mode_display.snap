@@ -1,0 +1,125 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage amp session --offline --json --mode display
+---
+exit: 0
+--- stdout ---
+{
+  "sessions": [
+    {
+      "cacheCreationTokens": 300,
+      "cacheReadTokens": 9000,
+      "credits": 3.2,
+      "inputTokens": 2700,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 300,
+          "cacheReadTokens": 4000,
+          "cost": 0.0,
+          "inputTokens": 1000,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 200
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 5000,
+          "cost": 0.0,
+          "inputTokens": 1400,
+          "modelName": "gpt-5",
+          "outputTokens": 300
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 300,
+          "modelName": "amp-mystery-1",
+          "outputTokens": 70
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514",
+        "gpt-5",
+        "amp-mystery-1"
+      ],
+      "outputTokens": 570,
+      "sessionId": "T-aaaaaaaa-0000-4000-8000-000000000001",
+      "totalCost": 0.0,
+      "totalTokens": 12915
+    },
+    {
+      "cacheCreationTokens": 250,
+      "cacheReadTokens": 16000,
+      "credits": 2.0,
+      "inputTokens": 2300,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 7000,
+          "cost": 0.0,
+          "inputTokens": 900,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 400
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 3000,
+          "cost": 0.0,
+          "inputTokens": 600,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 100
+        },
+        {
+          "cacheCreationTokens": 50,
+          "cacheReadTokens": 6000,
+          "cost": 0.0,
+          "inputTokens": 800,
+          "modelName": "amp-mystery-1",
+          "outputTokens": 300
+        }
+      ],
+      "modelsUsed": [
+        "claude-haiku-4-5-20251001",
+        "claude-sonnet-4-20250514",
+        "amp-mystery-1"
+      ],
+      "outputTokens": 800,
+      "sessionId": "T-bbbbbbbb-0000-4000-8000-000000000002",
+      "totalCost": 0.0,
+      "totalTokens": 19850
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 100,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 100,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 50
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514"
+      ],
+      "outputTokens": 50,
+      "sessionId": "T-cccccccc-0000-4000-8000-000000000003",
+      "totalCost": 0.0,
+      "totalTokens": 150
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 550,
+    "cacheReadTokens": 25000,
+    "credits": 5.2,
+    "inputTokens": 5100,
+    "outputTokens": 1420,
+    "totalCost": 0.0,
+    "totalTokens": 32915
+  }
+}
+
+--- stderr ---

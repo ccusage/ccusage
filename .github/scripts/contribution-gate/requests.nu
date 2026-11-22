@@ -1,4 +1,6 @@
 use ./core.nu [
+    TITLE_MAX_LENGTH
+    BODY_MAX_LENGTH
     format-gh-error
     gh-api-complete
     gh-api-body
@@ -9,6 +11,7 @@ use ./core.nu [
     write-output
 ]
 use ./context.nu [require-open-issue]
+use ./schemas.nu [issue-schema pr-schema implementation-schema]
 
 export const CLOSING_PULL_REQUEST_QUERY = 'query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { issue(number: $number) { closedByPullRequestsReferences(first: 100, includeClosedPrs: false) { nodes { number state url } pageInfo { hasNextPage } } } } }'
 
@@ -60,7 +63,6 @@ export def existing-implementation-pull-request [pull_requests: list<record>, re
             [
                 (($pull_request | get --optional user.login) == 'github-actions[bot]')
                 (($pull_request | get --optional head.repo.full_name) == $repo)
-                (($head_ref | describe) == 'string')
                 (($head_ref | describe) == 'string' and ($head_ref | str starts-with $head_prefix))
             ]
             | all {|valid| $valid}
@@ -147,7 +149,9 @@ export def retry-pull-request-lookup [lookup: closure, wait: closure, max_attemp
             return $outcome.pull_request
         }
         if $attempt == $max_attempts and $outcome.transient_error != null {
-            error make {msg: $"Pull request lookup still failed after retrying: ($outcome.transient_error)"}
+            error make {
+                msg: $"Pull request lookup still failed after retrying: ($outcome.transient_error)"
+            }
         }
         if $attempt < $max_attempts {
             do $wait $attempt | ignore
@@ -188,7 +192,9 @@ export def closing-pull-request-nodes [connection: record]: nothing -> list<reco
         error make {msg: 'GitHub returned invalid closing pull request pagination data'}
     }
     if $has_next_page {
-        error make {msg: 'Closing pull request lookup exceeded one page; refusing incomplete duplicate detection'}
+        error make {
+            msg: 'Closing pull request lookup exceeded one page; refusing incomplete duplicate detection'
+        }
     }
     let nodes = $connection | get --optional nodes
     if ($nodes | describe) !~ '^(list|table)' {
@@ -236,9 +242,9 @@ export def implementation-result [value: string]: nothing -> record {
     let prepared_metadata_valid = [
         ($title | str trim | is-not-empty)
         (($title | lines | length) == 1)
-        (($title | str length) <= 240)
+        (($title | str length) <= $TITLE_MAX_LENGTH)
         ($body | str trim | is-not-empty)
-        (($body | str length) <= 20000)
+        (($body | str length) <= $BODY_MAX_LENGTH)
     ] | all {|valid| $valid}
 
     match $implementation {
@@ -271,10 +277,12 @@ export def implementation-title [title: string]: nothing -> string {
     let valid = [
         ($sanitized | str trim | is-not-empty)
         (($sanitized | lines | length) == 1)
-        (($sanitized | str length) <= 240)
+        (($sanitized | str length) <= $TITLE_MAX_LENGTH)
     ] | all {|condition| $condition }
     if not $valid {
-        error make {msg: 'The sanitized implementation title must be one non-empty line of at most 240 characters'}
+        error make {
+            msg: 'The sanitized implementation title must be one non-empty line of at most 240 characters'
+        }
     }
     $sanitized
 }
@@ -382,14 +390,18 @@ def git-complete [args: list<string>]: nothing -> record {
 def git-run [args: list<string>]: nothing -> nothing {
     let result = git-complete $args
     if $result.exit_code != 0 {
-        error make {msg: $"git ($args | str join ' ') failed with exit code ($result.exit_code): ($result.stderr | str trim)"}
+        error make {
+            msg: $"git ($args | str join ' ') failed with exit code ($result.exit_code): ($result.stderr | str trim)"
+        }
     }
 }
 
 def git-output [args: list<string>]: nothing -> string {
     let result = git-complete $args
     if $result.exit_code != 0 {
-        error make {msg: $"git ($args | str join ' ') failed with exit code ($result.exit_code): ($result.stderr | str trim)"}
+        error make {
+            msg: $"git ($args | str join ' ') failed with exit code ($result.exit_code): ($result.stderr | str trim)"
+        }
     }
     $result.stdout | str trim
 }
@@ -441,7 +453,9 @@ def discard-created-pull-request [repo: string, number: int, branch: string]: no
         {|| git-run [push origin --delete $branch] }
     )
     if ($errors | is-not-empty) {
-        error make {msg: $"Could not fully discard implementation PR #($number) on branch ($branch): ($errors | str join '; ')"}
+        error make {
+            msg: $"Could not fully discard implementation PR #($number) on branch ($branch): ($errors | str join '; ')"
+        }
     }
 }
 
@@ -457,7 +471,9 @@ def discard-unvalidated-publication [repo: string, branch: string]: nothing -> n
         {|| git-run [push origin --delete $branch] }
     )
     if ($errors | is-not-empty) {
-        error make {msg: $"Could not fully discard an unvalidated implementation publication on branch ($branch): ($errors | str join '; ')"}
+        error make {
+            msg: $"Could not fully discard an unvalidated implementation publication on branch ($branch): ($errors | str join '; ')"
+        }
     }
 }
 
@@ -469,6 +485,7 @@ def setup-git-auth []: nothing -> nothing {
 }
 
 export def issue-request []: nothing -> nothing {
+    write-output schema (issue-schema | to json --raw)
     let number = issue-number
     let repo = repository
     let author_status = required-env AUTHOR_STATUS
@@ -483,6 +500,7 @@ export def issue-request []: nothing -> nothing {
 }
 
 export def pr-request []: nothing -> nothing {
+    write-output schema (pr-schema | to json --raw)
     let number = issue-number
     let repo = repository
     let prompt = render-prompt 'pr-judge.md' {
@@ -506,12 +524,13 @@ def resolve-coauthor-attribution [username: string, user_id: int, user: record]:
     } else {
         let created_at = $user | get --optional created_at
         if ($created_at | describe) != 'string' {
-            error make {msg: $"Could not determine when GitHub account ($username) was created"}
+            error make {
+                msg: $"Could not determine when GitHub account ($username) was created"
+            }
         }
         let created_at = $created_at | into datetime
         let legacy_cutoff = '2017-07-18T00:00:00Z' | into datetime
         if $created_at < $legacy_cutoff {
-            # GitHub does not expose whether a legacy account switched no-reply formats, so age alone cannot yield a reliable address.
             {email: '', trailer: ''}
         } else {
             let email = $"($user_id)+($username)@users.noreply.github.com"
@@ -526,7 +545,9 @@ def resolve-coauthor-attribution [username: string, user_id: int, user: record]:
 export def coauthor-email [username: string, user_id: int, user: record]: nothing -> string {
     let attribution = resolve-coauthor-attribution $username $user_id $user
     if ($attribution.email | is-empty) {
-        error make {msg: $"Could not resolve a GitHub email for legacy account ($username) without a public email"}
+        error make {
+            msg: $"Could not resolve a GitHub email for legacy account ($username) without a public email"
+        }
     }
     $attribution.email
 }
@@ -536,6 +557,7 @@ export def coauthor-attribution [username: string, user_id: int, user: record]: 
 }
 
 export def issue-implementation-request []: nothing -> nothing {
+    write-output schema (implementation-schema | to json --raw)
     let number = issue-number
     let repo = repository
     require-open-issue | ignore
@@ -616,7 +638,9 @@ export def publish-implementation []: nothing -> nothing {
         error make {msg: 'The implementation patch is empty'}
     }
     if $staged.exit_code != 1 {
-        error make {msg: $"Could not inspect the staged implementation: ($staged.stderr | str trim)"}
+        error make {
+            msg: $"Could not inspect the staged implementation: ($staged.stderr | str trim)"
+        }
     }
 
     git-run [config user.name 'github-actions[bot]']
@@ -680,7 +704,9 @@ export def publish-implementation []: nothing -> nothing {
         }
     } catch {
         discard-created-pull-request $repo $pull_number $branch
-        error make {msg: 'Could not reconcile competing pull requests after publication; the workflow-created pull request was closed'}
+        error make {
+            msg: 'Could not reconcile competing pull requests after publication; the workflow-created pull request was closed'
+        }
     }
     let competing = $reconciliation.competing
     if $competing != null {
@@ -692,4 +718,117 @@ export def publish-implementation []: nothing -> nothing {
     print $"Created implementation PR #($pull_number) for issue #($issue.number)."
     write-output pull_request_number ($pull_number | into string)
     write-output skip 'false'
+}
+
+export def implementation-artifact []: nothing -> nothing {
+    let result = implementation-result (required-env RESULT)
+    let head = git-complete [rev-parse HEAD]
+    if $head.exit_code != 0 {
+        error make {msg: $"Could not resolve Pullfrog HEAD: ($head.stderr | str trim)"}
+    }
+    let head_sha = $head.stdout | str trim
+
+    if $result.implementation == 'none' {
+        if $head_sha != (required-env BASE_SHA) {
+            error make {
+                msg: 'Pullfrog declined implementation after creating local commits'
+            }
+        }
+        let status = git-complete [status --porcelain]
+        if $status.exit_code != 0 or ($status.stdout | str trim | is-not-empty) {
+            error make {
+                msg: 'Pullfrog declined implementation after changing the working tree'
+            }
+        }
+    } else if $result.implementation == 'prepared' {
+        let ancestry = git-complete [
+            merge-base
+            --is-ancestor
+            (required-env BASE_SHA)
+            $head_sha
+        ]
+        if $ancestry.exit_code != 0 {
+            error make {msg: 'Pullfrog HEAD must descend from the checked-out base commit'}
+        }
+
+        let untracked_result = git-complete [ls-files --others --exclude-standard '-z']
+        if $untracked_result.exit_code != 0 {
+            error make {
+                msg: $"Could not inspect untracked files: ($untracked_result.stderr | str trim)"
+            }
+        }
+        let untracked = $untracked_result.stdout | split row (char nul) | where {|path| $path | is-not-empty}
+        if ($untracked | length) > 100 {
+            error make {
+                msg: 'Pullfrog created too many untracked files for automatic publication'
+            }
+        }
+        if ($untracked | is-not-empty) {
+            git-run [add --intent-to-add -- ...$untracked]
+        }
+
+        let changed_paths_result = git-complete [
+            diff
+            --name-only
+            '-z'
+            (required-env BASE_SHA)
+            --
+        ]
+        if $changed_paths_result.exit_code != 0 {
+            error make {
+                msg: $"Could not inspect changed paths: ($changed_paths_result.stderr | str trim)"
+            }
+        }
+        let changed_paths = $changed_paths_result.stdout | split row (char nul) | where {|path| $path | is-not-empty}
+        if ($changed_paths | is-empty) or ($changed_paths | length) > 100 {
+            error make {msg: 'Pullfrog implementation must change between 1 and 100 files'}
+        }
+
+        let changed = git-complete [
+            diff
+            --quiet
+            (required-env BASE_SHA)
+            --
+        ]
+        if $changed.exit_code == 0 {
+            error make {
+                msg: 'Pullfrog reported a prepared implementation without any changes'
+            }
+        }
+        if $changed.exit_code != 1 {
+            error make {
+                msg: $"Could not inspect implementation changes: ($changed.stderr | str trim)"
+            }
+        }
+        git-run [
+            diff
+            --check
+            (required-env BASE_SHA)
+            --
+        ]
+
+        let patch = git-complete [
+            diff
+            --binary
+            --full-index
+            (required-env BASE_SHA)
+            --
+        ]
+        if $patch.exit_code != 0 {
+            error make {
+                msg: $"Could not create the implementation patch: ($patch.stderr | str trim)"
+            }
+        }
+        if ($patch.stdout | encode utf8 | bytes length) > 5000000 {
+            error make {
+                msg: 'Pullfrog implementation patch exceeds the 5 MB publication limit'
+            }
+        }
+        $patch.stdout | save --raw (required-env IMPLEMENTATION_PATCH)
+        $result | to json | save --raw (required-env IMPLEMENTATION_METADATA)
+    } else {
+        error make {msg: 'Pullfrog returned an unknown implementation result'}
+    }
+
+    write-output implementation $result.implementation
 }

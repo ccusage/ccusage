@@ -1,0 +1,137 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage grok monthly --offline --json --since 20251231 --until 20260101
+---
+exit: 0
+--- stdout ---
+{
+  "monthly": [
+    {
+      "cacheCreationTokens": 50,
+      "cacheReadTokens": 1700,
+      "inputTokens": 2450,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 1000,
+          "cost": 0.2,
+          "inputTokens": 2000,
+          "modelName": "grok-4.5-build",
+          "outputTokens": 500,
+          "storedCost": 0.2
+        },
+        {
+          "cacheCreationTokens": 50,
+          "cacheReadTokens": 700,
+          "cost": 0.003,
+          "inputTokens": 150,
+          "modelName": "grok-code-fast-1",
+          "outputTokens": 400,
+          "storedCost": 0.003
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 300,
+          "missingPricing": true,
+          "modelName": "grok-mystery-1",
+          "outputTokens": 70
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 0,
+          "modelName": "grok-4.7-build",
+          "outputTokens": 0
+        }
+      ],
+      "modelsUsed": [
+        "grok-4.5-build",
+        "grok-mystery-1",
+        "grok-4.7-build",
+        "grok-code-fast-1"
+      ],
+      "month": "2025-12",
+      "outputTokens": 970,
+      "totalCost": 0.203,
+      "totalTokens": 5170
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 50600,
+      "inputTokens": 201245,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 50000,
+          "cost": 0.4,
+          "inputTokens": 200000,
+          "modelName": "grok-4.5-build",
+          "outputTokens": 1000,
+          "storedCost": 0.4
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 600,
+          "cost": 0.000325,
+          "inputTokens": 0,
+          "modelName": "grok-4.3-build",
+          "outputTokens": 100
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00006,
+          "inputTokens": 0,
+          "modelName": "grok-code-fast-1",
+          "outputTokens": 40
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 900,
+          "missingPricing": true,
+          "modelName": "grok-mystery-1",
+          "outputTokens": 210
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 345,
+          "missingPricing": true,
+          "modelName": "unknown",
+          "outputTokens": 55
+        }
+      ],
+      "modelsUsed": [
+        "grok-4.3-build",
+        "grok-4.5-build",
+        "grok-mystery-1",
+        "grok-code-fast-1",
+        "unknown"
+      ],
+      "month": "2026-01",
+      "outputTokens": 1405,
+      "totalCost": 0.40038500000000005,
+      "totalTokens": 253250
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 50,
+    "cacheReadTokens": 52300,
+    "inputTokens": 203695,
+    "outputTokens": 2375,
+    "totalCost": 0.6033850000000001,
+    "totalTokens": 258420,
+    "unpricedModels": [
+      "grok-mystery-1",
+      "unknown"
+    ]
+  }
+}
+
+--- stderr ---

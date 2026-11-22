@@ -1,35 +1,121 @@
 use std::collections::BTreeSet;
 
-use serde_json::Value;
+use ccusage_adapter_common::rows::{RowUsage, SessionMetadata, SourceRow};
 
-use crate::{ModelBreakdown, cli::AgentReportKind, fast::FxHashMap};
+use crate::{
+    Diagnostics, ModelBreakdown,
+    cli::{AgentReportKind, WeekDay},
+    fast::FxHashMap,
+};
 
 #[derive(Debug, Clone)]
-pub(super) struct AllRow {
-    pub(super) period: String,
-    pub(super) agent: &'static str,
-    pub(super) models_used: Vec<String>,
-    pub(super) input_tokens: u64,
-    pub(super) output_tokens: u64,
-    pub(super) cache_creation_tokens: u64,
-    pub(super) cache_read_tokens: u64,
-    pub(super) total_tokens: u64,
-    pub(super) total_cost: f64,
-    pub(super) metadata: Option<Value>,
-    pub(super) metadata_agents: Option<Vec<&'static str>>,
-    pub(super) agent_breakdowns: Option<Vec<AllRow>>,
-    pub(super) model_breakdowns: Vec<ModelBreakdown>,
+pub(super) struct PeriodRow {
+    pub(super) usage: RowUsage,
+    pub(super) agents: Vec<&'static str>,
+    pub(super) agent_breakdowns: Vec<SourceRow>,
+}
+
+#[derive(Debug, Clone)]
+pub(super) enum ReportRow {
+    Source(SourceRow),
+    Period(PeriodRow),
+}
+
+impl std::ops::Deref for ReportRow {
+    type Target = RowUsage;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Source(row) => &row.usage,
+            Self::Period(row) => &row.usage,
+        }
+    }
+}
+
+impl std::ops::DerefMut for ReportRow {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        match self {
+            Self::Source(row) => &mut row.usage,
+            Self::Period(row) => &mut row.usage,
+        }
+    }
+}
+
+impl ReportRow {
+    pub(super) fn agent(&self) -> &'static str {
+        match self {
+            Self::Source(row) => row.agent,
+            Self::Period(_) => "all",
+        }
+    }
+
+    pub(super) fn agents(&self) -> Option<&[&'static str]> {
+        match self {
+            Self::Source(_) => None,
+            Self::Period(row) => Some(&row.agents),
+        }
+    }
+
+    pub(super) fn metadata(&self) -> Option<&SessionMetadata> {
+        match self {
+            Self::Source(row) => row.metadata.as_ref(),
+            Self::Period(_) => None,
+        }
+    }
+
+    pub(super) fn agent_breakdowns(&self) -> Option<&[SourceRow]> {
+        match self {
+            Self::Source(_) => None,
+            Self::Period(row) => Some(&row.agent_breakdowns),
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum Bucket {
+    Day,
+    Month,
+    Week(WeekDay),
+}
+
+pub(super) use ccusage_core::cli::IsoDate as ReportDay;
+
+#[derive(Clone)]
+pub(super) struct DayRow {
+    pub(super) day: ReportDay,
+    pub(super) row: SourceRow,
+}
+
+impl Bucket {
+    pub(super) fn for_report(kind: AgentReportKind, start: WeekDay) -> Option<Self> {
+        match kind {
+            AgentReportKind::Daily => Some(Self::Day),
+            AgentReportKind::Monthly => Some(Self::Month),
+            AgentReportKind::Weekly => Some(Self::Week(start)),
+            AgentReportKind::Session => None,
+        }
+    }
+
+    pub(super) fn key(self, date: ReportDay) -> String {
+        match self {
+            Self::Day => date.to_string(),
+            Self::Month => date.format_month(),
+            Self::Week(start) => date.week_start(start).to_string(),
+        }
+    }
 }
 
 pub(super) struct AllLoadResult {
-    pub(super) rows: Vec<AllRow>,
+    pub(super) rows: Vec<ReportRow>,
     pub(super) detected_agents: Vec<&'static str>,
+    pub(super) diagnostics: Vec<Diagnostics>,
 }
 
 pub(super) struct AllSectionsLoadResult {
-    pub(super) sections: Vec<(AgentReportKind, Vec<AllRow>)>,
+    pub(super) sections: Vec<(AgentReportKind, Vec<ReportRow>)>,
     pub(super) daily_detected_agents: Vec<&'static str>,
     pub(super) session_detected_agents: Vec<&'static str>,
+    pub(super) diagnostics: Vec<Diagnostics>,
 }
 
 impl AllSectionsLoadResult {
@@ -43,10 +129,7 @@ impl AllSectionsLoadResult {
     }
 }
 
-pub(super) struct AgentRows {
-    pub(super) rows: Vec<AllRow>,
-    pub(super) detected: bool,
-}
+pub(super) type AgentRows = ccusage_adapter_common::source::LoadedRows;
 
 pub(super) struct AgentLoadSpec<'scope> {
     pub(super) index: usize,
@@ -71,12 +154,12 @@ pub(super) struct AllAccumulator {
     total_cost: f64,
     models: BTreeSet<String>,
     agents: BTreeSet<&'static str>,
-    agent_breakdowns: Vec<AllRow>,
+    agent_breakdowns: Vec<SourceRow>,
     agent_indexes: FxHashMap<&'static str, usize>,
 }
 
 impl AllAccumulator {
-    pub(super) fn add(&mut self, row: AllRow) {
+    pub(super) fn add(&mut self, row: SourceRow) {
         self.input_tokens = self.input_tokens.saturating_add(row.input_tokens);
         self.output_tokens = self.output_tokens.saturating_add(row.output_tokens);
         self.cache_creation_tokens = self
@@ -86,52 +169,47 @@ impl AllAccumulator {
         self.total_tokens = self.total_tokens.saturating_add(row.total_tokens);
         self.total_cost += row.total_cost;
         self.models.extend(row.models_used.iter().cloned());
-        if let Some(agents) = row.metadata_agents.as_ref() {
-            self.agents.extend(agents.iter().copied());
-        } else if row.agent != "all" {
-            self.agents.insert(row.agent);
-        }
+        self.agents.insert(row.agent);
         match self.agent_indexes.get(row.agent).copied() {
             Some(index) => merge_agent_breakdown(&mut self.agent_breakdowns[index], row),
             None => {
                 self.agent_indexes
                     .insert(row.agent, self.agent_breakdowns.len());
-                self.agent_breakdowns.push(AllRow {
-                    metadata_agents: Some(vec![row.agent]),
-                    agent_breakdowns: None,
-                    ..row
-                });
+                self.agent_breakdowns.push(row);
             }
         }
     }
 
-    pub(super) fn into_row(self, period: String) -> AllRow {
+    pub(super) fn into_row(self, period: String) -> ReportRow {
         let mut agent_breakdowns = self.agent_breakdowns;
         for breakdown in &mut agent_breakdowns {
             breakdown.period = period.clone();
         }
-        agent_breakdowns.sort_by(|a, b| a.agent.cmp(b.agent));
-        let mut model_breakdowns = aggregate_model_breakdowns(&agent_breakdowns);
-        model_breakdowns.sort_by(|a, b| b.cost.total_cmp(&a.cost));
-        AllRow {
-            period,
-            agent: "all",
-            models_used: self.models.into_iter().collect(),
-            input_tokens: self.input_tokens,
-            output_tokens: self.output_tokens,
-            cache_creation_tokens: self.cache_creation_tokens,
-            cache_read_tokens: self.cache_read_tokens,
-            total_tokens: self.total_tokens,
-            total_cost: self.total_cost,
-            metadata: None,
-            metadata_agents: Some(self.agents.into_iter().collect()),
-            agent_breakdowns: Some(agent_breakdowns),
-            model_breakdowns,
-        }
+        ccusage_core::sort::stable_by(&mut agent_breakdowns, |a, b| a.agent.cmp(b.agent));
+        let model_breakdowns = merge_by_model(
+            agent_breakdowns
+                .iter()
+                .flat_map(|breakdown| &breakdown.model_breakdowns),
+        );
+        ReportRow::Period(PeriodRow {
+            usage: RowUsage {
+                period,
+                models_used: self.models.into_iter().collect(),
+                input_tokens: self.input_tokens,
+                output_tokens: self.output_tokens,
+                cache_creation_tokens: self.cache_creation_tokens,
+                cache_read_tokens: self.cache_read_tokens,
+                total_tokens: self.total_tokens,
+                total_cost: self.total_cost,
+                model_breakdowns,
+            },
+            agents: self.agents.into_iter().collect(),
+            agent_breakdowns,
+        })
     }
 }
 
-fn merge_agent_breakdown(target: &mut AllRow, source: AllRow) {
+fn merge_agent_breakdown(target: &mut SourceRow, source: SourceRow) {
     target.input_tokens = target.input_tokens.saturating_add(source.input_tokens);
     target.output_tokens = target.output_tokens.saturating_add(source.output_tokens);
     target.cache_creation_tokens = target
@@ -143,68 +221,29 @@ fn merge_agent_breakdown(target: &mut AllRow, source: AllRow) {
     target.total_tokens = target.total_tokens.saturating_add(source.total_tokens);
     target.total_cost += source.total_cost;
     let mut models: BTreeSet<String> = target.models_used.drain(..).collect();
-    models.extend(source.models_used);
+    models.extend(source.usage.models_used);
     target.models_used = models.into_iter().collect();
-    target.model_breakdowns =
-        merge_model_breakdowns(target.model_breakdowns.drain(..), source.model_breakdowns);
+    target.model_breakdowns = merge_by_model(
+        target
+            .model_breakdowns
+            .iter()
+            .chain(&source.usage.model_breakdowns),
+    );
 }
 
-fn merge_model_breakdowns(
-    existing: impl IntoIterator<Item = ModelBreakdown>,
-    additional: impl IntoIterator<Item = ModelBreakdown>,
-) -> Vec<ModelBreakdown> {
-    let mut indexes = FxHashMap::<String, usize>::default();
+fn merge_by_model<'a>(items: impl IntoIterator<Item = &'a ModelBreakdown>) -> Vec<ModelBreakdown> {
+    let mut indexes = FxHashMap::<&str, usize>::default();
     let mut breakdowns: Vec<ModelBreakdown> = Vec::new();
-    for item in existing.into_iter().chain(additional) {
-        let index = *indexes.entry(item.model_name.clone()).or_insert_with(|| {
-            let i = breakdowns.len();
+    for item in items {
+        let index = *indexes.entry(&item.model_name).or_insert_with(|| {
             breakdowns.push(ModelBreakdown {
                 model_name: item.model_name.clone(),
                 ..ModelBreakdown::default()
             });
-            i
+            breakdowns.len() - 1
         });
-        let b = &mut breakdowns[index];
-        b.input_tokens = b.input_tokens.saturating_add(item.input_tokens);
-        b.output_tokens = b.output_tokens.saturating_add(item.output_tokens);
-        b.cache_creation_tokens = b
-            .cache_creation_tokens
-            .saturating_add(item.cache_creation_tokens);
-        b.cache_read_tokens = b.cache_read_tokens.saturating_add(item.cache_read_tokens);
-        b.extra_total_tokens = b.extra_total_tokens.saturating_add(item.extra_total_tokens);
-        b.cost += item.cost;
-        b.missing_pricing |= item.missing_pricing;
-        b.add_stored_cost(item.stored_cost);
+        breakdowns[index].merge(item);
     }
-    breakdowns.sort_by(|a, b| b.cost.total_cmp(&a.cost));
-    breakdowns
-}
-
-fn aggregate_model_breakdowns(rows: &[AllRow]) -> Vec<ModelBreakdown> {
-    let mut indexes = FxHashMap::<String, usize>::default();
-    let mut breakdowns: Vec<ModelBreakdown> = Vec::new();
-    for row in rows {
-        for item in &row.model_breakdowns {
-            let index = *indexes.entry(item.model_name.clone()).or_insert_with(|| {
-                let i = breakdowns.len();
-                breakdowns.push(ModelBreakdown {
-                    model_name: item.model_name.clone(),
-                    ..ModelBreakdown::default()
-                });
-                i
-            });
-            let b = &mut breakdowns[index];
-            b.input_tokens = b.input_tokens.saturating_add(item.input_tokens);
-            b.output_tokens = b.output_tokens.saturating_add(item.output_tokens);
-            b.cache_creation_tokens = b
-                .cache_creation_tokens
-                .saturating_add(item.cache_creation_tokens);
-            b.cache_read_tokens = b.cache_read_tokens.saturating_add(item.cache_read_tokens);
-            b.extra_total_tokens = b.extra_total_tokens.saturating_add(item.extra_total_tokens);
-            b.cost += item.cost;
-            b.missing_pricing |= item.missing_pricing;
-            b.add_stored_cost(item.stored_cost);
-        }
-    }
+    ModelBreakdown::sort_by_cost_desc(&mut breakdowns);
     breakdowns
 }

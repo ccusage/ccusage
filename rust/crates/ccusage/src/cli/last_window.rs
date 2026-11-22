@@ -1,194 +1,385 @@
-use ccusage_cli::{AgentCommandArgs, AgentReportKind, Command, SharedArgs, WeekDay};
-use ccusage_core::{PeriodUnit, format_date, last_periods_since, utc_now};
+use std::num::NonZeroU32;
 
-use super::Cli;
+use ccusage_cli::{Command, DateBound, IsoDate, PeriodUnit, SharedArgs, WeekDay};
+use ccusage_core::{date_at, resolve_tz};
+use jiff::Span;
 
-/// Turns `--last N` into the `--since` bound every loader already understands.
-///
-/// The count means "the most recent N periods of the report's own unit", so it
-/// can only be resolved once the command is known: `daily --last 1` is today,
-/// `weekly --last 1` is the current week, `monthly --last 1` is this month.
-pub(crate) fn resolve(cli: &mut Cli) -> Result<(), String> {
-    let Some((shared, unit, start_of_week)) = window_target(cli) else {
+pub(crate) fn resolve(command: &mut Command) -> Result<(), String> {
+    let Some(period) = command.period() else {
         return Ok(());
     };
+    let Some(shared) = command.shared_mut() else {
+        return Ok(());
+    };
+    resolve_shared(shared, period)
+}
+
+pub(crate) fn resolve_shared(
+    shared: &mut SharedArgs,
+    (unit, start_of_week): (PeriodUnit, WeekDay),
+) -> Result<(), String> {
     let Some(last) = shared.last else {
         return Ok(());
     };
-    let today = format_date(utc_now(), shared.timezone.as_deref());
-    let Some(since) = last_periods_since(unit, last, &today, start_of_week) else {
+    let today = date_at(
+        shared.clock.now().into(),
+        &resolve_tz(shared.timezone.as_ref()),
+    );
+    let (Some(since), Some(until)) = (
+        last_periods_since(unit, last, today, start_of_week),
+        last_periods_until(unit, today, start_of_week),
+    ) else {
         return Err(format!("Could not resolve --last {last} from today's date"));
     };
     shared.since = Some(since);
+    shared.until = Some(until);
     Ok(())
 }
 
-fn window_target(cli: &mut Cli) -> Option<(&mut SharedArgs, PeriodUnit, WeekDay)> {
-    match cli.command.as_mut() {
-        // A bare `ccusage` is the unified daily report.
-        None => Some((&mut cli.shared, PeriodUnit::Day, UNIFIED_WEEK_START)),
-        Some(Command::Daily(args)) => Some((&mut args.shared, PeriodUnit::Day, UNIFIED_WEEK_START)),
-        Some(Command::Monthly(shared)) => Some((shared, PeriodUnit::Month, UNIFIED_WEEK_START)),
-        Some(Command::Weekly(args)) => {
-            let start_of_week = args.start_of_week;
-            Some((&mut args.shared, PeriodUnit::Week, start_of_week))
-        }
-        Some(
-            Command::All(args)
-            | Command::Codex(args)
-            | Command::OpenCode(args)
-            | Command::Amp(args)
-            | Command::Droid(args)
-            | Command::Codebuff(args)
-            | Command::Hermes(args)
-            | Command::Pi(args)
-            | Command::Goose(args)
-            | Command::Kilo(args)
-            | Command::Copilot(args)
-            | Command::Gemini(args)
-            | Command::Antigravity(args)
-            | Command::Kimi(args)
-            | Command::Qwen(args)
-            | Command::OpenClaw(args)
-            | Command::Grok(args)
-            | Command::ZCode(args),
-        ) => agent_window_target(args),
-        Some(
-            Command::Session(_)
-            | Command::Blocks(_)
-            | Command::Statusline(_)
-            | Command::Telemetry(_),
-        ) => None,
-    }
+pub(super) fn last_periods_since(
+    unit: PeriodUnit,
+    count: NonZeroU32,
+    today: IsoDate,
+    start_of_week: WeekDay,
+) -> Option<DateBound> {
+    let earlier = i64::from(count.get() - 1);
+    // NOTE(2026-11-20, #2369): Jiff's span setters panic on counts a u32 can express. Use the fallible setters so an oversized --last stays a window error.
+    let (base, span) = match unit {
+        PeriodUnit::Day => (today.civil()?, Span::new().try_days(earlier).ok()?),
+        PeriodUnit::Week => (
+            today.week_start(start_of_week).civil()?,
+            Span::new().try_weeks(earlier).ok()?,
+        ),
+        PeriodUnit::Month => (
+            today.civil()?.first_of_month(),
+            Span::new().try_months(earlier).ok()?,
+        ),
+    };
+    Some(IsoDate::from(base.checked_sub(span).ok()?).into())
 }
 
-/// Every report that buckets by week outside of `ccusage claude weekly` starts
-/// the week on Monday, so the window has to as well.
-const UNIFIED_WEEK_START: WeekDay = WeekDay::Monday;
-
-fn agent_window_target(
-    args: &mut AgentCommandArgs,
-) -> Option<(&mut SharedArgs, PeriodUnit, WeekDay)> {
-    let unit = match args.kind {
-        AgentReportKind::Daily => PeriodUnit::Day,
-        AgentReportKind::Weekly => PeriodUnit::Week,
-        AgentReportKind::Monthly => PeriodUnit::Month,
-        AgentReportKind::Session => return None,
+pub(super) fn last_periods_until(
+    unit: PeriodUnit,
+    today: IsoDate,
+    start_of_week: WeekDay,
+) -> Option<DateBound> {
+    let last = match unit {
+        PeriodUnit::Day => today,
+        PeriodUnit::Week => today.week_start(start_of_week).checked_add_days(6)?,
+        PeriodUnit::Month => {
+            let first = today.civil()?.first_of_month();
+            IsoDate::from(first.with().day(first.days_in_month()).build().ok()?)
+        }
     };
-    Some((&mut args.shared, unit, UNIFIED_WEEK_START))
+    Some(last.into())
 }
 
 #[cfg(test)]
 mod tests {
-    use ccusage_cli::{CodexSpeed, SortOrder, WeeklyArgs};
+    use std::collections::BTreeMap;
+
+    use ccusage_cli::{
+        AgentCommandArgs, AgentReportKind, ClaudeReport, SharedArgs, SortOrder, WeekDay, WeeklyArgs,
+    };
 
     use super::*;
+    use ccusage_core::utc_now;
+
+    fn periods(count: u32) -> std::num::NonZeroU32 {
+        std::num::NonZeroU32::new(count).unwrap()
+    }
 
     fn shared_with_last(last: u32) -> SharedArgs {
         SharedArgs {
-            last: Some(last),
-            timezone: Some("UTC".to_string()),
+            last: Some(periods(last)),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
             ..SharedArgs::with_defaults()
         }
     }
 
     fn agent_command(kind: AgentReportKind, last: u32) -> AgentCommandArgs {
         AgentCommandArgs {
+            options: Default::default(),
             shared: shared_with_last(last),
             kind,
             session_id: None,
             sections: None,
             by_agent: false,
-            pi_path: None,
-            open_claw_path: None,
-            codex_speed: CodexSpeed::Auto,
+
+            include_claude_agent: false,
+            start_of_week: WeekDay::Monday,
+            sources: BTreeMap::new(),
         }
     }
 
-    fn resolved_since(command: Command) -> Option<String> {
-        let mut cli = Cli {
-            command: Some(command),
-            shared: SharedArgs::with_defaults(),
-        };
-        resolve(&mut cli).unwrap();
-        match cli.command {
-            Some(Command::All(args)) | Some(Command::Codex(args)) => args.shared.since,
-            Some(Command::Weekly(args)) => args.shared.since,
-            Some(Command::Monthly(shared)) => shared.since,
-            _ => panic!("unexpected command"),
-        }
+    fn resolved_since(command: Command) -> Option<ccusage_cli::DateBound> {
+        resolved_bounds(command).0
+    }
+
+    fn resolved_bounds(
+        command: Command,
+    ) -> (
+        Option<ccusage_cli::DateBound>,
+        Option<ccusage_cli::DateBound>,
+    ) {
+        let mut command = command;
+        resolve(&mut command).unwrap();
+        let shared = command.shared().unwrap();
+        (shared.since, shared.until)
     }
 
     #[test]
     fn resolves_the_unified_daily_window_to_today() {
-        let today = format_date(utc_now(), Some("UTC")).replace('-', "");
+        let today = date_at(utc_now(), ccusage_core::cli::ReportTimezone::UTC.zone());
 
         let since = resolved_since(Command::All(agent_command(AgentReportKind::Daily, 1)));
 
-        assert_eq!(since.as_deref(), Some(today.as_str()));
+        assert_eq!(since, Some(today.into()));
     }
 
     #[test]
     fn resolves_agent_report_kinds_to_their_own_period() {
-        let weekly = resolved_since(Command::Codex(agent_command(AgentReportKind::Weekly, 1)));
-        let monthly = resolved_since(Command::Codex(agent_command(AgentReportKind::Monthly, 1)));
+        let weekly = resolved_since(Command::agent_report(
+            ccusage_cli::StandardAgent::Codex,
+            agent_command(AgentReportKind::Weekly, 1),
+        ));
+        let cline_weekly = resolved_since(Command::agent_report(
+            ccusage_cli::StandardAgent::Cline,
+            agent_command(AgentReportKind::Weekly, 1),
+        ));
+        let monthly = resolved_since(Command::agent_report(
+            ccusage_cli::StandardAgent::Codex,
+            agent_command(AgentReportKind::Monthly, 1),
+        ));
 
-        let today = format_date(utc_now(), Some("UTC"));
+        let today = date_at(utc_now(), ccusage_core::cli::ReportTimezone::UTC.zone());
         assert_eq!(
             weekly,
-            last_periods_since(PeriodUnit::Week, 1, &today, WeekDay::Monday)
+            last_periods_since(PeriodUnit::Week, periods(1), today, WeekDay::Monday)
+        );
+        assert_eq!(
+            cline_weekly,
+            last_periods_since(PeriodUnit::Week, periods(1), today, WeekDay::Monday)
         );
         assert_eq!(
             monthly,
-            last_periods_since(PeriodUnit::Month, 1, &today, WeekDay::Monday)
+            last_periods_since(PeriodUnit::Month, periods(1), today, WeekDay::Monday)
         );
     }
 
     #[test]
     fn keeps_the_claude_weekly_start_of_week() {
-        let since = resolved_since(Command::Weekly(WeeklyArgs {
+        let since = resolved_since(Command::claude_report(ClaudeReport::Weekly(WeeklyArgs {
             shared: shared_with_last(1),
             start_of_week: WeekDay::Sunday,
-        }));
+        })));
 
-        let today = format_date(utc_now(), Some("UTC"));
+        let today = date_at(utc_now(), ccusage_core::cli::ReportTimezone::UTC.zone());
         assert_eq!(
             since,
-            last_periods_since(PeriodUnit::Week, 1, &today, WeekDay::Sunday)
+            last_periods_since(PeriodUnit::Week, periods(1), today, WeekDay::Sunday)
+        );
+    }
+
+    #[test]
+    fn keeps_the_unified_weekly_start_of_week() {
+        let since = resolved_since(Command::All(AgentCommandArgs {
+            start_of_week: WeekDay::Wednesday,
+            ..agent_command(AgentReportKind::Weekly, 1)
+        }));
+
+        let today = date_at(utc_now(), ccusage_core::cli::ReportTimezone::UTC.zone());
+        assert_eq!(
+            since,
+            last_periods_since(PeriodUnit::Week, periods(1), today, WeekDay::Wednesday)
+        );
+    }
+
+    #[test]
+    fn caps_the_unified_window_at_the_end_of_the_current_period() {
+        let today = date_at(utc_now(), ccusage_core::cli::ReportTimezone::UTC.zone());
+
+        assert_eq!(
+            resolved_bounds(Command::All(agent_command(AgentReportKind::Daily, 1))),
+            (Some(today.into()), Some(today.into()))
+        );
+        for (kind, unit) in [
+            (AgentReportKind::Weekly, PeriodUnit::Week),
+            (AgentReportKind::Monthly, PeriodUnit::Month),
+        ] {
+            assert_eq!(
+                resolved_bounds(Command::All(agent_command(kind, 1))).1,
+                last_periods_until(unit, today, WeekDay::Monday)
+            );
+        }
+    }
+
+    #[test]
+    fn ends_the_window_with_the_last_day_of_its_period() {
+        let day = |date: &str, unit, start_of_week| {
+            last_periods_until(unit, IsoDate::parse(date).unwrap(), start_of_week)
+                .map(|day| day.to_string())
+        };
+
+        assert_eq!(
+            day("2026-07-29", PeriodUnit::Day, WeekDay::Monday).as_deref(),
+            Some("20260729")
+        );
+        assert_eq!(
+            day("2026-07-29", PeriodUnit::Week, WeekDay::Monday).as_deref(),
+            Some("20260802")
+        );
+        assert_eq!(
+            day("2026-07-29", PeriodUnit::Week, WeekDay::Sunday).as_deref(),
+            Some("20260801")
+        );
+        assert_eq!(
+            day("2026-02-10", PeriodUnit::Month, WeekDay::Monday).as_deref(),
+            Some("20260228")
+        );
+        assert_eq!(
+            day("2026-12-31", PeriodUnit::Month, WeekDay::Monday).as_deref(),
+            Some("20261231")
+        );
+        assert_eq!(
+            day("9999-12-15", PeriodUnit::Month, WeekDay::Monday).as_deref(),
+            Some("99991231")
         );
     }
 
     #[test]
     fn leaves_commands_without_last_untouched() {
-        let mut cli = Cli {
-            command: Some(Command::Monthly(SharedArgs {
-                order: SortOrder::Desc,
-                ..SharedArgs::with_defaults()
-            })),
-            shared: SharedArgs::with_defaults(),
-        };
-
-        resolve(&mut cli).unwrap();
-
-        let Some(Command::Monthly(shared)) = cli.command else {
-            panic!("expected monthly command");
-        };
-        assert!(shared.since.is_none());
+        let mut command = Command::claude_report(ClaudeReport::Monthly(SharedArgs {
+            order: Some(SortOrder::Desc),
+            ..SharedArgs::with_defaults()
+        }));
+        resolve(&mut command).unwrap();
+        assert!(command.shared().unwrap().since.is_none());
     }
 
     #[test]
     fn resolves_the_bare_command_as_a_daily_window() {
-        let mut cli = Cli {
-            command: None,
-            shared: shared_with_last(2),
-        };
-
-        resolve(&mut cli).unwrap();
-
-        let today = format_date(utc_now(), Some("UTC"));
+        let mut command = ccusage_cli_parser::parse_from_with_config(
+            ["ccusage", "--last", "2", "--timezone", "UTC"]
+                .into_iter()
+                .map(std::ffi::OsString::from),
+            &ccusage_cli::NoConfig,
+        )
+        .unwrap();
+        resolve(&mut command).unwrap();
+        let today = date_at(utc_now(), ccusage_core::cli::ReportTimezone::UTC.zone());
         assert_eq!(
-            cli.shared.since,
-            last_periods_since(PeriodUnit::Day, 2, &today, WeekDay::Monday)
+            command.shared().unwrap().since,
+            last_periods_since(PeriodUnit::Day, periods(2), today, WeekDay::Monday)
+        );
+    }
+
+    #[test]
+    fn covers_only_today_for_a_single_day() {
+        assert_eq!(
+            last_periods_since(
+                PeriodUnit::Day,
+                periods(1),
+                IsoDate::parse("2026-07-27").unwrap(),
+                WeekDay::Monday
+            )
+            .map(|day| day.to_string())
+            .as_deref(),
+            Some("20260727")
+        );
+    }
+
+    #[test]
+    fn counts_days_inclusively_across_a_month_boundary() {
+        assert_eq!(
+            last_periods_since(
+                PeriodUnit::Day,
+                periods(3),
+                IsoDate::parse("2026-08-01").unwrap(),
+                WeekDay::Monday
+            )
+            .map(|day| day.to_string())
+            .as_deref(),
+            Some("20260730")
+        );
+    }
+
+    #[test]
+    fn starts_a_single_week_at_the_configured_week_start() {
+        assert_eq!(
+            last_periods_since(
+                PeriodUnit::Week,
+                periods(1),
+                IsoDate::parse("2026-07-29").unwrap(),
+                WeekDay::Monday
+            )
+            .map(|day| day.to_string())
+            .as_deref(),
+            Some("20260727")
+        );
+        assert_eq!(
+            last_periods_since(
+                PeriodUnit::Week,
+                periods(1),
+                IsoDate::parse("2026-07-29").unwrap(),
+                WeekDay::Sunday
+            )
+            .map(|day| day.to_string())
+            .as_deref(),
+            Some("20260726")
+        );
+    }
+
+    #[test]
+    fn counts_whole_weeks_back_from_the_current_one() {
+        assert_eq!(
+            last_periods_since(
+                PeriodUnit::Week,
+                periods(2),
+                IsoDate::parse("2026-07-29").unwrap(),
+                WeekDay::Monday
+            )
+            .map(|day| day.to_string())
+            .as_deref(),
+            Some("20260720")
+        );
+    }
+
+    #[test]
+    fn rejects_counts_beyond_the_span_limits() {
+        let today = IsoDate::parse("2026-07-27").unwrap();
+
+        for unit in [PeriodUnit::Day, PeriodUnit::Week, PeriodUnit::Month] {
+            assert!(
+                last_periods_since(unit, periods(u32::MAX), today, WeekDay::Monday).is_none(),
+                "{unit:?} should not resolve a window beyond the representable range"
+            );
+        }
+    }
+
+    #[test]
+    fn starts_months_on_the_first_and_wraps_the_year() {
+        assert_eq!(
+            last_periods_since(
+                PeriodUnit::Month,
+                periods(1),
+                IsoDate::parse("2026-07-27").unwrap(),
+                WeekDay::Monday
+            )
+            .map(|day| day.to_string())
+            .as_deref(),
+            Some("20260701")
+        );
+        assert_eq!(
+            last_periods_since(
+                PeriodUnit::Month,
+                periods(3),
+                IsoDate::parse("2026-01-15").unwrap(),
+                WeekDay::Monday
+            )
+            .map(|day| day.to_string())
+            .as_deref(),
+            Some("20251101")
         );
     }
 }

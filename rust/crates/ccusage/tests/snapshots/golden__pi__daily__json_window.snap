@@ -1,0 +1,116 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage pi daily --offline --json --since 20251231 --until 20260101
+---
+exit: 0
+--- stdout ---
+{
+  "daily": [
+    {
+      "cacheCreationTokens": 501,
+      "cacheReadTokens": 19006,
+      "date": "2025-12-31",
+      "inputTokens": 2550,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 401,
+          "cacheReadTokens": 14006,
+          "cost": 4.00007685,
+          "inputTokens": 1850,
+          "modelName": "[pi] claude-haiku-4-5-20251001",
+          "outputTokens": 806,
+          "storedCost": 4.0
+        },
+        {
+          "cacheCreationTokens": 100,
+          "cacheReadTokens": 5000,
+          "cost": 0.02,
+          "inputTokens": 700,
+          "modelName": "[pi] claude-sonnet-4-20250514",
+          "outputTokens": 150,
+          "storedCost": 0.02
+        }
+      ],
+      "modelsUsed": [
+        "[pi] claude-sonnet-4-20250514",
+        "[pi] claude-haiku-4-5-20251001"
+      ],
+      "outputTokens": 956,
+      "totalCost": 4.020076850000001,
+      "totalTokens": 23013
+    },
+    {
+      "cacheCreationTokens": 200,
+      "cacheReadTokens": 11000,
+      "date": "2026-01-01",
+      "inputTokens": 1915,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 7000,
+          "cost": 0.03,
+          "inputTokens": 900,
+          "modelName": "[pi] claude-haiku-4-5-20251001",
+          "outputTokens": 400,
+          "storedCost": 0.03
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 1000,
+          "cost": 0.006749999999999999,
+          "inputTokens": 100,
+          "modelName": "[pi] claude-opus-4-20250514",
+          "outputTokens": 50
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 3000,
+          "cost": 0.0050999999999999995,
+          "inputTokens": 600,
+          "modelName": "[pi] claude-sonnet-4-20250514",
+          "outputTokens": 160
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 0,
+          "modelName": "[pi] gpt-5",
+          "outputTokens": 0
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 300,
+          "missingPricing": true,
+          "modelName": "[pi] pi-mystery-1",
+          "outputTokens": 70
+        }
+      ],
+      "modelsUsed": [
+        "[pi] claude-sonnet-4-20250514",
+        "[pi] gpt-5",
+        "[pi] claude-opus-4-20250514",
+        "[pi] pi-mystery-1",
+        "[pi] claude-haiku-4-5-20251001"
+      ],
+      "outputTokens": 685,
+      "totalCost": 0.04185,
+      "totalTokens": 14550
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 701,
+    "cacheReadTokens": 30006,
+    "inputTokens": 4465,
+    "outputTokens": 1641,
+    "totalCost": 4.061926850000001,
+    "totalTokens": 37563,
+    "unpricedModels": [
+      "[pi] pi-mystery-1"
+    ]
+  }
+}
+
+--- stderr ---

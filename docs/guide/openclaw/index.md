@@ -38,6 +38,9 @@ Both `OPENCLAW_DIR` and `--open-claw-path` can be one root directory or a comma-
 # Show daily OpenClaw usage
 ccusage openclaw daily
 
+# Show weekly OpenClaw usage
+ccusage openclaw weekly
+
 # Show monthly OpenClaw usage
 ccusage openclaw monthly
 
@@ -59,7 +62,7 @@ ccusage openclaw daily --since 2026-05-01 --until 2026-05-16
 
 ## Cost Calculation
 
-OpenClaw session messages embed a `cost.total` value per assistant message. In the default mode, ccusage uses these embedded costs directly, so reports work offline without `--offline`. With `--mode calculate`, ccusage resolves the raw model identity through the merged LiteLLM and models.dev pricing data; this includes timestamp-aware DeepSeek V4 rates when applicable.
+OpenClaw session messages embed a `cost.total` value per assistant message. In the default `auto` mode, ccusage uses an embedded cost when present and calculates from tokens otherwise. Use `--offline` to prevent pricing network requests. With `--mode calculate`, ccusage resolves the raw model identity through the merged LiteLLM and models.dev pricing data; this includes timestamp-aware DeepSeek V4 rates when applicable.
 
 ## Model Attribution
 
@@ -67,10 +70,10 @@ OpenClaw sessions emit `model_change` and `custom`/`model-snapshot` events that 
 
 ## Environment Variables
 
-| Variable       | Description                                                         |
-| -------------- | ------------------------------------------------------------------- |
-| `OPENCLAW_DIR` | Custom path, or comma-separated paths, to OpenClaw root directories |
-| `LOG_LEVEL`    | Adjust logging verbosity (0 silent … 5 trace)                       |
+| Variable       | Description                                                                                                   |
+| -------------- | ------------------------------------------------------------------------------------------------------------- |
+| `OPENCLAW_DIR` | Custom path, or comma-separated paths, to OpenClaw root directories                                           |
+| `LOG_LEVEL`    | `0` hides aggregated warnings, progress, and table titles ([details](/guide/environment-variables#log-level)) |
 
 ## Daily View
 
@@ -97,14 +100,37 @@ npx ccusage@latest openclaw daily
 
 ### Example Output
 
+`ccusage openclaw daily` on the fixture data:
+
 ```text
-┌────────────┬──────────────────────┬───────────┬───────────┬──────────────┬────────────┬──────────────┬──────────────┐
-│ Date       │ Models               │     Input │    Output │ Cache Create │ Cache Read │ Total Tokens │   Cost (USD) │
-├────────────┼──────────────────────┼───────────┼───────────┼──────────────┼────────────┼──────────────┼──────────────┤
-│ 2026-05-16 │ - [openclaw] gpt-5.2 │     1,860 │        95 │          500 │    109,928 │      112,383 │        $0.03 │
-├────────────┼──────────────────────┼───────────┼───────────┼──────────────┼────────────┼──────────────┼──────────────┤
-│ Total      │                      │     1,860 │        95 │          500 │    109,928 │      112,383 │        $0.03 │
-└────────────┴──────────────────────┴───────────┴───────────┴──────────────┴────────────┴──────────────┴──────────────┘
+┌────────────┬───────────────────────────┬───────────┬───────────┬───────────────┬─────────────┬───────────────┬─────────────┐
+│ Date       │ Models                    │     Input │    Output │  Cache Create │  Cache Read │  Total Tokens │  Cost (USD) │
+├────────────┼───────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2025-12-27 │ - [openclaw]              │       111 │        57 │             0 │           0 │           168 │       $0.01 │
+│            │ claude-opus-4             │           │           │               │             │               │             │
+│            │ - [openclaw] unknown      │           │           │               │             │               │             │
+├────────────┼───────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2025-12-30 │ - [openclaw]              │     2,000 │       400 │           600 │       8,000 │        11,000 │       $1.10 │
+│            │ claude-sonnet-4           │           │           │               │             │               │             │
+├────────────┼───────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2025-12-31 │ - [openclaw]              │     3,740 │     1,225 │         1,000 │      15,000 │        20,965 │       $0.37 │
+│            │ claude-haiku-4-5          │           │           │               │             │               │             │
+│            │ - [openclaw] gpt-5        │           │           │               │             │               │             │
+│            │ - [openclaw]              │           │           │               │             │               │             │
+│            │ openclaw-mystery-1        │           │           │               │             │               │             │
+├────────────┼───────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2026-01-01 │ - [openclaw]              │     2,413 │       854 │           200 │      11,500 │        14,967 │       $0.01 │
+│            │ claude-haiku-4-5          │           │           │               │             │               │             │
+│            │ - [openclaw]              │           │           │               │             │               │             │
+│            │ claude-sonnet-4           │           │           │               │             │               │             │
+│            │ - [openclaw] gpt-5        │           │           │               │             │               │             │
+├────────────┼───────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2026-01-02 │ - [openclaw]              │       860 │       340 │            50 │       6,000 │         7,600 │       $0.33 │
+│            │ openclaw-mystery-1        │           │           │               │             │               │             │
+│            │ - [openclaw] unknown      │           │           │               │             │               │             │
+├────────────┼───────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ Total      │                           │     9,124 │     2,876 │         1,850 │      40,500 │        54,700 │       $1.83 │
+└────────────┴───────────────────────────┴───────────┴───────────┴───────────────┴─────────────┴───────────────┴─────────────┘
 ```
 
 ### JSON Output
@@ -115,31 +141,64 @@ Use `--json` for automation and scripting:
 ccusage openclaw daily --json
 ```
 
-Returns structured data:
-
-<!-- eslint-skip -->
+This excerpt keeps one row; `totals` covers the complete report. `storedCost` is the part of `cost` that OpenClaw recorded itself, and `missingPricing` marks a model ccusage has no price for:
 
 ```json
 {
 	"daily": [
 		{
-			"date": "2026-05-16",
-			"inputTokens": 1860,
-			"outputTokens": 95,
-			"cacheCreationTokens": 500,
-			"cacheReadTokens": 109928,
-			"totalTokens": 112383,
-			"totalCost": 0.03,
-			"modelsUsed": ["[openclaw] gpt-5.2"]
+			"cacheCreationTokens": 1000,
+			"cacheReadTokens": 15000,
+			"date": "2025-12-31",
+			"inputTokens": 3740,
+			"modelBreakdowns": [
+				{
+					"cacheCreationTokens": 0,
+					"cacheReadTokens": 0,
+					"cost": 0.2,
+					"inputTokens": 340,
+					"missingPricing": true,
+					"modelName": "[openclaw] openclaw-mystery-1",
+					"outputTokens": 80,
+					"storedCost": 0.2
+				},
+				{
+					"cacheCreationTokens": 1000,
+					"cacheReadTokens": 10000,
+					"cost": 0.11,
+					"inputTokens": 2000,
+					"modelName": "[openclaw] claude-haiku-4-5-20251001",
+					"outputTokens": 500,
+					"storedCost": 0.11
+				},
+				{
+					"cacheCreationTokens": 0,
+					"cacheReadTokens": 5000,
+					"cost": 0.06344999999999999,
+					"inputTokens": 1400,
+					"modelName": "[openclaw] gpt-5",
+					"outputTokens": 645,
+					"storedCost": 0.06
+				}
+			],
+			"modelsUsed": [
+				"[openclaw] claude-haiku-4-5-20251001",
+				"[openclaw] gpt-5",
+				"[openclaw] openclaw-mystery-1"
+			],
+			"outputTokens": 1225,
+			"totalCost": 0.37345000000000006,
+			"totalTokens": 20965
 		}
 	],
 	"totals": {
-		"inputTokens": 1860,
-		"outputTokens": 95,
-		"cacheCreationTokens": 500,
-		"cacheReadTokens": 109928,
-		"totalTokens": 112383,
-		"totalCost": 0.03
+		"cacheCreationTokens": 1850,
+		"cacheReadTokens": 40500,
+		"inputTokens": 9124,
+		"outputTokens": 2876,
+		"totalCost": 1.8257687500000002,
+		"totalTokens": 54700,
+		"unpricedModels": ["[openclaw] openclaw-mystery-1", "[openclaw] unknown"]
 	}
 }
 ```
@@ -166,14 +225,19 @@ ccusage openclaw session --since 2026-05-09
 
 ### Example Output
 
+This excerpt from the fixture report keeps the `gamma` session and the Total row; the other sessions are omitted:
+
 ```text
-┌────────────┬──────────────────────┬───────────┬───────────┬──────────────┬────────────┬──────────────┬──────────────┐
-│ Session    │ Models               │     Input │    Output │ Cache Create │ Cache Read │ Total Tokens │   Cost (USD) │
-├────────────┼──────────────────────┼───────────┼───────────┼──────────────┼────────────┼──────────────┼──────────────┤
-│ abc        │ - [openclaw] gpt-5.2 │     1,860 │        95 │          500 │    109,928 │      112,383 │        $0.03 │
-├────────────┼──────────────────────┼───────────┼───────────┼──────────────┼────────────┼──────────────┼──────────────┤
-│ Total      │                      │     1,860 │        95 │          500 │    109,928 │      112,383 │        $0.03 │
-└────────────┴──────────────────────┴───────────┴───────────┴──────────────┴────────────┴──────────────┴──────────────┘
+┌──────────┬───────────────────────────┬───────────┬───────────┬───────────────┬─────────────┬───────────────┬─────────────┬───────────────┐
+│ Session  │ Models                    │     Input │    Output │  Cache Create │  Cache Read │  Total Tokens │  Cost (USD) │ Last Activity │
+├──────────┼───────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┼───────────────┤
+│ gamma    │ - [openclaw]              │     1,100 │       250 │           300 │       4,000 │         5,650 │       $0.51 │ 2025-12-30    │
+│          │ claude-opus-4             │           │           │               │             │               │             │               │
+│          │ - [openclaw]              │           │           │               │             │               │             │               │
+│          │ claude-sonnet-4           │           │           │               │             │               │             │               │
+├──────────┼───────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┼───────────────┤
+│ Total    │                           │     9,124 │     2,876 │         1,850 │      40,500 │        54,700 │       $1.83 │               │
+└──────────┴───────────────────────────┴───────────┴───────────┴───────────────┴─────────────┴───────────────┴─────────────┴───────────────┘
 ```
 
 ## Related

@@ -1,0 +1,147 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage grok monthly --offline --json
+---
+exit: 0
+--- stdout ---
+{
+  "monthly": [
+    {
+      "cacheCreationTokens": 150,
+      "cacheReadTokens": 2600,
+      "inputTokens": 5370,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 100,
+          "cacheReadTokens": 1900,
+          "cost": 0.21730000000000002,
+          "inputTokens": 4000,
+          "modelName": "grok-4.5-build",
+          "outputTokens": 1000,
+          "storedCost": 0.21730000000000002
+        },
+        {
+          "cacheCreationTokens": 50,
+          "cacheReadTokens": 700,
+          "cost": 0.003409,
+          "inputTokens": 1070,
+          "modelName": "grok-code-fast-1",
+          "outputTokens": 550,
+          "storedCost": 0.003
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 300,
+          "missingPricing": true,
+          "modelName": "grok-mystery-1",
+          "outputTokens": 70
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 0,
+          "modelName": "grok-4.7-build",
+          "outputTokens": 0
+        }
+      ],
+      "modelsUsed": [
+        "grok-4.5-build",
+        "grok-code-fast-1",
+        "grok-mystery-1",
+        "grok-4.7-build"
+      ],
+      "month": "2025-12",
+      "outputTokens": 1620,
+      "totalCost": 0.22070900000000002,
+      "totalTokens": 9740
+    },
+    {
+      "cacheCreationTokens": 700,
+      "cacheReadTokens": 50800,
+      "inputTokens": 202045,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 50100,
+          "cost": 0.40099,
+          "inputTokens": 200300,
+          "modelName": "grok-4.5-build",
+          "outputTokens": 1060,
+          "storedCost": 0.4
+        },
+        {
+          "cacheCreationTokens": 700,
+          "cacheReadTokens": 100,
+          "cost": 0.001,
+          "inputTokens": 0,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 300,
+          "storedCost": 0.001
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 600,
+          "cost": 0.000325,
+          "inputTokens": 0,
+          "modelName": "grok-4.3-build",
+          "outputTokens": 100
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.000235,
+          "inputTokens": 500,
+          "modelName": "grok-code-fast-1",
+          "outputTokens": 90
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 900,
+          "missingPricing": true,
+          "modelName": "grok-mystery-1",
+          "outputTokens": 210
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 345,
+          "missingPricing": true,
+          "modelName": "unknown",
+          "outputTokens": 55
+        }
+      ],
+      "modelsUsed": [
+        "grok-4.3-build",
+        "grok-4.5-build",
+        "grok-mystery-1",
+        "grok-code-fast-1",
+        "unknown",
+        "claude-sonnet-4-20250514"
+      ],
+      "month": "2026-01",
+      "outputTokens": 1815,
+      "totalCost": 0.4025500000000001,
+      "totalTokens": 255360
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 850,
+    "cacheReadTokens": 53400,
+    "inputTokens": 207415,
+    "outputTokens": 3435,
+    "totalCost": 0.6232590000000001,
+    "totalTokens": 265100,
+    "unpricedModels": [
+      "grok-mystery-1",
+      "unknown"
+    ]
+  }
+}
+
+--- stderr ---

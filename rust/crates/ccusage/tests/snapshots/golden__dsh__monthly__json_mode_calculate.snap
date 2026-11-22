@@ -1,0 +1,125 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage dsh monthly --offline --json --mode calculate
+---
+exit: 0
+--- stdout ---
+{
+  "monthly": [
+    {
+      "cacheCreationTokens": 1200,
+      "cacheReadTokens": 32000,
+      "inputTokens": 7730,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 1200,
+          "cacheReadTokens": 32000,
+          "cost": 0.00330716,
+          "inputTokens": 4050,
+          "modelName": "deepseek-v4-pro",
+          "outputTokens": 1043
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0014399999999999999,
+          "inputTokens": 180,
+          "modelName": "anthropic/claude-sonnet-4.5",
+          "outputTokens": 60
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 500,
+          "missingPricing": true,
+          "modelName": "unknown",
+          "outputTokens": 81
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 3000,
+          "missingPricing": true,
+          "modelName": "dsh-mystery-1",
+          "outputTokens": 700
+        }
+      ],
+      "modelsUsed": [
+        "unknown",
+        "anthropic/claude-sonnet-4.5",
+        "deepseek-v4-pro",
+        "dsh-mystery-1"
+      ],
+      "month": "2025-12",
+      "outputTokens": 1884,
+      "totalCost": 0.004747159999999999,
+      "totalTokens": 42814
+    },
+    {
+      "cacheCreationTokens": 540,
+      "cacheReadTokens": 7000,
+      "inputTokens": 23090,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 240,
+          "cacheReadTokens": 4000,
+          "cost": 0.01065,
+          "inputTokens": 1200,
+          "modelName": "anthropic/claude-sonnet-4.5",
+          "outputTokens": 330
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 3000,
+          "cost": 0.007427999999999999,
+          "inputTokens": 20500,
+          "modelName": "deepseek-flash",
+          "outputTokens": 1050
+        },
+        {
+          "cacheCreationTokens": 300,
+          "cacheReadTokens": 0,
+          "cost": 0.0008265000000000001,
+          "inputTokens": 1300,
+          "modelName": "deepseek-v4-pro",
+          "outputTokens": 150
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 90,
+          "missingPricing": true,
+          "modelName": "unknown",
+          "outputTokens": 10
+        }
+      ],
+      "modelsUsed": [
+        "anthropic/claude-sonnet-4.5",
+        "deepseek-flash",
+        "unknown",
+        "deepseek-v4-pro"
+      ],
+      "month": "2026-01",
+      "outputTokens": 1540,
+      "totalCost": 0.018904499999999998,
+      "totalTokens": 32852
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 1740,
+    "cacheReadTokens": 39000,
+    "inputTokens": 30820,
+    "outputTokens": 3424,
+    "totalCost": 0.023651659999999998,
+    "totalTokens": 75666,
+    "unpricedModels": [
+      "dsh-mystery-1",
+      "unknown"
+    ]
+  }
+}
+
+--- stderr ---

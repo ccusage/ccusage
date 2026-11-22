@@ -1,0 +1,139 @@
+name: Binary size
+
+on:
+  workflow_dispatch:
+    inputs:
+      refs:
+        description: Git refs to compare, separated by spaces or commas. Branches, tags, and commit SHAs (full or abbreviated) are accepted. The first ref is the base every other ref is compared against; when a target cannot build it, the first ref that did becomes that target's base.
+        type: string
+        default: main
+      targets:
+        description: Release targets to build, separated by spaces or commas, from linux-x64, linux-arm64, and darwin-arm64. Empty builds all three.
+        type: string
+        default: ''
+      limit:
+        description: Optional size limit in bytes; every binary over it fails the run. Empty disables the check.
+        type: string
+        default: ''
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  plan:
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      refs: ${{ steps.plan.outputs.refs }}
+      targets: ${{ steps.plan.outputs.targets }}
+      builds: ${{ steps.plan.outputs.builds }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-nix-cache
+        with:
+          save: 'false'
+      - id: plan
+        env:
+          REFS: ${{ inputs.refs }}
+          TARGETS: ${{ inputs.targets }}
+        run: .github/scripts/binary-size.nu plan --refs "$REFS" --targets "$TARGETS"
+
+  build:
+    name: build ${{ matrix.build.ref }} / ${{ matrix.build.target }}
+    needs: plan
+    runs-on: ${{ matrix.build.os }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        build: ${{ fromJSON(needs.plan.outputs.builds) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Checkout ${{ matrix.build.ref }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ matrix.build.sha }}
+          path: ref-src
+          persist-credentials: false
+      - uses: ./.github/actions/setup-nix-cache
+        with:
+          disk-job: build-native-packages
+          cache-scope: ${{ matrix.build.cache_scope }}
+          save: 'false'
+      - name: Build and measure the release binary
+        env:
+          REF: ${{ matrix.build.ref }}
+          SHA: ${{ matrix.build.sha }}
+          TARGET: ${{ matrix.build.target }}
+          PACKAGE: ${{ matrix.build.package }}
+          FALLBACK: ${{ matrix.build.fallback }}
+          SYMBOLS: ${{ matrix.build.symbols }}
+        run: |
+          symbols=()
+          if [ "$SYMBOLS" = true ]; then
+            symbols=(--symbols)
+          fi
+          .github/scripts/binary-size.nu build \
+            --source "$GITHUB_WORKSPACE/ref-src" \
+            --ref "$REF" \
+            --sha "$SHA" \
+            --target "$TARGET" \
+            --package "$PACKAGE" \
+            --fallback "$FALLBACK" \
+            "${symbols[@]}" \
+            --out "$RUNNER_TEMP/binary-size"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: binary-size-${{ matrix.build.id }}
+          path: ${{ runner.temp }}/binary-size
+          if-no-files-found: error
+
+  compare:
+    needs: [plan, build]
+    if: ${{ !cancelled() && needs.plan.result == 'success' }}
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-nix-cache
+        with:
+          save: 'false'
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: binary-size-*
+          path: ${{ runner.temp }}/binary-size/builds
+      - name: Compare sizes
+        env:
+          REFS: ${{ needs.plan.outputs.refs }}
+          TARGETS: ${{ needs.plan.outputs.targets }}
+          LIMIT: ${{ inputs.limit }}
+        run: |
+          .github/scripts/binary-size.nu compare \
+            --dir "$RUNNER_TEMP/binary-size/builds" \
+            --refs "$REFS" \
+            --targets "$TARGETS" \
+            --limit "$LIMIT" \
+            --out "$RUNNER_TEMP/binary-size"
+          cat "$RUNNER_TEMP/binary-size/report.md" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: binary-size-report
+          path: ${{ runner.temp }}/binary-size
+          if-no-files-found: error
+      - name: Check size limit
+        run: .github/scripts/binary-size.nu check "$RUNNER_TEMP/binary-size/report.json"

@@ -1,0 +1,11 @@
+[package]
+name = "ccusage-environment"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[features]
+test-environment = []
+
+[lints]
+workspace = true

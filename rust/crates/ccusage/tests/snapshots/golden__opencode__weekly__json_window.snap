@@ -1,0 +1,103 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage opencode weekly --offline --json --since 20251231 --until 20260101
+---
+exit: 0
+--- stdout ---
+{
+  "totals": {
+    "cacheCreationTokens": 200,
+    "cacheReadTokens": 12500,
+    "inputTokens": 5131,
+    "outputTokens": 1193,
+    "totalCost": 2.0546100000000003,
+    "totalTokens": 19074,
+    "unpricedModels": [
+      "opencode-mystery-1",
+      "opus"
+    ]
+  },
+  "weekly": [
+    {
+      "cacheCreationTokens": 200,
+      "cacheReadTokens": 12500,
+      "inputTokens": 5131,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 7000,
+          "cost": 2.0,
+          "inputTokens": 900,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 400,
+          "storedCost": 2.0
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.041084999999999997,
+          "inputTokens": 1394,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 269
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 3000,
+          "cost": 0.00936,
+          "inputTokens": 1480,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 268
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 2500,
+          "cost": 0.003525,
+          "inputTokens": 850,
+          "modelName": "gpt-5",
+          "outputTokens": 165
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0006399999999999999,
+          "inputTokens": 200,
+          "modelName": "gemini-3-pro-high",
+          "outputTokens": 20
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 300,
+          "missingPricing": true,
+          "modelName": "opencode-mystery-1",
+          "outputTokens": 70
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 7,
+          "missingPricing": true,
+          "modelName": "opus",
+          "outputTokens": 1
+        }
+      ],
+      "modelsUsed": [
+        "claude-opus-4-20250514",
+        "gpt-5",
+        "claude-haiku-4-5-20251001",
+        "claude-sonnet-4-20250514",
+        "opencode-mystery-1",
+        "opus",
+        "gemini-3-pro-high"
+      ],
+      "outputTokens": 1193,
+      "totalCost": 2.0546100000000003,
+      "totalTokens": 19074,
+      "week": "2025-12-29"
+    }
+  ]
+}
+
+--- stderr ---

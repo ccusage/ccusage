@@ -1,0 +1,32 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: "COLUMNS=200 ccusage codex session --offline --json --id codex://threads/44444444-4444-4444-8444-444444444444"
+---
+exit: 0
+--- stdout ---
+{
+  "cacheCreationTokens": 0,
+  "cacheReadTokens": 100,
+  "directory": "2026/01/01",
+  "inputTokens": 400,
+  "lastActivity": "2026-01-01T12:05:00.500Z",
+  "models": {
+    "gpt-5-codex": {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 100,
+      "inputTokens": 400,
+      "isFallback": false,
+      "outputTokens": 50,
+      "reasoningOutputTokens": 0,
+      "totalTokens": 550
+    }
+  },
+  "outputTokens": 50,
+  "reasoningOutputTokens": 0,
+  "sessionFile": "rollout-2026-01-01T12-05-00-44444444-4444-4444-8444-444444444444",
+  "sessionId": "2026/01/01/rollout-2026-01-01T12-05-00-44444444-4444-4444-8444-444444444444",
+  "totalCost": 0.0010125,
+  "totalTokens": 550
+}
+
+--- stderr ---

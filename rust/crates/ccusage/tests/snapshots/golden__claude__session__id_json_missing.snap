@@ -1,0 +1,9 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage claude session --offline --json --id sess-missing
+---
+exit: 0
+--- stdout ---
+null
+
+--- stderr ---

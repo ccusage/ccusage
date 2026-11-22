@@ -1,0 +1,202 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage droid session --offline --json --since 20251231 --until 20260101
+---
+exit: 0
+--- stdout ---
+{
+  "sessions": [
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 40,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 40,
+          "missingPricing": true,
+          "modelName": "grok-unknown",
+          "outputTokens": 10
+        }
+      ],
+      "modelsUsed": [
+        "grok-unknown"
+      ],
+      "outputTokens": 10,
+      "sessionId": "bracket-0008",
+      "totalCost": 0.0,
+      "totalTokens": 80
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 0,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 0,
+          "modelName": "gpt-unknown",
+          "outputTokens": 0
+        }
+      ],
+      "modelsUsed": [
+        "gpt-unknown"
+      ],
+      "outputTokens": 0,
+      "sessionId": "default-0007",
+      "totalCost": 0.0,
+      "totalTokens": 345
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 2500,
+      "inputTokens": 700,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 2500,
+          "cost": 0.0026875,
+          "inputTokens": 700,
+          "modelName": "gpt-5",
+          "outputTokens": 150
+        }
+      ],
+      "modelsUsed": [
+        "gpt-5"
+      ],
+      "outputTokens": 150,
+      "sessionId": "gpt-0003",
+      "totalCost": 0.0026875,
+      "totalTokens": 3350
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 70,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00023750000000000003,
+          "inputTokens": 70,
+          "modelName": "gpt-5",
+          "outputTokens": 15
+        }
+      ],
+      "modelsUsed": [
+        "gpt-5"
+      ],
+      "outputTokens": 15,
+      "sessionId": "gpt-0003-fork",
+      "totalCost": 0.00023750000000000003,
+      "totalTokens": 85
+    },
+    {
+      "cacheCreationTokens": 20,
+      "cacheReadTokens": 500,
+      "inputTokens": 300,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 20,
+          "cacheReadTokens": 500,
+          "cost": 0.0,
+          "inputTokens": 300,
+          "missingPricing": true,
+          "modelName": "droid-mystery-1",
+          "outputTokens": 70
+        }
+      ],
+      "modelsUsed": [
+        "droid-mystery-1"
+      ],
+      "outputTokens": 70,
+      "sessionId": "mystery-0004",
+      "totalCost": 0.0,
+      "totalTokens": 900
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 400,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0014000000000000002,
+          "inputTokens": 400,
+          "modelName": "gemini-2-5-pro",
+          "outputTokens": 90
+        }
+      ],
+      "modelsUsed": [
+        "gemini-2-5-pro"
+      ],
+      "outputTokens": 90,
+      "sessionId": "offset-0005",
+      "totalCost": 0.0014000000000000002,
+      "totalTokens": 490
+    },
+    {
+      "cacheCreationTokens": 200,
+      "cacheReadTokens": 7000,
+      "inputTokens": 900,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 7000,
+          "cost": 0.00385,
+          "inputTokens": 900,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 400
+        }
+      ],
+      "modelsUsed": [
+        "claude-haiku-4-5-20251001"
+      ],
+      "outputTokens": 400,
+      "sessionId": "sidecar-0006",
+      "totalCost": 0.00385,
+      "totalTokens": 8500
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 600,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0033,
+          "inputTokens": 600,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 100
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514"
+      ],
+      "outputTokens": 100,
+      "sessionId": "tie-0009",
+      "totalCost": 0.0033,
+      "totalTokens": 700
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 220,
+    "cacheReadTokens": 10000,
+    "inputTokens": 3010,
+    "outputTokens": 835,
+    "totalCost": 0.011474999999999999,
+    "totalTokens": 14450,
+    "unpricedModels": [
+      "droid-mystery-1",
+      "grok-unknown"
+    ]
+  }
+}
+
+--- stderr ---

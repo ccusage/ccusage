@@ -1,0 +1,148 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage claude session --offline --json --since 20251231 --until 20260101
+---
+exit: 0
+--- stdout ---
+{
+  "sessions": [
+    {
+      "cacheCreationTokens": 200,
+      "cacheReadTokens": 10000,
+      "firstActivity": "2025-12-31T23:50:00.000Z",
+      "inputTokens": 1553,
+      "lastActivity": "2026-01-01T02:00:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 3000,
+          "cost": 0.500969,
+          "inputTokens": 653,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 154,
+          "storedCost": 0.5
+        },
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 7000,
+          "cost": 0.05775,
+          "inputTokens": 900,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 400
+        }
+      ],
+      "modelsUsed": [
+        "claude-opus-4-20250514",
+        "claude-sonnet-4-20250514"
+      ],
+      "outputTokens": 554,
+      "projectPath": "-Users-dev-beta",
+      "sessionId": "sess-beta-1",
+      "totalCost": 0.558719,
+      "totalTokens": 12307
+    },
+    {
+      "cacheCreationTokens": 100,
+      "cacheReadTokens": 9450,
+      "firstActivity": "2025-12-31T09:00:02.000Z",
+      "inputTokens": 1850,
+      "lastActivity": "2026-01-01T12:30:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 100,
+          "cacheReadTokens": 8000,
+          "cost": 0.028909999999999998,
+          "inputTokens": 1220,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 580,
+          "storedCost": 0.02
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 500,
+          "cost": 0.009000000000000001,
+          "inputTokens": 250,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 60
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 150,
+          "cost": 0.007,
+          "inputTokens": 80,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 25,
+          "storedCost": 0.007
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 800,
+          "cost": 0.0,
+          "inputTokens": 300,
+          "missingPricing": true,
+          "modelName": "mystery-model-9000",
+          "outputTokens": 70
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514",
+        "claude-opus-4-20250514",
+        "mystery-model-9000",
+        "claude-haiku-4-5-20251001"
+      ],
+      "outputTokens": 735,
+      "projectPath": "-Users-dev-alpha",
+      "sessionId": "sess-alpha-1",
+      "totalCost": 0.04491,
+      "totalTokens": 12135
+    },
+    {
+      "cacheCreationTokens": 1250,
+      "cacheReadTokens": 3000,
+      "firstActivity": "2026-01-01T03:00:00.000Z",
+      "inputTokens": 2004,
+      "lastActivity": "2026-01-01T03:00:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0175,
+          "inputTokens": 2000,
+          "modelName": "claude-opus-5",
+          "outputTokens": 300
+        },
+        {
+          "cacheCreation1hTokens": 1000,
+          "cacheCreationTokens": 1250,
+          "cacheReadTokens": 3000,
+          "cost": 0.0085995,
+          "inputTokens": 4,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 50
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514",
+        "claude-opus-5"
+      ],
+      "outputTokens": 350,
+      "projectPath": "-Users-dev-beta",
+      "sessionId": "sess-beta-2",
+      "totalCost": 0.0260995,
+      "totalTokens": 6604
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 1550,
+    "cacheReadTokens": 22450,
+    "inputTokens": 5407,
+    "outputTokens": 1639,
+    "totalCost": 0.6297285,
+    "totalTokens": 31046,
+    "unpricedModels": [
+      "mystery-model-9000"
+    ]
+  }
+}
+
+--- stderr ---

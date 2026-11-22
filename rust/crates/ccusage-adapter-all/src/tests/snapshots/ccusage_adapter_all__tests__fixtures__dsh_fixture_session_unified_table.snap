@@ -1,0 +1,62 @@
+---
+source: crates/ccusage-adapter-all/src/tests/fixtures.rs
+expression: "serde_json::to_string_pretty(&table_snapshot(&result.rows, kind,\n&result.detected_agents,)).unwrap()"
+---
+{
+  "headers": [
+    "Session",
+    "Agent",
+    "Models",
+    "Input",
+    "Output",
+    "Cache Create",
+    "Cache Read",
+    "Total Tokens",
+    "Cost (USD)"
+  ],
+  "rows": [
+    {
+      "cells": [
+        "dsh-fork",
+        "DeepSeek Harness",
+        "- sonnet-4-5",
+        "3,200",
+        "550",
+        "2,000",
+        "5,000",
+        "10,750",
+        "$0.03"
+      ],
+      "kind": "row"
+    },
+    {
+      "cells": [
+        "dsh-parent",
+        "DeepSeek Harness",
+        "- deepseek-flash\n- deepseek-v4-pro",
+        "20,650",
+        "1,220",
+        "600",
+        "17,000",
+        "39,470",
+        "$0.01"
+      ],
+      "kind": "row"
+    },
+    {
+      "cells": [
+        "Total",
+        "",
+        "",
+        "23,850",
+        "1,770",
+        "2,600",
+        "22,000",
+        "50,220",
+        "$0.03"
+      ],
+      "kind": "total"
+    }
+  ],
+  "title": "Coding (Agent) CLI Usage Report - Session\nDetected: DeepSeek Harness"
+}

@@ -1,0 +1,295 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=120 ccusage monthly --offline --compact
+---
+exit: 0
+--- stdout ---
+┌──────────┬──────────────────────┬───────────────────────────┬────────────┬───────────┬─────────────┐
+│ Month    │ Agent                │ Models                    │      Input │    Output │  Cost (USD) │
+├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│ 1970-01  │ All                  │                           │         11 │         7 │       $0.00 │
+├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│          │ - ZCode              │ - gpt-5                   │         11 │         7 │       $0.00 │
+├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│ 2025-12  │ All                  │                           │    129,543 │    30,114 │      $21.17 │
+├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│          │ - Amp                │ - gpt-5                   │      3,400 │       950 │       $0.02 │
+│          │                      │ - haiku-4-5               │            │           │             │
+│          │                      │ - sonnet-4                │            │           │             │
+├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│          │ - Antigravity        │ - antigravity-model-77    │      3,075 │       466 │       $0.01 │
+│          │                      │ - gemini-3-pro            │            │           │             │
+│          │                      │ - gemini-3.5-flash-high   │            │           │             │
+│          │                      │ - gpt-5                   │            │           │             │
+│          │                      │ - haiku-4-5               │            │           │             │
+│          │                      │ - sonnet-4                │            │           │             │
+├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│          │ - Claude             │ - haiku-4-5               │      8,550 │     2,495 │       $0.36 │
+│          │                      │ - opus-4                  │            │           │             │
+│          │                      │ - sonnet-4                │            │           │             │
+├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│          │ - Cline              │ - gpt-5                   │      6,500 │     2,050 │       $2.57 │
+│          │                      │ - opus-4                  │            │           │             │
+│          │                      │ - sonnet-4                │            │           │             │
+├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│          │ - Codebuff           │ - gpt-5                   │      2,711 │       807 │       $0.02 │
+│          │                      │ - haiku-4-5               │            │           │             │
+│          │                      │ - opus-4                  │            │           │             │
+│          │                      │ - sonnet-4                │            │           │             │
+├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│          │ - Codex              │ - gpt-5                   │     25,496 │     3,375 │       $0.10 │
+│          │                      │ - gpt-5-codex             │            │           │             │
+│          │                      │ - gpt-5.2-codex           │            │           │             │
+│          │                      │ - gpt-5.5                 │            │           │             │
+│          │                      │ - gpt-6.1-sol             │            │           │             │
+├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│          │ - GitHub Copilot CLI │ - copilot-mystery-1       │      7,270 │     1,825 │       $1.00 │
+│          │                      │ - gpt-5                   │            │           │             │
+│          │                      │ - haiku-4-5               │            │           │             │
+│          │                      │ - opus-4                  │            │           │             │
+│          │                      │ - sonnet-4                │            │           │             │
+│          │                      │ - unknown                 │            │           │             │
+├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│          │ - Droid              │ - droid-mystery-1         │      2,570 │       575 │       $0.05 │
+│          │                      │ - gemini-2-5-pro          │            │           │             │
+│          │                      │ - gpt-5                   │            │           │             │
+│          │                      │ - opus-4                  │            │           │             │
+│          │                      │ - sonnet-4                │            │           │             │
+├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│          │ - DeepSeek Harness   │ - deepseek-v4-pro         │      7,730 │     1,884 │       $0.00 │
+│          │                      │ - dsh-mystery-1           │            │           │             │
+│          │                      │ - sonnet-4.5              │            │           │             │
+│          │                      │ - unknown                 │            │           │             │
+├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│          │ - Gemini CLI         │ - gemini-2.5-flash        │      4,827 │     1,165 │       $0.02 │
+│          │                      │ - gemini-2.5-pro          │            │           │             │
+│          │                      │ - gemini-3-flash-preview  │            │           │             │
+│          │                      │ - gemini-mystery-1        │            │           │             │
+│          │                      │ - sonnet-4                │            │           │             │
+│          │                      │ - unknown                 │            │           │             │
+├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│          │ - Goose              │ - gpt-5                   │      4,000 │       950 │       $0.06 │
+│          │                      │ - haiku-4-5               │            │           │             │
+│          │                      │ - opus-4                  │            │           │             │
+│          │                      │ - sonnet-4                │            │           │             │
+├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│          │ - Grok               │ - grok-4.5-build          │      5,370 │     1,620 │       $0.22 │
+│          │                      │ - grok-4.7-build          │            │           │             │
+│          │                      │ - grok-code-fast-1        │            │           │             │
+│          │                      │ - grok-mystery-1          │            │           │             │
+├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│          │ - Hermes             │ - gpt-5                   │      4,350 │     1,120 │       $1.26 │
+│          │                      │ - haiku-4-5               │            │           │             │
+│          │                      │ - sonnet-4                │            │           │             │
+├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│          │ - Kilo               │ - gpt-5                   │      2,993 │       867 │       $2.54 │
+│          │                      │ - haiku-4-5               │            │           │             │
+│          │                      │ - sonnet-4                │            │           │             │
+├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│          │ - Kimi               │ - kimi-for-coding         │     11,861 │     2,929 │       $0.05 │
+│          │                      │ - kimi-k2                 │            │           │             │
+│          │                      │ - sonnet-4                │            │           │             │
+├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│          │ - OpenClaw           │ - [openclaw]              │      5,851 │     1,337 │       $1.48 │
+│          │                      │ claude-haiku-4-5          │            │           │             │
+│          │                      │ - [openclaw]              │            │           │             │
+│          │                      │ claude-opus-4             │            │           │             │
+│          │                      │ - [openclaw]              │            │           │             │
+│          │                      │ claude-sonnet-4           │            │           │             │
+│          │                      │ - [openclaw] gpt-5        │            │           │             │
+│          │                      │ - [openclaw]              │            │           │             │
+│          │                      │ openclaw-mystery-1        │            │           │             │
+│          │                      │ - [openclaw] unknown      │            │           │             │
+├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│          │ - OpenCode           │ - gpt-5                   │      4,637 │     1,179 │       $2.79 │
+│          │                      │ - haiku-4-5               │            │           │             │
+│          │                      │ - opus-4                  │            │           │             │
+│          │                      │ - sonnet-4                │            │           │             │
+├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│          │ - pi-agent           │ - [pi] claude-haiku-4-5   │     10,032 │     1,948 │       $8.57 │
+│          │                      │ - [pi] claude-opus-4      │            │           │             │
+│          │                      │ - [pi] claude-sonnet-4    │            │           │             │
+│          │                      │ - [pi] gpt-5              │            │           │             │
+│          │                      │ - [pi] pi-mystery-1       │            │           │             │
+│          │                      │ - [pi] pi-mystery-2       │            │           │             │
+├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│          │ - Qwen               │ - qwen-2.5-72b            │      3,850 │     1,327 │       $0.02 │
+│          │                      │ - qwen-3-30b              │            │           │             │
+│          │                      │ - qwen-mystery-1          │            │           │             │
+│          │                      │ - qwen3-coder-plus        │            │           │             │
+│          │                      │ - sonnet-4                │            │           │             │
+├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│          │ - ZCode              │ - GLM-5.2                 │      4,470 │     1,245 │       $0.02 │
+│          │                      │ - GLM-5.3                 │            │           │             │
+│          │                      │ - GLM-5.3-Flash           │            │           │             │
+│          │                      │ - opus-4                  │            │           │             │
+│          │                      │ - sonnet-4                │            │           │             │
+├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│ 2026-01  │ All                  │                           │  1,131,553 │    23,771 │       $6.82 │
+├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│          │ - Amp                │ - amp-mystery-1           │      1,700 │       470 │       $0.00 │
+│          │                      │ - gpt-5                   │            │           │             │
+│          │                      │ - sonnet-4                │            │           │             │
+├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│          │ - Antigravity        │ - antigravity-mystery-1   │    254,341 │     2,214 │       $0.69 │
+│          │                      │ - gemini-2.5-pro          │            │           │             │
+│          │                      │ - gemini-3.6-flash-high   │            │           │             │
+│          │                      │ - gpt-5                   │            │           │             │
+│          │                      │ - haiku-4-5               │            │           │             │
+│          │                      │ - model_placeholder_m499  │            │           │             │
+│          │                      │ - sonnet-4                │            │           │             │
+├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│          │ - Claude             │ - mystery-model-9000      │      4,757 │     1,674 │       $0.60 │
+│          │                      │ - opus-4                  │            │           │             │
+│          │                      │ - opus-5                  │            │           │             │
+│          │                      │ - opus-5-fast             │            │           │             │
+│          │                      │ - sonnet-4                │            │           │             │
+├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│          │ - Cline              │ - cline-mystery-1         │      2,950 │       685 │       $0.33 │
+│          │                      │ - devstral-medium-latest  │            │           │             │
+│          │                      │ - gpt-5                   │            │           │             │
+│          │                      │ - haiku-4-5               │            │           │             │
+│          │                      │ - sonnet-4                │            │           │             │
+├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│          │ - Codebuff           │ - codebuff-mystery-1      │      2,940 │       760 │       $0.01 │
+│          │                      │ - codebuff-unknown        │            │           │             │
+│          │                      │ - gpt-5                   │            │           │             │
+│          │                      │ - grok-4                  │            │           │             │
+│          │                      │ - openai/gpt-5            │            │           │             │
+│          │                      │ - sonnet-4                │            │           │             │
+├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│          │ - Codex              │ - codex-mystery-1         │    105,850 │     2,523 │       $0.59 │
+│          │                      │ - gpt-5                   │            │           │             │
+│          │                      │ - gpt-5-codex             │            │           │             │
+│          │                      │ - gpt-5-mini              │            │           │             │
+│          │                      │ - gpt-5.5                 │            │           │             │
+├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│          │ - GitHub Copilot CLI │ - copilot-mystery-1       │      3,820 │       486 │       $0.40 │
+│          │                      │ - gpt-5                   │            │           │             │
+│          │                      │ - haiku-4-5               │            │           │             │
+│          │                      │ - opus-4                  │            │           │             │
+│          │                      │ - sonnet-4                │            │           │             │
+│          │                      │ - unknown                 │            │           │             │
+├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│          │ - Droid              │ - gpt-unknown             │      2,840 │       930 │       $0.02 │
+│          │                      │ - grok-unknown            │            │           │             │
+│          │                      │ - haiku-4-5               │            │           │             │
+│          │                      │ - sonnet-4                │            │           │             │
+├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│          │ - DeepSeek Harness   │ - deepseek-flash          │     23,090 │     1,540 │       $0.02 │
+│          │                      │ - deepseek-v4-pro         │            │           │             │
+│          │                      │ - sonnet-4.5              │            │           │             │
+│          │                      │ - unknown                 │            │           │             │
+├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│          │ - Gemini CLI         │ - gemini-2.5-flash        │    301,672 │     1,350 │       $0.81 │
+│          │                      │ - gemini-2.5-pro          │            │           │             │
+│          │                      │ - gemini-3-flash-preview  │            │           │             │
+│          │                      │ - gemini-mystery-1        │            │           │             │
+│          │                      │ - sonnet-4                │            │           │             │
+├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│          │ - Goose              │ - goose-mystery-1         │      2,500 │       870 │       $0.01 │
+│          │                      │ - gpt-5                   │            │           │             │
+│          │                      │ - haiku-4-5               │            │           │             │
+│          │                      │ - qwen/qwen3-coder        │            │           │             │
+│          │                      │ - sonnet-4                │            │           │             │
+├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│          │ - Grok               │ - grok-4.3-build          │    202,045 │     1,815 │       $0.40 │
+│          │                      │ - grok-4.5-build          │            │           │             │
+│          │                      │ - grok-code-fast-1        │            │           │             │
+│          │                      │ - grok-mystery-1          │            │           │             │
+│          │                      │ - sonnet-4                │            │           │             │
+│          │                      │ - unknown                 │            │           │             │
+├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│          │ - Hermes             │ - deepseek-v4-flash       │      2,320 │       600 │       $0.33 │
+│          │                      │ - gpt-5                   │            │           │             │
+│          │                      │ - hermes-mystery-1        │            │           │             │
+│          │                      │ - openai/gpt-5            │            │           │             │
+│          │                      │ - opus-4                  │            │           │             │
+├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│          │ - Kilo               │ - gpt-5                   │      2,370 │       607 │       $1.46 │
+│          │                      │ - kilo-mystery-1          │            │           │             │
+│          │                      │ - opus-4                  │            │           │             │
+│          │                      │ - sonnet-4                │            │           │             │
+├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│          │ - Kimi               │ - gpt-5                   │      1,900 │       565 │       $0.00 │
+│          │                      │ - kimi-for-coding         │            │           │             │
+│          │                      │ - kimi-k2                 │            │           │             │
+│          │                      │ - kimi-mystery-1          │            │           │             │
+├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│          │ - OpenClaw           │ - [openclaw]              │      3,273 │     1,194 │       $0.34 │
+│          │                      │ claude-haiku-4-5          │            │           │             │
+│          │                      │ - [openclaw]              │            │           │             │
+│          │                      │ claude-sonnet-4           │            │           │             │
+│          │                      │ - [openclaw] gpt-5        │            │           │             │
+│          │                      │ - [openclaw]              │            │           │             │
+│          │                      │ openclaw-mystery-1        │            │           │             │
+│          │                      │ - [openclaw] unknown      │            │           │             │
+├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│          │ - OpenCode           │ - gemini-3-pro-high       │      2,549 │       407 │       $0.01 │
+│          │                      │ - gpt-5                   │            │           │             │
+│          │                      │ - haiku-4.5               │            │           │             │
+│          │                      │ - k2p6                    │            │           │             │
+│          │                      │ - opencode-mystery-1      │            │           │             │
+│          │                      │ - opus                    │            │           │             │
+│          │                      │ - opus-4                  │            │           │             │
+│          │                      │ - sonnet-4                │            │           │             │
+├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│          │ - pi-agent           │ - [pi] claude-haiku-4-5   │      5,535 │     1,648 │       $0.55 │
+│          │                      │ - [pi] claude-opus-4      │            │           │             │
+│          │                      │ - [pi] claude-sonnet-4    │            │           │             │
+│          │                      │ - [pi] gpt-5              │            │           │             │
+│          │                      │ - [pi] pi-mystery-1       │            │           │             │
+├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│          │ - Qwen               │ - qwen3-coder-plus        │    200,751 │     2,273 │       $0.23 │
+│          │                      │ - sonnet-4                │            │           │             │
+│          │                      │ - unknown                 │            │           │             │
+├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│          │ - ZCode              │ - GLM-5.3                 │      4,350 │     1,160 │       $0.01 │
+│          │                      │ - GLM-5.3-Flash           │            │           │             │
+│          │                      │ - glm-5.3                 │            │           │             │
+│          │                      │ - gpt-5                   │            │           │             │
+│          │                      │ - haiku-4-5               │            │           │             │
+│          │                      │ - opus-4                  │            │           │             │
+│          │                      │ - sonnet-4                │            │           │             │
+│          │                      │ - zcode-mystery-1         │            │           │             │
+├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│ 2026-04  │ All                  │                           │      1,000 │       500 │       $0.00 │
+├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│          │ - Kimi               │ - kimi-for-coding         │      1,000 │       500 │       $0.00 │
+├──────────┼──────────────────────┼───────────────────────────┼────────────┼───────────┼─────────────┤
+│ Total    │                      │                           │  1,262,107 │    54,392 │      $27.99 │
+└──────────┴──────────────────────┴───────────────────────────┴────────────┴───────────┴─────────────┘
+
+--- stderr ---
+WARN  Missing embedded pricing for GLM-5.3; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for [openclaw] openclaw-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for [openclaw] unknown; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for [pi] pi-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for [pi] pi-mystery-2; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for amp-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for antigravity-model-77; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for antigravity-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for claude-sonnet-4-20250514; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for cline-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for codebuff-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for codex-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for copilot-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for droid-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for dsh-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for gemini-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for goose-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for grok-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for grok-unknown; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for hermes-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for kilo-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for kimi-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for model_placeholder_m499; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for mystery-model-9000; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for opencode-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for opus; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for qwen-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for unknown; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for zcode-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+
+Running in Compact Mode
+Expand terminal width to see cache metrics and total tokens

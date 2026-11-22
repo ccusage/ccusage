@@ -1,0 +1,16 @@
+// @ts-check
+// biome-ignore lint/suspicious/noExplicitAny: The SDK payload is dynamic.
+type Input = any;
+
+// @ts-expect-error 2026-11-19: The SDK definitions lack the wire value.
+const value: Input = 42;
+// @ts-expect-error: Missing code.
+const another: string = 42;
+// @ts-expect-error 2026-02-29: Invalid date.
+const other: string = 42;
+// NOTE(2026-11-19, Codex CLI 0.130.0, #12): Rollouts carry UTC. The date window needs the offset.
+const marker = `// TODO ${value}`;
+/* Plain block text. */
+// NOTE(2026-11-19): The Codex log format uses UTC. The report needs the offset.
+// @ts-expect-error Upstream types omit the field (2026-11-19).
+const final: string = 42;

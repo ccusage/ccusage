@@ -46,10 +46,11 @@ Monthly JSON
         {
           "cacheCreationTokens": 15,
           "cacheReadTokens": 10,
-          "cost": 0.001049375,
+          "cost": 0.030789999999999998,
           "inputTokens": 112,
           "modelName": "gpt-5.4",
-          "outputTokens": 48
+          "outputTokens": 48,
+          "storedCost": 0.03
         }
       ],
       "modelsUsed": [
@@ -58,7 +59,7 @@ Monthly JSON
       ],
       "month": "2026-02",
       "outputTokens": 48,
-      "totalCost": 0.08104937499999999,
+      "totalCost": 0.11079,
       "totalTokens": 185
     }
   ],
@@ -67,7 +68,7 @@ Monthly JSON
     "cacheReadTokens": 30,
     "inputTokens": 275,
     "outputTokens": 142,
-    "totalCost": 0.084411875,
+    "totalCost": 0.1141525,
     "totalTokens": 492
   }
 }
@@ -111,7 +112,7 @@ Session JSON
         {
           "cacheCreationTokens": 15,
           "cacheReadTokens": 10,
-          "cost": 0.000661875,
+          "cost": 0.0006525,
           "inputTokens": 65,
           "modelName": "gpt-5.4",
           "outputTokens": 30
@@ -123,7 +124,7 @@ Session JSON
       "outputTokens": 30,
       "projectPath": "GitHub Copilot CLI",
       "sessionId": "session-b",
-      "totalCost": 0.000661875,
+      "totalCost": 0.0006525,
       "totalTokens": 120
     },
     {
@@ -172,10 +173,11 @@ Session JSON
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.00025,
+          "cost": 0.03,
           "inputTokens": 40,
           "modelName": "gpt-5.4",
-          "outputTokens": 10
+          "outputTokens": 10,
+          "storedCost": 0.03
         }
       ],
       "modelsUsed": [
@@ -185,7 +187,7 @@ Session JSON
       "outputTokens": 10,
       "projectPath": "GitHub Copilot CLI",
       "sessionId": "session-credits",
-      "totalCost": 0.08025,
+      "totalCost": 0.11,
       "totalTokens": 50
     }
   ],
@@ -194,7 +196,7 @@ Session JSON
     "cacheReadTokens": 30,
     "inputTokens": 275,
     "outputTokens": 142,
-    "totalCost": 0.084411875,
+    "totalCost": 0.1141525,
     "totalTokens": 492
   }
 }

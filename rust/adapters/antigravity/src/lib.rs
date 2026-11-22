@@ -1,48 +1,31 @@
-use ccusage_adapter_common::filter_loaded_entries_by_date;
-use ccusage_core::*;
+use ccusage_adapter_common::source::{EntryDescriptor, EntrySource, LoadContext};
+use ccusage_core::{
+    LoadedEntry, Result, TimestampMs, TokenUsageRaw, cli, cli::AgentCommandArgs, date_at,
+    model_aliases,
+};
 
 mod loader;
 mod parser;
 mod paths;
+#[cfg(test)]
 mod report;
 
-use crate::{
-    PricingMap, Result, cli::AgentCommandArgs, print_json_or_jq, print_usage_table, sort_summaries,
-    wants_json,
-};
+pub struct Antigravity;
+pub static SOURCE: Antigravity = Antigravity;
 
-pub use loader::load_entries;
-pub(crate) use report::report_from_rows;
-pub use report::summarize_entries;
-
-/// Runs an Antigravity usage report for the requested report kind.
-pub fn run(args: AgentCommandArgs) -> Result<()> {
-    let shared = args.shared;
-    let pricing = PricingMap::load_with_overrides(
-        shared.offline,
-        crate::log_level() != Some(0),
-        shared.pricing_overrides.iter(),
-    );
-    let mut entries = load_entries(&shared, &pricing)?;
-    filter_loaded_entries_by_date(&mut entries, &shared);
-    let mut rows = summarize_entries(&entries, args.kind)?;
-    sort_summaries(&mut rows, &shared.order, |row| {
-        ccusage_core::summary_period(row)
-    });
-    if wants_json(&shared) {
-        return print_json_or_jq(
-            report_from_rows(&rows, args.kind),
-            shared.jq.as_deref(),
-            shared.no_cost,
-        );
+impl EntrySource for Antigravity {
+    fn descriptor(&self) -> EntryDescriptor {
+        EntryDescriptor {
+            session: ccusage_adapter_common::source::SessionShape::WithActivity,
+            ..EntryDescriptor::standard("antigravity", "Antigravity")
+        }
     }
-    print_usage_table(
-        "Antigravity Token Usage Report",
-        ccusage_core::first_column(args.kind),
-        &rows,
-        &shared,
-        false,
-        None,
-    )?;
-    Ok(())
+
+    fn load_entries(&self, cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
+        loader::load_entries_for_context(cx)
+    }
+}
+
+pub fn run(args: AgentCommandArgs) -> Result<()> {
+    SOURCE.run_focused(args)
 }

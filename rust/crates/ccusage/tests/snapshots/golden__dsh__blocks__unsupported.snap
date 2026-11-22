@@ -1,0 +1,11 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage dsh blocks --offline --json
+---
+exit: 2
+--- stdout ---
+
+--- stderr ---
+The "blocks" report is only available for Claude Code usage.
+Use "ccusage dsh daily" for DeepSeek Harness usage reports.
+Run 'ccusage --help' for usage.

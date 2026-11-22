@@ -1,0 +1,35 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage openclaw monthly --offline
+---
+exit: 0
+--- stdout ---
+┌──────────┬───────────────────────────┬───────────┬───────────┬───────────────┬─────────────┬───────────────┬─────────────┐
+│ Month    │ Models                    │     Input │    Output │  Cache Create │  Cache Read │  Total Tokens │  Cost (USD) │
+├──────────┼───────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2025-12  │ - [openclaw]              │     5,851 │     1,337 │         1,600 │      23,000 │        32,133 │       $1.48 │
+│          │ claude-haiku-4-5          │           │           │               │             │               │             │
+│          │ - [openclaw]              │           │           │               │             │               │             │
+│          │ claude-opus-4             │           │           │               │             │               │             │
+│          │ - [openclaw]              │           │           │               │             │               │             │
+│          │ claude-sonnet-4           │           │           │               │             │               │             │
+│          │ - [openclaw] gpt-5        │           │           │               │             │               │             │
+│          │ - [openclaw]              │           │           │               │             │               │             │
+│          │ openclaw-mystery-1        │           │           │               │             │               │             │
+│          │ - [openclaw] unknown      │           │           │               │             │               │             │
+├──────────┼───────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2026-01  │ - [openclaw]              │     3,273 │     1,194 │           250 │      17,500 │        22,567 │       $0.34 │
+│          │ claude-haiku-4-5          │           │           │               │             │               │             │
+│          │ - [openclaw]              │           │           │               │             │               │             │
+│          │ claude-sonnet-4           │           │           │               │             │               │             │
+│          │ - [openclaw] gpt-5        │           │           │               │             │               │             │
+│          │ - [openclaw]              │           │           │               │             │               │             │
+│          │ openclaw-mystery-1        │           │           │               │             │               │             │
+│          │ - [openclaw] unknown      │           │           │               │             │               │             │
+├──────────┼───────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ Total    │                           │     9,124 │     2,531 │         1,850 │      40,500 │        54,700 │       $1.82 │
+└──────────┴───────────────────────────┴───────────┴───────────┴───────────────┴─────────────┴───────────────┴─────────────┘
+
+--- stderr ---
+WARN  Missing embedded pricing for [openclaw] openclaw-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for [openclaw] unknown; cost excludes this model. Run without --offline or update ccusage after pricing is added.

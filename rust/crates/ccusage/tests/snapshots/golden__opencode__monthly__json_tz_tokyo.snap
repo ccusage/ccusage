@@ -1,0 +1,163 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage opencode monthly --offline --json --timezone Asia/Tokyo
+---
+exit: 0
+--- stdout ---
+{
+  "monthly": [
+    {
+      "cacheCreationTokens": 500,
+      "cacheReadTokens": 5000,
+      "inputTokens": 2247,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 300,
+          "cacheReadTokens": 4000,
+          "cost": 0.501185,
+          "inputTokens": 1130,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 253,
+          "storedCost": 0.5
+        },
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 1000,
+          "cost": 0.268,
+          "inputTokens": 1100,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 220,
+          "storedCost": 0.25
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00009125000000000001,
+          "inputTokens": 17,
+          "modelName": "gpt-5",
+          "outputTokens": 7
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514",
+        "claude-opus-4-20250514",
+        "gpt-5"
+      ],
+      "month": "2025-12",
+      "outputTokens": 480,
+      "totalCost": 0.76927625,
+      "totalTokens": 8227
+    },
+    {
+      "cacheCreationTokens": 200,
+      "cacheReadTokens": 12500,
+      "inputTokens": 4939,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 7000,
+          "cost": 2.0,
+          "inputTokens": 900,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 400,
+          "storedCost": 2.0
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.023084999999999998,
+          "inputTokens": 794,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 149
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 3000,
+          "cost": 0.00936,
+          "inputTokens": 1480,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 268
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 2500,
+          "cost": 0.0036774999999999998,
+          "inputTokens": 908,
+          "modelName": "gpt-5",
+          "outputTokens": 173
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0006399999999999999,
+          "inputTokens": 200,
+          "modelName": "gemini-3-pro-high",
+          "outputTokens": 20
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0003375,
+          "inputTokens": 250,
+          "modelName": "k2p6",
+          "outputTokens": 25
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00009999999999999999,
+          "inputTokens": 100,
+          "modelName": "claude-haiku-4.5",
+          "outputTokens": 0
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 300,
+          "missingPricing": true,
+          "modelName": "opencode-mystery-1",
+          "outputTokens": 70
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 7,
+          "missingPricing": true,
+          "modelName": "opus",
+          "outputTokens": 1
+        }
+      ],
+      "modelsUsed": [
+        "gpt-5",
+        "claude-opus-4-20250514",
+        "claude-haiku-4-5-20251001",
+        "claude-sonnet-4-20250514",
+        "opencode-mystery-1",
+        "opus",
+        "gemini-3-pro-high",
+        "k2p6",
+        "claude-haiku-4.5"
+      ],
+      "month": "2026-01",
+      "outputTokens": 1106,
+      "totalCost": 2.0372000000000003,
+      "totalTokens": 19040
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 700,
+    "cacheReadTokens": 17500,
+    "inputTokens": 7186,
+    "outputTokens": 1586,
+    "totalCost": 2.8064762500000002,
+    "totalTokens": 27267,
+    "unpricedModels": [
+      "opencode-mystery-1",
+      "opus"
+    ]
+  }
+}
+
+--- stderr ---

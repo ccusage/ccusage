@@ -5,34 +5,35 @@ description: Profiles ccusage performance. Use when a CLI command is slow, when 
 
 # ccusage Profile
 
-Nearly all runtime cost lives in the Rust binary. `references/rust.md` covers
-release builds, the branch-vs-main worktree setup, deterministic measurement,
-JSON parity, and reproducing the CI performance comment.
+Read [Rust profiling](references/rust.md) for release builds, ref comparisons,
+output parity, and the CI measurements.
 
-Two habits carry across every profiling session here:
+## Where to measure
 
-- Measure end-to-end on real logs before trusting a profile. The wins in this
-  repository came from timing the real CLI over real Claude data; a
-  microbenchmark answers an isolated question without predicting a CLI win.
-- Re-verify `daily`, `weekly`, `monthly`, `session`, and `blocks` JSON after
-  touching aggregation order, and record in the commit message any hotspot that
-  was measured and deliberately left alone.
+In this order:
 
-## Node Paths
+1. CI: open a PR to get the `ccusage perf` comment (it runs only on pull
+   requests from this repository, not forks), and dispatch `binary-size.yaml` or `profile-instructions.yaml`
+   with `gh workflow run ... -f refs="<base> <branch>"` for sizes and
+   instruction counts on any pushed branch.
+2. A Blacksmith testbox (`blacksmith-testbox` skill): `testbox-bench.yaml`,
+   `testbox-bench-macos.yaml`, `testbox-dev.yaml`, one box per lever or PR.
+3. Locally only for quick, focused runs.
 
-`apps/ccusage/src/cli.js` resolves and spawns the platform binary, so the
-JavaScript side is a startup-latency question rather than a throughput one — a
-profile of it covers launcher startup, not the work the binary does:
+Never queue long benchmarks or builds on one local machine. Real-log
+measurement is the one exception that stays local: run it once, at the end,
+on APFS clones, and report ratios only, because the owner's logs never leave
+their machine. A real-log ratio that disagrees with the fixture ratio means the
+fixture is missing a shape; add it to the generator.
 
-```sh
-LOG_LEVEL=0 node --cpu-prof --cpu-prof-dir /tmp/ccusage-profiles apps/ccusage/src/cli.js daily --offline --json
-```
+## Checks
 
-Nothing else here runs on `node`. The tools under `nix/tools/` are built with
-`bunCli`/`bunNodeModules` and run under Bun; scripts in `apps/ccusage/scripts/`
-carry `nix shell` shebangs that pick nushell, babashka, or bun. Time those
-scripts directly and profile with their own runtime's tooling rather than
-`NODE_OPTIONS`.
+Measure end-to-end on generated fixtures. Verify `daily`,
+`weekly`, `monthly`, `session`, and `blocks` JSON after changing aggregation
+order. Record measured hotspots left alone in the commit message.
 
-Point `--cpu-prof-dir` outside the worktree — nothing here ignores a `profiles/`
-directory.
+## Node paths
+
+Profile launcher startup with `node --cpu-prof`, using a `--cpu-prof-dir`
+outside the worktree. Run other tools with their pinned interpreter and use
+its profiler.

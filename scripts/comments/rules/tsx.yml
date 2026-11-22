@@ -1,0 +1,5 @@
+id: tsx-comment
+language: Tsx
+message: Collect Tsx comments.
+rule:
+  kind: comment

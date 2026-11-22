@@ -1,0 +1,175 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage openclaw daily --offline --json --timezone Asia/Tokyo
+---
+exit: 0
+--- stdout ---
+{
+  "daily": [
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "date": "2025-12-28",
+      "inputTokens": 111,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.01,
+          "inputTokens": 100,
+          "modelName": "[openclaw] claude-opus-4-20250514",
+          "outputTokens": 50,
+          "storedCost": 0.01
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 11,
+          "missingPricing": true,
+          "modelName": "[openclaw] unknown",
+          "outputTokens": 7
+        }
+      ],
+      "modelsUsed": [
+        "[openclaw] unknown",
+        "[openclaw] claude-opus-4-20250514"
+      ],
+      "outputTokens": 57,
+      "totalCost": 0.01,
+      "totalTokens": 168
+    },
+    {
+      "cacheCreationTokens": 600,
+      "cacheReadTokens": 8000,
+      "date": "2025-12-30",
+      "inputTokens": 2000,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 600,
+          "cacheReadTokens": 8000,
+          "cost": 1.1,
+          "inputTokens": 2000,
+          "modelName": "[openclaw] claude-sonnet-4-20250514",
+          "outputTokens": 400,
+          "storedCost": 1.1
+        }
+      ],
+      "modelsUsed": [
+        "[openclaw] claude-sonnet-4-20250514"
+      ],
+      "outputTokens": 400,
+      "totalCost": 1.1,
+      "totalTokens": 11000
+    },
+    {
+      "cacheCreationTokens": 1200,
+      "cacheReadTokens": 25000,
+      "date": "2026-01-01",
+      "inputTokens": 5653,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.2,
+          "inputTokens": 340,
+          "missingPricing": true,
+          "modelName": "[openclaw] openclaw-mystery-1",
+          "outputTokens": 80,
+          "storedCost": 0.2
+        },
+        {
+          "cacheCreationTokens": 1200,
+          "cacheReadTokens": 17000,
+          "cost": 0.11475,
+          "inputTokens": 3300,
+          "modelName": "[openclaw] claude-haiku-4-5-20251001",
+          "outputTokens": 1000,
+          "storedCost": 0.11
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 5000,
+          "cost": 0.06005625,
+          "inputTokens": 1413,
+          "modelName": "[openclaw] gpt-5",
+          "outputTokens": 304,
+          "storedCost": 0.06
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 3000,
+          "cost": 0.0042,
+          "inputTokens": 600,
+          "modelName": "[openclaw] claude-sonnet-4-20250514",
+          "outputTokens": 100
+        }
+      ],
+      "modelsUsed": [
+        "[openclaw] claude-haiku-4-5-20251001",
+        "[openclaw] gpt-5",
+        "[openclaw] openclaw-mystery-1",
+        "[openclaw] claude-sonnet-4-20250514"
+      ],
+      "outputTokens": 1484,
+      "totalCost": 0.37900625,
+      "totalTokens": 33682
+    },
+    {
+      "cacheCreationTokens": 50,
+      "cacheReadTokens": 7500,
+      "date": "2026-01-02",
+      "inputTokens": 1360,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 50,
+          "cacheReadTokens": 6000,
+          "cost": 0.33,
+          "inputTokens": 800,
+          "modelName": "[openclaw] openclaw-mystery-1",
+          "outputTokens": 300,
+          "storedCost": 0.33
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 1500,
+          "cost": 0.0033125000000000003,
+          "inputTokens": 500,
+          "modelName": "[openclaw] gpt-5",
+          "outputTokens": 250
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 60,
+          "missingPricing": true,
+          "modelName": "[openclaw] unknown",
+          "outputTokens": 40
+        }
+      ],
+      "modelsUsed": [
+        "[openclaw] gpt-5",
+        "[openclaw] unknown",
+        "[openclaw] openclaw-mystery-1"
+      ],
+      "outputTokens": 590,
+      "totalCost": 0.3333125,
+      "totalTokens": 9850
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 1850,
+    "cacheReadTokens": 40500,
+    "inputTokens": 9124,
+    "outputTokens": 2531,
+    "totalCost": 1.82231875,
+    "totalTokens": 54700,
+    "unpricedModels": [
+      "[openclaw] openclaw-mystery-1",
+      "[openclaw] unknown"
+    ]
+  }
+}
+
+--- stderr ---

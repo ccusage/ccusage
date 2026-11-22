@@ -1,0 +1,37 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage antigravity daily --offline
+---
+exit: 0
+--- stdout ---
+┌────────────┬──────────────────────────┬───────────┬───────────┬───────────────┬─────────────┬───────────────┬─────────────┐
+│ Date       │ Models                   │     Input │    Output │  Cache Create │  Cache Read │  Total Tokens │  Cost (USD) │
+├────────────┼──────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2025-12-27 │ - antigravity-model-77   │        10 │         5 │             0 │           0 │            15 │       $0.00 │
+├────────────┼──────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2025-12-30 │ - gemini-3-pro           │     1,005 │       201 │            50 │       4,500 │         5,856 │       $0.01 │
+│            │ - gpt-5                  │           │           │               │             │               │             │
+├────────────┼──────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2025-12-31 │ - gemini-3-pro           │     2,060 │       260 │             0 │       2,000 │         4,340 │       $0.01 │
+│            │ - gemini-3.5-flash-high  │           │           │               │             │               │             │
+│            │ - haiku-4-5              │           │           │               │             │               │             │
+│            │ - sonnet-4               │           │           │               │             │               │             │
+├────────────┼──────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2026-01-01 │ - antigravity-mystery-1  │   253,641 │     2,091 │           200 │     118,000 │       373,932 │       $0.68 │
+│            │ - gemini-2.5-pro         │           │           │               │             │               │             │
+│            │ - gemini-3.6-flash-high  │           │           │               │             │               │             │
+│            │ - gpt-5                  │           │           │               │             │               │             │
+│            │ - haiku-4-5              │           │           │               │             │               │             │
+│            │ - sonnet-4               │           │           │               │             │               │             │
+├────────────┼──────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2026-01-02 │ - gemini-3.6-flash-high  │       700 │       123 │           200 │       3,000 │         4,073 │       $0.01 │
+│            │ - model_placeholder_m499 │           │           │               │             │               │             │
+│            │ - sonnet-4               │           │           │               │             │               │             │
+├────────────┼──────────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ Total      │                          │   257,416 │     2,680 │           450 │     127,500 │       388,216 │       $0.70 │
+└────────────┴──────────────────────────┴───────────┴───────────┴───────────────┴─────────────┴───────────────┴─────────────┘
+
+--- stderr ---
+WARN  Missing embedded pricing for antigravity-model-77; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for antigravity-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for model_placeholder_m499; cost excludes this model. Run without --offline or update ccusage after pricing is added.

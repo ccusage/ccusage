@@ -1,46 +1,31 @@
-use ccusage_adapter_common::{filter_loaded_entries_by_date, read_files_parallel};
-use ccusage_core::*;
+use ccusage_adapter_common::source::{EntryDescriptor, EntrySource, LoadContext};
+use ccusage_core::{
+    LoadedEntry, Result, TimestampMs, TokenUsageRaw, cli, cli::AgentCommandArgs, date_at, fast,
+    model_aliases, parse_ts_timestamp, stored_cost_for_mode,
+};
 
 mod loader;
 mod parser;
 mod paths;
-mod report;
 mod sqlite;
 
-use crate::{
-    Result, cli::AgentCommandArgs, print_json_or_jq, print_usage_table, sort_summaries, wants_json,
-};
+pub struct OpenClaw;
 
-pub use loader::load_entries;
-pub(crate) use report::report_from_rows;
-pub use report::summarize_entries;
+pub static SOURCE: OpenClaw = OpenClaw;
+
+impl EntrySource for OpenClaw {
+    fn descriptor(&self) -> EntryDescriptor {
+        EntryDescriptor {
+            session: ccusage_adapter_common::source::SessionShape::WithActivity,
+            ..EntryDescriptor::standard("openclaw", "OpenClaw")
+        }
+    }
+
+    fn load_entries(&self, cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
+        loader::load_entries(cx)
+    }
+}
 
 pub fn run(args: AgentCommandArgs) -> Result<()> {
-    let pricing = crate::PricingMap::load_with_overrides(
-        args.shared.offline,
-        crate::log_level() != Some(0),
-        args.shared.pricing_overrides.iter(),
-    );
-    let mut entries = load_entries(&args.shared, args.open_claw_path.as_deref(), Some(&pricing))?;
-    filter_loaded_entries_by_date(&mut entries, &args.shared);
-    let mut rows = summarize_entries(&entries, args.kind)?;
-    sort_summaries(&mut rows, &args.shared.order, |row| {
-        ccusage_core::summary_period(row)
-    });
-    if wants_json(&args.shared) {
-        return print_json_or_jq(
-            report_from_rows(&rows, args.kind),
-            args.shared.jq.as_deref(),
-            args.shared.no_cost,
-        );
-    }
-    print_usage_table(
-        "OpenClaw Token Usage Report",
-        ccusage_core::first_column(args.kind),
-        &rows,
-        &args.shared,
-        false,
-        None,
-    )?;
-    Ok(())
+    SOURCE.run_focused(args)
 }

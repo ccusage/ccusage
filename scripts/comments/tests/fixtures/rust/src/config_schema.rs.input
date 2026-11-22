@@ -1,0 +1,7 @@
+/// Schema description.
+struct Config {
+    /// Field description.
+    setting: bool,
+}
+/// Internal operation.
+fn helper() {}

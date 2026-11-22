@@ -15,22 +15,21 @@ https://github.com/johnthagen/min-sized-rust
 
 ## Baseline
 
-`[profile.release]` in `rust/Cargo.toml` already applies the `min-sized-rust`
-settings, including a separate `opt-level` for dependencies. Read it before adding
-anything, and change it only when a measurement argues for it.
-
-What ends up in a published platform package is the single `bin/ccusage` staged by
-the Nushell scripts in `apps/ccusage/scripts/`, so packaged size tracks the binary
-almost exactly. The `development` skill covers that packaging seam.
+Review existing `[profile.release]` settings in `rust/Cargo.toml` before
+changing the profile. Measure `bin/ccusage` for platform package size.
 
 ## Investigation
 
-Measure before editing code or dependencies:
+Measure before editing code or dependencies, with the shipped artifacts on
+CI rather than a local build:
 
 ```sh
-direnv exec . cargo build --manifest-path rust/Cargo.toml --release --bin ccusage
-ls -lh rust/target/release/ccusage
+gh workflow run binary-size.yaml --repo ccusage/ccusage -f refs='main <branch>'
 ```
+
+It builds pushed refs only (push the branch first) for every target in parallel and reports bytes, sections and
+symbol growth. A local `cargo build --release` is only for a
+quick check of one change.
 
 When the release profile does not explain a regression, look at feature flags
 (`cargo tree -e features -p ccusage`) and large symbols (`cargo bloat --release
@@ -51,6 +50,6 @@ binary packers such as UPX, and `prefer-dynamic` linking.
 
 ## Validation
 
-For release-profile or packaging changes, rebuild the native CLI, compare against
-the earlier measurement, and record the command and result in the PR body or review
-reply. Repo-wide format and test recipes are in the `development` skill.
+For release-profile or packaging changes, re-run `binary-size.yaml` with `main`
+and the branch, and record the run link and the size table in the PR body or
+review reply. Repo-wide format and test recipes are in the `development` skill.

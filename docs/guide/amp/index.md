@@ -41,6 +41,7 @@ AMP_DATA_DIR="$HOME/.local/share/amp,/backup/amp" ccusage amp session
 | Focused view          | Description               | See also                                |
 | --------------------- | ------------------------- | --------------------------------------- |
 | `ccusage amp daily`   | Aggregate usage by date   | [Daily Usage](/guide/daily-reports)     |
+| `ccusage amp weekly`  | Aggregate usage by week   | [Weekly Usage](/guide/weekly-reports)   |
 | `ccusage amp monthly` | Aggregate usage by month  | [Monthly Usage](/guide/monthly-reports) |
 | `ccusage amp session` | Group usage by Amp thread | [Session Usage](/guide/session-reports) |
 
@@ -55,10 +56,10 @@ These views support `--json` for structured output, `--compact` for narrow termi
 
 ## Environment Variables
 
-| Variable       | Description                                                                           |
-| -------------- | ------------------------------------------------------------------------------------- |
-| `AMP_DATA_DIR` | Override the root directory, or comma-separated root directories, containing Amp data |
-| `LOG_LEVEL`    | Adjust verbosity (0 silent ... 5 trace)                                               |
+| Variable       | Description                                                                                                   |
+| -------------- | ------------------------------------------------------------------------------------------------------------- |
+| `AMP_DATA_DIR` | Override the root directory, or comma-separated root directories, containing Amp data                         |
+| `LOG_LEVEL`    | `0` hides aggregated warnings, progress, and table titles ([details](/guide/environment-variables#log-level)) |
 
 ## Troubleshooting
 

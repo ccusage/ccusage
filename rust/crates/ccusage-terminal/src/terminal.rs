@@ -1,9 +1,12 @@
-use std::env;
+use ccusage_environment::Environment;
 
 pub(crate) const DEFAULT_TERMINAL_WIDTH: usize = 120;
 
 pub fn terminal_width() -> usize {
-    select_terminal_width(env::var("COLUMNS").ok().as_deref(), terminal_size_width())
+    select_terminal_width(
+        Environment::current().var("COLUMNS").ok().as_deref(),
+        terminal_size_width(),
+    )
 }
 
 fn terminal_size_width() -> Option<usize> {

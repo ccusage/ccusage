@@ -60,7 +60,7 @@ Daily JSON
         {
           "cacheCreationTokens": 15,
           "cacheReadTokens": 10,
-          "cost": 0.000661875,
+          "cost": 0.0006525,
           "inputTokens": 65,
           "modelName": "gpt-5.4",
           "outputTokens": 30
@@ -70,7 +70,7 @@ Daily JSON
         "gpt-5.4"
       ],
       "outputTokens": 30,
-      "totalCost": 0.000661875,
+      "totalCost": 0.0006525,
       "totalTokens": 120
     },
     {
@@ -115,10 +115,11 @@ Daily JSON
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.00025,
+          "cost": 0.03,
           "inputTokens": 40,
           "modelName": "gpt-5.4",
-          "outputTokens": 10
+          "outputTokens": 10,
+          "storedCost": 0.03
         }
       ],
       "modelsUsed": [
@@ -126,7 +127,7 @@ Daily JSON
         "unknown"
       ],
       "outputTokens": 10,
-      "totalCost": 0.06025,
+      "totalCost": 0.09,
       "totalTokens": 50
     },
     {
@@ -158,7 +159,7 @@ Daily JSON
     "cacheReadTokens": 30,
     "inputTokens": 275,
     "outputTokens": 142,
-    "totalCost": 0.084411875,
+    "totalCost": 0.1141525,
     "totalTokens": 492
   }
 }

@@ -8,9 +8,13 @@ publish.workspace = true
 ccusage-adapter-common.workspace = true
 ccusage-core.workspace = true
 jiff.workspace = true
+percent-encoding.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
-ccusage-core = { workspace = true, features = ["test-snapshots"] }
+ccusage-adapter-common = { workspace = true, features = ["testing"] }
 ccusage-test-support.workspace = true
+
+[lints]
+workspace = true

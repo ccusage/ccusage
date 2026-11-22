@@ -1,0 +1,3 @@
+#!/usr/bin/env nix
+;; NOTE(2026-11-19): The reader preserves case. Avoid rewriting identifiers.
+(println "; quoted") ; Untracked provenance.

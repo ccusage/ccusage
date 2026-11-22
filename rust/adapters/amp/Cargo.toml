@@ -12,4 +12,8 @@ serde.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
+ccusage-adapter-common = { workspace = true, features = ["testing"] }
 ccusage-test-support.workspace = true
+
+[lints]
+workspace = true

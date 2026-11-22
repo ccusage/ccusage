@@ -1,0 +1,205 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage qwen session --offline --json --mode calculate
+---
+exit: 0
+--- stdout ---
+{
+  "sessions": [
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "firstActivity": "2026-01-02T08:00:00.000Z",
+      "inputTokens": 70,
+      "lastActivity": "2026-01-02T08:00:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 70,
+          "missingPricing": true,
+          "modelName": "unknown",
+          "outputTokens": 30
+        }
+      ],
+      "modelsUsed": [
+        "unknown"
+      ],
+      "outputTokens": 30,
+      "projectPath": "alpha",
+      "sessionId": "alpha-session-a",
+      "totalCost": 0.0,
+      "totalTokens": 100
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 1280,
+      "firstActivity": "2025-12-30T09:00:00.000Z",
+      "inputTokens": 2631,
+      "lastActivity": "2026-01-01T11:00:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 1200,
+          "cost": 0.006121,
+          "inputTokens": 1911,
+          "modelName": "qwen3-coder-plus",
+          "outputTokens": 644
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 80,
+          "cost": 0.0030840000000000004,
+          "inputTokens": 420,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 120
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.000132,
+          "inputTokens": 300,
+          "modelName": "qwen-2.5-72b-instruct",
+          "outputTokens": 60
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 0,
+          "modelName": "qwen-mystery-1",
+          "outputTokens": 0
+        }
+      ],
+      "modelsUsed": [
+        "qwen3-coder-plus",
+        "claude-sonnet-4-20250514",
+        "qwen-2.5-72b-instruct",
+        "qwen-mystery-1"
+      ],
+      "outputTokens": 824,
+      "projectPath": "alpha",
+      "sessionId": "sess-a",
+      "totalCost": 0.009337,
+      "totalTokens": 5599
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 102113,
+      "firstActivity": "2025-12-27T22:00:00.000Z",
+      "inputTokens": 201330,
+      "lastActivity": "2026-01-02T23:30:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 101500,
+          "cost": 0.23279999999999998,
+          "inputTokens": 200500,
+          "modelName": "qwen3-coder-plus",
+          "outputTokens": 2300
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 580,
+          "cost": 0.005484000000000001,
+          "inputTokens": 520,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 250
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00006969999999999999,
+          "inputTokens": 310,
+          "modelName": "qwen-3-30b",
+          "outputTokens": 65
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 33,
+          "cost": 0.0,
+          "inputTokens": 0,
+          "missingPricing": true,
+          "modelName": "qwen-mystery-1",
+          "outputTokens": 11
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514",
+        "qwen-mystery-1",
+        "qwen3-coder-plus",
+        "qwen-3-30b"
+      ],
+      "outputTokens": 2626,
+      "projectPath": "beta",
+      "sessionId": "sess-b",
+      "totalCost": 0.23835369999999997,
+      "totalTokens": 306169
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "firstActivity": "2026-01-01T09:00:00.000Z",
+      "inputTokens": 250,
+      "lastActivity": "2026-01-01T09:00:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0015,
+          "inputTokens": 250,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 50
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514"
+      ],
+      "outputTokens": 50,
+      "projectPath": "alpha",
+      "sessionId": "sess-d",
+      "totalCost": 0.0015,
+      "totalTokens": 300
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 100,
+      "firstActivity": "2026-01-01T10:00:00.000Z",
+      "inputTokens": 320,
+      "lastActivity": "2026-01-01T10:00:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 100,
+          "cost": 0.0006900000000000001,
+          "inputTokens": 320,
+          "modelName": "qwen3-coder-plus",
+          "outputTokens": 70
+        }
+      ],
+      "modelsUsed": [
+        "qwen3-coder-plus"
+      ],
+      "outputTokens": 70,
+      "projectPath": "alpha",
+      "sessionId": "sess-e",
+      "totalCost": 0.0006900000000000001,
+      "totalTokens": 490
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 0,
+    "cacheReadTokens": 103493,
+    "inputTokens": 204601,
+    "outputTokens": 3600,
+    "totalCost": 0.24988069999999998,
+    "totalTokens": 312658,
+    "unpricedModels": [
+      "qwen-mystery-1",
+      "unknown"
+    ]
+  }
+}
+
+--- stderr ---

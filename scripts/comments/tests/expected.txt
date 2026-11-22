@@ -1,0 +1,66 @@
+.github/workflows/workflow.yaml:8: note-format: # A shell comment.
+.github/workflows/workflow.yaml:17: note-format: # ordinary trailing comment
+.github/workflows/workflow.yaml:17: trailing-comment: # ordinary trailing comment
+.github/workflows/workflow.yaml:18: note-format: # v1.2.3
+.github/workflows/workflow.yaml:18: trailing-comment: # v1.2.3
+.github/workflows/workflow.yaml:19: note-format: # v1.2.3
+.github/workflows/workflow.yaml:19: trailing-comment: # v1.2.3
+.github/workflows/workflow.yaml:20: note-format: # v1.2.3
+.github/workflows/workflow.yaml:20: trailing-comment: # v1.2.3
+.github/workflows/workflow.yaml:22: note-format: # v1.2.3 update metadata
+.github/workflows/workflow.yaml:22: trailing-comment: # v1.2.3 update metadata
+config.jsonc:6: note-format: // XXX
+config.jsonc:6: trailing-comment: // XXX
+config.jsonc:6: work-marker: // XXX
+config.toml:3: note-format: # Cargo config syntax below is data.
+config.toml:7: note-format: # Trailing.
+config.toml:7: trailing-comment: # Trailing.
+config.toml:8: note-format: # NOTE(2026-02-29): This is impossible. Correct the month.
+config.toml:9: note-format: # NOTE(2026-11-19): The reason is missing.
+config.yaml:5: note-format: # trailing
+config.yaml:5: trailing-comment: # trailing
+config.yaml:7: note-format: # v1.2.3
+config.yaml:7: trailing-comment: # v1.2.3
+justfile:1: note-format: # Unattached prose.
+justfile:7: note-format: # Internal recipe note.
+nix-shebang-other.ts:2: note-format: /*
+nix-shebang-prose.ts:2: note-format: /*
+nix-shebang.ts:7: note-format: /*
+rust/src/config_schema.rs:6: rust-doc-scope: /// Internal operation.
+rust/src/lib.rs:8: rust-doc-scope: /// Internal documentation.
+rust/src/lib.rs:15: safety-placement: // SAFETY: This is attached to an ordinary statement.
+rust/src/lib.rs:16: note-format: // misplaced note
+rust/src/lib.rs:16: trailing-comment: // misplaced note
+rust/src/lib.rs:17: note-format: // TODO: document this
+rust/src/lib.rs:17: work-marker: // TODO: document this
+rust/src/lib.rs:21: note-format: /* A block comment. */
+rust/src/lib.rs:23: rust-doc-scope: //! This is module documentation.
+rust/src/lib.rs:26: rust-doc-scope: #[doc = "Internal attribute documentation."]
+rust/src/lib.rs:33: rust-doc-scope: /// Unreachable public item.
+rust/src/lib.rs:36: rust-doc-scope: #[doc = "Unreachable public attribute documentation."]
+rust/src/module.rs:1: rust-doc-scope: //! Module only.
+script.bb:3: note-format: ; Untracked provenance.
+script.bb:3: trailing-comment: ; Untracked provenance.
+script.js:5: trailing-comment: // NOTE(2026-11-19): The wire means foo. Preserve it.
+script.js:6: note-format: /** Ordinary prose. */
+script.jsx:1: note-format: /* HACK */
+script.jsx:1: trailing-comment: /* HACK */
+script.jsx:1: work-marker: /* HACK */
+script.nu:8: note-format: # XXX
+script.nu:8: trailing-comment: # XXX
+script.nu:8: work-marker: # XXX
+script.nu:13: note-format: # outside
+script.nu:13: trailing-comment: # outside
+script.nu:14: note-format: # Not help.
+script.sh:9: note-format: # HACK
+script.sh:9: trailing-comment: # HACK
+script.sh:9: work-marker: # HACK
+script.ts:7: dated-directive: // @ts-expect-error: Missing code.
+script.ts:9: dated-directive: // @ts-expect-error 2026-02-29: Invalid date.
+script.ts:13: note-format: /* Plain block text. */
+script.ts:14: agent-cli-version: // NOTE(2026-11-19): The Codex log format uses UTC. The report needs the offset.
+script.tsx:1: note-format: /* FIXME */
+script.tsx:1: trailing-comment: /* FIXME */
+script.tsx:1: work-marker: /* FIXME */
+source.nix:6: note-format: # Stray prose.
+source.nix:8: note-format: # A shell hook comment.

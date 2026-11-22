@@ -1,0 +1,162 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage antigravity monthly --offline --json --timezone Asia/Tokyo
+---
+exit: 0
+--- stdout ---
+{
+  "monthly": [
+    {
+      "cacheCreationTokens": 50,
+      "cacheReadTokens": 6500,
+      "inputTokens": 1955,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 50,
+          "cacheReadTokens": 4500,
+          "cost": 0.0066,
+          "inputTokens": 1000,
+          "modelName": "gemini-3-pro",
+          "outputTokens": 200
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 2000,
+          "cost": 0.00279,
+          "inputTokens": 940,
+          "modelName": "gemini-3.5-flash-high",
+          "outputTokens": 120
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.000016250000000000002,
+          "inputTokens": 5,
+          "modelName": "gpt-5",
+          "outputTokens": 1
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 10,
+          "missingPricing": true,
+          "modelName": "antigravity-model-77",
+          "outputTokens": 5
+        }
+      ],
+      "modelsUsed": [
+        "antigravity-model-77",
+        "gemini-3-pro",
+        "gpt-5",
+        "gemini-3.5-flash-high"
+      ],
+      "month": "2025-12",
+      "outputTokens": 326,
+      "totalCost": 0.00940625,
+      "totalTokens": 8931
+    },
+    {
+      "cacheCreationTokens": 400,
+      "cacheReadTokens": 121000,
+      "inputTokens": 255461,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 100000,
+          "cost": 0.665,
+          "inputTokens": 250000,
+          "modelName": "gemini-2.5-pro",
+          "outputTokens": 1000
+        },
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 3000,
+          "cost": 0.01155,
+          "inputTokens": 1500,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 290
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 10000,
+          "cost": 0.0088775,
+          "inputTokens": 2030,
+          "modelName": "gpt-5",
+          "outputTokens": 509
+        },
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 7000,
+          "cost": 0.00412,
+          "inputTokens": 1020,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 430
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0011200000000000001,
+          "inputTokens": 500,
+          "modelName": "gemini-3-pro",
+          "outputTokens": 10
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00015075,
+          "inputTokens": 51,
+          "modelName": "gemini-3.6-flash-high",
+          "outputTokens": 30
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 1000,
+          "cost": 0.0,
+          "inputTokens": 300,
+          "missingPricing": true,
+          "modelName": "antigravity-mystery-1",
+          "outputTokens": 70
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 60,
+          "missingPricing": true,
+          "modelName": "model_placeholder_m499",
+          "outputTokens": 15
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514",
+        "gemini-3-pro",
+        "claude-haiku-4-5-20251001",
+        "gpt-5",
+        "gemini-3.6-flash-high",
+        "gemini-2.5-pro",
+        "antigravity-mystery-1",
+        "model_placeholder_m499"
+      ],
+      "month": "2026-01",
+      "outputTokens": 2354,
+      "totalCost": 0.69081825,
+      "totalTokens": 379285
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 450,
+    "cacheReadTokens": 127500,
+    "inputTokens": 257416,
+    "outputTokens": 2680,
+    "totalCost": 0.7002244999999999,
+    "totalTokens": 388216,
+    "unpricedModels": [
+      "antigravity-model-77",
+      "antigravity-mystery-1",
+      "model_placeholder_m499"
+    ]
+  }
+}
+
+--- stderr ---

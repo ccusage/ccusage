@@ -1,0 +1,163 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage pi session --offline --json --since 20251231 --until 20260101
+---
+exit: 0
+--- stdout ---
+{
+  "sessions": [
+    {
+      "cacheCreationTokens": 200,
+      "cacheReadTokens": 7000,
+      "firstActivity": "2026-01-01T13:10:00.000Z",
+      "inputTokens": 900,
+      "lastActivity": "2026-01-01T13:10:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 7000,
+          "cost": 0.03,
+          "inputTokens": 900,
+          "modelName": "[pi] claude-haiku-4-5-20251001",
+          "outputTokens": 400,
+          "storedCost": 0.03
+        }
+      ],
+      "modelsUsed": [
+        "[pi] claude-haiku-4-5-20251001"
+      ],
+      "outputTokens": 400,
+      "projectPath": "--Users-dev-alpha--",
+      "sessionId": "sess-alpha-fork",
+      "totalCost": 0.03,
+      "totalTokens": 8500
+    },
+    {
+      "cacheCreationTokens": 100,
+      "cacheReadTokens": 5000,
+      "firstActivity": "2025-12-31T15:30:00.000Z",
+      "inputTokens": 1000,
+      "lastActivity": "2026-01-01T12:00:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 100,
+          "cacheReadTokens": 5000,
+          "cost": 0.02,
+          "inputTokens": 700,
+          "modelName": "[pi] claude-sonnet-4-20250514",
+          "outputTokens": 150,
+          "storedCost": 0.02
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 300,
+          "missingPricing": true,
+          "modelName": "[pi] pi-mystery-1",
+          "outputTokens": 70
+        }
+      ],
+      "modelsUsed": [
+        "[pi] claude-sonnet-4-20250514",
+        "[pi] pi-mystery-1"
+      ],
+      "outputTokens": 220,
+      "projectPath": "--Users-dev-alpha--",
+      "sessionId": "sess-alpha-main",
+      "totalCost": 0.02,
+      "totalTokens": 6320
+    },
+    {
+      "cacheCreationTokens": 400,
+      "cacheReadTokens": 18000,
+      "firstActivity": "2025-12-31T23:50:00.000Z",
+      "inputTokens": 2515,
+      "lastActivity": "2026-01-01T00:50:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 400,
+          "cacheReadTokens": 14000,
+          "cost": 4.0,
+          "inputTokens": 1800,
+          "modelName": "[pi] claude-haiku-4-5-20251001",
+          "outputTokens": 801,
+          "storedCost": 4.0
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 1000,
+          "cost": 0.006749999999999999,
+          "inputTokens": 100,
+          "modelName": "[pi] claude-opus-4-20250514",
+          "outputTokens": 50
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 3000,
+          "cost": 0.0050999999999999995,
+          "inputTokens": 600,
+          "modelName": "[pi] claude-sonnet-4-20250514",
+          "outputTokens": 160
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 0,
+          "modelName": "[pi] gpt-5",
+          "outputTokens": 0
+        }
+      ],
+      "modelsUsed": [
+        "[pi] claude-haiku-4-5-20251001",
+        "[pi] claude-sonnet-4-20250514",
+        "[pi] gpt-5",
+        "[pi] claude-opus-4-20250514"
+      ],
+      "outputTokens": 1016,
+      "projectPath": "--Users-dev-beta--",
+      "sessionId": "sess-beta-legacy",
+      "totalCost": 4.01185,
+      "totalTokens": 22681
+    },
+    {
+      "cacheCreationTokens": 1,
+      "cacheReadTokens": 6,
+      "firstActivity": "2025-12-31T16:00:00.000Z",
+      "inputTokens": 50,
+      "lastActivity": "2025-12-31T16:00:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 1,
+          "cacheReadTokens": 6,
+          "cost": 0.00007685,
+          "inputTokens": 50,
+          "modelName": "[pi] claude-haiku-4-5-20251001",
+          "outputTokens": 5
+        }
+      ],
+      "modelsUsed": [
+        "[pi] claude-haiku-4-5-20251001"
+      ],
+      "outputTokens": 5,
+      "projectPath": "--Users-dev-alpha--",
+      "sessionId": "session",
+      "totalCost": 0.00007685,
+      "totalTokens": 62
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 701,
+    "cacheReadTokens": 30006,
+    "inputTokens": 4465,
+    "outputTokens": 1641,
+    "totalCost": 4.06192685,
+    "totalTokens": 37563,
+    "unpricedModels": [
+      "[pi] pi-mystery-1"
+    ]
+  }
+}
+
+--- stderr ---

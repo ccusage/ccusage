@@ -1,0 +1,124 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage hermes weekly --offline --json --mode calculate
+---
+exit: 0
+--- stdout ---
+{
+  "totals": {
+    "cacheCreationTokens": 870,
+    "cacheReadTokens": 28045,
+    "inputTokens": 6670,
+    "outputTokens": 1720,
+    "totalCost": 0.05440642500000001,
+    "totalTokens": 37305,
+    "unpricedModels": [
+      "hermes-mystery-1"
+    ]
+  },
+  "weekly": [
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "inputTokens": 100,
+      "messageCount": 3,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0010500000000000002,
+          "inputTokens": 100,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 50
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514"
+      ],
+      "outputTokens": 50,
+      "totalCost": 0.0010500000000000002,
+      "totalTokens": 150,
+      "week": "2025-12-22"
+    },
+    {
+      "cacheCreationTokens": 870,
+      "cacheReadTokens": 28045,
+      "inputTokens": 6570,
+      "messageCount": 60,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 50,
+          "cacheReadTokens": 3000,
+          "cost": 0.021937500000000002,
+          "inputTokens": 600,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 100
+        },
+        {
+          "cacheCreationTokens": 600,
+          "cacheReadTokens": 8000,
+          "cost": 0.01905,
+          "inputTokens": 2400,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 480
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 6000,
+          "cost": 0.00475,
+          "inputTokens": 800,
+          "modelName": "openai/gpt-5",
+          "outputTokens": 300
+        },
+        {
+          "cacheCreationTokens": 220,
+          "cacheReadTokens": 7500,
+          "cost": 0.004375,
+          "inputTokens": 1150,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 440
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 2545,
+          "cost": 0.0031431249999999997,
+          "inputTokens": 820,
+          "modelName": "gpt-5",
+          "outputTokens": 180
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 1000,
+          "cost": 0.00010080000000000001,
+          "inputTokens": 500,
+          "modelName": "deepseek-v4-flash",
+          "outputTokens": 100
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 300,
+          "missingPricing": true,
+          "modelName": "hermes-mystery-1",
+          "outputTokens": 70
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514",
+        "claude-haiku-4-5-20251001",
+        "gpt-5",
+        "claude-opus-4-20250514",
+        "hermes-mystery-1",
+        "deepseek-v4-flash",
+        "openai/gpt-5"
+      ],
+      "outputTokens": 1670,
+      "totalCost": 0.053356425000000006,
+      "totalTokens": 37155,
+      "week": "2025-12-29"
+    }
+  ]
+}
+
+--- stderr ---

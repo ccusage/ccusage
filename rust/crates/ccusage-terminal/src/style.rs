@@ -1,7 +1,4 @@
-use std::{
-    env,
-    io::{self, IsTerminal},
-};
+use ccusage_environment::Environment;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Color {
@@ -36,15 +33,29 @@ pub fn color(style: impl Into<TerminalStyle>, value: impl AsRef<str>, color: Col
 }
 
 fn use_color(style: &TerminalStyle) -> bool {
-    if style.no_color || env::var_os("NO_COLOR").is_some() {
+    let environment = Environment::current();
+    if style.no_color || environment.var_os("NO_COLOR").is_some() {
         return false;
     }
-    style.color || env::var_os("FORCE_COLOR").is_some() || io::stdout().is_terminal()
+    style.color || environment.var_os("FORCE_COLOR").is_some() || crate::stdout_is_terminal()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn color_respects_injected_no_color() {
+        let style = TerminalStyle {
+            color: true,
+            ..TerminalStyle::default()
+        };
+
+        let output =
+            Environment::with_var("NO_COLOR", "").run(|| color(style, "Total", Color::Yellow));
+
+        assert_eq!(output, "Total");
+    }
 
     #[test]
     fn color_respects_explicit_no_color() {

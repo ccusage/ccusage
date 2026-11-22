@@ -3,16 +3,6 @@
 The Grok Build CLI adapter: it turns session `updates.jsonl` files under
 `~/.grok` into the usage entries the reports render.
 
-## Owns
-
-- `loader.rs` — reading sessions, progress, global dedupe, `has_data`
-- `parser.rs` — `turn_completed` admission, token split, pricing candidates
-- `paths.rs` — root resolution and `sessions/**/updates.jsonl` discovery
-- `report.rs` — daily / monthly / session summary shapes
-
-Anything that is not specific to this source belongs in `ccusage-core` or
-`ccusage-adapter-common` instead.
-
 ## Data source
 
 Only completed turns:
@@ -36,44 +26,32 @@ killed mid-turn never gets that row, so its usage is invisible here even though
 source: it carries no per-request model id, so its tokens cannot be priced or
 attributed.
 
+Completed turns use `agentTimestampMs` in milliseconds, then the envelope
+`timestamp` in seconds. Turns with neither valid timestamp are skipped with a diagnostic.
+
 ## Token mapping
 
-Grok records OpenAI-style usage where `inputTokens` includes cache:
+Grok records OpenAI-style usage where `inputTokens` includes cache reads and cache writes:
 
-| Grok field                       | ccusage field                 | Rule                                                                     |
-| -------------------------------- | ----------------------------- | ------------------------------------------------------------------------ |
-| `inputTokens − cachedReadTokens` | `input_tokens`                | cache clamped ≤ input                                                    |
-| `cachedReadTokens`               | `cache_read_input_tokens`     |                                                                          |
-| `outputTokens`                   | `output_tokens`               | as recorded                                                              |
-| `reasoningTokens`                | dropped                       | already inside `outputTokens`; counting it again would inflate the total |
-| `cacheCreationTokens`            | `cache_creation_input_tokens` | carved out of the uncached remainder                                     |
-| `costUsdTicks`                   | `cost_usd`                    | fixed-point USD, one tick is 1e-10 USD                                   |
+| Grok field                                             | ccusage field                 | Rule                                                                                          |
+| ------------------------------------------------------ | ----------------------------- | --------------------------------------------------------------------------------------------- |
+| `inputTokens − cachedReadTokens − cacheCreationTokens` | `input_tokens`                | cache clamped ≤ input                                                                         |
+| `cachedReadTokens`                                     | `cache_read_input_tokens`     |                                                                                               |
+| `outputTokens`                                         | `output_tokens`               | as recorded                                                                                   |
+| `reasoningTokens`                                      | dropped                       | already inside `outputTokens`; counting it again would inflate the total                      |
+| `cacheCreationTokens`                                  | `cache_creation_input_tokens` | carved out of the uncached remainder; only requests sent through Anthropic Messages report it |
+| `costUsdTicks`                                         | `cost_usd`                    | fixed-point USD, one tick is 1e-10 USD                                                        |
 
 `costUsdTicks` is the invoice cost, so `display` and the default `auto` report what
 Grok billed. `calculate`, and `auto` for turns that recorded no ticks, fall back to
 token × LiteLLM pricing. That fallback only approximates the invoice: a
 `turn_completed` row aggregates several API requests, so it cannot reproduce Grok's
-per-request long-context tiering.
+per-request long-context tiering and is priced at the base rates.
 
 ## Model display and pricing
 
 - Display label: raw `modelUsage` key (e.g. `grok-4.5-build`)
 - Pricing candidates strip trailing `-build` and try `xai/` / `x-ai/` forms
-
-## Public surface
-
-- `loader::load_entries`
-- `loader::has_data`
-- `report::summarize_entries`
-- `run`
-
-## Depends on
-
-- `ccusage-adapter-common`
-- `ccusage-core`
-- `jiff`
-- `serde`
-- `serde_json`
 
 ## Testing
 

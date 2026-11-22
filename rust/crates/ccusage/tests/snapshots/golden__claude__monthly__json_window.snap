@@ -1,0 +1,117 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage claude monthly --offline --json --since 20251231 --until 20260101
+---
+exit: 0
+--- stdout ---
+{
+  "monthly": [
+    {
+      "cacheCreationTokens": 300,
+      "cacheReadTokens": 14150,
+      "inputTokens": 1800,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 7000,
+          "cost": 0.05775,
+          "inputTokens": 900,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 400
+        },
+        {
+          "cacheCreationTokens": 100,
+          "cacheReadTokens": 7000,
+          "cost": 0.02606,
+          "inputTokens": 820,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 490,
+          "storedCost": 0.02
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 150,
+          "cost": 0.007,
+          "inputTokens": 80,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 25,
+          "storedCost": 0.007
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514",
+        "claude-haiku-4-5-20251001",
+        "claude-opus-4-20250514"
+      ],
+      "month": "2025-12",
+      "outputTokens": 915,
+      "totalCost": 0.09081,
+      "totalTokens": 17165
+    },
+    {
+      "cacheCreationTokens": 1250,
+      "cacheReadTokens": 8300,
+      "inputTokens": 3607,
+      "modelBreakdowns": [
+        {
+          "cacheCreation1hTokens": 1000,
+          "cacheCreationTokens": 1250,
+          "cacheReadTokens": 7000,
+          "cost": 0.5124185,
+          "inputTokens": 1057,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 294,
+          "storedCost": 0.5
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0175,
+          "inputTokens": 2000,
+          "modelName": "claude-opus-5",
+          "outputTokens": 300
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 500,
+          "cost": 0.009000000000000001,
+          "inputTokens": 250,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 60
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 800,
+          "cost": 0.0,
+          "inputTokens": 300,
+          "missingPricing": true,
+          "modelName": "mystery-model-9000",
+          "outputTokens": 70
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514",
+        "claude-opus-4-20250514",
+        "mystery-model-9000",
+        "claude-opus-5"
+      ],
+      "month": "2026-01",
+      "outputTokens": 724,
+      "totalCost": 0.5389185,
+      "totalTokens": 13881
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 1550,
+    "cacheReadTokens": 22450,
+    "inputTokens": 5407,
+    "outputTokens": 1639,
+    "totalCost": 0.6297284999999999,
+    "totalTokens": 31046,
+    "unpricedModels": [
+      "mystery-model-9000"
+    ]
+  }
+}
+
+--- stderr ---

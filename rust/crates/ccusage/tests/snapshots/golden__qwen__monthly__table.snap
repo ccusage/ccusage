@@ -1,0 +1,25 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage qwen monthly --offline
+---
+exit: 0
+--- stdout ---
+┌──────────┬────────────────────┬───────────┬───────────┬───────────────┬─────────────┬───────────────┬─────────────┐
+│ Month    │ Models             │     Input │    Output │  Cache Create │  Cache Read │  Total Tokens │  Cost (USD) │
+├──────────┼────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2025-12  │ - qwen-2.5-72b     │     3,850 │     1,327 │             0 │       2,893 │         8,974 │       $0.02 │
+│          │ - qwen-3-30b       │           │           │               │             │               │             │
+│          │ - qwen-mystery-1   │           │           │               │             │               │             │
+│          │ - qwen3-coder-plus │           │           │               │             │               │             │
+│          │ - sonnet-4         │           │           │               │             │               │             │
+├──────────┼────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ 2026-01  │ - qwen3-coder-plus │   200,751 │     2,273 │             0 │     100,600 │       303,684 │       $0.23 │
+│          │ - sonnet-4         │           │           │               │             │               │             │
+│          │ - unknown          │           │           │               │             │               │             │
+├──────────┼────────────────────┼───────────┼───────────┼───────────────┼─────────────┼───────────────┼─────────────┤
+│ Total    │                    │   204,601 │     3,600 │             0 │     103,493 │       312,658 │       $0.25 │
+└──────────┴────────────────────┴───────────┴───────────┴───────────────┴─────────────┴───────────────┴─────────────┘
+
+--- stderr ---
+WARN  Missing embedded pricing for qwen-mystery-1; cost excludes this model. Run without --offline or update ccusage after pricing is added.
+WARN  Missing embedded pricing for unknown; cost excludes this model. Run without --offline or update ccusage after pricing is added.

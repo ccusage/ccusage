@@ -1,22 +1,59 @@
 {
 	"combinedOptions": {
 		"agent_period_options": ["agent_options", "last_options"],
+		"agent_weekly_options": ["agent_options", "all_weekly_options", "last_options"],
 		"all_agent_period_options": ["all_agent_options", "last_options"],
-		"all_agent_session_options": ["all_agent_options", "session_options"],
-		"blocks_combined_options": ["shared_claude_options", "blocks_options"],
-		"claude_daily_options": ["shared_claude_options", "daily_options", "last_options"],
-		"claude_monthly_options": ["shared_claude_options", "last_options"],
-		"claude_session_options": ["shared_claude_options", "session_options"],
-		"claude_weekly_options": ["shared_claude_options", "weekly_options", "last_options"],
+		"all_agent_session_options": ["all_agent_options", "session_options", "claude_project_options"],
+		"all_agent_weekly_options": ["all_agent_options", "all_weekly_options", "last_options"],
+		"blocks_combined_options": [
+			"shared_claude_options",
+			"claude_project_options",
+			"blocks_options"
+		],
+		"claude_daily_options": [
+			"shared_claude_options",
+			"claude_project_options",
+			"daily_options",
+			"last_options"
+		],
+		"claude_monthly_options": ["shared_claude_options", "claude_project_options", "last_options"],
+		"claude_session_options": [
+			"shared_claude_options",
+			"claude_project_options",
+			"session_options"
+		],
+		"claude_weekly_options": [
+			"shared_claude_options",
+			"claude_project_options",
+			"weekly_options",
+			"last_options"
+		],
 		"codex_period_options": ["codex_options", "last_options"],
+		"codex_weekly_options": ["codex_options", "all_weekly_options", "last_options"],
 		"codex_session_options": ["codex_options", "session_options"],
+		"opencode_period_options": ["agent_options", "opencode_options", "last_options"],
+		"opencode_weekly_options": [
+			"agent_options",
+			"opencode_options",
+			"all_weekly_options",
+			"last_options"
+		],
+		"opencode_session_options": ["agent_options", "opencode_options"],
 		"openclaw_combined_options": ["agent_options", "openclaw_options"],
 		"openclaw_period_options": ["agent_options", "openclaw_options", "last_options"],
+		"openclaw_weekly_options": [
+			"agent_options",
+			"openclaw_options",
+			"all_weekly_options",
+			"last_options"
+		],
 		"pi_combined_options": ["agent_options", "pi_options"],
-		"pi_period_options": ["agent_options", "pi_options", "last_options"]
+		"pi_period_options": ["agent_options", "pi_options", "last_options"],
+		"pi_weekly_options": ["agent_options", "pi_options", "all_weekly_options", "last_options"]
 	},
 	"root": {
 		"usage": ["ccusage [daily] <OPTIONS>", "ccusage <COMMANDS>"],
+		"options": "all_agent_options",
 		"commands": [
 			{
 				"name": "daily",
@@ -41,6 +78,10 @@
 			{
 				"name": "statusline",
 				"description": "Display compact status line for Claude Code hooks with hybrid time+file caching (Beta)"
+			},
+			{
+				"name": "telemetry",
+				"description": "Manage usage telemetry preferences"
 			},
 			{
 				"name": "claude",
@@ -115,8 +156,12 @@
 				"description": "Show ZCode usage commands"
 			},
 			{
-				"name": "telemetry",
-				"description": "Show or change the anonymous usage telemetry setting"
+				"name": "cline",
+				"description": "Show Cline usage commands"
+			},
+			{
+				"name": "dsh",
+				"description": "Show DeepSeek Harness usage commands"
 			}
 		]
 	},
@@ -137,7 +182,7 @@
 			"path": ["weekly"],
 			"description": "Show all detected coding (agent) CLI usage grouped by week",
 			"usage": "ccusage weekly <OPTIONS>",
-			"options": "all_agent_period_options"
+			"options": "all_agent_weekly_options"
 		},
 		{
 			"path": ["session"],
@@ -156,6 +201,16 @@
 			"description": "Display compact status line for Claude Code hooks with hybrid time+file caching (Beta)",
 			"usage": "ccusage statusline <OPTIONS>",
 			"options": "statusline_options"
+		},
+		{
+			"path": ["telemetry"],
+			"description": "Manage usage telemetry preferences.",
+			"usage": "ccusage telemetry <ACTION>",
+			"commands": [
+				{ "name": "status", "description": "Show the current telemetry status" },
+				{ "name": "enable", "description": "Enable usage telemetry" },
+				{ "name": "disable", "description": "Disable usage telemetry" }
+			]
 		},
 		{
 			"path": ["claude"],
@@ -240,6 +295,10 @@
 				{
 					"name": "session",
 					"description": "Show Codex token usage grouped by session"
+				},
+				{
+					"name": "statusline",
+					"description": "Show a one-line Codex usage summary"
 				}
 			]
 		},
@@ -262,6 +321,12 @@
 			"options": "codex_session_options"
 		},
 		{
+			"path": ["codex", "statusline"],
+			"description": "Show a Codex usage summary, or serve its native statusline with --mcp",
+			"usage": "ccusage codex statusline <OPTIONS>",
+			"options": "codex_statusline_options"
+		},
+		{
 			"path": ["opencode"],
 			"description": "Usage reports for opencode.",
 			"usage": "ccusage opencode <COMMANDS>",
@@ -269,10 +334,6 @@
 				{
 					"name": "daily",
 					"description": "Show OpenCode token usage grouped by day"
-				},
-				{
-					"name": "weekly",
-					"description": "Show OpenCode token usage grouped by week"
 				},
 				{
 					"name": "monthly",
@@ -288,25 +349,19 @@
 			"path": ["opencode", "daily"],
 			"description": "Show OpenCode token usage grouped by day",
 			"usage": "ccusage opencode daily <OPTIONS>",
-			"options": "agent_period_options"
-		},
-		{
-			"path": ["opencode", "weekly"],
-			"description": "Show OpenCode token usage grouped by week",
-			"usage": "ccusage opencode weekly <OPTIONS>",
-			"options": "agent_period_options"
+			"options": "opencode_period_options"
 		},
 		{
 			"path": ["opencode", "monthly"],
 			"description": "Show OpenCode token usage grouped by month",
 			"usage": "ccusage opencode monthly <OPTIONS>",
-			"options": "agent_period_options"
+			"options": "opencode_period_options"
 		},
 		{
 			"path": ["opencode", "session"],
 			"description": "Show OpenCode token usage grouped by session",
 			"usage": "ccusage opencode session <OPTIONS>",
-			"options": "agent_options"
+			"options": "opencode_session_options"
 		},
 		{
 			"path": ["amp"],
@@ -864,23 +919,78 @@
 			"options": "agent_options"
 		},
 		{
-			"path": ["telemetry"],
-			"description": "Show or change the anonymous usage telemetry setting (status when no command is given). See https://ccusage.com/guide/telemetry",
-			"usage": "ccusage telemetry <COMMANDS>",
+			"path": ["cline"],
+			"description": "Usage reports for Cline.",
+			"usage": "ccusage cline <COMMANDS>",
 			"commands": [
 				{
-					"name": "status",
-					"description": "Show whether telemetry is enabled and why (default)"
+					"name": "daily",
+					"description": "Show Cline usage grouped by date"
 				},
 				{
-					"name": "enable",
-					"description": "Enable anonymous usage telemetry"
+					"name": "monthly",
+					"description": "Show Cline usage grouped by month"
 				},
 				{
-					"name": "disable",
-					"description": "Disable anonymous usage telemetry"
+					"name": "session",
+					"description": "Show Cline usage grouped by session"
 				}
 			]
+		},
+		{
+			"path": ["cline", "daily"],
+			"description": "Show Cline usage grouped by date",
+			"usage": "ccusage cline daily <OPTIONS>",
+			"options": "agent_period_options"
+		},
+		{
+			"path": ["cline", "monthly"],
+			"description": "Show Cline usage grouped by month",
+			"usage": "ccusage cline monthly <OPTIONS>",
+			"options": "agent_period_options"
+		},
+		{
+			"path": ["cline", "session"],
+			"description": "Show Cline usage grouped by session",
+			"usage": "ccusage cline session <OPTIONS>",
+			"options": "agent_options"
+		},
+		{
+			"path": ["dsh"],
+			"description": "Usage reports for DeepSeek Harness.",
+			"usage": "ccusage dsh <COMMANDS>",
+			"commands": [
+				{
+					"name": "daily",
+					"description": "Show DeepSeek Harness usage grouped by date"
+				},
+				{
+					"name": "monthly",
+					"description": "Show DeepSeek Harness usage grouped by month"
+				},
+				{
+					"name": "session",
+					"description": "Show DeepSeek Harness usage grouped by session"
+				}
+			]
+		},
+		{
+			"path": ["dsh", "daily"],
+			"description": "Show DeepSeek Harness usage grouped by date",
+			"usage": "ccusage dsh daily <OPTIONS>",
+			"options": "agent_period_options"
+		},
+		{
+			"path": ["dsh", "monthly"],
+			"description": "Show DeepSeek Harness usage grouped by month",
+			"usage": "ccusage dsh monthly <OPTIONS>",
+			"options": "agent_period_options"
+		},
+		{
+			"path": ["dsh", "session"],
+			"description": "Show DeepSeek Harness usage grouped by session",
+			"usage": "ccusage dsh session <OPTIONS>",
+			"options": "agent_options"
 		}
 	]
 }

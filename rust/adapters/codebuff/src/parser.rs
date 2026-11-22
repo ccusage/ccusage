@@ -1,28 +1,33 @@
-use std::{fs, path::Path};
+use ccusage_core::cost::PriceTable;
+use ccusage_core::{
+    cost::{EntryPricing, UsageGranularity, price_entry_on_route},
+    pricing::{BillingRoute, MatchKind},
+};
+use std::path::Path;
 
+use ccusage_adapter_common::units::{UnitError, read_json};
+use ccusage_core::{Diagnostics, Skip, SkipKind};
 use serde_json::Value;
 
-use crate::{
-    PricingMap, Result, TokenUsageRaw, apply_total_token_fallback, calculate_cost_for_usage_at,
-    cli::CostMode, format_rfc3339_millis, missing_pricing_model_for_candidates, parse_ts_timestamp,
-};
+use crate::{TokenUsageRaw, format_rfc3339_millis, parse_ts_timestamp};
+use ccusage_core::AdditionalTokens;
 
 const DEFAULT_CODEBUFF_MODEL: &str = "codebuff-unknown";
 
 #[derive(Clone, Default)]
-pub(super) struct AssistantUsage {
+struct AssistantUsage {
     model: Option<String>,
     credits: f64,
     input_tokens: u64,
-    pub(super) output_tokens: u64,
+    output_tokens: Option<u64>,
     cache_creation_input_tokens: u64,
     cache_read_input_tokens: u64,
-    pub(super) extra_total_tokens: u64,
+    total_tokens: u64,
 }
 
 pub(super) struct CodebuffEntry {
     pub(super) timestamp: crate::TimestampMs,
-    pub(super) timestamp_text: String,
+
     pub(super) session_id: String,
     pub(super) model: String,
     provider: String,
@@ -37,14 +42,13 @@ struct CodebuffContext {
     session_id: String,
 }
 
-pub(super) fn load_chat_file(path: &Path) -> Result<Vec<CodebuffEntry>> {
-    let content = fs::read(path)?;
-    let Ok(messages) = serde_json::from_slice::<Vec<Value>>(&content) else {
-        return Ok(Vec::new());
-    };
+pub(super) fn load_chat_file(
+    path: &Path,
+    diagnostics: &Diagnostics,
+) -> std::result::Result<Vec<CodebuffEntry>, UnitError> {
+    let messages = read_json::<Vec<Value>>(path)?;
     let context = derive_context(path);
     let chat_timestamp = parse_codebuff_chat_id_timestamp(&context.chat_id);
-    let file_timestamp = file_modified_timestamp(path).unwrap_or(crate::TimestampMs::UNIX_EPOCH);
     let mut entries = Vec::new();
     for (ordinal, message) in messages.iter().enumerate() {
         let Some(message) = message.as_object() else {
@@ -57,37 +61,54 @@ pub(super) fn load_chat_file(path: &Path) -> Result<Vec<CodebuffEntry>> {
         if !has_signal(&usage) {
             continue;
         }
-        let timestamp = message_timestamp(message)
-            .or(chat_timestamp)
-            .unwrap_or(file_timestamp);
+        let Some(timestamp) = message_timestamp(message).or(chat_timestamp) else {
+            diagnostics.record(Skip::record(
+                path,
+                Skip::line_number(ordinal),
+                SkipKind::InvalidTimestamp,
+                "Codebuff usage record has no valid message or chat timestamp",
+            ));
+            continue;
+        };
         let model = usage
             .model
             .clone()
             .unwrap_or_else(|| DEFAULT_CODEBUFF_MODEL.to_string());
+        let raw_usage = TokenUsageRaw {
+            input_tokens: usage.input_tokens,
+            output_tokens: usage.output_tokens.unwrap_or_default(),
+            cache_creation_input_tokens: usage.cache_creation_input_tokens,
+            cache_read_input_tokens: usage.cache_read_input_tokens,
+            speed: None,
+            cache_creation: None,
+        };
+        let additional = AdditionalTokens::from_total(raw_usage, 0, usage.total_tokens);
+        let (matching_output, matching_remainder) = if usage.output_tokens.is_some() {
+            (raw_usage.output_tokens, additional.report_remainder)
+        } else {
+            additional.replay_counts(raw_usage.output_tokens)
+        };
         let dedup_key = dedup_key(
             message,
             &context.session_id,
             timestamp,
             &model,
-            &usage,
+            TokenUsageRaw {
+                output_tokens: matching_output,
+                ..raw_usage
+            },
+            matching_remainder,
             ordinal,
         );
         entries.push(CodebuffEntry {
             timestamp,
-            timestamp_text: format_rfc3339_millis(timestamp),
+
             session_id: context.session_id.clone(),
             provider: infer_provider(&model).to_string(),
             model,
             credits: usage.credits,
-            usage: TokenUsageRaw {
-                input_tokens: usage.input_tokens,
-                output_tokens: usage.output_tokens,
-                cache_creation_input_tokens: usage.cache_creation_input_tokens,
-                cache_read_input_tokens: usage.cache_read_input_tokens,
-                speed: None,
-                cache_creation: None,
-            },
-            extra_total_tokens: usage.extra_total_tokens,
+            usage: raw_usage,
+            extra_total_tokens: additional.report_remainder,
             dedup_key,
         });
     }
@@ -196,7 +217,7 @@ fn extract_usage_from_run_state(
     found.then_some(usage)
 }
 
-pub(super) fn parse_usage_object(value: Option<&Value>) -> AssistantUsage {
+fn parse_usage_object(value: Option<&Value>) -> AssistantUsage {
     let mut usage = AssistantUsage::default();
     let Some(record) = value.and_then(Value::as_object) else {
         return usage;
@@ -210,15 +231,15 @@ pub(super) fn parse_usage_object(value: Option<&Value>) -> AssistantUsage {
             "prompt_tokens",
         ],
     );
-    usage.output_tokens = pick_u64(
-        record,
-        &[
-            "outputTokens",
-            "output_tokens",
-            "completionTokens",
-            "completion_tokens",
-        ],
-    );
+    usage.output_tokens = [
+        "outputTokens",
+        "output_tokens",
+        "completionTokens",
+        "completion_tokens",
+    ]
+    .iter()
+    .map(|key| record.get(*key).and_then(Value::as_u64))
+    .fold(None, prefer_recorded_output);
     usage.cache_read_input_tokens =
         pick_u64(record, &["cacheReadInputTokens", "cache_read_input_tokens"])
             .max(pick_nested_u64(
@@ -242,22 +263,7 @@ pub(super) fn parse_usage_object(value: Option<&Value>) -> AssistantUsage {
             "cached_tokens_created",
         ],
     );
-    let total_tokens = pick_u64(record, &["totalTokens", "total_tokens", "total"]);
-    let raw_usage = TokenUsageRaw {
-        input_tokens: usage.input_tokens,
-        output_tokens: usage.output_tokens,
-        cache_creation_input_tokens: usage.cache_creation_input_tokens,
-        cache_read_input_tokens: usage.cache_read_input_tokens,
-        speed: None,
-        cache_creation: None,
-    };
-    let (raw_usage, extra_total_tokens) =
-        apply_total_token_fallback(raw_usage, usage.extra_total_tokens, total_tokens);
-    usage.input_tokens = raw_usage.input_tokens;
-    usage.output_tokens = raw_usage.output_tokens;
-    usage.cache_creation_input_tokens = raw_usage.cache_creation_input_tokens;
-    usage.cache_read_input_tokens = raw_usage.cache_read_input_tokens;
-    usage.extra_total_tokens = extra_total_tokens;
+    usage.total_tokens = pick_u64(record, &["totalTokens", "total_tokens", "total"]);
     usage.credits = number_field(record, "credits");
     usage.model = string_field(record, "model");
     usage
@@ -267,17 +273,15 @@ fn merge_fallback(target: &mut AssistantUsage, fallback: AssistantUsage) {
     if target.input_tokens == 0 {
         target.input_tokens = fallback.input_tokens;
     }
-    if target.output_tokens == 0 {
-        target.output_tokens = fallback.output_tokens;
-    }
+    target.output_tokens = prefer_recorded_output(target.output_tokens, fallback.output_tokens);
     if target.cache_creation_input_tokens == 0 {
         target.cache_creation_input_tokens = fallback.cache_creation_input_tokens;
     }
     if target.cache_read_input_tokens == 0 {
         target.cache_read_input_tokens = fallback.cache_read_input_tokens;
     }
-    if target.extra_total_tokens == 0 {
-        target.extra_total_tokens = fallback.extra_total_tokens;
+    if target.total_tokens == 0 {
+        target.total_tokens = fallback.total_tokens;
     }
     if target.credits <= 0.0 {
         target.credits = fallback.credits;
@@ -287,12 +291,16 @@ fn merge_fallback(target: &mut AssistantUsage, fallback: AssistantUsage) {
     }
 }
 
+fn prefer_recorded_output(primary: Option<u64>, fallback: Option<u64>) -> Option<u64> {
+    primary.filter(|count| *count > 0).or(fallback).or(primary)
+}
+
 fn has_signal(usage: &AssistantUsage) -> bool {
     usage.input_tokens > 0
-        || usage.output_tokens > 0
+        || usage.output_tokens.unwrap_or_default() > 0
         || usage.cache_creation_input_tokens > 0
         || usage.cache_read_input_tokens > 0
-        || usage.extra_total_tokens > 0
+        || usage.total_tokens > 0
         || usage.credits > 0.0
 }
 
@@ -320,26 +328,10 @@ fn timestamp_value(value: Option<&Value>) -> Option<crate::TimestampMs> {
     match value? {
         Value::String(value) => parse_ts_timestamp(value),
         Value::Number(value) => {
-            let raw = value.as_i64()?;
-            let millis = if raw < 10_000_000_000 {
-                raw.checked_mul(1_000)?
-            } else {
-                raw
-            };
-            (millis > 0).then(|| crate::TimestampMs::from_millis(millis))
+            ccusage_adapter_common::timestamps::epoch_secs_or_millis(value.as_i64()?)
         }
-        _ => None,
+        Value::Null | Value::Bool(_) | Value::Array(_) | Value::Object(_) => None,
     }
-}
-
-fn file_modified_timestamp(path: &Path) -> Option<crate::TimestampMs> {
-    let modified = fs::metadata(path).ok()?.modified().ok()?;
-    let millis = modified
-        .duration_since(std::time::UNIX_EPOCH)
-        .ok()?
-        .as_millis()
-        .min(i64::MAX as u128) as i64;
-    Some(crate::TimestampMs::from_millis(millis))
 }
 
 fn dedup_key(
@@ -347,7 +339,8 @@ fn dedup_key(
     session_id: &str,
     timestamp: crate::TimestampMs,
     model: &str,
-    usage: &AssistantUsage,
+    usage: TokenUsageRaw,
+    extra_total_tokens: u64,
     ordinal: usize,
 ) -> String {
     if let Some(id) = string_field(message, "id") {
@@ -360,7 +353,7 @@ fn dedup_key(
         usage.output_tokens,
         usage.cache_read_input_tokens,
         usage.cache_creation_input_tokens,
-        usage.extra_total_tokens
+        extra_total_tokens
     )
 }
 
@@ -389,61 +382,41 @@ fn infer_provider(model: &str) -> &'static str {
     }
 }
 
-pub(super) fn calculate_codebuff_cost(entry: &CodebuffEntry, pricing: &PricingMap) -> f64 {
-    let usage = TokenUsageRaw {
-        output_tokens: entry
-            .usage
-            .output_tokens
-            .saturating_add(entry.extra_total_tokens),
-        cache_creation: None,
-        ..entry.usage
+pub(super) fn price_codebuff(
+    entry: &CodebuffEntry,
+    pricing: PriceTable<'_>,
+) -> (f64, Option<String>, bool) {
+    let candidates = codebuff_model_candidates(entry);
+    let candidates: Vec<_> = candidates
+        .iter()
+        .map(|name| (name.as_str(), MatchKind::Fuzzy))
+        .collect();
+    let entry_pricing = EntryPricing {
+        granularity: UsageGranularity::Request,
+        usage: entry.usage,
+        reasoning_tokens: 0,
+        reported_model: Some(&entry.model),
+        candidates: &candidates,
+        stored_cost: None,
+        timestamp: Some(entry.timestamp),
     };
-    let raw = calculate_cost_for_usage_at(
-        Some(&entry.model),
-        usage,
-        None,
-        Some(entry.timestamp),
-        CostMode::Calculate,
-        Some(pricing),
-    );
-    if raw > 0.0
-        || entry.provider == "unknown"
-        || entry.model.starts_with(&format!("{}/", entry.provider))
-    {
-        return raw;
-    }
-    calculate_cost_for_usage_at(
-        Some(&format!("{}/{}", entry.provider, entry.model)),
-        usage,
-        None,
-        Some(entry.timestamp),
-        CostMode::Calculate,
-        Some(pricing),
+    // NOTE(2026-11-20, #2332): Codebuff bills every request through its own service. Every vendor it records is therefore a third party and must not inherit DeepSeek's schedule.
+    let priced = price_entry_on_route(entry_pricing, BillingRoute::Foreign, pricing);
+    (
+        priced.cost,
+        priced
+            .missing_pricing
+            .then(|| ccusage_core::model_aliases::resolve_model_name(&entry.model).into_owned()),
+        priced.estimated,
     )
 }
 
-pub(super) fn missing_codebuff_pricing(
-    entry: &CodebuffEntry,
-    pricing: &PricingMap,
-) -> Option<String> {
-    let usage = TokenUsageRaw {
-        output_tokens: entry
-            .usage
-            .output_tokens
-            .saturating_add(entry.extra_total_tokens),
-        cache_creation: None,
-        ..entry.usage
-    };
+fn codebuff_model_candidates(entry: &CodebuffEntry) -> Vec<String> {
     let mut candidates = vec![entry.model.clone()];
     if entry.provider != "unknown" && !entry.model.starts_with(&format!("{}/", entry.provider)) {
         candidates.push(format!("{}/{}", entry.provider, entry.model));
     }
-    missing_pricing_model_for_candidates(
-        &entry.model,
-        candidates,
-        crate::total_usage_tokens(usage),
-        Some(pricing),
-    )
+    candidates
 }
 
 fn object_field<'a>(
@@ -475,4 +448,55 @@ fn pick_u64(record: &serde_json::Map<String, Value>, keys: &[&str]) -> u64 {
 
 fn pick_nested_u64(record: &serde_json::Map<String, Value>, key: &str, keys: &[&str]) -> u64 {
     object_field(record, key).map_or(0, |nested| pick_u64(nested, keys))
+}
+
+#[cfg(test)]
+mod pricing_identity_tests {
+    use super::*;
+
+    #[test]
+    fn adapter_pricing_identity() {
+        let entry = CodebuffEntry {
+            timestamp: crate::parse_ts_timestamp("2026-11-17T10:00:00Z").unwrap(),
+
+            session_id: "s".into(),
+            model: "gpt-5.2".into(),
+            provider: "openai".into(),
+            credits: 0.0,
+            usage: TokenUsageRaw::default(),
+            extra_total_tokens: 0,
+            dedup_key: String::new(),
+        };
+        assert_eq!(
+            codebuff_model_candidates(&entry),
+            ["gpt-5.2", "openai/gpt-5.2"]
+        );
+    }
+
+    #[test]
+    fn prices_a_foreign_router_without_the_deepseek_schedule() {
+        ccusage_test_support::install_pricing_snapshots();
+        let pricing = ccusage_core::PricingMap::load_embedded();
+        for (provider, expected) in [("unknown", 0.0015), ("openrouter", 0.0015)] {
+            let entry = CodebuffEntry {
+                timestamp: crate::parse_ts_timestamp("2026-11-17T10:00:00Z").unwrap(),
+
+                session_id: "s".into(),
+                model: "deepseek-v4-flash".into(),
+                provider: provider.into(),
+                credits: 0.0,
+                usage: TokenUsageRaw {
+                    input_tokens: 1_000,
+                    output_tokens: 1_000,
+                    ..TokenUsageRaw::default()
+                },
+                extra_total_tokens: 0,
+                dedup_key: String::new(),
+            };
+
+            let (cost, missing, _) = price_codebuff(&entry, PriceTable::Calculate(&pricing));
+            assert!((cost - expected).abs() < 1e-12, "{provider}: {cost}");
+            assert_eq!(missing, None, "{provider}");
+        }
+    }
 }

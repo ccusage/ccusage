@@ -8,6 +8,9 @@ ccusage can read local Grok Build CLI session logs as a supported data source. G
 # Daily Grok usage
 ccusage grok daily
 
+# Weekly Grok usage
+ccusage grok weekly
+
 # Monthly Grok usage
 ccusage grok monthly
 
@@ -46,6 +49,7 @@ Only rows with `sessionUpdate == "turn_completed"` and a usable usage breakdown 
 | Focused view           | Description                 | See also                                |
 | ---------------------- | --------------------------- | --------------------------------------- |
 | `ccusage grok daily`   | Aggregate usage by date     | [Daily Usage](/guide/daily-reports)     |
+| `ccusage grok weekly`  | Aggregate usage by week     | [Weekly Usage](/guide/weekly-reports)   |
 | `ccusage grok monthly` | Aggregate usage by month    | [Monthly Usage](/guide/monthly-reports) |
 | `ccusage grok session` | Group usage by Grok session | [Session Usage](/guide/session-reports) |
 
@@ -58,18 +62,18 @@ contain a non-zero value; [JSON output](/guide/json-output) keeps
 
 ## What Gets Calculated
 
-- **Token usage** - Grok records OpenAI-style usage where `inputTokens` includes cache. ccusage splits it into uncached input, cache read (`cachedReadTokens`) and cache write (`cacheCreationTokens`), and stores the full `outputTokens` as output.
+- **Token usage** - Grok records OpenAI-style usage where `inputTokens` includes both cache reads and cache writes. ccusage splits it into uncached input, cache read (`cachedReadTokens`) and cache write (`cacheCreationTokens`), and stores the full `outputTokens` as output.
 - **Reasoning tokens** - `reasoningTokens` are a subset of `outputTokens`, so they are already counted in the total. They are **not** added on top of output for either tokens or cost.
 - **Precomputed cost** - Grok records `costUsdTicks` on each completed turn, in units of 1e-10 USD. ccusage uses it as the invoice cost, so `display` and the default `auto` report exactly what Grok billed.
-- **Pricing** - `calculate`, and `auto` for turns that recorded no ticks, fall back to table estimates. Model ids such as `grok-4.5-build` try candidates with the trailing `-build` stripped and `xai/` / `x-ai/` prefixes, exact matches first. xAI's long-context rates apply when a turn's whole context — fresh input plus cache reads and writes — exceeds the model's boundary (200K for `grok-4.5` and `grok-4.6`). A `turn_completed` row aggregates several API requests, so the tier is chosen per turn rather than per request and the estimate only approximates the invoice.
+- **Pricing** - `calculate`, and `auto` for turns that recorded no ticks, fall back to table estimates. Model ids such as `grok-4.5-build` try candidates with the trailing `-build` stripped and `xai/` / `x-ai/` prefixes, exact matches first. A `turn_completed` row aggregates several API requests and records no per-request split, so xAI's per-request long-context rates are not applied: the estimate uses the base rates and only approximates the invoice.
 - **Model labels** - Display form is the raw `modelUsage` key (e.g. `grok-4.5-build`). The Agent column identifies the Grok source in unified reports.
 
 ## Environment Variables
 
-| Variable    | Description                                  |
-| ----------- | -------------------------------------------- |
-| `GROK_HOME` | Official Grok config/data home (single root) |
-| `LOG_LEVEL` | Adjust verbosity (0 silent ... 5 trace)      |
+| Variable    | Description                                                                                                   |
+| ----------- | ------------------------------------------------------------------------------------------------------------- |
+| `GROK_HOME` | Official Grok config/data home (single root)                                                                  |
+| `LOG_LEVEL` | `0` hides aggregated warnings, progress, and table titles ([details](/guide/environment-variables#log-level)) |
 
 ## Configuration
 

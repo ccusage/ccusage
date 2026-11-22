@@ -1,0 +1,211 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage cline session --offline --json --timezone Asia/Tokyo
+---
+exit: 0
+--- stdout ---
+{
+  "sessions": [
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 3400,
+      "firstActivity": "2025-12-30T22:00:00.000Z",
+      "inputTokens": 2200,
+      "lastActivity": "2026-01-02T11:05:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 2400,
+          "cost": 0.02,
+          "inputTokens": 1600,
+          "modelName": "gpt-5",
+          "outputTokens": 500,
+          "storedCost": 0.02
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 1000,
+          "cost": 0.0009,
+          "inputTokens": 100,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 20
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00039999999999999996,
+          "inputTokens": 500,
+          "modelName": "devstral-medium-latest",
+          "outputTokens": 100
+        }
+      ],
+      "modelsUsed": [
+        "gpt-5",
+        "devstral-medium-latest",
+        "claude-sonnet-4-20250514"
+      ],
+      "outputTokens": 620,
+      "projectPath": "Cline",
+      "sessionId": "cli:cli-beta",
+      "totalCost": 0.021300000000000003,
+      "totalTokens": 6220
+    },
+    {
+      "cacheCreationTokens": 500,
+      "cacheReadTokens": 6000,
+      "firstActivity": "2025-12-31T16:00:00.000Z",
+      "inputTokens": 2350,
+      "lastActivity": "2026-01-01T00:20:00.123Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.07,
+          "inputTokens": 250,
+          "modelName": "cline-mystery-1",
+          "outputTokens": 50,
+          "storedCost": 0.07
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 3000,
+          "cost": 0.0013999999999999998,
+          "inputTokens": 600,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 100
+        },
+        {
+          "cacheCreationTokens": 500,
+          "cacheReadTokens": 3000,
+          "cost": 0.0,
+          "inputTokens": 1500,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 600,
+          "storedCost": 0.0
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514",
+        "claude-haiku-4-5-20251001",
+        "cline-mystery-1"
+      ],
+      "outputTokens": 750,
+      "projectPath": "Cline",
+      "sessionId": "cli:task-alpha",
+      "totalCost": 0.0714,
+      "totalTokens": 9600
+    },
+    {
+      "cacheCreationTokens": 550,
+      "cacheReadTokens": 22100,
+      "firstActivity": "2025-12-30T10:00:00.000Z",
+      "inputTokens": 4800,
+      "lastActivity": "2026-01-02T09:00:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 7000,
+          "cost": 2.0,
+          "inputTokens": 900,
+          "modelName": "anthropic/claude-sonnet-4",
+          "outputTokens": 400,
+          "storedCost": 2.0
+        },
+        {
+          "cacheCreationTokens": 300,
+          "cacheReadTokens": 4000,
+          "cost": 0.5,
+          "inputTokens": 1000,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 200,
+          "storedCost": 0.5
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 100,
+          "cost": 0.25,
+          "inputTokens": 400,
+          "modelName": "gpt-5",
+          "outputTokens": 45,
+          "storedCost": 0.25
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 5000,
+          "cost": 0.051,
+          "inputTokens": 1400,
+          "modelName": "claude-opus-4-20250514",
+          "outputTokens": 300
+        },
+        {
+          "cacheCreationTokens": 50,
+          "cacheReadTokens": 6000,
+          "cost": 0.0029625,
+          "inputTokens": 800,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 300
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 300,
+          "missingPricing": true,
+          "modelName": "cline-mystery-1",
+          "outputTokens": 70
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514",
+        "claude-opus-4-20250514",
+        "anthropic/claude-sonnet-4",
+        "cline-mystery-1",
+        "gpt-5",
+        "claude-haiku-4-5-20251001"
+      ],
+      "outputTokens": 1315,
+      "projectPath": "Cline",
+      "sessionId": "task:task-alpha",
+      "totalCost": 2.8039625000000004,
+      "totalTokens": 28765
+    },
+    {
+      "cacheCreationTokens": 0,
+      "cacheReadTokens": 0,
+      "firstActivity": "2025-12-27T22:00:00.000Z",
+      "inputTokens": 100,
+      "lastActivity": "2025-12-27T22:00:00.000Z",
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0010500000000000002,
+          "inputTokens": 100,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 50
+        }
+      ],
+      "modelsUsed": [
+        "claude-sonnet-4-20250514"
+      ],
+      "outputTokens": 50,
+      "projectPath": "Cline",
+      "sessionId": "task:task-stale",
+      "totalCost": 0.0010500000000000002,
+      "totalTokens": 150
+    }
+  ],
+  "totals": {
+    "cacheCreationTokens": 1050,
+    "cacheReadTokens": 31500,
+    "inputTokens": 9450,
+    "outputTokens": 2735,
+    "totalCost": 2.897712500000001,
+    "totalTokens": 44735,
+    "unpricedModels": [
+      "cline-mystery-1"
+    ]
+  }
+}
+
+--- stderr ---
