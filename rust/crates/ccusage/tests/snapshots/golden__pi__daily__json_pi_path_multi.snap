@@ -153,7 +153,7 @@ exit: 0
           "cost": 0.0,
           "inputTokens": 0,
           "modelName": "[pi] gpt-5",
-          "outputTokens": 500
+          "outputTokens": 0
         },
         {
           "cacheCreationTokens": 0,
@@ -172,7 +172,7 @@ exit: 0
         "[pi] pi-mystery-1",
         "[pi] claude-haiku-4-5-20251001"
       ],
-      "outputTokens": 1185,
+      "outputTokens": 685,
       "totalCost": 0.04185,
       "totalTokens": 14550
     },
@@ -232,7 +232,7 @@ exit: 0
     "cacheCreationTokens": 2235,
     "cacheReadTokens": 44449,
     "inputTokens": 15572,
-    "outputTokens": 4101,
+    "outputTokens": 3601,
     "totalCost": 9.113834350000001,
     "totalTokens": 66607,
     "unpricedModels": [

@@ -9,7 +9,7 @@ exit: 0
     "cacheCreationTokens": 9001,
     "cacheReadTokens": 668794,
     "inputTokens": 1070549,
-    "outputTokens": 37494,
+    "outputTokens": 33097,
     "totalCost": 15.246333500000002,
     "totalTokens": 1787423,
     "unpricedModels": [
@@ -131,7 +131,7 @@ exit: 0
           "cost": 0.57183625,
           "inputTokens": 13020,
           "modelName": "gpt-5",
-          "outputTokens": 3833,
+          "outputTokens": 2798,
           "storedCost": 0.53
         },
         {
@@ -205,7 +205,7 @@ exit: 0
           "cost": 0.06336875,
           "inputTokens": 1913,
           "modelName": "[openclaw] gpt-5",
-          "outputTokens": 899,
+          "outputTokens": 554,
           "storedCost": 0.06
         },
         {
@@ -290,7 +290,7 @@ exit: 0
           "cost": 0.004050000000000001,
           "inputTokens": 400,
           "modelName": "anthropic/claude-sonnet-4.5",
-          "outputTokens": 562
+          "outputTokens": 130
         },
         {
           "cacheCreationTokens": 20,
@@ -323,7 +323,7 @@ exit: 0
           "cost": 0.0026291,
           "inputTokens": 1511,
           "modelName": "kimi-k2-thinking",
-          "outputTokens": 821
+          "outputTokens": 389
         },
         {
           "cacheCreationTokens": 1200,
@@ -506,7 +506,7 @@ exit: 0
           "cost": 0.0,
           "inputTokens": 0,
           "modelName": "gpt-unknown",
-          "outputTokens": 345
+          "outputTokens": 0
         },
         {
           "cacheCreationTokens": 0,
@@ -524,7 +524,7 @@ exit: 0
           "inputTokens": 250,
           "missingPricing": true,
           "modelName": "gemini-mystery-1",
-          "outputTokens": 724
+          "outputTokens": 70
         },
         {
           "cacheCreationTokens": 0,
@@ -594,7 +594,7 @@ exit: 0
           "cost": 0.0,
           "inputTokens": 0,
           "modelName": "[pi] gpt-5",
-          "outputTokens": 500
+          "outputTokens": 0
         },
         {
           "cacheCreationTokens": 0,
@@ -611,7 +611,7 @@ exit: 0
           "cost": 0.0,
           "inputTokens": 0,
           "modelName": "qwen-mystery-1",
-          "outputTokens": 654
+          "outputTokens": 0
         },
         {
           "cacheCreationTokens": 0,
@@ -689,7 +689,7 @@ exit: 0
         "unknown",
         "zcode-mystery-1"
       ],
-      "outputTokens": 37494,
+      "outputTokens": 33097,
       "period": "2025-12-29",
       "totalCost": 15.246333500000002,
       "totalTokens": 1787423

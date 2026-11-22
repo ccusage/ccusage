@@ -323,13 +323,13 @@ fn read_session_file_data_with_context(
         );
         let cost = priced.cost;
         let estimated_pricing = priced.estimated;
-        let (usage, extra_total_tokens) = additional.for_report(usage);
+        let extra_total_tokens = additional.report_remainder;
         usage_records.push(PiUsageRecord {
             signature: PiUsageSignature {
                 timestamp,
                 model: raw_model.clone(),
                 input_tokens: usage.input_tokens,
-                output_tokens: usage.output_tokens,
+                output_tokens: additional.replay_counts(usage.output_tokens).0,
                 cache_creation_input_tokens: usage.cache_creation_input_tokens,
                 cache_read_input_tokens: usage.cache_read_input_tokens,
                 effective_total_tokens: crate::total_usage_tokens(usage)
@@ -465,6 +465,11 @@ pub(crate) struct PiEntryId {
 
 pub(crate) fn entry_id(entry: &PiLoadedEntry) -> PiEntryId {
     let usage = entry.usage;
+    let (output_tokens, remainder) = ccusage_core::AdditionalTokens {
+        reasoning: 0,
+        report_remainder: entry.extra_total_tokens,
+    }
+    .replay_counts(usage.output_tokens);
     PiEntryId {
         project: Arc::clone(&entry.project),
         session_id: Arc::clone(&entry.session_id),
@@ -472,10 +477,10 @@ pub(crate) fn entry_id(entry: &PiLoadedEntry) -> PiEntryId {
         model: entry.model.clone(),
         tokens: [
             usage.input_tokens,
-            usage.output_tokens,
+            output_tokens,
             usage.cache_creation_input_tokens,
             usage.cache_read_input_tokens,
-            entry.extra_total_tokens,
+            remainder,
         ],
         cost_bits: entry.cost.to_bits(),
     }

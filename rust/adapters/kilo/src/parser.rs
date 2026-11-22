@@ -102,12 +102,12 @@ pub(super) fn message_value_to_entry(
         cache_creation: None,
     };
     let additional = AdditionalTokens::from_total(usage, tokens.reasoning, tokens.total);
-    let (report_usage, extra_total_tokens) = additional.for_report(usage);
+    let extra_total_tokens = additional.total();
     if usage.input_tokens == 0
         && usage.output_tokens == 0
         && usage.cache_creation_input_tokens == 0
         && usage.cache_read_input_tokens == 0
-        && additional.total() == 0
+        && extra_total_tokens == 0
     {
         return Ok(None);
     }
@@ -169,7 +169,7 @@ pub(super) fn message_value_to_entry(
             estimated_pricing,
             stored_cost,
             message_count: None,
-            usage: report_usage,
+            usage,
             message_id: Some(message_id),
             version: None,
             recorded_cost: cost_usd,
@@ -246,8 +246,9 @@ mod tests {
     }
 
     #[test]
-    fn falls_back_to_total_tokens_when_kilo_parts_are_missing() {
+    fn keeps_total_only_usage_out_of_output_tokens() {
         ccusage_test_support::install_pricing_snapshots();
+        let pricing = ccusage_core::PricingMap::load_embedded();
         let value = serde_json::from_value::<KiloMessage>(serde_json::json!({
             "id": "msg-1",
             "role": "assistant",
@@ -263,14 +264,15 @@ mod tests {
             "session-a",
             Path::new("/tmp/kilo.db"),
             &jiff::tz::TimeZone::UTC,
-            CostMode::Auto,
-            ccusage_core::cost::PriceTable::Auto(&ccusage_core::PricingMap::load_embedded()),
+            CostMode::Calculate,
+            ccusage_core::cost::PriceTable::Calculate(&pricing),
         )
         .unwrap()
         .unwrap();
 
-        assert_eq!(entry.usage.output_tokens, 234);
-        assert_eq!(entry.extra_total_tokens, 0);
+        assert_eq!(entry.usage.output_tokens, 0);
+        assert_eq!(entry.extra_total_tokens, 234);
+        assert_eq!(entry.cost, 0.0);
     }
 
     fn deepseek_pricing() -> ccusage_core::PricingMap {

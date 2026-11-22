@@ -26,7 +26,7 @@ exit: 0
           "cost": 0.005375,
           "inputTokens": 1400,
           "modelName": "gpt-5",
-          "outputTokens": 645
+          "outputTokens": 300
         },
         {
           "cacheCreationTokens": 0,
@@ -43,7 +43,7 @@ exit: 0
         "gpt-5",
         "amp-mystery-1"
       ],
-      "outputTokens": 915,
+      "outputTokens": 570,
       "sessionId": "T-aaaaaaaa-0000-4000-8000-000000000001",
       "totalCost": 0.0137,
       "totalTokens": 12915
@@ -60,7 +60,7 @@ exit: 0
           "cost": 0.0042,
           "inputTokens": 600,
           "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 600
+          "outputTokens": 100
         },
         {
           "cacheCreationTokens": 200,
@@ -85,7 +85,7 @@ exit: 0
         "claude-sonnet-4-20250514",
         "amp-mystery-1"
       ],
-      "outputTokens": 1300,
+      "outputTokens": 800,
       "sessionId": "T-bbbbbbbb-0000-4000-8000-000000000002",
       "totalCost": 0.00805,
       "totalTokens": 19850
@@ -118,7 +118,7 @@ exit: 0
     "cacheReadTokens": 25000,
     "credits": 5.2,
     "inputTokens": 5100,
-    "outputTokens": 2265,
+    "outputTokens": 1420,
     "totalCost": 0.022799999999999997,
     "totalTokens": 32915,
     "unpricedModels": [

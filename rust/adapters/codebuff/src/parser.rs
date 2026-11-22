@@ -34,7 +34,6 @@ pub(super) struct CodebuffEntry {
     pub(super) credits: f64,
     pub(super) usage: TokenUsageRaw,
     pub(super) extra_total_tokens: u64,
-    pub(super) reported_output_tokens: u64,
     pub(super) dedup_key: String,
 }
 
@@ -84,18 +83,21 @@ pub(super) fn load_chat_file(
             cache_creation: None,
         };
         let additional = AdditionalTokens::from_total(raw_usage, 0, usage.total_tokens);
-        let (report_usage, extra_total_tokens) = if usage.output_tokens.is_some() {
-            (raw_usage, additional.report_remainder)
+        let (matching_output, matching_remainder) = if usage.output_tokens.is_some() {
+            (raw_usage.output_tokens, additional.report_remainder)
         } else {
-            additional.for_report(raw_usage)
+            additional.replay_counts(raw_usage.output_tokens)
         };
         let dedup_key = dedup_key(
             message,
             &context.session_id,
             timestamp,
             &model,
-            report_usage,
-            extra_total_tokens,
+            TokenUsageRaw {
+                output_tokens: matching_output,
+                ..raw_usage
+            },
+            matching_remainder,
             ordinal,
         );
         entries.push(CodebuffEntry {
@@ -106,8 +108,7 @@ pub(super) fn load_chat_file(
             model,
             credits: usage.credits,
             usage: raw_usage,
-            extra_total_tokens,
-            reported_output_tokens: report_usage.output_tokens,
+            extra_total_tokens: additional.report_remainder,
             dedup_key,
         });
     }
@@ -464,7 +465,6 @@ mod pricing_identity_tests {
             credits: 0.0,
             usage: TokenUsageRaw::default(),
             extra_total_tokens: 0,
-            reported_output_tokens: 0,
             dedup_key: String::new(),
         };
         assert_eq!(
@@ -491,7 +491,6 @@ mod pricing_identity_tests {
                     ..TokenUsageRaw::default()
                 },
                 extra_total_tokens: 0,
-                reported_output_tokens: 1_000,
                 dedup_key: String::new(),
             };
 

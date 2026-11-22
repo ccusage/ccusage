@@ -121,7 +121,6 @@ pub(super) fn row_to_entry(
     let missing_pricing_model =
         (mode != CostMode::Display && priced.matched.is_none() && total_usage_tokens(usage) > 0)
             .then(|| ccusage_core::model_aliases::resolve_model_name(&raw_model).into_owned());
-    let (usage, extra_total_tokens) = additional.for_report(usage);
 
     Ok(Some((
         id.clone(),
@@ -136,7 +135,7 @@ pub(super) fn row_to_entry(
             session_id: Arc::from(session_id),
             project_path: Arc::from(project_path),
             cost,
-            extra_total_tokens,
+            extra_total_tokens: additional.report_remainder,
             credits: None,
             message_count: None,
             model: Some(raw_model),

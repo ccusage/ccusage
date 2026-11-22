@@ -112,7 +112,7 @@ exit: 0
           "cost": 0.0,
           "inputTokens": 0,
           "modelName": "gpt-5",
-          "outputTokens": 345
+          "outputTokens": 0
         }
       ],
       "modelsUsed": [
@@ -120,7 +120,7 @@ exit: 0
         "codebuff-mystery-1",
         "gpt-5"
       ],
-      "outputTokens": 615,
+      "outputTokens": 270,
       "totalCost": 0.0,
       "totalTokens": 8115
     },
@@ -189,7 +189,7 @@ exit: 0
     "cacheReadTokens": 25540,
     "credits": 8.2,
     "inputTokens": 5651,
-    "outputTokens": 1912,
+    "outputTokens": 1567,
     "totalCost": 0.0,
     "totalTokens": 34063
   }

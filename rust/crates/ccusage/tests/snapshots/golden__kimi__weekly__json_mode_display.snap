@@ -9,7 +9,7 @@ exit: 0
     "cacheCreationTokens": 1570,
     "cacheReadTokens": 63000,
     "inputTokens": 14761,
-    "outputTokens": 4426,
+    "outputTokens": 3994,
     "totalCost": 0.0,
     "totalTokens": 84007
   },
@@ -47,7 +47,7 @@ exit: 0
           "cost": 0.0,
           "inputTokens": 4511,
           "modelName": "kimi-k2-thinking",
-          "outputTokens": 1431
+          "outputTokens": 999
         },
         {
           "cacheCreationTokens": 70,
@@ -89,7 +89,7 @@ exit: 0
         "gpt-5",
         "kimi-mystery-1"
       ],
-      "outputTokens": 3876,
+      "outputTokens": 3444,
       "totalCost": 0.0,
       "totalTokens": 80357,
       "week": "2025-12-29"
