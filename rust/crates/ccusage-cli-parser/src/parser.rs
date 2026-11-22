@@ -15,7 +15,7 @@ mod values;
 
 use agents::{parse_agent_command, parse_codex_statusline};
 use errors::{invocation_error, last_option_error, report_flag_alias_error};
-use shared::{SharedFlag, parse_shared_arg, parse_shared_arg_for_command, read_shared_flag};
+use shared::{SharedFlag, parse_claude_report_arg, parse_shared_arg, read_shared_flag};
 use values::{
     parse_cost_source, parse_report_sections, parse_visual_burn_rate, parse_week_day,
     replace_configured_window_with_last, resolve_timezone, validate_date_window,
@@ -281,9 +281,10 @@ fn parse_blocks_command(
         token_limit: None,
         session_length: SessionLength::DEFAULT,
     };
+    let mut project = None;
     config.apply_blocks_args(&mut args);
     while parser.peek().is_some() {
-        if parse_shared_arg_for_command(parser, &mut args.shared)? {
+        if parse_claude_report_arg(parser, &mut args.shared, &mut project)? {
             continue;
         }
         match command_option(parser, options, "blocks")? {
@@ -305,7 +306,10 @@ fn parse_blocks_command(
             }
         }
     }
-    Ok(Command::claude_report(ClaudeReport::Blocks(args)))
+    Ok(Command::Claude {
+        report: ClaudeReport::Blocks(args),
+        project,
+    })
 }
 
 fn parse_statusline_command(
@@ -450,13 +454,14 @@ fn parse_top_level_session_command(
     initial_options: RootOptions,
 ) -> Result<Command, String> {
     let mut args = SessionArgs { shared, id: None };
+    let mut project = None;
     let mut sections = initial_options.sections;
     let mut by_agent = initial_options.by_agent;
     while parser.peek().is_some() {
         if parse_unified_report_arg(parser, &mut sections, &mut by_agent)?.is_some() {
             continue;
         }
-        if parse_shared_arg_for_command(parser, &mut args.shared)? {
+        if parse_claude_report_arg(parser, &mut args.shared, &mut project)? {
             continue;
         }
         match parser.next_flag()?.as_str() {
@@ -475,10 +480,12 @@ fn parse_top_level_session_command(
         return Ok(Command::claude_report(ClaudeReport::Session(args)));
     }
 
+    let mut report = agent_command_args(args.shared, AgentReportKind::Session);
+    report.options.claude_project = project;
     Ok(Command::All(AgentCommandArgs {
         sections,
         by_agent,
-        ..agent_command_args(args.shared, AgentReportKind::Session)
+        ..report
     }))
 }
 

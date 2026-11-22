@@ -5,8 +5,9 @@ use crate::TimestampMs;
 use super::{
     CachedHit, Candidate, HitKind, Lookup, Name, NameCache, Pass, Pricing, PricingMap, PricingRows,
     PricingSchedule, RequestCache, RequestHit, Row, RowMatch, Scope, host_listing,
-    host_of_model_id, is_host_segment, last_segment, models_dev_pricing, names_pricing_key,
-    pricing_key_matches, same_host_spelling, schedule_for, unlabeled_model,
+    host_of_model_id, is_host_segment, keys::normalized_key_bytes, last_segment,
+    models_dev_pricing, names_pricing_key, normalized_pricing_key, pricing_key_matches,
+    same_host_spelling, schedule_for, unlabeled_model,
 };
 
 #[derive(Clone, Copy)]
@@ -349,7 +350,7 @@ impl PricingMap {
             .and_then(project)
             .or_else(|| {
                 self.rows.authoritative(model, hosted, fold, |found| {
-                    let found = match self.overrides.shadow(found, true) {
+                    let found = match self.overrides.shadow(found) {
                         Some(id) => self.resolve_override(id, models_dev, false)?,
                         None => found,
                     };
@@ -809,7 +810,7 @@ impl PricingMap {
     ) -> Option<RowMatch<'a>> {
         self.rows
             .host_row(id, host, lookup, fold)
-            .and_then(|found| match self.overrides.shadow(found, true) {
+            .and_then(|found| match self.overrides.shadow(found) {
                 Some(id) => self.resolve_override(id, models_dev, false),
                 None => Some(found),
             })
@@ -833,59 +834,77 @@ impl PricingMap {
             })
     }
 
-    fn search_fuzzy<'a>(
+    pub(super) fn search_fuzzy<'a>(
         &'a self,
         name: Name<'_>,
         lookup: Lookup,
         secondary: Option<&'a PricingRows>,
         models_dev: &impl Fn() -> Option<&'a PricingRows>,
     ) -> Option<CachedHit> {
+        self.search_fuzzy_with_keys(name, lookup, secondary, models_dev, PricingRows::keys)
+    }
+
+    pub(super) fn search_fuzzy_with_keys<'a, I>(
+        &'a self,
+        name: Name<'_>,
+        lookup: Lookup,
+        secondary: Option<&'a PricingRows>,
+        models_dev: &impl Fn() -> Option<&'a PricingRows>,
+        keys: impl Fn(&'a PricingRows) -> I,
+    ) -> Option<CachedHit>
+    where
+        I: Iterator<Item = (usize, &'a str)>,
+    {
         let normalized = name.identity();
-        let base = self.rows.normalized_matches();
+        let matches = |key| pricing_key_matches(key, name.raw(), normalized);
+        let base = keys(&self.rows).filter(|&(_, key)| matches(key));
+        let resolve = |(id, key)| Some((key, self.rows.at(id)?));
         let primary = if self.overrides.is_empty() {
-            Self::fuzzy(
-                base.map(|(found, identity)| (found.key, identity, found)),
-                name.raw(),
-                normalized,
-                lookup,
-            )
+            Self::fuzzy(base.filter_map(resolve), name.raw(), normalized, lookup)
         } else {
             let shadowed = self.override_shadows.get_or_init(|| {
                 self.rows
-                    .matches()
-                    .filter_map(|found| self.overrides.shadow(found, false))
+                    .keys()
+                    .filter_map(|(id, key)| {
+                        self.overrides
+                            .shadow_identity(&normalized_pricing_key(key), || {
+                                self.rows.vendor_id(id).map(str::len)
+                            })
+                    })
                     .collect()
             });
-            let matches =
-                |key, identity| pricing_key_matches(key, identity, name.raw(), normalized);
-            let resolve = |id| self.resolve_override(id, models_dev, true);
-            let base = base.filter_map(|(raw, identity)| {
-                let found = match self.overrides.shadow(raw, false) {
-                    Some(id) if matches(raw.key, identity) => resolve(id)?,
-                    Some(_) => return None,
+            let resolve_override = |id| self.resolve_override(id, models_dev, true);
+            let base = base.filter_map(resolve).filter_map(|(key, raw)| {
+                let found = match self
+                    .overrides
+                    .shadow_identity(&normalized_pricing_key(key), || {
+                        raw.row.vendor_id().map(str::len)
+                    }) {
+                    Some(id) => resolve_override(id)?,
                     None => raw,
                 };
-                Some((raw.key, identity, found))
+                Some((key, found))
             });
-            let overrides =
-                self.overrides
-                    .names()
-                    .enumerate()
-                    .filter_map(|(id, (key, identity))| {
-                        if shadowed.contains(&id) || !matches(key, identity) {
-                            return None;
-                        }
-                        Some((key, identity, resolve(id)?))
-                    });
+            let overrides = self
+                .overrides
+                .names()
+                .enumerate()
+                .filter_map(|(id, (key, _))| {
+                    if shadowed.contains(&id) || !matches(key) {
+                        return None;
+                    }
+                    Some((key, resolve_override(id)?))
+                });
             Self::fuzzy(base.chain(overrides), name.raw(), normalized, lookup)
         };
         primary
             .map(|found| CachedHit::new(found, HitKind::AuthoritativeFuzzy))
             .or_else(|| {
+                let secondary = secondary.filter(|rows| rows.may_match_fuzzy(name.raw()))?;
                 Self::fuzzy(
-                    secondary?
-                        .normalized_matches()
-                        .map(|(found, identity)| (found.key, identity, found)),
+                    keys(secondary)
+                        .filter(|&(_, key)| matches(key))
+                        .filter_map(|(id, key)| Some((key, secondary.at(id)?))),
                     name.raw(),
                     normalized,
                     lookup,
@@ -910,27 +929,23 @@ impl PricingMap {
     }
 
     fn fuzzy<'a>(
-        rows: impl Iterator<Item = (&'a str, &'a str, RowMatch<'a>)>,
+        rows: impl Iterator<Item = (&'a str, RowMatch<'a>)>,
         name: &str,
         normalized: &str,
         lookup: Lookup,
     ) -> Option<RowMatch<'a>> {
         let segment = last_segment(normalized);
-        let pool = rows.filter(|(key, identity, found)| {
+        let pool = rows.filter(|(key, found)| {
             lookup.includes(found.row)
                 && (!found.row.is_free()
                     || (matches!(lookup, Lookup::Context) && found.row.scope == Scope::Direct))
-                && if found.row.exact_only {
-                    names_pricing_key(key, identity, name, normalized)
-                } else {
-                    pricing_key_matches(key, identity, name, normalized)
-                }
+                && (!found.row.exact_only || names_pricing_key(key, name, normalized))
         });
         let mut best = None;
         let mut best_not_longer = None;
         let mut equal_segment_seen = false;
-        for (key, identity, found) in pool {
-            let row_segment = last_segment(identity);
+        for (key, found) in pool {
+            let row_segment = last_segment(key);
             let rank = (key.len(), std::cmp::Reverse(key));
             if best.is_none_or(|(previous, _)| rank > previous) {
                 best = Some((rank, found));
@@ -939,7 +954,7 @@ impl PricingMap {
                 if best_not_longer.is_none_or(|(previous, _)| rank > previous) {
                     best_not_longer = Some((rank, found));
                 }
-                equal_segment_seen |= row_segment == segment;
+                equal_segment_seen |= normalized_key_bytes(row_segment).eq(segment.bytes());
             }
         }
         let winner = if equal_segment_seen {

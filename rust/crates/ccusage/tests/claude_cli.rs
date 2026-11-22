@@ -2028,6 +2028,8 @@ fn explicit_claude_session_id_ignores_configured_project() {
     for command in [
         &["session", "--id=target"][..],
         &["claude", "session", "-i", "target"],
+        &["session", "--project=project-a", "--id=target"],
+        &["claude", "session", "--id", "target", "-p", "project-a"],
     ] {
         let json = report_with_project_config(&fixture, command, &config);
         assert_eq!(json["totalCost"], 4.0, "{command:?}");
@@ -2089,15 +2091,34 @@ fn unified_project_filter_preserves_other_agents_and_explains_its_scope() {
 }
 
 #[test]
-fn daily_project_flag_overrides_configured_project() {
+fn project_flag_overrides_configured_project_in_usage_reports() {
     let fixture = project_filter_fixture();
-    let config = serde_json::json!({"claude": {"commands": {"daily": {"project": "project-a"}}}});
-    let json = report_with_project_config(
-        &fixture,
-        &["claude", "daily", "--project", "project-b"],
-        &config,
-    );
-    assert_eq!(json["totals"]["totalCost"], 2.5);
+    let config = serde_json::json!({"claude": {"defaults": {"project": "project-a"}}});
+    for command in [
+        &["claude", "daily", "--project", "project-b"][..],
+        &["claude", "weekly", "-p", "project-b"],
+        &["claude", "monthly", "--project=project-b"],
+        &["claude", "session", "--project", "project-b"],
+        &["session", "--project", "project-b"],
+    ] {
+        let json = report_with_project_config(&fixture, command, &config);
+        assert_eq!(json["totals"]["totalCost"], 2.5, "{command:?}: {json}");
+    }
+}
+
+#[test]
+fn project_flag_overrides_configured_project_in_blocks() {
+    let fixture = project_filter_fixture();
+    let config = serde_json::json!({"claude": {"commands": {"blocks": {"project": "project-a"}}}});
+    for command in [
+        &["claude", "blocks", "--project=project-b"][..],
+        &["blocks", "-p", "project-b"],
+    ] {
+        let json = report_with_project_config(&fixture, command, &config);
+        let blocks = json["blocks"].as_array().unwrap();
+        assert_eq!(blocks.len(), 1, "{command:?}: {json}");
+        assert_eq!(blocks[0]["costUSD"], 2.5, "{command:?}: {json}");
+    }
 }
 
 fn project_filter_fixture() -> Fixture {

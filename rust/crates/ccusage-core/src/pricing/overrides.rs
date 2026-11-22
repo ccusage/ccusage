@@ -45,19 +45,21 @@ impl Overrides {
             .or_else(|| self.id_identity(name, true))
     }
 
+    fn exact_id(&self, identity: &str) -> Option<usize> {
+        self.by_identity.get(identity).copied()
+    }
+
     fn id_identity(&self, name: Name<'_>, fold: bool) -> Option<usize> {
         let identity = name.identity();
         if !fold {
-            return self.by_identity.get(identity).copied();
+            return self.exact_id(identity);
         }
         let identity = fold_case(identity);
         let key = |id: usize| self.rows[id].key.as_ref();
         let folded = matching_folded_ids(&self.folded_ids, &identity, key);
-        self.by_identity
-            .get(identity.as_ref())
+        self.exact_id(&identity)
             .into_iter()
-            .chain(folded)
-            .copied()
+            .chain(folded.iter().copied())
             .min_by_key(|&id| identity_order(name, key(id), true))
     }
 
@@ -94,19 +96,27 @@ impl Overrides {
             })
     }
 
-    pub(super) fn shadow(&self, found: RowMatch<'_>, fold: bool) -> Option<usize> {
+    pub(super) fn shadow(&self, found: RowMatch<'_>) -> Option<usize> {
         if self.is_empty() {
             return None;
         }
-        let key_cache = OnceLock::new();
-        let vendor_cache = OnceLock::new();
-        let key = Name::new(found.key, &key_cache);
-        let vendor = found.row.vendor_id().map(|id| Name::new(id, &vendor_cache));
-        let find = |fold| {
-            self.id_identity(key, fold)
-                .or_else(|| self.id_identity(vendor?, fold))
-        };
-        find(false).or_else(|| fold.then(|| find(true)).flatten())
+        let identity = OnceLock::new();
+        let name = Name::new(found.key, &identity);
+        let vendor = found.row.vendor_id();
+        self.shadow_identity(name.identity(), || vendor.map(str::len))
+            .or_else(|| self.id_identity(name, true))
+            .or_else(|| self.id_identity(Name::new(vendor?, &OnceLock::new()), true))
+    }
+
+    pub(super) fn shadow_identity(
+        &self,
+        identity: &str,
+        vendor_len: impl FnOnce() -> Option<usize>,
+    ) -> Option<usize> {
+        self.exact_id(identity).or_else(|| {
+            // NOTE(2026-11-21, #2465): Normalization swaps ASCII bytes one for one. The vendor ID can use the same suffix offset in the normalized key.
+            self.exact_id(&identity[identity.len() - vendor_len()?..])
+        })
     }
 
     pub(super) fn names(&self) -> impl Iterator<Item = (&str, &str)> {
