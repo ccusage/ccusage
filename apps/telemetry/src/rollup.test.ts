@@ -248,6 +248,25 @@ void describe('writeDailyRollup', () => {
 		assert.deepEqual(rollup.byVersion, [{ version: '20.0.38', users: 10 }]);
 	});
 
+	void it('limits all breakdown queries while preserving full distinct-user totals', async () => {
+		const { env, queries } = fakeEnv();
+
+		const rollup = await writeDailyRollup(env, '2026-10-21', new Date('2026-10-22T00:15:00Z'));
+
+		const breakdownQueries = queries.filter(({ query }) => query.includes('GROUP BY'));
+		assert.equal(breakdownQueries.length, 3);
+		for (const { query } of breakdownQueries) {
+			assert.match(query, /ORDER BY users DESC LIMIT 20$/);
+		}
+		const totalsQueries = queries.filter(({ query }) => !query.includes('GROUP BY'));
+		assert.equal(totalsQueries.length, 3);
+		for (const { query } of totalsQueries) assert.equal(query.includes('LIMIT'), false);
+		assert.deepEqual(
+			[rollup.dailyActiveUsers, rollup.weeklyActiveUsers, rollup.monthlyActiveUsers],
+			[10, 25, 42],
+		);
+	});
+
 	void it('does not publish zeros when Analytics Engine returns no count row', async () => {
 		const { env, puts } = fakeEnv();
 		env.ANALYTICS.query = async () => ({ data: [] });

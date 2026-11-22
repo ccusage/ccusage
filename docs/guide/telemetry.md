@@ -52,6 +52,8 @@ The collector writes only the six fields above to its dataset. It does not write
 
 The [public dashboard](https://telemetry.ccusage.com/) shows up to 90 completed UTC days of daily, weekly and monthly active environments, plus platform and version breakdowns for the latest available day. The Worker reads stored KV aggregates; viewing the dashboard does not query individual pings or trigger telemetry. It uses no third-party scripts or page analytics.
 
+Each breakdown keeps up to 20 groups with the highest observed counts per day. Smaller groups may be omitted; the daily, weekly and monthly totals still count all installation IDs.
+
 An active environment means a distinct random installation ID observed in the relevant window, not a verified person. Multiple devices and reset IDs can increase counts; opt-outs, blocked requests and failed sends can reduce them. These are adoption indicators, not an exact population or a guaranteed lower bound. Command breakdowns are omitted because only the first command of each UTC day is reported.
 
 Daily aggregates are generated after 00:15 UTC. The [aggregate JSON](https://telemetry.ccusage.com/v1/stats) is cached for up to one hour at the edge and five minutes in browsers. Missing days appear as gaps, not zero activity. An empty dashboard means no aggregates are available yet; an error or stale data is shown explicitly.

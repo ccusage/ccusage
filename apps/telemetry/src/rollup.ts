@@ -4,6 +4,7 @@ const DATASET = 'events.analyticsEngine.ccusage_telemetry';
 const DAY_MS = 24 * 60 * 60 * 1000;
 export const PUBLIC_STATS_KEY = 'public-stats.json';
 const MAX_PUBLIC_DAYS = 90;
+const MAX_BREAKDOWN_ROWS = 20;
 
 const count = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 const usersSchema = z.coerce.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
@@ -13,7 +14,7 @@ const platformRowSchema = z.object({ os: z.string(), arch: z.string(), users: us
 const versionRowSchema = z.object({ version: z.string(), users: usersSchema });
 const commandRowSchema = z.object({ command: z.string(), users: usersSchema });
 const countRowSchema = z.object({ users: usersSchema, maxSampleInterval: usersSchema });
-const samplingRowSchema = z.object({ maxSampleInterval: usersSchema }).passthrough();
+const samplingRowSchema = z.object({ maxSampleInterval: usersSchema });
 const publicDaySchema = z.object({
 	date: z.iso.date(),
 	generatedAt: z.iso.datetime({ offset: true }),
@@ -222,7 +223,7 @@ async function breakdown<Row>(
 	rowSchema: z.ZodType<Row>,
 ): Promise<{ rows: Row[]; samplingObserved: boolean }> {
 	const result = await analytics.query({
-		query: `SELECT ${columns}, count(DISTINCT index1) AS users, approx_max(sampleInterval) AS maxSampleInterval FROM ${DATASET} WHERE timestamp >= $start AND timestamp < $end GROUP BY ${groupBy} ORDER BY users DESC`,
+		query: `SELECT ${columns}, count(DISTINCT index1) AS users, approx_max(sampleInterval) AS maxSampleInterval FROM ${DATASET} WHERE timestamp >= $start AND timestamp < $end GROUP BY ${groupBy} ORDER BY users DESC LIMIT ${MAX_BREAKDOWN_ROWS}`,
 		params: { start, end },
 	});
 	const samplingRows = z.array(samplingRowSchema).parse(result.data);
