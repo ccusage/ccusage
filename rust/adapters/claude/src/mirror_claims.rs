@@ -1,10 +1,10 @@
 use std::{
     collections::HashSet,
-    fs,
+    ffi::OsStr,
     path::{Path, PathBuf},
 };
 
-use ccusage_adapter_common::{claims::NativeSessions, read_discovered_paths};
+use ccusage_adapter_common::{claims::NativeSessions, dir_entries, read_discovered_paths};
 use ccusage_core::{Diagnostics, ReportWindow, Result, cli::SharedArgs};
 
 use crate::{
@@ -141,19 +141,18 @@ pub(super) fn find_unbounded_sessions(
         .iter()
         .filter(|id| is_project_path_segment(id))
         .map(|id| format!("{id}.jsonl"))
-        .filter(|name| Path::new(name).file_name() == Some(std::ffi::OsStr::new(name)))
+        .filter(|name| Path::new(name).file_name() == Some(OsStr::new(name)))
         .collect();
 
     // NOTE(2026-11-22, #2498): An unbounded scan only needs one admitted main-thread record for an ID. Claude deduplication retains it as either a survivor or an alias, so try ordinary transcript filenames first.
     for root in &roots {
-        let Ok(projects) = fs::read_dir(root) else {
-            continue;
-        };
-        for project in projects.flatten() {
-            if selected_project.is_some_and(|selected| project.file_name() == selected) {
+        for (project, kind) in dir_entries(root, diagnostics) {
+            if !(kind.is_dir() || kind.is_symlink())
+                || selected_project
+                    .is_some_and(|selected| project.file_name() == Some(OsStr::new(selected)))
+            {
                 continue;
             }
-            let project = project.path();
             for name in &names {
                 let file = project.join(name);
                 if file.is_file() && visited.insert(file.clone()) {

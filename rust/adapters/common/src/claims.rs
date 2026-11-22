@@ -105,7 +105,7 @@ mod channel_tests {
     fn publication_reaches_the_receiver() {
         let (sender, receiver) = super::channel();
         std::thread::scope(|scope| {
-            scope.spawn(move || {
+            ccusage_core::parallel::spawn_scoped_worker(scope, move || {
                 assert!(sender.requested().is_some());
                 sender.publish(super::ClaudeCounted::nothing());
             });
