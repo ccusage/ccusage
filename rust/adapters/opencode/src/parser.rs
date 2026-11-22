@@ -342,14 +342,14 @@ impl OpenCodeUsage {
         };
         let additional =
             AdditionalTokens::from_total(usage, self.tokens.reasoning, self.tokens.total);
-        let (report_usage, extra_total_tokens) = additional.for_report(usage);
+        let extra_total_tokens = additional.total();
         let recorded_cost = ccusage_core::cost::recorded_cost(self.stored_cost);
         let cost_only = self.kind == UsageKind::Aggregate && recorded_cost.is_some();
         if usage.input_tokens == 0
             && usage.output_tokens == 0
             && usage.cache_creation_input_tokens == 0
             && usage.cache_read_input_tokens == 0
-            && additional.total() == 0
+            && extra_total_tokens == 0
             && !cost_only
         {
             return Ok(None);
@@ -400,7 +400,7 @@ impl OpenCodeUsage {
             missing_pricing_model,
             estimated_pricing,
             stored_cost,
-            usage: report_usage,
+            usage,
             message_id: self.id,
             version: None,
             recorded_cost: self.stored_cost,

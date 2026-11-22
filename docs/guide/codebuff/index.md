@@ -64,7 +64,7 @@ These views support `--json` for structured output, `--compact` for narrow termi
 
 ## What Gets Calculated
 
-- **Token usage** - Assistant messages can provide input and output token counts from `metadata.usage`, `metadata.codebuff.usage`, or nested run-state provider usage. ccusage uses the first positive output count in that order. With no positive count, a recorded zero takes precedence over the total-based display fallback.
+- **Token usage** - Assistant messages can provide input and output token counts from `metadata.usage`, `metadata.codebuff.usage`, or nested run-state provider usage. ccusage uses the first positive output count in that order. Any unexplained remainder contributes only to the reported total.
 - **Cache tokens** - Cache creation and cache read tokens are included when the Codebuff message metadata records them.
 - **Credits** - Codebuff credit values are summed in row metadata and included in per-agent JSON output.
 - **Pricing** - Auto and Calculate estimate USD costs from model pricing. Codebuff records credits rather than USD costs, so Display reports $0; credit and token totals remain available. See [Cost Modes](/guide/cost-modes).

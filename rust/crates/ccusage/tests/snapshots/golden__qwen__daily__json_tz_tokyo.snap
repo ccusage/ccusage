@@ -126,7 +126,7 @@ exit: 0
           "cost": 0.0,
           "inputTokens": 0,
           "modelName": "qwen-mystery-1",
-          "outputTokens": 654
+          "outputTokens": 0
         }
       ],
       "modelsUsed": [
@@ -136,7 +136,7 @@ exit: 0
         "qwen-mystery-1",
         "qwen3-coder-plus"
       ],
-      "outputTokens": 3182,
+      "outputTokens": 2528,
       "totalCost": 0.23888569999999998,
       "totalTokens": 305633
     },
@@ -190,7 +190,7 @@ exit: 0
     "cacheCreationTokens": 0,
     "cacheReadTokens": 103493,
     "inputTokens": 204601,
-    "outputTokens": 4254,
+    "outputTokens": 3600,
     "totalCost": 0.24988069999999998,
     "totalTokens": 312658,
     "unpricedModels": [

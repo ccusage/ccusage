@@ -22,7 +22,6 @@ pub(super) struct CopilotUsageEntry {
     pub(super) cache_read_tokens: u64,
     pub(super) reasoning_output_tokens: u64,
     pub(super) extra_total_tokens: u64,
-    pub(super) fallback_output_tokens: u64,
     pub(super) request_count: u64,
     pub(super) nano_aiu: Option<u64>,
     pub(super) dedup_key: String,

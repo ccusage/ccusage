@@ -33,7 +33,7 @@ exit: 0
           "cost": 0.03,
           "inputTokens": 1000,
           "modelName": "gpt-5",
-          "outputTokens": 555
+          "outputTokens": 210
         }
       ],
       "modelsUsed": [
@@ -41,7 +41,7 @@ exit: 0
         "gpt-5",
         "kilo-mystery-1"
       ],
-      "outputTokens": 847,
+      "outputTokens": 502,
       "sessionId": "ses-alpha",
       "totalCost": 0.73,
       "totalTokens": 10167
@@ -144,7 +144,7 @@ exit: 0
     "cacheCreationTokens": 550,
     "cacheReadTokens": 22500,
     "inputTokens": 5363,
-    "outputTokens": 1819,
+    "outputTokens": 1474,
     "totalCost": 3.9899999999999998,
     "totalTokens": 30362
   }

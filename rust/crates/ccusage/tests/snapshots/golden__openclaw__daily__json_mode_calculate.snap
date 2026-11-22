@@ -80,7 +80,7 @@ exit: 0
           "cost": 0.005375,
           "inputTokens": 1400,
           "modelName": "[openclaw] gpt-5",
-          "outputTokens": 645
+          "outputTokens": 300
         },
         {
           "cacheCreationTokens": 0,
@@ -97,7 +97,7 @@ exit: 0
         "[openclaw] gpt-5",
         "[openclaw] openclaw-mystery-1"
       ],
-      "outputTokens": 1225,
+      "outputTokens": 880,
       "totalCost": 0.012125,
       "totalTokens": 20965
     },
@@ -179,7 +179,7 @@ exit: 0
     "cacheCreationTokens": 1850,
     "cacheReadTokens": 40500,
     "inputTokens": 9124,
-    "outputTokens": 2876,
+    "outputTokens": 2531,
     "totalCost": 0.04634375,
     "totalTokens": 54700,
     "unpricedModels": [
