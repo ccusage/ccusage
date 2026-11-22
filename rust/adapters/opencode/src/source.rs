@@ -1,5 +1,5 @@
 use ccusage_adapter_common::{
-    claims::{ClaudeClaimsRx, ClaudeCounted},
+    claims::{ClaudeClaimsRx, ClaudeCounted, NativeSessions, native_sessions},
     rows::summary_rows,
     source::{LoadRequest, LoadedRows, ProgressOwner, UsageSource},
 };
@@ -23,7 +23,7 @@ impl OpenCode {
         request
             .progress
             .run(UsageLoadAgent("OpenCode"), request.shared.json, || {
-                load_rows(request, || claims.receive())
+                load_rows(request, |sessions| claims.receive(sessions))
             })
     }
 }
@@ -45,14 +45,14 @@ impl UsageSource for OpenCode {
         request
             .progress
             .run(UsageLoadAgent("OpenCode"), request.shared.json, || {
-                load_rows(request, || Ok(ClaudeCounted::nothing()))
+                load_rows(request, |_| Ok(ClaudeCounted::nothing()))
             })
     }
 }
 
 fn load_rows(
     request: &LoadRequest<'_>,
-    counted: impl FnOnce() -> Result<ClaudeCounted>,
+    counted: impl FnOnce(NativeSessions) -> Result<ClaudeCounted>,
 ) -> Result<LoadedRows> {
     let diagnostics = Diagnostics::new("opencode");
     let linked = load_entries_with_native_sessions_with_diagnostics(
@@ -62,10 +62,11 @@ fn load_rows(
         &diagnostics,
     )?;
     let detected = !linked.is_empty() || has_data();
-    let mut entries = if linked.iter().any(|(_, session)| session.is_some()) {
-        counted()?.retain_uncounted(linked)
-    } else {
+    let sessions = native_sessions(&linked);
+    let mut entries = if sessions.is_empty() {
         linked.into_iter().map(|(entry, _)| entry).collect()
+    } else {
+        counted(sessions)?.retain_uncounted(linked)
     };
     ccusage_adapter_common::filter_loaded_entries_by_date(&mut entries, request.shared);
     let summaries = summarize_entries(

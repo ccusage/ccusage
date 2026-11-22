@@ -87,7 +87,6 @@ fn parse_claude_daily_command(
 fn parse_claude_monthly_command(
     parser: &mut ArgParser,
     mut shared: SharedArgs,
-    _config: &dyn CliConfig,
 ) -> Result<Command, String> {
     let mut project = None;
     while parser.peek().is_some() {
@@ -132,7 +131,6 @@ fn parse_claude_weekly_command(
 fn parse_claude_session_command(
     parser: &mut ArgParser,
     shared: SharedArgs,
-    _config: &dyn CliConfig,
 ) -> Result<Command, String> {
     let mut args = SessionArgs { shared, id: None };
     let mut project = None;
@@ -166,9 +164,9 @@ fn parse_claude_command(
     };
     match command.as_str() {
         "daily" => parse_claude_daily_command(parser, shared, config),
-        "monthly" => parse_claude_monthly_command(parser, shared, config),
+        "monthly" => parse_claude_monthly_command(parser, shared),
         "weekly" => parse_claude_weekly_command(parser, shared, config),
-        "session" => parse_claude_session_command(parser, shared, config),
+        "session" => parse_claude_session_command(parser, shared),
         command => Err(format!("Unknown claude command '{command}'")),
     }
 }

@@ -1,7 +1,8 @@
 use std::{collections::BTreeMap, path::PathBuf};
 
-use ccusage_adapter_common::source::{
-    LoadKind, LoadRequest, ProgressOwner, SourceOptions, UsageSource,
+use ccusage_adapter_common::{
+    claims::native_sessions,
+    source::{LoadKind, LoadRequest, ProgressOwner, SourceOptions, UsageSource},
 };
 
 use crate::{
@@ -164,13 +165,16 @@ pub(super) fn load_opencode_entries(
     claude_source: Option<&ccusage_cli::SourceArgs>,
 ) -> Result<(Vec<LoadedEntry>, Option<Diagnostics>)> {
     let entries = opencode::load_entries_with_native_sessions(shared, kind)?;
-    if include_claude_agent || entries.iter().all(|(_, session)| session.is_none()) {
+    if include_claude_agent {
+        return Ok((entries.into_iter().map(|(entry, _)| entry).collect(), None));
+    }
+    let sessions = native_sessions(&entries);
+    if sessions.is_empty() {
         return Ok((entries.into_iter().map(|(entry, _)| entry).collect(), None));
     }
     let claude_shared = claude_source.map_or(shared, |source| &source.shared);
     let diagnostics = Diagnostics::new("claude");
-    let project = claude_source.and_then(|source| source.options.claude_project.as_deref());
-    let counted = claude::SOURCE.counted(claude_shared, project, &diagnostics)?;
+    let counted = claude::SOURCE.counted(claude_shared, sessions, &diagnostics)?;
     Ok((counted.retain_uncounted(entries), Some(diagnostics)))
 }
 
