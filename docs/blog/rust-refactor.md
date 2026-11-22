@@ -28,7 +28,7 @@ On a maintainer's real logs, reports take 0.45× the wall time and 0.43× the pe
 
 ### Measured times on benchmark machines
 
-Ratios hide how long you actually wait, so here are the measured times. The input is the generated benchmark data from our CI: 10.3 GiB of Claude Code logs, 14.2 GiB of Codex logs (4.5 GiB compressed on disk), and a 256 MiB OpenCode database. The `ccusage daily` row reads the Claude, Codex, and Grok data together. Wall time is the mean of 15 runs after 3 warmups; peak memory is the median of 5 runs.
+Ratios hide how long you actually wait, so here are the measured times. The input is the generated benchmark data from our CI: 10.3 GiB of Claude Code logs, 14.2 GiB of Codex logs (4.5 GiB compressed on disk), and a 256 MiB OpenCode database. The `ccusage daily` row reads the Claude, Codex, and Grok data together. Wall time is the mean of 15 runs after 3 warmups, measured with hyperfine; the OpenCode rows use the shell's `time` over 15 interleaved runs after 3 warmups instead, because hyperfine skews multi-threaded runs (#2461). Peak memory is the median of 5 runs (15 for OpenCode).
 
 **Linux x64, 32 vCPU**
 
