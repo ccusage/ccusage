@@ -1,4 +1,6 @@
 use std::{
+    borrow::Cow,
+    cmp::Ordering,
     num::NonZeroUsize,
     sync::{Arc, OnceLock},
 };
@@ -8,15 +10,20 @@ use crate::fast::FxHashMap;
 use super::{
     CacheDefaults, LongContext, LongContextMode, LongContextRates, PricingMap, PricingRows, Row,
     RowMatch, RowPricing, Scope, Source, data,
+    keys::normalized_key_bytes,
+    normalized_pricing_key,
     row::{Published, PublishedRates},
-    rows::FoldedIndexes,
+    rows::{FoldedIndexes, Index, folded_identity},
+    secondary_index::SecondaryIndex,
     speed::PublishedSpeed,
 };
 
-/// Builds the embedded catalogue from the LiteLLM and models.dev snapshots and
-/// encodes it for [`EmbeddedSnapshots::pricing_table`](super::EmbeddedSnapshots).
+/// Encodes the primary catalogue, models.dev fallback, and its membership index.
 /// Install the LiteLLM source and models.dev catalog rules first.
-pub fn encode_pricing_table(litellm_json: &str, models_dev_json: &str) -> Vec<u8> {
+pub fn encode_pricing_table(
+    litellm_json: &str,
+    models_dev_json: &str,
+) -> (Vec<u8>, Vec<u8>, Vec<u8>) {
     let mut models_dev = PricingMap::default();
     models_dev
         .load_models_dev_json_missing(models_dev_json)
@@ -27,31 +34,22 @@ pub fn encode_pricing_table(litellm_json: &str, models_dev_json: &str) -> Vec<u8
         "embedded LiteLLM pricing must load"
     );
     map.complete_layers(&models_dev);
-    let mut writer = Writer::default();
-    writer.rows(&map.rows);
-    writer.rows(&models_dev.rows);
-    writer.finish()
+    let primary = Writer::encode(&map.rows, RecordOffsets::Absolute);
+    let secondary = Writer::encode(&models_dev.rows, RecordOffsets::Delta);
+    (primary, secondary, SecondaryIndex::encode(&models_dev.rows))
 }
 
-pub(super) struct PricingTable {
-    pub(super) rows: PricingMap,
-    pub(super) models_dev: PricingMap,
-}
-
-pub(super) fn decode_pricing_table(bytes: &[u8]) -> PricingTable {
+pub(super) fn decode_pricing_table(
+    bytes: &'static [u8],
+    offsets_format: RecordOffsets,
+) -> EmbeddedRows {
     let mut reader = Reader::new(bytes);
-    let table = PricingTable {
-        rows: reader.rows(),
-        models_dev: reader.rows(),
-    };
+    let rows = reader.rows(offsets_format);
     assert!(
-        reader.keys.0.is_empty()
-            && reader.flags.0.is_empty()
-            && reader.limits.0.is_empty()
-            && reader.rates.0.is_empty(),
+        reader.catalogues.0.is_empty(),
         "embedded pricing table has trailing bytes"
     );
-    table
+    rows
 }
 
 const SOURCE_LITELLM: u8 = 0;
@@ -63,9 +61,11 @@ const EXACT_ONLY: u8 = 1 << 3;
 const WHOLE_REQUEST_TIERS: u8 = 1 << 4;
 const HOST_SHIFT: u8 = 5;
 const HOST_MASK: u8 = 0b11 << HOST_SHIFT;
+const FREE_DIRECT: u8 = 1 << 7;
 const _: () = assert!(data::HOSTS.len() <= (HOST_MASK >> HOST_SHIFT) as usize);
-const _: () =
-    assert!(HOST_MASK & (SOURCE_MASK | SCOPE_DIRECT | EXACT_ONLY | WHOLE_REQUEST_TIERS) == 0);
+const _: () = assert!(
+    HOST_MASK & (SOURCE_MASK | SCOPE_DIRECT | EXACT_ONLY | WHOLE_REQUEST_TIERS | FREE_DIRECT) == 0
+);
 
 const NO_LONG_CONTEXT: u8 = 0;
 const LONG_CONTEXT_MARGINAL: u8 = 1;
@@ -74,22 +74,108 @@ const LONG_CONTEXT_WHOLE_REQUEST: u8 = 2;
 const PUBLISHED_KNOWN: u8 = 0;
 const PUBLISHED_BY_KEY: u8 = 1;
 
+const KEY_OFFSET_BYTES: usize = 3;
+const KEY_LEN: usize = KEY_OFFSET_BYTES;
+const FLAGS: usize = KEY_LEN + 1;
+const LIMITS: usize = FLAGS + 2;
+const RATES: usize = LIMITS + 2;
+type EncodedId = [u8; 2];
+type Record = [u8; RATES + 2];
+type DeltaRecord = [u8; 4];
+
+#[derive(Clone, Copy)]
+pub(super) enum RecordOffsets {
+    Absolute,
+    Delta,
+}
+
+const ROWS_PER_PAGE: usize = 64;
+type RowPage = [OnceLock<Box<Row>>; ROWS_PER_PAGE];
+
+fn push_offset(bytes: &mut Vec<u8>, offset: usize) {
+    bytes.extend_from_slice(
+        &u16::try_from(offset)
+            .expect("pricing stream offset or row index fits u16")
+            .to_le_bytes(),
+    );
+}
+
+fn push_stream(bytes: &mut Vec<u8>, stream: &[u8]) {
+    varint(bytes, stream.len() as u64);
+    bytes.extend_from_slice(stream);
+}
+
+fn encode_record(key: usize, key_len: u8, offsets: [u16; 3]) -> Record {
+    let key = u32::try_from(key).expect("pricing key offset fits u32");
+    assert!(key <= 0xFF_FFFF, "pricing key offset fits u24");
+    let [first, second, third, _] = key.to_le_bytes();
+    let [
+        [flags_lo, flags_hi],
+        [limits_lo, limits_hi],
+        [rates_lo, rates_hi],
+    ] = offsets.map(u16::to_le_bytes);
+    [
+        first, second, third, key_len, flags_lo, flags_hi, limits_lo, limits_hi, rates_lo, rates_hi,
+    ]
+}
+
+fn expand_records(bytes: &[u8]) -> Vec<Record> {
+    let (deltas, remainder) = bytes.as_chunks::<{ size_of::<DeltaRecord>() }>();
+    assert!(
+        remainder.is_empty(),
+        "embedded pricing records are truncated"
+    );
+    let mut key = 0;
+    let mut offsets = [0u16; 3];
+    deltas
+        .iter()
+        .map(|&[key_len, flags, limits, rates]| {
+            for (offset, delta) in offsets.iter_mut().zip([flags, limits, rates]) {
+                *offset += u16::from(delta);
+            }
+            let record = encode_record(key, key_len, offsets);
+            key += usize::from(key_len);
+            record
+        })
+        .collect()
+}
+
 enum Rate {
     Required(f64),
     Optional(Option<f64>),
 }
 
-// NOTE(2026-11-20, #2388): The deflated table replaces the JSON snapshots in the binary, and a row-major layout with inline rates compresses larger than they do. Keep one stream per field kind and rates as indexes into a pool ordered by frequency.
 #[derive(Default)]
 struct Writer {
-    keys: Vec<u8>,
     flags: Vec<u8>,
     limits: Vec<u8>,
     rates: Vec<Rate>,
 }
 
+struct Catalogue {
+    keys: Vec<u8>,
+    records: Vec<RowOffsets>,
+    sensitive: [Vec<usize>; 3],
+    exact_only: Vec<usize>,
+    folded: FoldedIndexes,
+}
+
+struct RowOffsets {
+    key: usize,
+    key_len: usize,
+    flags: usize,
+    limits: usize,
+    rates: usize,
+}
+
 impl Writer {
-    fn finish(self) -> Vec<u8> {
+    fn encode(rows: &PricingRows, offsets_format: RecordOffsets) -> Vec<u8> {
+        let mut writer = Self::default();
+        let catalogue = writer.rows(rows);
+        writer.finish(catalogue, offsets_format)
+    }
+
+    fn finish(self, catalogue: Catalogue, offsets_format: RecordOffsets) -> Vec<u8> {
         let mut counts = FxHashMap::<u64, usize>::default();
         for rate in &self.rates {
             if let Rate::Required(value) | Rate::Optional(Some(value)) = rate {
@@ -106,11 +192,13 @@ impl Writer {
             .map(|(id, (bits, _))| (*bits, id))
             .collect();
         let mut rates = Vec::new();
+        let mut offsets = Vec::with_capacity(self.rates.len());
         for rate in &self.rates {
             let id = match rate {
                 Rate::Required(value) => ids[&value.to_bits()],
                 Rate::Optional(value) => value.map_or(0, |value| ids[&value.to_bits()] + 1),
             };
+            offsets.push(rates.len());
             varint(&mut rates, id as u64);
         }
 
@@ -119,52 +207,100 @@ impl Writer {
         for (bits, _) in &values {
             table.extend_from_slice(&bits.to_le_bytes());
         }
-        for stream in [&self.keys, &self.flags, &self.limits] {
-            varint(&mut table, stream.len() as u64);
-            table.extend_from_slice(stream);
+        for stream in [&self.flags, &self.limits, &rates] {
+            push_stream(&mut table, stream);
         }
-        table.extend_from_slice(&rates);
+        let Catalogue {
+            keys,
+            records,
+            sensitive,
+            exact_only,
+            folded,
+        } = catalogue;
+        push_stream(&mut table, &keys);
+        let record_size = if matches!(offsets_format, RecordOffsets::Delta) {
+            size_of::<DeltaRecord>()
+        } else {
+            size_of::<Record>()
+        };
+        varint(&mut table, (records.len() * record_size) as u64);
+        let mut previous = [0u16; 3];
+        for record in records {
+            let key_len = u8::try_from(record.key_len).expect("pricing key length fits u8");
+            let offsets = [record.flags, record.limits, offsets[record.rates]]
+                .map(|offset| u16::try_from(offset).expect("pricing stream offset fits u16"));
+            if matches!(offsets_format, RecordOffsets::Delta) {
+                table.push(key_len);
+                for (previous, offset) in previous.iter_mut().zip(offsets) {
+                    table.push(
+                        u8::try_from(offset - *previous)
+                            .expect("pricing stream offset delta fits u8"),
+                    );
+                    *previous = offset;
+                }
+            } else {
+                table.extend_from_slice(&encode_record(record.key, key_len, offsets));
+            }
+        }
+        for ids in sensitive.into_iter().chain([exact_only]).chain(folded.0) {
+            varint(&mut table, (ids.len() * size_of::<EncodedId>()) as u64);
+            for id in ids {
+                push_offset(&mut table, id);
+            }
+        }
         table
     }
 
-    fn rows(&mut self, rows: &PricingRows) {
+    fn rows(&mut self, rows: &PricingRows) -> Catalogue {
         let mut sorted: Vec<_> = rows.entries.rows.iter().collect();
         sorted.sort_by(|left, right| left.key.cmp(&right.key));
-        varint(&mut self.keys, sorted.len() as u64);
-        let mut previous: &str = "";
-        for row in &sorted {
-            self.key(previous, &row.key);
+        let mut keys = Vec::new();
+        let mut records = Vec::new();
+        let mut sensitive: [Vec<(&str, usize)>; 3] = Default::default();
+        let identities: Vec<_> = sorted
+            .iter()
+            .map(|row| normalized_pricing_key(&row.key))
+            .collect();
+        let mut exact_only = Vec::new();
+        for (id, (row, identity)) in sorted.iter().zip(&identities).enumerate() {
+            let found = RowMatch::new(id, row);
+            let key = keys.len();
+            keys.extend_from_slice(row.key.as_bytes());
+            let vendor =
+                super::rows::vendor_lookup_id(found).map(|vendor| row.key.len() - vendor.len());
+            records.push(RowOffsets {
+                key,
+                key_len: row.key.len(),
+                flags: self.flags.len(),
+                limits: self.limits.len(),
+                rates: self.rates.len(),
+            });
+            sensitive[Index::for_key(found) as usize].push((identity.as_ref(), id));
+            if let Some(start) = vendor {
+                sensitive[Index::VendorId as usize].push((&identity[start..], id));
+            }
+            if row.exact_only {
+                exact_only.push((identity.as_ref(), id));
+            }
             self.row(row);
-            previous = &row.key;
         }
         let folded = FoldedIndexes::build(
             sorted
-                .into_iter()
+                .iter()
                 .enumerate()
                 .map(|(id, row)| RowMatch::new(id, row)),
         );
-        for ids in folded.0 {
-            varint(&mut self.flags, ids.len() as u64);
-            for id in ids {
-                varint(&mut self.flags, id as u64);
-            }
+        let sorted_ids = |mut keys: Vec<(&str, usize)>| {
+            keys.sort_unstable();
+            keys.into_iter().map(|(_, id)| id).collect()
+        };
+        Catalogue {
+            keys,
+            records,
+            sensitive: sensitive.map(sorted_ids),
+            exact_only: sorted_ids(exact_only),
+            folded,
         }
-    }
-
-    fn key(&mut self, previous: &str, key: &str) {
-        let shared = previous
-            .bytes()
-            .zip(key.bytes())
-            .take_while(|(left, right)| left == right)
-            .count();
-        let shared = (0..=shared)
-            .rev()
-            .find(|len| key.is_char_boundary(*len))
-            .unwrap_or(0);
-        let suffix = &key[shared..];
-        varint(&mut self.keys, shared as u64);
-        varint(&mut self.keys, suffix.len() as u64);
-        self.keys.extend_from_slice(suffix.as_bytes());
     }
 
     fn row(&mut self, row: &Row) {
@@ -182,8 +318,9 @@ impl Writer {
         let exact_only = if row.exact_only { EXACT_ONLY } else { 0 };
         let whole_request = u8::from(row.whole_request_tiers) * WHOLE_REQUEST_TIERS;
         let host = row.host.map_or(0, |host| (host + 1) << HOST_SHIFT);
+        let free_direct = u8::from(row.scope == Scope::Direct && row.is_free()) * FREE_DIRECT;
         self.flags
-            .push(source | scope | exact_only | whole_request | host);
+            .push(source | scope | exact_only | whole_request | host | free_direct);
         varint(
             &mut self.flags,
             row.vendor_start.map_or(0, |start| start.get() as u64),
@@ -273,7 +410,7 @@ fn varint(bytes: &mut Vec<u8>, mut value: u64) {
     bytes.push(value as u8);
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 struct Stream<'a>(&'a [u8]);
 
 impl<'a> Stream<'a> {
@@ -314,52 +451,207 @@ impl<'a> Stream<'a> {
 }
 
 struct Reader<'a> {
+    data: RowData<'a>,
+    catalogues: Stream<'a>,
+}
+
+impl Reader<'static> {
+    fn new(bytes: &'static [u8]) -> Self {
+        let mut table = Stream(bytes);
+        let len = table.usize();
+        let values = table.take(len * 8);
+        let data = RowData {
+            values,
+            flags: table.stream(),
+            limits: table.stream(),
+            rates: table.stream(),
+        };
+        Self {
+            data,
+            catalogues: table,
+        }
+    }
+
+    fn rows(&mut self, offsets_format: RecordOffsets) -> EmbeddedRows {
+        let keys = std::str::from_utf8(self.catalogues.stream().0)
+            .expect("embedded pricing keys are UTF-8");
+        let record_bytes = self.catalogues.stream().0;
+        let records = if matches!(offsets_format, RecordOffsets::Delta) {
+            Cow::Owned(expand_records(record_bytes))
+        } else {
+            let (records, remainder) = record_bytes.as_chunks();
+            assert!(
+                remainder.is_empty(),
+                "embedded pricing records are truncated"
+            );
+            Cow::Borrowed(records)
+        };
+        let mut ids = || {
+            let (ids, remainder) = self.catalogues.stream().0.as_chunks();
+            assert!(remainder.is_empty(), "embedded pricing index is truncated");
+            ids
+        };
+        EmbeddedRows {
+            data: self.data,
+            keys,
+            records,
+            sensitive: std::array::from_fn(|_| ids()),
+            exact_only: ids(),
+            folded: std::array::from_fn(|_| ids()),
+            decoded: OnceLock::new(),
+        }
+    }
+}
+
+pub(super) fn decode_id(id: &EncodedId) -> usize {
+    u16::from_le_bytes(*id) as usize
+}
+
+#[derive(Debug)]
+pub(super) struct EmbeddedRows {
+    data: RowData<'static>,
+    keys: &'static str,
+    records: Cow<'static, [Record]>,
+    sensitive: [&'static [EncodedId]; 3],
+    exact_only: &'static [EncodedId],
+    folded: [&'static [EncodedId]; 3],
+    decoded: OnceLock<Box<[OnceLock<Box<RowPage>>]>>,
+}
+
+impl EmbeddedRows {
+    pub(super) fn len(&self) -> usize {
+        self.records.len()
+    }
+
+    fn offset(record: &Record, field: usize) -> usize {
+        u16::from_le_bytes([record[field], record[field + 1]]) as usize
+    }
+
+    fn read_key(&self, record: &Record) -> &str {
+        let start = u32::from_le_bytes([record[0], record[1], record[2], 0]) as usize;
+        &self.keys[start..start + usize::from(record[KEY_LEN])]
+    }
+
+    pub(super) fn key(&self, id: usize) -> &str {
+        self.read_key(&self.records[id])
+    }
+
+    fn flags(&self, id: usize) -> Stream<'static> {
+        Stream(&self.data.flags.0[Self::offset(&self.records[id], FLAGS)..])
+    }
+
+    pub(super) fn vendor_id(&self, id: usize) -> Option<&str> {
+        let mut flags = self.flags(id);
+        flags.u8();
+        let start = flags.usize().checked_sub(1)?;
+        Some(&self.key(id)[start..])
+    }
+
+    pub(super) fn id(&self, key: &str) -> Option<usize> {
+        self.records
+            .binary_search_by(|record| self.read_key(record).cmp(key))
+            .ok()
+    }
+
+    pub(super) fn exact_only(&self, id: usize) -> bool {
+        self.flags(id).u8() & EXACT_ONLY != 0
+    }
+
+    pub(super) fn exact_only_ids(&self, identity: &str) -> &[EncodedId] {
+        matching_ids(self.exact_only, |id| {
+            normalized_key_bytes(self.key(id)).cmp(identity.bytes())
+        })
+    }
+
+    pub(super) fn indexed_ids(&self, identity: &str, index: Index, fold: bool) -> &[EncodedId] {
+        let ids = if fold { self.folded } else { self.sensitive };
+        matching_ids(ids[index as usize], |id| {
+            let mut key = self.key(id);
+            if matches!(index, Index::VendorId) {
+                let mut flags = self.flags(id);
+                key = if flags.u8() & FREE_DIRECT != 0 {
+                    super::last_segment(key)
+                } else {
+                    &key[flags
+                        .usize()
+                        .checked_sub(1)
+                        .expect("vendor index has an ID")..]
+                };
+            }
+            if fold {
+                folded_identity(key).cmp(identity.bytes())
+            } else {
+                normalized_key_bytes(key).cmp(identity.bytes())
+            }
+        })
+    }
+
+    pub(super) fn row(&self, id: usize) -> Option<&Row> {
+        let record = self.records.get(id)?;
+        let pages = self.decoded.get_or_init(|| {
+            std::iter::repeat_with(OnceLock::new)
+                .take(self.len().div_ceil(ROWS_PER_PAGE))
+                .collect()
+        });
+        let page = pages[id / ROWS_PER_PAGE]
+            .get_or_init(|| Box::new([const { OnceLock::new() }; ROWS_PER_PAGE]));
+        Some(page[id % ROWS_PER_PAGE].get_or_init(|| Box::new(self.decode_row(record))))
+    }
+
+    pub(super) fn materialize(&self) -> super::Entries {
+        let mut entries = super::Entries::default();
+        entries.rows.reserve_exact(self.len());
+        for record in self.records.iter() {
+            let row = self.decode_row(record);
+            entries.append_row(row);
+        }
+        entries
+    }
+
+    fn decode_row(&self, record: &Record) -> Row {
+        let mut data = RowData {
+            values: self.data.values,
+            flags: Stream(&self.data.flags.0[Self::offset(record, FLAGS)..]),
+            limits: Stream(&self.data.limits.0[Self::offset(record, LIMITS)..]),
+            rates: Stream(&self.data.rates.0[Self::offset(record, RATES)..]),
+        };
+        data.row(Arc::from(self.read_key(record)))
+    }
+
+    #[cfg(test)]
+    pub(super) fn decode_cache_counts(&self) -> (usize, usize) {
+        self.decoded
+            .get()
+            .into_iter()
+            .flat_map(|pages| pages.iter())
+            .filter_map(OnceLock::get)
+            .fold((0, 0), |(slots, rows), page| {
+                let decoded_rows = page.iter().filter(|cell| cell.get().is_some()).count();
+                (slots + page.len(), rows + decoded_rows)
+            })
+    }
+}
+
+fn matching_ids(ids: &[EncodedId], compare: impl Fn(usize) -> Ordering) -> &[EncodedId] {
+    let start = ids.partition_point(|id| compare(decode_id(id)).is_lt());
+    let end = start
+        + ids[start..]
+            .iter()
+            .take_while(|id| compare(decode_id(id)).is_eq())
+            .count();
+    &ids[start..end]
+}
+
+#[derive(Clone, Copy, Debug)]
+struct RowData<'a> {
     values: &'a [u8],
-    keys: Stream<'a>,
     flags: Stream<'a>,
     limits: Stream<'a>,
     rates: Stream<'a>,
 }
 
-impl<'a> Reader<'a> {
-    fn new(bytes: &'a [u8]) -> Self {
-        let mut table = Stream(bytes);
-        let len = table.usize();
-        let values = table.take(len * 8);
-        Self {
-            values,
-            keys: table.stream(),
-            flags: table.stream(),
-            limits: table.stream(),
-            rates: table,
-        }
-    }
-
-    fn rows(&mut self) -> PricingMap {
-        let mut map = PricingMap::default();
-        let rows = map.rows_mut();
-        let entries = &mut rows.entries;
-        let count = self.keys.usize();
-        entries.rows.reserve_exact(count);
-        for _ in 0..count {
-            let shared = self.keys.usize();
-            let suffix = self.keys.usize();
-            let suffix = std::str::from_utf8(self.keys.take(suffix))
-                .expect("embedded pricing keys are UTF-8");
-            let previous = entries.rows.last().map_or("", |row| &row.key[..shared]);
-            let key = [previous, suffix].concat();
-            let row = self.row();
-            entries.append(key, row);
-        }
-        rows.folded_indexes = OnceLock::from(FoldedIndexes(std::array::from_fn(|_| {
-            (0..self.flags.usize())
-                .map(|_| self.flags.usize())
-                .collect()
-        })));
-        map
-    }
-
-    fn row(&mut self) -> Row {
+impl RowData<'_> {
+    fn row(&mut self, key: Arc<str>) -> Row {
         let flags = self.flags.u8();
         let source = match flags & SOURCE_MASK {
             SOURCE_LITELLM => Some(Source::LiteLlm),
@@ -382,7 +674,7 @@ impl<'a> Reader<'a> {
         let host = ((flags & HOST_MASK) >> HOST_SHIFT).checked_sub(1);
         let context_limit = self.limits.u64().checked_sub(1);
         Row {
-            key: Arc::default(),
+            key,
             pricing: self.pricing(),
             source,
             schedule,
