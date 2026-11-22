@@ -66,7 +66,9 @@ Matching uses the native Claude Code session ID, including session aliases retai
 
 With date bounds, claim discovery keeps `--since` unchanged and includes one extra calendar day after `--until` to cover model calls recorded after their turn crossed midnight. The report still contains only Claude usage inside the requested window. OpenCode rows remain when there is no main-thread Claude claim, for example when the native logs are missing, contain only subagent usage, or are outside that discovery margin.
 
-Focused OpenCode reports use the same session claims. Pass `--include-claude-agent` to include every `claude-agent` row:
+Unified reports check for mirrors across all Claude projects, even when a project filter limits the Claude rows.
+
+Focused OpenCode reports also check for mirrored sessions. Pass `--include-claude-agent` to include every `claude-agent` row:
 
 ```bash
 ccusage opencode daily --include-claude-agent

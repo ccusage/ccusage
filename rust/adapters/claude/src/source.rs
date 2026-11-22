@@ -39,6 +39,19 @@ impl Claude {
         claims: ClaudeClaimsTx,
     ) -> Result<LoadedRows> {
         let (rows, counted) = self.load(request, true)?;
+        // NOTE(2026-11-22, #2498): Check every project so excluded Claude rows cannot reappear as OpenCode usage.
+        let counted = if request.options.claude_project.is_some() {
+            match request.kind {
+                LoadKind::Day => {
+                    let shared = claim_load_options(request.shared);
+                    let daily = crate::daily::load_daily_entries(&shared, None, &rows.diagnostics)?;
+                    ClaudeCounted::sessions(daily.sessions(), request.shared)
+                }
+                LoadKind::Session => self.counted(request.shared, None, &rows.diagnostics)?,
+            }
+        } else {
+            counted
+        };
         claims.publish(counted);
         Ok(rows)
     }

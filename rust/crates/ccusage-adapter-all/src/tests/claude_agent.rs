@@ -71,6 +71,43 @@ fn unified_reports_count_claude_agent_sessions_once() {
     })
 }
 
+#[test]
+fn unified_project_filter_does_not_restore_opencode_mirrors() {
+    ccusage_test_support::install_pricing_snapshots();
+    let fixture = fs_fixture!({});
+    write_claude_agent_fixture(&fixture);
+    fixture.write_file(
+        "claude/projects/project-b/claude-native-b.jsonl",
+        claude_usage_line("claude-native-b", "2099-01-02T00:00:00.000Z", "msg-b", 10),
+    );
+    claude_opencode_env(&fixture, fixture.path("claude").into_os_string()).run(|| {
+        let shared = claude_agent_shared("20990101", "20990103");
+        let sources = BTreeMap::from([(
+            "claude".to_string(),
+            SourceArgs {
+                options: ccusage_core::cli::AgentOptions {
+                    claude_project: Some("project-b".to_string()),
+                    ..Default::default()
+                },
+                shared: shared.clone(),
+            },
+        )]);
+
+        for kind in [
+            AgentReportKind::Daily,
+            AgentReportKind::Weekly,
+            AgentReportKind::Monthly,
+            AgentReportKind::Session,
+        ] {
+            assert_eq!(
+                unified_totals(kind, &shared, &sources)["inputTokens"],
+                37,
+                "{kind:?}"
+            );
+        }
+    })
+}
+
 fn focused_opencode_input(
     shared: &SharedArgs,
     kind: AgentReportKind,
