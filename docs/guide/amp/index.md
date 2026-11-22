@@ -41,6 +41,7 @@ AMP_DATA_DIR="$HOME/.local/share/amp,/backup/amp" ccusage amp session
 | Focused view          | Description               | See also                                |
 | --------------------- | ------------------------- | --------------------------------------- |
 | `ccusage amp daily`   | Aggregate usage by date   | [Daily Usage](/guide/daily-reports)     |
+| `ccusage amp weekly`  | Aggregate usage by week   | [Weekly Usage](/guide/weekly-reports)   |
 | `ccusage amp monthly` | Aggregate usage by month  | [Monthly Usage](/guide/monthly-reports) |
 | `ccusage amp session` | Group usage by Amp thread | [Session Usage](/guide/session-reports) |
 

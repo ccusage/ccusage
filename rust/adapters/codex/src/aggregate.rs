@@ -8,7 +8,7 @@ use std::{
 
 use crate::{
     CodexGroup, CodexTokenUsageEvent, Result,
-    cli::{AgentReportKind, SharedArgs},
+    cli::{AgentReportKind, SharedArgs, WeekDay},
 };
 
 use super::{
@@ -41,6 +41,7 @@ pub(super) fn load_groups_with_diagnostics(
         &paths::codex_usage_sources()?,
         shared,
         kind,
+        WeekDay::Monday,
         pricing,
         diagnostics,
     )
@@ -50,6 +51,7 @@ pub(super) fn load_groups_from_sources_with_diagnostics(
     sources: &[paths::CodexUsageSource],
     shared: &SharedArgs,
     kind: AgentReportKind,
+    start_of_week: WeekDay,
     pricing: Option<&PricingMap>,
     diagnostics: &Diagnostics,
 ) -> Result<(BTreeMap<String, CodexGroup>, bool)> {
@@ -61,6 +63,7 @@ pub(super) fn load_groups_from_sources_with_diagnostics(
         &source_refs,
         shared,
         kind,
+        start_of_week,
         pricing,
         diagnostics,
         &mut discover,
@@ -148,13 +151,21 @@ fn aggregate_file_groups(
             .iter()
             .map(|(source, _)| *source)
             .collect::<Vec<_>>();
-        return aggregate_discovered(&sources, shared, kind, pricing, diagnostics, &mut |emit| {
-            for (group, (_, files)) in selected.iter().enumerate() {
-                for file in *files {
-                    emit(group, file.clone());
+        return aggregate_discovered(
+            &sources,
+            shared,
+            kind,
+            WeekDay::Monday,
+            pricing,
+            diagnostics,
+            &mut |emit| {
+                for (group, (_, files)) in selected.iter().enumerate() {
+                    for file in *files {
+                        emit(group, file.clone());
+                    }
                 }
-            }
-        })
+            },
+        )
         .map(|(groups, _)| groups);
     }
 
@@ -194,13 +205,14 @@ fn aggregate_planned(
         aggregate_files_with_dedupe(&run, &seen)?;
         file_offset += files.len();
     }
-    seen.fold(shared, kind)
+    seen.fold(shared, kind, WeekDay::Monday)
 }
 
 fn aggregate_discovered(
     sources: &[&paths::CodexUsageSource],
     shared: &SharedArgs,
     kind: AgentReportKind,
+    start_of_week: WeekDay,
     pricing: Option<&PricingMap>,
     diagnostics: &Diagnostics,
     discover: &mut DiscoverFiles<'_>,
@@ -308,7 +320,8 @@ fn aggregate_discovered(
             ))?;
         }
     }
-    seen.fold(shared, kind).map(|groups| (groups, detected))
+    seen.fold(shared, kind, start_of_week)
+        .map(|groups| (groups, detected))
 }
 
 fn aggregate_files_with_dedupe(run: &CodexAggregateRun<'_>, seen: &CodexDedupe<'_>) -> Result<()> {

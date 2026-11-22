@@ -324,7 +324,7 @@ pub enum AgentReportKind {
 }
 
 impl AgentReportKind {
-    const ALL: [Self; 4] = [Self::Daily, Self::Weekly, Self::Monthly, Self::Session];
+    pub const ALL: [Self; 4] = [Self::Daily, Self::Weekly, Self::Monthly, Self::Session];
 
     pub const fn name(self) -> &'static str {
         match self {

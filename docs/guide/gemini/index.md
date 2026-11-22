@@ -10,6 +10,9 @@ ccusage can read Gemini CLI chat logs as one of its supported local data sources
 # Daily Gemini CLI usage
 ccusage gemini daily
 
+# Weekly Gemini CLI usage
+ccusage gemini weekly
+
 # Monthly Gemini CLI usage
 ccusage gemini monthly
 
@@ -40,6 +43,7 @@ GEMINI_DATA_DIR="$HOME/.gemini/tmp,/backup/gemini/tmp" ccusage gemini daily
 | Focused view             | Description                       | See also                                |
 | ------------------------ | --------------------------------- | --------------------------------------- |
 | `ccusage gemini daily`   | Aggregate usage by date           | [Daily Usage](/guide/daily-reports)     |
+| `ccusage gemini weekly`  | Aggregate usage by week           | [Weekly Usage](/guide/weekly-reports)   |
 | `ccusage gemini monthly` | Aggregate usage by month          | [Monthly Usage](/guide/monthly-reports) |
 | `ccusage gemini session` | Group usage by Gemini CLI session | [Session Usage](/guide/session-reports) |
 

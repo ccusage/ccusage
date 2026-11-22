@@ -56,6 +56,9 @@ For custom Pi models, add a [`pricingOverrides` entry](/guide/config-files#prici
 # Show daily pi-agent usage
 ccusage pi daily
 
+# Show weekly pi-agent usage
+ccusage pi weekly
+
 # Show monthly pi-agent usage
 ccusage pi monthly
 

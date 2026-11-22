@@ -420,6 +420,7 @@ fn the_fused_fork_pass_records_a_parent_skip_once() {
             )],
             &shared,
             ccusage_core::cli::AgentReportKind::Daily,
+            ccusage_core::cli::WeekDay::Monday,
             Some(&crate::PricingMap::load_embedded()),
             &diagnostics,
         )
@@ -498,6 +499,7 @@ fn bounded_parent_usage_failures_warn_once_without_changing_replay() {
             )],
             &shared,
             ccusage_core::cli::AgentReportKind::Daily,
+            ccusage_core::cli::WeekDay::Monday,
             Some(&crate::PricingMap::load_embedded()),
             &diagnostics,
         )

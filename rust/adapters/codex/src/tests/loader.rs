@@ -72,6 +72,7 @@ fn session_input_tokens(
         sources,
         shared,
         AgentReportKind::Session,
+        ccusage_core::cli::WeekDay::Monday,
         Some(&crate::PricingMap::load_embedded()),
         diagnostics,
     )

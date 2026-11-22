@@ -1,0 +1,76 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage kilo weekly --offline --json --since 20251231 --until 20260101
+---
+exit: 0
+--- stdout ---
+{
+  "totals": {
+    "cacheCreationTokens": 200,
+    "cacheReadTokens": 12500,
+    "inputTokens": 2830,
+    "outputTokens": 787,
+    "totalCost": 2.2372125,
+    "totalTokens": 16742,
+    "unpricedModels": [
+      "kilo-mystery-1"
+    ]
+  },
+  "weekly": [
+    {
+      "cacheCreationTokens": 200,
+      "cacheReadTokens": 12500,
+      "inputTokens": 2830,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 7000,
+          "cost": 2.0,
+          "inputTokens": 900,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 400,
+          "storedCost": 2.0
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.2,
+          "inputTokens": 330,
+          "missingPricing": true,
+          "modelName": "kilo-mystery-1",
+          "outputTokens": 77,
+          "storedCost": 0.2
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 2500,
+          "cost": 0.0330125,
+          "inputTokens": 1000,
+          "modelName": "gpt-5",
+          "outputTokens": 210,
+          "storedCost": 0.03
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 3000,
+          "cost": 0.0042,
+          "inputTokens": 600,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 100
+        }
+      ],
+      "modelsUsed": [
+        "gpt-5",
+        "claude-haiku-4-5-20251001",
+        "claude-sonnet-4-20250514",
+        "kilo-mystery-1"
+      ],
+      "outputTokens": 787,
+      "totalCost": 2.2372125,
+      "totalTokens": 16742,
+      "week": "2025-12-29"
+    }
+  ]
+}
+
+--- stderr ---

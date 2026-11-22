@@ -1,0 +1,102 @@
+---
+source: crates/ccusage/tests/golden/mod.rs
+description: COLUMNS=200 ccusage droid weekly --offline --json --since 20251231 --until 20260101
+---
+exit: 0
+--- stdout ---
+{
+  "totals": {
+    "cacheCreationTokens": 220,
+    "cacheReadTokens": 10000,
+    "inputTokens": 3010,
+    "outputTokens": 835,
+    "totalCost": 0.011474999999999999,
+    "totalTokens": 14450,
+    "unpricedModels": [
+      "droid-mystery-1",
+      "grok-unknown"
+    ]
+  },
+  "weekly": [
+    {
+      "cacheCreationTokens": 220,
+      "cacheReadTokens": 10000,
+      "inputTokens": 3010,
+      "modelBreakdowns": [
+        {
+          "cacheCreationTokens": 200,
+          "cacheReadTokens": 7000,
+          "cost": 0.00385,
+          "inputTokens": 900,
+          "modelName": "claude-haiku-4-5-20251001",
+          "outputTokens": 400
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0033,
+          "inputTokens": 600,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 100
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 2500,
+          "cost": 0.0029249999999999996,
+          "inputTokens": 770,
+          "modelName": "gpt-5",
+          "outputTokens": 165
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0014000000000000002,
+          "inputTokens": 400,
+          "modelName": "gemini-2-5-pro",
+          "outputTokens": 90
+        },
+        {
+          "cacheCreationTokens": 20,
+          "cacheReadTokens": 500,
+          "cost": 0.0,
+          "inputTokens": 300,
+          "missingPricing": true,
+          "modelName": "droid-mystery-1",
+          "outputTokens": 70
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 40,
+          "missingPricing": true,
+          "modelName": "grok-unknown",
+          "outputTokens": 10
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 0,
+          "modelName": "gpt-unknown",
+          "outputTokens": 0
+        }
+      ],
+      "modelsUsed": [
+        "gemini-2-5-pro",
+        "gpt-5",
+        "droid-mystery-1",
+        "claude-sonnet-4-20250514",
+        "grok-unknown",
+        "gpt-unknown",
+        "claude-haiku-4-5-20251001"
+      ],
+      "outputTokens": 835,
+      "totalCost": 0.011474999999999999,
+      "totalTokens": 14450,
+      "week": "2025-12-29"
+    }
+  ]
+}
+
+--- stderr ---

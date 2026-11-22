@@ -32,6 +32,7 @@ KILO_DATA_DIR="$HOME/.local/share/kilo,/backup/kilo" ccusage kilo daily
 | Focused view           | Description                          | See also                                |
 | ---------------------- | ------------------------------------ | --------------------------------------- |
 | `ccusage kilo daily`   | Aggregate usage by date (YYYY-MM-DD) | [Daily Usage](/guide/daily-reports)     |
+| `ccusage kilo weekly`  | Aggregate usage by week              | [Weekly Usage](/guide/weekly-reports)   |
 | `ccusage kilo monthly` | Aggregate usage by month (YYYY-MM)   | [Monthly Usage](/guide/monthly-reports) |
 | `ccusage kilo session` | Per-session breakdown                | [Session Usage](/guide/session-reports) |
 

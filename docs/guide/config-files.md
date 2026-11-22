@@ -356,6 +356,8 @@ Set `claude.commands.<report>.project` or `commands.<report>.project` to configu
 
 ### Weekly Command
 
+Set `startOfWeek` in `defaults` to share a week start across unified and focused reports, or in `commands.weekly` to override the default for weekly reports. Use a source's `defaults` or `commands.weekly` to set the week start for its focused report. The usual [source configuration precedence](#source-specific-configuration) applies, with `--start-of-week` taking priority.
+
 ```json
 {
 	"commands": {

@@ -735,6 +735,11 @@ pub(crate) fn extra_cases(_root: &Path) -> Vec<Case> {
     let physical = rollout("2025-12-30", "10-00-00", MAIN).replace(".jsonl", "");
     vec![
         Case::new(
+            "weekly",
+            "json_start_sunday",
+            &["codex", "weekly", "--offline", "--json", "-w", "sunday"],
+        ),
+        Case::new(
             "statusline",
             "session_physical_json",
             &["codex", "statusline", "--offline", "--json", "--id", &physical],
