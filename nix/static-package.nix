@@ -56,6 +56,8 @@
         # NOTE(2026-11-21, #2457): PGO profiles vary between training runs. The PR perf comparison builds this untrained twin so it measures code changes, not profile noise.
         ccusage-static-no-pgo = staticPackage {
           description = "Static Linux build of ccusage without PGO";
+          # NOTE(2026-11-22, #2514): Without PGO, relinking the same source moved `opencode daily` by up to 14% depending on where hot functions fell within 64-byte lines. Starting every function on a 64-byte line fixes that placement, so unrelated code changes no longer shift it.
+          extraRustflags = "-C llvm-args=-align-all-functions=6";
         };
       };
     };

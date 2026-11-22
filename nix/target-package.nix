@@ -10,17 +10,23 @@
   description,
   llvmProfdata ? null,
   maxMissingFunctions ? 0,
+  extraRustflags ? "",
 }:
 let
   cargoExtraArgs = "-p ccusage --bin ccusage --target ${target}";
-  commonArgs = package.passthru.commonArgs // overrides // { inherit cargoExtraArgs; };
-  depsOnlyArgs =
-    package.passthru.depsOnlyArgs
-    // overrides
-    // {
-      inherit cargoExtraArgs;
-      buildPhaseCargoCommand = "cargoWithProfile build ${cargoExtraArgs}";
+  withExtraRustflags =
+    args:
+    args
+    // pkgs.lib.optionalAttrs (extraRustflags != "") {
+      RUSTFLAGS = "${args.RUSTFLAGS} ${extraRustflags}";
     };
+  commonArgs = withExtraRustflags (package.passthru.commonArgs // overrides) // {
+    inherit cargoExtraArgs;
+  };
+  depsOnlyArgs = withExtraRustflags (package.passthru.depsOnlyArgs // overrides) // {
+    inherit cargoExtraArgs;
+    buildPhaseCargoCommand = "cargoWithProfile build ${cargoExtraArgs}";
+  };
   dependencyArtifacts = craneLib.buildDepsOnly depsOnlyArgs;
   workspaceArtifacts = import ./cargo-artifacts.nix {
     inherit
