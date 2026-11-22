@@ -19,9 +19,13 @@ pub(crate) fn resolve(
             unified.shared.clock,
         )
         .map_err(|message| format!("{message} (in {agent} config)"))?;
+        let mut options = view.agent_options(agent);
+        if *agent == "claude" {
+            options.claude_project = report.options.claude_project.or(options.claude_project);
+        }
         unified.sources.insert(
             agent.to_string(),
-            SourceArgs::from_options(report.shared, view.agent_options(agent)),
+            SourceArgs::from_options(report.shared, options),
         );
     }
     Ok(())

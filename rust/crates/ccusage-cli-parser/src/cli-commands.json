@@ -3,13 +3,31 @@
 		"agent_period_options": ["agent_options", "last_options"],
 		"agent_weekly_options": ["agent_options", "all_weekly_options", "last_options"],
 		"all_agent_period_options": ["all_agent_options", "last_options"],
-		"all_agent_session_options": ["all_agent_options", "session_options"],
+		"all_agent_session_options": ["all_agent_options", "session_options", "claude_project_options"],
 		"all_agent_weekly_options": ["all_agent_options", "all_weekly_options", "last_options"],
-		"blocks_combined_options": ["shared_claude_options", "blocks_options"],
-		"claude_daily_options": ["shared_claude_options", "daily_options", "last_options"],
-		"claude_monthly_options": ["shared_claude_options", "last_options"],
-		"claude_session_options": ["shared_claude_options", "session_options"],
-		"claude_weekly_options": ["shared_claude_options", "weekly_options", "last_options"],
+		"blocks_combined_options": [
+			"shared_claude_options",
+			"claude_project_options",
+			"blocks_options"
+		],
+		"claude_daily_options": [
+			"shared_claude_options",
+			"claude_project_options",
+			"daily_options",
+			"last_options"
+		],
+		"claude_monthly_options": ["shared_claude_options", "claude_project_options", "last_options"],
+		"claude_session_options": [
+			"shared_claude_options",
+			"claude_project_options",
+			"session_options"
+		],
+		"claude_weekly_options": [
+			"shared_claude_options",
+			"claude_project_options",
+			"weekly_options",
+			"last_options"
+		],
 		"codex_period_options": ["codex_options", "last_options"],
 		"codex_session_options": ["codex_options", "session_options"],
 		"opencode_period_options": ["agent_options", "opencode_options", "last_options"],

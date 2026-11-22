@@ -295,7 +295,7 @@ ccusage claude daily -p my-project
 ccusage claude daily --instances --project my-project
 ```
 
-`--instances` and `--project` belong to `ccusage claude daily`; the unified `ccusage daily` rejects them. To filter the Claude rows of a unified daily report, set `claude.commands.daily.project` in a [configuration file](/guide/config-files#source-specific-configuration).
+Use these flags with `ccusage claude daily`. To filter the Claude rows of a unified daily report, set `claude.commands.daily.project` in a [configuration file](/guide/config-files#filter-claude-code-by-project).
 
 ## Common Use Cases
 
