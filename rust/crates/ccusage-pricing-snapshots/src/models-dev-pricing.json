@@ -40943,7 +40943,7 @@
 			"output": 3.036
 		},
 		"limit": {
-			"context": 200000
+			"context": 204800
 		},
 		"provider": "nano-gpt"
 	},
