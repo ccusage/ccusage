@@ -399,7 +399,6 @@ fn to_call(
         cache_creation: None,
     };
     let additional = AdditionalTokens::from_total(usage, 0, total);
-    // Match repeated spans with and without explicit output before deciding which tokens are classified.
     let (matching_output, extra_total_tokens) = additional.replay_counts(usage.output_tokens);
     let fallback_output_tokens = matching_output - usage.output_tokens;
     let Some(counted_tokens) =
