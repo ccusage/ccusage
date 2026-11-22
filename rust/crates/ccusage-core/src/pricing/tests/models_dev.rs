@@ -159,7 +159,7 @@ fn models_dev_layers_share_rows_without_copying_them_into_primary() {
         r#"{"md-only-1": {"cost": {"input": 1000000, "output": 2000000}}}"#,
     );
     let pricing = layered(&PricingMap::default(), Some(&embedded));
-    assert!(!pricing.rows.entries.contains_key("md-only-1"));
+    assert!(pricing.rows.get("md-only-1").is_none());
     assert!(std::sync::Arc::ptr_eq(
         pricing.models_dev.as_ref().unwrap(),
         &embedded.rows,
@@ -952,7 +952,7 @@ fn live_models_dev_pricing_merges_spelling_duplicates_onto_one_entry() {
     let mut pricing = PricingMap::default();
 
     assert_eq!(pricing.load_models_dev_json_missing(json), Some(1));
-    assert!(!pricing.rows.entries.contains_key("grok-9-5"));
+    assert!(pricing.rows.get("grok-9-5").is_none());
     assert_eq!(
         pricing
             .explain(None, &[("grok-9-5", MatchKind::Exact)])
