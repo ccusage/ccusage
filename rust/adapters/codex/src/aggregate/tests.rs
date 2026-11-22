@@ -477,10 +477,15 @@ fn usage_attribution_uses_file_order_when_workers_finish_in_reverse() {
         assert_eq!(group.last_activity.as_deref(), Some("2026-09-01T00:00:01Z"));
         let model = &group.models["gpt-5"];
         assert!(!model.is_fallback);
-        assert_eq!(model.tier_usage.total().input_tokens, recorded_input);
         assert_eq!(
-            model.tier_usage[CodexServiceTier::Standard].input_tokens,
-            recorded_input
+            [
+                CodexServiceTier::Standard,
+                CodexServiceTier::Fast,
+                CodexServiceTier::Flex,
+                CodexServiceTier::Ultrafast,
+            ]
+            .map(|tier| model.tier_usage[tier].input_tokens),
+            [recorded_input, 0, 0, 0]
         );
         assert_eq!(
             model
