@@ -14,6 +14,7 @@ use crate::{
     cli::{AgentReportKind, SharedArgs, WeekDay},
     fast::FxHashMap,
     merge_codex_service_tiers,
+    types::ConfiguredTiers,
 };
 
 use super::{
@@ -74,7 +75,7 @@ pub(super) struct CodexAttribution {
     pub(super) last_activity: CompactString,
     pub(super) is_fallback: bool,
     service_tier: Option<CodexServiceTier>,
-    configured_tier: Option<CodexServiceTier>,
+    configured_tiers: ConfiguredTiers,
 }
 
 impl CodexAttribution {
@@ -90,21 +91,26 @@ impl CodexAttribution {
             last_activity: CompactString::new(&event.last_activity),
             is_fallback: event.is_fallback_model,
             service_tier: event.service_tier,
-            configured_tier: provenance.configured_tier,
+            configured_tiers: provenance.configured_tier.into(),
         }
     }
 
-    pub(super) fn pricing_tier(&self) -> Option<CodexServiceTier> {
-        self.service_tier.or(self.configured_tier)
+    pub(super) fn pricing_tiers(&self) -> (Option<CodexServiceTier>, Option<ConfiguredTiers>) {
+        let tier = self.service_tier.or_else(|| self.configured_tiers.single());
+        let candidates =
+            (tier.is_none() && self.configured_tiers.is_mixed()).then_some(self.configured_tiers);
+        (tier, candidates)
     }
 
     fn merge(&mut self, mut incoming: Self) -> bool {
         self.service_tier = merge_codex_service_tiers(self.service_tier, incoming.service_tier);
+        self.configured_tiers.merge(incoming.configured_tiers);
         self.rollout_count = self.rollout_count.max(incoming.rollout_count);
         if incoming.file_index >= self.file_index {
             return false;
         }
         incoming.service_tier = self.service_tier;
+        incoming.configured_tiers = self.configured_tiers;
         incoming.rollout_count = self.rollout_count;
         *self = incoming;
         true

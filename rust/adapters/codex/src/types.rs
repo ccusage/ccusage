@@ -5,6 +5,7 @@ use serde::Deserialize;
 mod bucket;
 mod wire;
 
+pub(crate) use bucket::ConfiguredTiers;
 pub use bucket::{CodexUsageBucket, TierBuckets};
 use wire::{DecodedField, LossyObject, LossyRawUsage, LossyString, LossyTimestamp, codex_record};
 
@@ -118,16 +119,18 @@ impl CodexTokenUsageEvent {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 pub(crate) struct CodexTimestampedUsage {
     pub(crate) usage: CodexUsageBucket,
     pub(crate) tier_usage: TierBuckets,
+    pub(crate) configured_copy_usage: BTreeMap<ConfiguredTiers, CodexUsageBucket>,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct CodexModelUsage {
     pub(crate) usage: CodexUsageBucket,
     pub(crate) tier_usage: TierBuckets,
+    pub(crate) configured_copy_usage: BTreeMap<ConfiguredTiers, CodexUsageBucket>,
     pub(crate) reasoning_output_tokens: u64,
     pub total_tokens: u64,
     pub(crate) timestamped_usage: BTreeMap<i64, CodexTimestampedUsage>,

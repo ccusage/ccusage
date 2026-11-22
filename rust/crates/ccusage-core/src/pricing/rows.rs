@@ -3,6 +3,8 @@ use std::{
     sync::{Arc, OnceLock},
 };
 
+use smallvec::SmallVec;
+
 use crate::fast::FxHashMap;
 
 use super::{
@@ -129,13 +131,30 @@ impl FoldedIndexes {
                 keys[Index::VendorId as usize].push((id, found.id));
             }
         }
-        Self(keys.map(|mut keys| {
-            keys.sort_unstable_by(|(left, _), (right, _)| {
-                folded_identity(left).cmp(folded_identity(right))
-            });
-            keys.into_iter().map(|(_, id)| id).collect()
-        }))
+        Self(keys.map(sort_folded_ids))
     }
+}
+
+pub(super) fn sort_folded_ids(mut keys: Vec<(&str, usize)>) -> Vec<usize> {
+    keys.sort_unstable_by(|(left, _), (right, _)| {
+        folded_identity(left).cmp(folded_identity(right))
+    });
+    keys.into_iter().map(|(_, id)| id).collect()
+}
+
+pub(super) fn matching_folded_ids<'a, 'k>(
+    ids: &'a [usize],
+    identity: &str,
+    key: impl Fn(usize) -> &'k str,
+) -> &'a [usize] {
+    let compare = |id: &usize| folded_identity(key(*id)).cmp(identity.bytes());
+    let start = ids.partition_point(|id| compare(id).is_lt());
+    let end = start
+        + ids[start..]
+            .iter()
+            .take_while(|id| compare(id).is_eq())
+            .count();
+    &ids[start..end]
 }
 
 pub(super) fn vendor_lookup_id(found: RowMatch<'_>) -> Option<&str> {
@@ -148,11 +167,11 @@ pub(super) fn vendor_lookup_id(found: RowMatch<'_>) -> Option<&str> {
     id.filter(|id| *id != found.key)
 }
 
-fn has_uppercase(key: &str) -> bool {
+pub(super) fn has_uppercase(key: &str) -> bool {
     key.bytes().any(|byte| byte.is_ascii_uppercase())
 }
 
-fn fold_case(identity: &str) -> Cow<'_, str> {
+pub(super) fn fold_case(identity: &str) -> Cow<'_, str> {
     if has_uppercase(identity) {
         Cow::Owned(identity.to_ascii_lowercase())
     } else {
@@ -168,6 +187,10 @@ pub(super) fn folded_identity(key: &str) -> impl Iterator<Item = u8> + '_ {
             byte.to_ascii_lowercase()
         }
     })
+}
+
+pub(super) fn identity_order<'k>(name: Name<'_>, key: &'k str, fold: bool) -> (bool, &'k str) {
+    (fold && !key.eq_ignore_ascii_case(name.raw()), key)
 }
 
 impl PricingRows {
@@ -284,12 +307,23 @@ impl PricingRows {
         })
     }
 
+    #[cfg(test)]
     pub(super) fn indexed_rows<'a>(
         &'a self,
         identity: &str,
         index: Index,
         fold: bool,
     ) -> impl Iterator<Item = RowMatch<'a>> {
+        self.search_index::<false>(identity, index, fold)
+    }
+
+    fn search_index<'a, const INHERITANCE: bool>(
+        &'a self,
+        identity: &str,
+        index: Index,
+        fold: bool,
+    ) -> impl Iterator<Item = RowMatch<'a>> {
+        let mut uncached = SmallVec::<[usize; 1]>::new();
         let (sensitive, folded) = match self.embedded() {
             Some(rows) => (
                 RowIds::Embedded(rows.indexed_ids(identity, index, false)),
@@ -299,23 +333,36 @@ impl PricingRows {
                     &[]
                 }),
             ),
-            None => (
-                RowIds::Live(
-                    index
-                        .sensitive(self.indexes())
-                        .get(identity)
-                        .map_or(&[], |ids| ids.as_slice()),
-                ),
-                RowIds::Live(if fold {
-                    self.folded_ids(identity, index)
-                } else {
+            None => {
+                let keys = index.sensitive(self.indexes());
+                let folded = if !fold {
                     &[]
-                }),
-            ),
+                } else if INHERITANCE && self.folded_indexes.get().is_none() {
+                    uncached.extend(
+                        keys.iter()
+                            .filter_map(|(key, ids)| {
+                                (key.len() == identity.len()
+                                    && key.as_ref() != identity
+                                    && folded_identity(key).eq(identity.bytes()))
+                                .then_some(ids)
+                            })
+                            .flatten()
+                            .copied(),
+                    );
+                    &[]
+                } else {
+                    self.folded_ids(identity, index)
+                };
+                (
+                    RowIds::Live(keys.get(identity).map_or(&[], |ids| ids.as_slice())),
+                    RowIds::Live(folded),
+                )
+            }
         };
         sensitive
             .iter()
             .chain(folded.iter())
+            .chain(uncached)
             .filter_map(|id| self.at(id))
     }
 
@@ -323,21 +370,29 @@ impl PricingRows {
         let indexes = self
             .folded_indexes
             .get_or_init(|| FoldedIndexes::build(self.matches()));
-        let ids = &indexes.0[index as usize];
-        let compare = |id: &usize| {
-            let found = RowMatch::new(*id, &self.entries.rows[*id]);
-            folded_identity(index.key(found)).cmp(identity.bytes())
-        };
-        let start = ids.partition_point(|id| compare(id).is_lt());
-        let end = start
-            + ids[start..]
-                .iter()
-                .take_while(|id| compare(id).is_eq())
-                .count();
-        &ids[start..end]
+        matching_folded_ids(&indexes.0[index as usize], identity, |id| {
+            index.key(RowMatch::new(id, &self.entries.rows[id]))
+        })
     }
 
     pub(super) fn authoritative<'a>(
+        &'a self,
+        name: Name<'_>,
+        hosted: bool,
+        fold: bool,
+        visible: impl Fn(RowMatch<'a>) -> Option<RowMatch<'a>>,
+    ) -> Option<RowMatch<'a>> {
+        self.authoritative_on_index::<false>(name, hosted, fold, visible)
+    }
+
+    pub(super) fn authoritative_base(&self, name: Name<'_>, fold: bool) -> Option<RowMatch<'_>> {
+        if !self.may_contain(name.raw()) {
+            return None;
+        }
+        self.authoritative_on_index::<true>(name, false, fold, Some)
+    }
+
+    fn authoritative_on_index<'a, const INHERITANCE: bool>(
         &'a self,
         name: Name<'_>,
         hosted: bool,
@@ -361,12 +416,12 @@ impl PricingRows {
             Cow::Borrowed(name.identity())
         };
         let matches = |index| {
-            self.indexed_rows(&identity, index, fold)
+            self.search_index::<INHERITANCE>(&identity, index, fold)
                 .filter_map(|raw| Some((raw.key, visible(raw)?)))
         };
         let by_key = |select| {
             matches(select)
-                .min_by_key(|(key, _)| (fold && !key.eq_ignore_ascii_case(name.raw()), *key))
+                .min_by_key(|(key, _)| identity_order(name, key, fold))
                 .map(|(_, found)| found)
         };
         by_key(Index::Identity)
@@ -403,15 +458,19 @@ impl PricingRows {
         lookup: Lookup,
         fold: bool,
     ) -> Option<RowMatch<'_>> {
-        self.exact_on_index(name, lookup, fold, Some(host))
+        self.exact_on_index::<false>(name, lookup, fold, Some(host))
     }
 
     pub(super) fn exact(&self, name: Name<'_>, lookup: Lookup, fold: bool) -> Option<RowMatch<'_>> {
-        self.exact_on_index(name, lookup, fold, None)
+        self.exact_on_index::<false>(name, lookup, fold, None)
+    }
+
+    pub(super) fn exact_base(&self, name: Name<'_>, fold: bool) -> Option<RowMatch<'_>> {
+        self.exact_on_index::<true>(name, Lookup::Pricing, fold, None)
     }
 
     #[inline(never)]
-    fn exact_on_index(
+    fn exact_on_index<const INHERITANCE: bool>(
         &self,
         name: Name<'_>,
         lookup: Lookup,
@@ -435,14 +494,9 @@ impl PricingRows {
         } else {
             Index::Identity
         };
-        self.indexed_rows(&identity, index, fold)
+        self.search_index::<INHERITANCE>(&identity, index, fold)
             .filter(|found| lookup.includes(found.row) && on_host(found))
-            .min_by_key(|found| {
-                (
-                    fold && !found.key.eq_ignore_ascii_case(name.raw()),
-                    found.key,
-                )
-            })
+            .min_by_key(|found| identity_order(name, found.key, fold))
     }
 
     fn indexes(&self) -> &RowIndexes {

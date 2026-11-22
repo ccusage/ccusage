@@ -4,15 +4,17 @@ use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 
 use super::{
-    Candidate, LongContext, LongContextMode, Lookup, Name, Pricing, PricingMap, PricingOverride,
+    Candidate, LongContext, LongContextMode, Name, Pricing, PricingMap, PricingOverride,
     PricingRows, Row, RowMatch, Scope, Source, SpeedMultipliers, normalized_pricing_key,
     row::{cache_defaults, whole_request_override_model},
+    rows::{fold_case, has_uppercase, identity_order, matching_folded_ids, sort_folded_ids},
     unlabeled_model, with_names,
 };
 
 #[derive(Debug, Default)]
 pub(super) struct Overrides {
     by_identity: FxHashMap<Arc<str>, usize>,
+    folded_ids: Vec<usize>,
     rows: Vec<OverrideRow>,
 }
 
@@ -37,8 +39,27 @@ impl Overrides {
         self.rows.is_empty()
     }
 
-    pub(super) fn id_identity(&self, identity: &str) -> Option<usize> {
+    pub(super) fn identity_id(&self, name: Name<'_>) -> Option<usize> {
+        self.id_identity(name, false)
+            .or_else(|| self.id_identity(name, true))
+    }
+
+    fn exact_id(&self, identity: &str) -> Option<usize> {
         self.by_identity.get(identity).copied()
+    }
+
+    fn id_identity(&self, name: Name<'_>, fold: bool) -> Option<usize> {
+        let identity = name.identity();
+        if !fold {
+            return self.exact_id(identity);
+        }
+        let identity = fold_case(identity);
+        let key = |id: usize| self.rows[id].key.as_ref();
+        let folded = matching_folded_ids(&self.folded_ids, &identity, key);
+        self.exact_id(&identity)
+            .into_iter()
+            .chain(folded.iter().copied())
+            .min_by_key(|&id| identity_order(name, key(id), true))
     }
 
     pub(super) fn resolved(&self, id: usize) -> Option<RowMatch<'_>> {
@@ -50,21 +71,26 @@ impl Overrides {
             .map(|row| RowMatch::new(id, row))
     }
 
-    pub(super) fn label_id(&self, label: &str, slot: &Candidate<'_>) -> Option<usize> {
+    pub(super) fn label_id(&self, label: &str, slot: &Candidate<'_>) -> Option<(usize, bool)> {
         if self.is_empty() {
             return None;
         }
+        [false, true].into_iter().find_map(|fold| {
+            self.label_id_with_case(label, slot, fold)
+                .map(|id| (id, fold))
+        })
+    }
+
+    fn label_id_with_case(&self, label: &str, slot: &Candidate<'_>, fold: bool) -> Option<usize> {
         let name = slot.name(label);
-        self.id_identity(name.identity())
-            .or_else(|| self.id_identity(slot.configured(label)?.identity()))
+        let lookup = |name| self.id_identity(name, fold);
+        lookup(name)
+            .or_else(|| lookup(slot.configured(label)?))
+            .or_else(|| name.suffixes().find_map(lookup))
             .or_else(|| {
-                name.suffixes()
-                    .find_map(|suffix| self.id_identity(suffix.identity()))
-            })
-            .or_else(|| {
-                let model = super::unlabeled_model(label);
+                let model = unlabeled_model(label);
                 (model != label)
-                    .then(|| self.label_id(model, &Candidate::default()))
+                    .then(|| self.label_id_with_case(model, &Candidate::default(), fold))
                     .flatten()
             })
     }
@@ -73,9 +99,12 @@ impl Overrides {
         if self.is_empty() {
             return None;
         }
-        self.shadow_identity(&normalized_pricing_key(found.key), || {
-            found.row.vendor_id().map(str::len)
-        })
+        let identity = OnceLock::new();
+        let name = Name::new(found.key, &identity);
+        let vendor = found.row.vendor_id();
+        self.shadow_identity(name.identity(), || vendor.map(str::len))
+            .or_else(|| self.id_identity(name, true))
+            .or_else(|| self.id_identity(Name::new(vendor?, &OnceLock::new()), true))
     }
 
     pub(super) fn shadow_identity(
@@ -83,9 +112,9 @@ impl Overrides {
         identity: &str,
         vendor_len: impl FnOnce() -> Option<usize>,
     ) -> Option<usize> {
-        self.id_identity(identity).or_else(|| {
+        self.exact_id(identity).or_else(|| {
             // NOTE(2026-11-21, #2465): Normalization swaps ASCII bytes one for one. The vendor ID can use the same suffix offset in the normalized key.
-            self.id_identity(&identity[identity.len() - vendor_len()?..])
+            self.exact_id(&identity[identity.len() - vendor_len()?..])
         })
     }
 
@@ -170,37 +199,47 @@ impl PricingMap {
                 slot.patches.push(value.clone());
             }
         }
-        for (id, slot) in overrides.rows.iter_mut().enumerate() {
-            slot.base = self.override_base(id, &slot.key, &overrides.by_identity);
+        overrides.folded_ids = sort_folded_ids(
+            overrides
+                .rows
+                .iter()
+                .enumerate()
+                .filter(|(_, row)| has_uppercase(&row.key))
+                .map(|(id, row)| (row.key.as_ref(), id))
+                .collect(),
+        );
+        for id in 0..overrides.rows.len() {
+            overrides.rows[id].base =
+                self.override_base(id, &overrides.rows[id].key, Some(&overrides));
         }
         let in_cycle: Vec<_> = (0..overrides.rows.len())
             .filter(|id| overrides.in_cycle(*id))
             .collect();
         for id in in_cycle {
             if let Some(slot) = overrides.rows.get_mut(id) {
-                slot.base = self.override_base(id, &slot.key, &FxHashMap::default());
+                slot.base = self.override_base(id, &slot.key, None);
             }
         }
         self.overrides = Arc::new(overrides);
         self.clear_find_cache();
     }
 
-    fn override_base(
-        &self,
-        id: usize,
-        key: &str,
-        overrides: &FxHashMap<Arc<str>, usize>,
-    ) -> Option<Base> {
-        with_names(key, |name| {
-            if name != key
-                && let Some(&dependency) = overrides.get(normalized_pricing_key(name).as_ref())
-                && dependency != id
-            {
-                return Some(Base::Override(dependency));
-            }
-            self.rows
-                .authoritative(Name::new(name, &OnceLock::new()), false, false, Some)
-                .map(|found| Base::Authority(Box::new(found.row.clone())))
+    fn override_base(&self, id: usize, key: &str, overrides: Option<&Overrides>) -> Option<Base> {
+        [false, true].into_iter().find_map(|fold| {
+            with_names(key, |raw| {
+                let identity = OnceLock::new();
+                let name = Name::new(raw, &identity);
+                if !fold
+                    && raw != key
+                    && let Some(dependency) = overrides.and_then(|rows| rows.identity_id(name))
+                    && dependency != id
+                {
+                    return Some(Base::Override(dependency));
+                }
+                self.rows
+                    .authoritative_base(name, fold)
+                    .map(|found| Base::Authority(Box::new(found.row.clone())))
+            })
         })
     }
 
@@ -308,9 +347,11 @@ impl PricingMap {
 
 fn secondary_base<'a>(rows: Option<&'a PricingRows>, key: &str) -> Option<&'a Row> {
     let rows = rows?;
-    with_names(key, |name| {
-        rows.exact(Name::new(name, &OnceLock::new()), Lookup::Pricing, false)
-            .map(|found| found.row)
+    [false, true].into_iter().find_map(|fold| {
+        with_names(key, |name| {
+            rows.exact_base(Name::new(name, &OnceLock::new()), fold)
+                .map(|found| found.row)
+        })
     })
 }
 

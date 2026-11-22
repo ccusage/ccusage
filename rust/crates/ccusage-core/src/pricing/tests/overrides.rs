@@ -53,6 +53,145 @@ fn full_override_creates_new_model() {
 }
 
 #[test]
+fn case_insensitive_override_prices_a_custom_model() {
+    let mut pricing = PricingMap::default();
+    let overrides = build_overrides("GLM-Custom", |value| {
+        value.input_cost_per_token = Some(1e-6);
+        value.output_cost_per_token = Some(2e-6);
+    });
+    pricing.apply_overrides(overrides.iter());
+
+    let entry = pricing.find("glm-custom").unwrap();
+    assert_eq!((entry.input, entry.output), (1e-6, 2e-6));
+}
+
+#[test]
+fn case_insensitive_override_wins_over_an_exact_catalogue_match() {
+    let mut pricing = PricingMap::default();
+    pricing.insert_test_pricing(
+        "claude-sonnet-4-5".to_string(),
+        Pricing {
+            input: 3e-6,
+            output: 15e-6,
+            ..Pricing::empty()
+        },
+    );
+    let overrides = build_overrides("Claude-Sonnet-4-5", |value| {
+        value.input_cost_per_token = Some(2e-6);
+        value.output_cost_per_token = Some(10e-6);
+    });
+    pricing.apply_overrides(overrides.iter());
+
+    let entry = pricing.find("claude-sonnet-4-5").unwrap();
+    assert_eq!((entry.input, entry.output), (2e-6, 10e-6));
+}
+
+#[test]
+fn case_insensitive_partial_override_inherits_catalogue_rates() {
+    for (catalogue, key) in [
+        ("claude-sonnet-4-5", "Claude-Sonnet-4-5"),
+        ("Claude-Sonnet-4-5", "claude-sonnet-4-5"),
+    ] {
+        let mut pricing = PricingMap::default();
+        pricing.insert_test_pricing(
+            catalogue.to_string(),
+            Pricing {
+                input: 3e-6,
+                output: 15e-6,
+                ..Pricing::empty()
+            },
+        );
+        let overrides = build_overrides(key, |value| {
+            value.input_cost_per_token = Some(2e-6);
+        });
+        pricing.apply_overrides(overrides.iter());
+
+        let entry = pricing.find("claude-sonnet-4-5").unwrap();
+        assert_eq!((entry.input, entry.output), (2e-6, 15e-6));
+        assert!(pricing.rows.folded_indexes.get().is_none());
+    }
+}
+
+#[test]
+fn exact_case_wins_when_overrides_differ_only_by_case() {
+    let mut pricing = PricingMap::default();
+    let mut overrides = build_overrides("GLM-Custom", |value| {
+        value.input_cost_per_token = Some(1e-6);
+        value.output_cost_per_token = Some(3e-6);
+    });
+    overrides.extend(build_overrides("glm-custom", |value| {
+        value.input_cost_per_token = Some(2e-6);
+        value.output_cost_per_token = Some(4e-6);
+    }));
+    pricing.apply_overrides(overrides.iter());
+
+    for (model, expected) in [
+        ("Glm-Custom", (1e-6, 3e-6)),
+        ("GLM-Custom", (1e-6, 3e-6)),
+        ("glm-custom", (2e-6, 4e-6)),
+    ] {
+        let entry = pricing.find(model).unwrap();
+        assert_eq!((entry.input, entry.output), expected, "{model}");
+    }
+}
+
+#[test]
+fn unknown_override_keeps_live_folded_indexes_cold() {
+    let mut pricing = PricingMap::default();
+    pricing.insert_test_pricing("Existing".to_owned(), Pricing::empty());
+    let mut secondary = PricingMap::default();
+    secondary.insert_test_pricing("Different".to_owned(), Pricing::empty());
+    pricing.models_dev = Some(std::sync::Arc::clone(&secondary.rows));
+    let overrides = build_overrides("brand-new-model", |value| {
+        value.input_cost_per_token = Some(1e-6);
+        value.output_cost_per_token = Some(2e-6);
+    });
+
+    pricing.apply_overrides(overrides.iter());
+    let entry = pricing.find("brand-new-model").unwrap();
+    assert_eq!((entry.input, entry.output), (1e-6, 2e-6));
+    assert!(pricing.rows.folded_indexes.get().is_none());
+    assert!(secondary.rows.folded_indexes.get().is_none());
+}
+
+#[test]
+fn pi_labeled_override_matches_across_case() {
+    let mut pricing = PricingMap::default();
+    let overrides = build_overrides("[pi] GLM-Custom", |value| {
+        value.input_cost_per_token = Some(1e-6);
+        value.output_cost_per_token = Some(2e-6);
+    });
+    pricing.apply_overrides(overrides.iter());
+
+    let model = crate::pricing::AgentModel::new("pi", "glm-custom");
+    let (_, entry) = pricing
+        .resolve_at(Some(model.display()), &model.candidates(), None)
+        .unwrap();
+    assert_eq!((entry.input, entry.output), (1e-6, 2e-6));
+    assert!(pricing.find("glm-custom").is_none());
+}
+
+#[test]
+fn pi_exact_bare_override_beats_folded_labeled_override() {
+    let mut pricing = PricingMap::default();
+    let mut overrides = build_overrides("GLM-Custom", |value| {
+        value.input_cost_per_token = Some(1e-6);
+        value.output_cost_per_token = Some(2e-6);
+    });
+    overrides.extend(build_overrides("[pi] glm-custom", |value| {
+        value.input_cost_per_token = Some(3e-6);
+        value.output_cost_per_token = Some(4e-6);
+    }));
+    pricing.apply_overrides(overrides.iter());
+
+    let model = crate::pricing::AgentModel::new("pi", "GLM-Custom");
+    let (_, entry) = pricing
+        .resolve_at(Some(model.display()), &model.candidates(), None)
+        .unwrap();
+    assert_eq!((entry.input, entry.output), (1e-6, 2e-6));
+}
+
+#[test]
 fn override_only_openai_models_charge_cache_writes_at_input_rate() {
     let input_rate = 1e-6;
     for model in ["gpt-5.5-private", "[pi] gpt-5.5-private"] {
@@ -675,6 +814,29 @@ fn applies_target_overrides_before_aliases_that_sort_first() {
     let into_cycle = pricing.find("a-into-cycle").unwrap();
     assert_eq!(into_cycle.input, 5e-6);
     assert_eq!(into_cycle.output, 9e-6);
+}
+
+#[test]
+fn layered_override_inherits_folded_parent_before_exact_catalogue() {
+    let _aliases = crate::model_aliases::set_model_aliases_for_tests([("child-x", "existing")]);
+    let mut pricing = PricingMap::default();
+    pricing.insert_test_pricing(
+        "existing".to_string(),
+        Pricing {
+            output: 20e-6,
+            ..Pricing::empty()
+        },
+    );
+    let mut overrides = build_overrides("Existing", |value| {
+        value.output_cost_per_token = Some(99e-6);
+    });
+    overrides.extend(build_overrides("child-x", |value| {
+        value.input_cost_per_token = Some(5e-6);
+    }));
+    pricing.apply_overrides(overrides.iter());
+
+    let child = pricing.find("child-x").unwrap();
+    assert_eq!((child.input, child.output), (5e-6, 99e-6));
 }
 
 #[test]
