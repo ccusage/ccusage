@@ -218,7 +218,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 50,
-          "cost": 0.012825,
+          "cost": 0.0038250000000000003,
           "inputTokens": 250,
           "modelName": "claude-opus-4-20250514",
           "outputTokens": 120
@@ -226,7 +226,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.006450000000000001,
+          "cost": 0.0015,
           "inputTokens": 400,
           "modelName": "gpt-5",
           "outputTokens": 445
@@ -246,7 +246,7 @@ exit: 0
         "claude-sonnet-4-20250514"
       ],
       "outputTokens": 595,
-      "totalCost": 0.019923,
+      "totalCost": 0.005972999999999999,
       "totalTokens": 1645
     }
   ],
@@ -255,7 +255,7 @@ exit: 0
     "cacheReadTokens": 2360,
     "inputTokens": 8831,
     "outputTokens": 2877,
-    "totalCost": 0.044670249999999995,
+    "totalCost": 0.030720249999999998,
     "totalTokens": 15038,
     "unpricedModels": [
       "GLM-5.3",

@@ -410,6 +410,44 @@ fn counts_a_re_exported_chat_span_once() {
 }
 
 #[test]
+fn bills_recorded_output_from_any_copy_of_an_otel_span() {
+    ccusage_test_support::install_pricing_snapshots();
+    let mut pricing = ccusage_core::PricingMap::default();
+    pricing.load_json(r#"{"test-model":{"input_cost_per_token":1,"output_cost_per_token":2}}"#);
+    for later_span in [("trace-1", "span-1"), ("trace-2", "span-2")] {
+        let span = |ids, timestamp| {
+            let mut record: serde_json::Value =
+                serde_json::from_str(&chat_span(ids, timestamp, "resp-1", 100)).unwrap();
+            record["attributes"]["gen_ai.response.model"] = json!("test-model");
+            record["attributes"]["github.copilot.service_request_id"] = json!("request-1");
+            record["attributes"]["gen_ai.usage.total_tokens"] = json!(110);
+            record
+        };
+        let mut partial = span(("trace-1", "span-1"), 1_775_934_264);
+        partial["attributes"]
+            .as_object_mut()
+            .unwrap()
+            .remove("gen_ai.usage.output_tokens");
+        let recorded = span(later_span, 1_775_934_300);
+        let fixture = fs_fixture!({
+            "copilot.jsonl": format!("{partial}\n{recorded}"),
+        });
+        let entries =
+            parse_otel_file(&fixture.path("copilot.jsonl"), &Diagnostics::new("copilot")).unwrap();
+
+        assert_eq!(dedup_keys(&entries), ["trace-1:span-1"]);
+        let entry = usage_entry_to_loaded(
+            entries.into_iter().next().unwrap(),
+            &jiff::tz::TimeZone::UTC,
+            CostMode::Calculate,
+            PriceTable::Calculate(&pricing),
+        );
+        assert_eq!(entry.usage.output_tokens, 10);
+        assert_eq!(entry.cost, 120.0);
+    }
+}
+
+#[test]
 fn keeps_calls_of_one_turn_that_share_a_response_id() {
     let fixture = fs_fixture!({
         "copilot.jsonl": [
@@ -509,7 +547,7 @@ fn does_not_double_count_reasoning_tokens() {
 }
 
 #[test]
-fn includes_separate_otel_reasoning_tokens_in_total_and_cost() {
+fn bills_separate_otel_reasoning_but_keeps_residual_tokens_only_in_the_total() {
     ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({
         "copilot.jsonl": format!(
@@ -529,7 +567,7 @@ fn includes_separate_otel_reasoning_tokens_in_total_and_cost() {
                     "gen_ai.usage.cache_read.input_tokens": 10,
                     "gen_ai.usage.cache_creation.input_tokens": 20,
                     "gen_ai.usage.reasoning.output_tokens": 5,
-                    "gen_ai.usage.total_tokens": 155,
+                    "gen_ai.usage.total_tokens": 162,
                 },
             })
         ),
@@ -570,9 +608,9 @@ fn includes_separate_otel_reasoning_tokens_in_total_and_cost() {
         AgentReportKind::Daily,
     );
 
-    assert_eq!(loaded[0].extra_total_tokens, 5);
+    assert_eq!(loaded[0].extra_total_tokens, 12);
     assert_eq!(report["daily"][0]["outputTokens"], 50);
-    assert_eq!(report["daily"][0]["totalTokens"], 155);
+    assert_eq!(report["daily"][0]["totalTokens"], 162);
     assert_eq!(report["daily"][0]["totalCost"], 280.0);
     assert_eq!(report["daily"][0]["modelBreakdowns"][0]["cost"], 280.0);
 }

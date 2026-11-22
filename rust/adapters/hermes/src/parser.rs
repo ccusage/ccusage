@@ -195,7 +195,6 @@ fn price_hermes(entry: &HermesEntry, pricing: PriceTable<'_>) -> (f64, Option<St
         granularity: UsageGranularity::Aggregate,
         usage: entry.usage,
         reasoning_tokens: 0,
-        residual_tokens: 0,
         reported_model: Some(&entry.model),
         candidates: &candidates,
         stored_cost: ccusage_core::cost::recorded_cost(entry.cost_usd),

@@ -10,10 +10,7 @@ use ccusage_core::{Diagnostics, Skip, SkipKind};
 use jiff::tz::TimeZone as JiffTimeZone;
 use serde::Deserialize;
 
-use crate::{
-    LoadedEntry, TimestampMs, TokenUsageRaw, apply_total_token_fallback, date_at,
-    fast::LinePrefilter,
-};
+use crate::{LoadedEntry, TimestampMs, TokenUsageRaw, date_at, fast::LinePrefilter};
 use ccusage_adapter_common::jsonl;
 
 const DEFAULT_MODEL: &str = "kimi-for-coding";
@@ -111,7 +108,7 @@ pub(super) struct KimiUsageEntry {
     output_tokens: u64,
     cache_creation_tokens: u64,
     cache_read_tokens: u64,
-    extra_total_tokens: u64,
+    report_remainder: u64,
 }
 
 use super::paths::WireFile;
@@ -234,7 +231,7 @@ fn entry_from_usage_record(
         output_tokens: usage.output_tokens,
         cache_creation_tokens: usage.cache_creation_input_tokens,
         cache_read_tokens: usage.cache_read_input_tokens,
-        extra_total_tokens: 0,
+        report_remainder: 0,
     })
 }
 
@@ -259,8 +256,9 @@ fn entry_from_status_update(
         speed: None,
         cache_creation: None,
     };
-    let (usage, extra_total_tokens) = apply_total_token_fallback(usage, 0, token_usage.total);
-    let Some(counted_tokens) = ccusage_core::checked_total_usage_tokens(usage, extra_total_tokens)
+    let report_remainder =
+        ccusage_core::AdditionalTokens::from_total(usage, 0, token_usage.total).report_remainder;
+    let Some(counted_tokens) = ccusage_core::checked_total_usage_tokens(usage, report_remainder)
     else {
         diagnostics.record(Skip::record(
             file_path,
@@ -294,7 +292,7 @@ fn entry_from_status_update(
         output_tokens: usage.output_tokens,
         cache_creation_tokens: usage.cache_creation_input_tokens,
         cache_read_tokens: usage.cache_read_input_tokens,
-        extra_total_tokens,
+        report_remainder,
     })
 }
 
@@ -336,19 +334,42 @@ pub(super) struct KimiEntryKey {
 }
 
 impl KimiUsageEntry {
+    pub(super) fn billable_output_tokens(&self) -> u64 {
+        self.output_tokens
+    }
+
     pub(super) fn dedupe_key(&self) -> KimiEntryKey {
+        let (usage, extra_total_tokens) = self.additional().for_report(self.usage());
         KimiEntryKey {
             session_id: self.session_id.clone(),
             message_id: self.message_id.clone(),
             timestamp: self.timestamp,
             model: self.model.clone(),
             tokens: [
-                self.input_tokens,
-                self.output_tokens,
-                self.cache_creation_tokens,
-                self.cache_read_tokens,
-                self.extra_total_tokens,
+                usage.input_tokens,
+                usage.output_tokens,
+                usage.cache_creation_input_tokens,
+                usage.cache_read_input_tokens,
+                extra_total_tokens,
             ],
+        }
+    }
+
+    fn usage(&self) -> TokenUsageRaw {
+        TokenUsageRaw {
+            input_tokens: self.input_tokens,
+            output_tokens: self.output_tokens,
+            cache_creation_input_tokens: self.cache_creation_tokens,
+            cache_read_input_tokens: self.cache_read_tokens,
+            speed: None,
+            cache_creation: None,
+        }
+    }
+
+    fn additional(&self) -> ccusage_core::AdditionalTokens {
+        ccusage_core::AdditionalTokens {
+            reasoning: 0,
+            report_remainder: self.report_remainder,
         }
     }
 }
@@ -358,15 +379,9 @@ pub(super) fn kimi_entry_to_loaded(
     tz: &JiffTimeZone,
     pricing: PriceTable<'_>,
 ) -> LoadedEntry {
-    let usage = TokenUsageRaw {
-        input_tokens: entry.input_tokens,
-        output_tokens: entry.output_tokens,
-        cache_creation_input_tokens: entry.cache_creation_tokens,
-        cache_read_input_tokens: entry.cache_read_tokens,
-        speed: None,
-        cache_creation: None,
-    };
+    let usage = entry.usage();
     let (cost, missing_pricing_model, estimated_pricing) = price_kimi_usage(&entry, pricing, usage);
+    let (usage, extra_total_tokens) = entry.additional().for_report(usage);
     LoadedEntry {
         date: date_at(entry.timestamp, tz),
         timestamp: entry.timestamp,
@@ -374,7 +389,7 @@ pub(super) fn kimi_entry_to_loaded(
         session_id: Arc::from(entry.session_id),
         project_path: Arc::from("Kimi"),
         cost,
-        extra_total_tokens: entry.extra_total_tokens,
+        extra_total_tokens,
         credits: None,
         message_count: None,
         model: Some(entry.model),
@@ -404,7 +419,6 @@ fn price_kimi_usage(
             granularity: UsageGranularity::Request,
             usage,
             reasoning_tokens: 0,
-            residual_tokens: 0,
             reported_model: Some(&entry.model),
             candidates: &candidates,
             stored_cost: None,
@@ -605,7 +619,8 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(entry.output_tokens, 432);
+        let entry = kimi_entry_to_loaded(entry, &JiffTimeZone::UTC, PriceTable::Display);
+        assert_eq!(entry.usage.output_tokens, 432);
         assert_eq!(entry.extra_total_tokens, 0);
     }
 
@@ -659,7 +674,7 @@ mod tests {
             output_tokens: usage.output_tokens,
             cache_creation_tokens: usage.cache_creation_input_tokens,
             cache_read_tokens: usage.cache_read_input_tokens,
-            extra_total_tokens: 0,
+            report_remainder: 0,
         };
         let at_cutoff = KimiUsageEntry {
             timestamp: TimestampMs::from_millis(1_776_698_890_072),
@@ -701,7 +716,7 @@ mod pricing_identity_tests {
             output_tokens: 0,
             cache_creation_tokens: 0,
             cache_read_tokens: 0,
-            extra_total_tokens: 0,
+            report_remainder: 0,
         };
         assert_eq!(
             model_candidates(&entry)

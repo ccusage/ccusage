@@ -98,7 +98,6 @@ exit: 0
           "cacheReadTokens": 0,
           "cost": 0.0,
           "inputTokens": 0,
-          "missingPricing": true,
           "modelName": "gpt-unknown",
           "outputTokens": 345
         }
@@ -126,7 +125,6 @@ exit: 0
     "totalTokens": 27880,
     "unpricedModels": [
       "droid-mystery-1",
-      "gpt-unknown",
       "grok-unknown"
     ]
   }

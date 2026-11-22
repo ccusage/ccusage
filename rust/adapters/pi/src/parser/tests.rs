@@ -581,7 +581,6 @@ fn auto_recalculates_non_finite_source_cost_while_display_preserves_it() {
                 granularity: UsageGranularity::Request,
                 usage,
                 reasoning_tokens: 0,
-                residual_tokens: 0,
                 reported_model: None,
                 candidates: &candidates,
                 stored_cost,

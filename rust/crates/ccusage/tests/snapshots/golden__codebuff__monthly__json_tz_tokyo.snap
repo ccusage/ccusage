@@ -47,18 +47,10 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 6000,
-          "cost": 0.0147,
+          "cost": 0.00945,
           "inputTokens": 1300,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 250
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 2500,
-          "cost": 0.006137500000000001,
-          "inputTokens": 700,
-          "modelName": "gpt-5",
-          "outputTokens": 495
         },
         {
           "cacheCreationTokens": 200,
@@ -67,6 +59,14 @@ exit: 0
           "inputTokens": 900,
           "modelName": "claude-haiku-4-5-20251001",
           "outputTokens": 400
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 2500,
+          "cost": 0.0026875,
+          "inputTokens": 700,
+          "modelName": "gpt-5",
+          "outputTokens": 495
         },
         {
           "cacheCreationTokens": 60,
@@ -113,7 +113,7 @@ exit: 0
       ],
       "month": "2026-01",
       "outputTokens": 1655,
-      "totalCost": 0.027012500000000002,
+      "totalCost": 0.0183125,
       "totalTokens": 28395
     }
   ],
@@ -123,7 +123,7 @@ exit: 0
     "credits": 8.2,
     "inputTokens": 5651,
     "outputTokens": 1912,
-    "totalCost": 0.0407255,
+    "totalCost": 0.0320255,
     "totalTokens": 34063,
     "unpricedModels": [
       "codebuff-mystery-1"

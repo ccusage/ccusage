@@ -433,7 +433,6 @@ fn claude_4_6_long_requests_paid_the_premium_until_the_1m_window_left_beta() {
                             ..Default::default()
                         },
                         reasoning_tokens: 0,
-                        residual_tokens: 0,
                         reported_model: Some(model),
                         candidates: &candidates,
                         stored_cost: None,
@@ -482,7 +481,6 @@ fn fast_mode_claude_opus_4_6_bills_no_1m_beta_premium_before_ga() {
                     ..Default::default()
                 },
                 reasoning_tokens: 0,
-                residual_tokens: 0,
                 reported_model: Some(model),
                 candidates: &candidates,
                 stored_cost: None,
@@ -649,7 +647,6 @@ fn request_cost(
                 ..Default::default()
             },
             reasoning_tokens: 0,
-            residual_tokens: 0,
             reported_model: Some(model),
             candidates: &[(model, MatchKind::Fuzzy)],
             stored_cost: None,
@@ -679,7 +676,6 @@ fn long_request_cost_with_override(model: &str, input: f64, output: f64, instant
                 ..Default::default()
             },
             reasoning_tokens: 0,
-            residual_tokens: 0,
             reported_model: Some(model),
             candidates: &candidates,
             stored_cost: None,
@@ -824,7 +820,6 @@ fn fast_mode_keeps_an_overrides_explicit_long_rates_before_ga() {
                 ..Default::default()
             },
             reasoning_tokens: 0,
-            residual_tokens: 0,
             reported_model: Some(model),
             candidates: &candidates,
             stored_cost: None,

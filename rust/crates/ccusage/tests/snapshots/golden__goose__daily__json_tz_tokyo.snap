@@ -15,7 +15,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.0015,
+          "cost": 0.0010500000000000002,
           "inputTokens": 100,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 50
@@ -25,7 +25,7 @@ exit: 0
         "claude-sonnet-4-20250514"
       ],
       "outputTokens": 50,
-      "totalCost": 0.0015,
+      "totalCost": 0.0010500000000000002,
       "totalTokens": 180
     },
     {
@@ -59,7 +59,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.0675,
+          "cost": 0.052500000000000005,
           "inputTokens": 2000,
           "modelName": "claude-opus-4-20250514",
           "outputTokens": 300
@@ -67,7 +67,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.00605,
+          "cost": 0.0058,
           "inputTokens": 1800,
           "modelName": "claude-haiku-4-5-20251001",
           "outputTokens": 800
@@ -97,7 +97,7 @@ exit: 0
         "goose-mystery-1"
       ],
       "outputTokens": 1270,
-      "totalCost": 0.0738,
+      "totalCost": 0.058550000000000005,
       "totalTokens": 6120
     },
     {
@@ -117,7 +117,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.0034500000000000004,
+          "cost": 0.0,
           "inputTokens": 0,
           "modelName": "gpt-5",
           "outputTokens": 0
@@ -128,7 +128,7 @@ exit: 0
         "claude-sonnet-4-20250514"
       ],
       "outputTokens": 300,
-      "totalCost": 0.010350000000000002,
+      "totalCost": 0.006900000000000001,
       "totalTokens": 1445
     }
   ],
@@ -137,7 +137,7 @@ exit: 0
     "cacheReadTokens": 0,
     "inputTokens": 6500,
     "outputTokens": 1820,
-    "totalCost": 0.0889,
+    "totalCost": 0.06975,
     "totalTokens": 8945,
     "unpricedModels": [
       "goose-mystery-1"

@@ -147,7 +147,7 @@ fn codebuff_fixture_keeps_distinct_messages_at_the_same_instant() {
         let day = |date: &str| days.iter().find(|day| day["date"] == date).unwrap();
         assert_eq!(day("2025-12-31")["credits"], 2.75);
         assert_eq!(day("2026-01-01")["inputTokens"], 1500);
-        assert_eq!(day("2026-01-01")["totalCost"], 0.01185);
+        assert_eq!(day("2026-01-01")["totalCost"], 0.0084);
     }
 }
 

@@ -7,8 +7,9 @@ use serde::Deserialize;
 use serde_json::{Map, Value};
 
 use super::{CallIds, CallKey, CopilotUsageEntry, copilot_model_names};
-use crate::{TimestampMs, TokenUsageRaw, apply_total_token_fallback, fast::LinePrefilter};
+use crate::{TimestampMs, TokenUsageRaw, fast::LinePrefilter};
 use ccusage_adapter_common::{jsonl, units::UnitError};
+use ccusage_core::AdditionalTokens;
 use ccusage_core::Diagnostics;
 
 // NOTE(2026-05-19, #1023): Copilot OpenTelemetry exporters write timestamps as scalars or `[seconds, nanos]` arrays. Keep both representations readable.
@@ -92,6 +93,7 @@ struct OtelCall {
     usage: TokenUsageRaw,
     reasoning_output_tokens: u64,
     extra_total_tokens: u64,
+    fallback_output_tokens: u64,
     call_key: Option<CallKey>,
     turn: Option<u64>,
     index: usize,
@@ -138,6 +140,7 @@ impl OtelCall {
             cache_read_tokens: self.usage.cache_read_input_tokens,
             reasoning_output_tokens: self.reasoning_output_tokens,
             extra_total_tokens: self.extra_total_tokens,
+            fallback_output_tokens: self.fallback_output_tokens,
             dedup_key,
             call_key: self.call_key,
         }
@@ -159,8 +162,22 @@ struct CopilotUsageCandidate {
     cache_read_tokens: u64,
     reasoning_output_tokens: u64,
     extra_total_tokens: u64,
+    fallback_output_tokens: u64,
     dedup_key: String,
     call_key: Option<CallKey>,
+}
+
+impl CopilotUsageCandidate {
+    fn reported_counts(&self) -> [u64; 6] {
+        [
+            self.input_tokens,
+            self.output_tokens,
+            self.cache_creation_tokens,
+            self.cache_read_tokens,
+            self.reasoning_output_tokens,
+            self.extra_total_tokens,
+        ]
+    }
 }
 
 pub(crate) fn read_otel_calls(
@@ -220,40 +237,48 @@ pub(crate) fn reconcile_otel_calls(files: Vec<OtelFileCalls>) -> Vec<CopilotUsag
             }
         }
     }
-    let mut request_ids = HashMap::<&CallKey, (Option<String>, Option<String>)>::new();
+    let mut evidence = HashMap::<&CallKey, (Option<String>, Option<String>, u64)>::new();
     for call in &calls {
         if let Some(key) = &call.call_key {
-            let (response_id, service_request_id) = request_ids.entry(key).or_default();
+            let first = &calls[earliest[key]];
+            let (response_id, service_request_id, fallback_output_tokens) = evidence
+                .entry(key)
+                .or_insert_with(|| (None, None, first.fallback_output_tokens));
             if response_id.is_none() {
                 response_id.clone_from(&call.response_id);
             }
             if service_request_id.is_none() {
                 service_request_id.clone_from(&call.service_request_id);
             }
+            if first.model == call.model && first.reported_counts() == call.reported_counts() {
+                *fallback_output_tokens =
+                    (*fallback_output_tokens).min(call.fallback_output_tokens);
+            }
         }
     }
     let kept = earliest
         .into_iter()
-        .map(|(key, index)| (index, request_ids.remove(key).unwrap_or_default()))
+        .map(|(key, index)| (index, evidence.remove(key).unwrap_or_default()))
         .collect::<HashMap<_, _>>();
-    let candidates = calls
+    let mut candidates = calls
         .into_iter()
         .enumerate()
         .filter_map(|(index, mut call)| {
             if call.call_key.is_none() {
                 return Some(call);
             }
-            let (response_id, service_request_id) = kept.get(&index)?;
+            let (response_id, service_request_id, fallback_output_tokens) = kept.get(&index)?;
             if call.response_id.is_none() {
                 call.response_id.clone_from(response_id);
             }
             if call.service_request_id.is_none() {
                 call.service_request_id.clone_from(service_request_id);
             }
+            call.fallback_output_tokens = *fallback_output_tokens;
             Some(call)
         })
         .collect::<Vec<_>>();
-    let sets = CandidateSets::new(&candidates);
+    let sets = CandidateSets::new(&mut candidates);
     candidates
         .into_iter()
         .enumerate()
@@ -269,6 +294,7 @@ pub(crate) fn reconcile_otel_calls(files: Vec<OtelFileCalls>) -> Vec<CopilotUsag
             cache_read_tokens: candidate.cache_read_tokens,
             reasoning_output_tokens: candidate.reasoning_output_tokens,
             extra_total_tokens: candidate.extra_total_tokens,
+            fallback_output_tokens: candidate.fallback_output_tokens,
             request_count: 1,
             nano_aiu: None,
             dedup_key: candidate.dedup_key,
@@ -373,8 +399,11 @@ fn to_call(
         speed: None,
         cache_creation: None,
     };
-    let (usage, extra_total_tokens) = apply_total_token_fallback(usage, 0, total);
-    let Some(counted_tokens) = ccusage_core::checked_total_usage_tokens(usage, extra_total_tokens)
+    let (report_usage, extra_total_tokens) =
+        AdditionalTokens::from_total(usage, 0, total).for_report(usage);
+    let fallback_output_tokens = report_usage.output_tokens - usage.output_tokens;
+    let Some(counted_tokens) =
+        ccusage_core::checked_total_usage_tokens(report_usage, extra_total_tokens)
     else {
         diagnostics.record(ccusage_core::Skip::record(
             path,
@@ -407,9 +436,10 @@ fn to_call(
         logged_model: first_non_empty_model_attr(attributes),
         session: best_session_attr(attributes).map(|(session_id, _)| session_id),
         timestamp,
-        usage,
+        usage: report_usage,
         reasoning_output_tokens: reasoning,
         extra_total_tokens,
+        fallback_output_tokens,
         turn,
         index,
     })
@@ -437,10 +467,10 @@ struct CandidateSets {
 }
 
 impl CandidateSets {
-    fn new(candidates: &[CopilotUsageCandidate]) -> Self {
+    fn new(candidates: &mut [CopilotUsageCandidate]) -> Self {
         let mut best_source_by_trace = HashMap::new();
         let mut best_source_by_response = HashMap::new();
-        for candidate in candidates {
+        for candidate in &*candidates {
             for (best_sources, id) in [
                 (&mut best_source_by_trace, &candidate.trace_id),
                 (&mut best_source_by_response, &candidate.response_id),
@@ -473,8 +503,8 @@ fn keep_best_source(
 }
 
 // NOTE(2026-10-10, #1858): Copilot CLI can re-export a chat span under new trace or span IDs with the original response ID and usage. VS Code reuses response IDs across a turn, so compare usage as well.
-fn repeated_chat_spans(candidates: &[CopilotUsageCandidate]) -> HashSet<usize> {
-    let mut kept = HashMap::<_, Vec<usize>>::new();
+fn repeated_chat_spans(candidates: &mut [CopilotUsageCandidate]) -> HashSet<usize> {
+    let mut kept = HashMap::<_, Vec<(usize, u64)>>::new();
     let mut repeated = HashSet::new();
     for (index, candidate) in candidates.iter().enumerate() {
         if candidate.source != CopilotUsageSource::ChatSpan {
@@ -486,34 +516,38 @@ fn repeated_chat_spans(candidates: &[CopilotUsageCandidate]) -> HashSet<usize> {
         let call = (
             response_id,
             candidate.model.as_str(),
-            candidate.input_tokens,
-            candidate.output_tokens,
-            candidate.cache_creation_tokens,
-            candidate.cache_read_tokens,
-            candidate.reasoning_output_tokens,
-            candidate.extra_total_tokens,
+            candidate.reported_counts(),
         );
         let copies = kept.entry(call).or_default();
         // NOTE(2026-11-20, #2368): A service request ID names one request. Spans with different service request IDs are separate calls even when their response ID and usage match.
-        let same_request = copies.iter_mut().find(|kept| {
+        let same_request = copies.iter_mut().find(|(kept, _)| {
             match (
-                candidates[**kept].service_request_id.as_deref(),
+                candidates[*kept].service_request_id.as_deref(),
                 candidate.service_request_id.as_deref(),
             ) {
                 (Some(kept), Some(current)) => kept == current,
                 _ => true,
             }
         });
-        let Some(earliest) = same_request else {
-            copies.push(index);
+        let Some((earliest, fallback_output_tokens)) = same_request else {
+            copies.push((index, candidate.fallback_output_tokens));
             continue;
         };
+        *fallback_output_tokens = (*fallback_output_tokens).min(candidate.fallback_output_tokens);
         if candidate.timestamp < candidates[*earliest].timestamp {
             repeated.insert(*earliest);
             *earliest = index;
         } else {
             repeated.insert(index);
         }
+    }
+    let fallback_changes = kept
+        .into_values()
+        .flatten()
+        .filter(|(index, fallback)| candidates[*index].fallback_output_tokens != *fallback)
+        .collect::<Vec<_>>();
+    for (index, fallback) in fallback_changes {
+        candidates[index].fallback_output_tokens = fallback;
     }
     repeated
 }

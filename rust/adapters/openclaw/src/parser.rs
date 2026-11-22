@@ -16,8 +16,8 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
-    LoadedEntry, TimestampMs, TokenUsageRaw, apply_total_token_fallback, cli::CostMode, date_at,
-    fast::LinePrefilter, stored_cost_for_mode,
+    LoadedEntry, TimestampMs, TokenUsageRaw, cli::CostMode, date_at, fast::LinePrefilter,
+    stored_cost_for_mode,
 };
 
 #[derive(Debug, Default, Deserialize)]
@@ -354,16 +354,13 @@ fn parse_transcript_message(
         speed: None,
         cache_creation: None,
     };
-    let (raw_usage, extra_total_tokens) = apply_total_token_fallback(raw_usage, 0, total_tokens);
-    let Some(counted_tokens) =
-        ccusage_core::checked_total_usage_tokens(raw_usage, extra_total_tokens)
-    else {
+    let Some(counted_tokens) = ccusage_core::checked_total_usage_tokens(raw_usage, 0) else {
         return Some(Err(TranscriptIssue::UnrepresentableTokens));
     };
-    if counted_tokens == 0 {
+    let total_tokens = total_tokens.max(counted_tokens);
+    if total_tokens == 0 {
         return None;
     }
-    let total_tokens = total_tokens.max(counted_tokens);
     let Some(timestamp) = timestamp_from_value(message.timestamp.as_ref())
         .or_else(|| timestamp_from_value(record.timestamp.as_ref()))
         .or(fallback_timestamp)
@@ -411,6 +408,7 @@ pub(super) fn entry_to_loaded(
         speed: None,
         cache_creation: None,
     };
+    let additional = ccusage_core::AdditionalTokens::from_total(usage, 0, entry.total_tokens);
     let host_model = entry
         .provider
         .as_deref()
@@ -425,7 +423,6 @@ pub(super) fn entry_to_loaded(
         granularity: UsageGranularity::Request,
         usage,
         reasoning_tokens: 0,
-        residual_tokens: 0,
         reported_model: Some(identity.display()),
         candidates: &candidates,
         stored_cost: entry.cost,
@@ -438,6 +435,7 @@ pub(super) fn entry_to_loaded(
         .missing_pricing
         .then(|| crate::model_aliases::resolve_model_name(&entry.model).into_owned());
     let stored_cost = stored_cost_for_mode(entry.cost, mode);
+    let (usage, extra_total_tokens) = additional.for_report(usage);
     LoadedEntry {
         date: date_at(entry.timestamp, tz),
         timestamp: entry.timestamp,
@@ -445,13 +443,7 @@ pub(super) fn entry_to_loaded(
         session_id: Arc::from(entry.session_id),
         project_path: Arc::from("OpenClaw"),
         cost,
-        extra_total_tokens: entry.total_tokens.saturating_sub(
-            entry
-                .input_tokens
-                .saturating_add(entry.output_tokens)
-                .saturating_add(entry.cache_creation_tokens)
-                .saturating_add(entry.cache_read_tokens),
-        ),
+        extra_total_tokens,
         credits: None,
         message_count: None,
         model: Some(identity.into_display()),
@@ -777,8 +769,14 @@ mod tests {
         .unwrap()
         .unwrap();
 
-        assert_eq!(entry.output_tokens, 222);
         assert_eq!(entry.total_tokens, 222);
+        let loaded = entry_to_loaded(
+            entry,
+            &JiffTimeZone::UTC,
+            CostMode::Display,
+            PriceTable::Display,
+        );
+        assert_eq!(loaded.usage.output_tokens, 222);
     }
 
     #[test]

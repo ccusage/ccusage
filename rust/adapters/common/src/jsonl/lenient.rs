@@ -9,11 +9,15 @@ pub fn lenient_u64<'de, D>(deserializer: D) -> Result<u64, D::Error>
 where
     D: Deserializer<'de>,
 {
+    lenient_optional_u64(deserializer).map(Option::unwrap_or_default)
+}
+
+pub fn lenient_optional_u64<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
+where
+    D: Deserializer<'de>,
+{
     let value = Option::<serde_json::Value>::deserialize(deserializer)?;
-    Ok(value
-        .as_ref()
-        .and_then(serde_json::Value::as_u64)
-        .unwrap_or_default())
+    Ok(value.as_ref().and_then(serde_json::Value::as_u64))
 }
 
 pub fn lenient_i64<'de, D>(deserializer: D) -> Result<Option<i64>, D::Error>

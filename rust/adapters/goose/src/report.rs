@@ -7,7 +7,7 @@ mod tests {
     use crate::*;
 
     #[test]
-    fn includes_goose_reasoning_remainder_in_report_total() {
+    fn includes_goose_residual_tokens_in_report_total() {
         let entry = LoadedEntry {
             usage: TokenUsageRaw {
                 input_tokens: 100,

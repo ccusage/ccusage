@@ -759,7 +759,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.005,
+          "cost": 0.0,
           "inputTokens": 0,
           "modelName": "[pi] gpt-5",
           "outputTokens": 500
@@ -774,7 +774,7 @@ exit: 0
       "outputTokens": 2126,
       "projectPath": "--Users-dev-beta--",
       "sessionId": "sess-beta-legacy",
-      "totalCost": 4.01994,
+      "totalCost": 4.01494,
       "totalTokens": 25831
     },
     {
@@ -870,7 +870,7 @@ exit: 0
     "cacheReadTokens": 44449,
     "inputTokens": 15567,
     "outputTokens": 4096,
-    "totalCost": 9.11883435,
+    "totalCost": 9.11383435,
     "totalTokens": 66597,
     "unpricedModels": [
       "[pi] pi-mystery-1",

@@ -170,6 +170,10 @@ fn usage_entry_to_loaded(
         cache_creation: None,
     };
     let cost_usd = entry.nano_aiu.map(nano_aiu_to_usd);
+    let remainder = entry
+        .extra_total_tokens
+        .saturating_add(entry.fallback_output_tokens);
+    let reasoning_tokens = entry.reasoning_output_tokens.min(remainder);
     let logged = entry.logged_model.as_deref().unwrap_or(&entry.model);
     let model = (entry.model.as_str(), MatchKind::Fuzzy);
     let with_logged = [(logged, MatchKind::Exact), model];
@@ -186,9 +190,13 @@ fn usage_entry_to_loaded(
             } else {
                 UsageGranularity::Aggregate
             },
-            usage,
-            reasoning_tokens: 0,
-            residual_tokens: entry.extra_total_tokens,
+            usage: TokenUsageRaw {
+                output_tokens: usage
+                    .output_tokens
+                    .saturating_sub(entry.fallback_output_tokens),
+                ..usage
+            },
+            reasoning_tokens,
             reported_model: Some(&entry.model),
             candidates,
             stored_cost: cost_usd,

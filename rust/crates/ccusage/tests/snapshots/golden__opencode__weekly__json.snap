@@ -10,7 +10,7 @@ exit: 0
     "cacheReadTokens": 17500,
     "inputTokens": 7186,
     "outputTokens": 1831,
-    "totalCost": 2.8077012500000005,
+    "totalCost": 2.8064762500000002,
     "totalTokens": 27267,
     "unpricedModels": [
       "opencode-mystery-1",
@@ -83,14 +83,6 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.0013250000000000002,
-          "inputTokens": 100,
-          "modelName": "claude-haiku-4.5",
-          "outputTokens": 245
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
           "cost": 0.0006399999999999999,
           "inputTokens": 200,
           "modelName": "gemini-3-pro-high",
@@ -103,6 +95,14 @@ exit: 0
           "inputTokens": 250,
           "modelName": "k2p6",
           "outputTokens": 25
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00009999999999999999,
+          "inputTokens": 100,
+          "modelName": "claude-haiku-4.5",
+          "outputTokens": 245
         },
         {
           "cacheCreationTokens": 0,
@@ -135,7 +135,7 @@ exit: 0
         "claude-haiku-4.5"
       ],
       "outputTokens": 1781,
-      "totalCost": 2.8066512500000003,
+      "totalCost": 2.80542625,
       "totalTokens": 27117,
       "week": "2025-12-29"
     }

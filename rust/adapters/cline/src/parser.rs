@@ -217,7 +217,6 @@ fn loaded_entry(
         granularity: UsageGranularity::Request,
         usage,
         reasoning_tokens: 0,
-        residual_tokens: 0,
         reported_model: Some(&model),
         candidates: &candidates,
         stored_cost: reported_cost,

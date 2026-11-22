@@ -520,18 +520,18 @@ exit: 0
           "outputTokens": 3989
         },
         {
-          "cacheCreationTokens": 300,
-          "cacheReadTokens": 12955,
-          "inputTokens": 8548,
-          "modelName": "gpt-5",
-          "outputTokens": 3043
-        },
-        {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 450300,
           "inputTokens": 100600,
           "modelName": "gpt-5.5",
           "outputTokens": 1590
+        },
+        {
+          "cacheCreationTokens": 300,
+          "cacheReadTokens": 12955,
+          "inputTokens": 8548,
+          "modelName": "gpt-5",
+          "outputTokens": 3043
         },
         {
           "cacheCreationTokens": 0,
@@ -698,20 +698,6 @@ exit: 0
           "outputTokens": 345
         },
         {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "inputTokens": 100,
-          "modelName": "claude-haiku-4.5",
-          "outputTokens": 245
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "inputTokens": 100,
-          "modelName": "kimi-k2-thinking",
-          "outputTokens": 482
-        },
-        {
           "cacheCreationTokens": 50,
           "cacheReadTokens": 0,
           "inputTokens": 450,
@@ -798,6 +784,13 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
+          "inputTokens": 100,
+          "modelName": "kimi-k2-thinking",
+          "outputTokens": 482
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
           "inputTokens": 51,
           "modelName": "gemini-3.6-flash-high",
           "outputTokens": 30
@@ -808,6 +801,13 @@ exit: 0
           "inputTokens": 500,
           "modelName": "deepseek-v4-flash",
           "outputTokens": 100
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "inputTokens": 100,
+          "modelName": "claude-haiku-4.5",
+          "outputTokens": 245
         },
         {
           "cacheCreationTokens": 0,
@@ -891,7 +891,6 @@ exit: 0
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "inputTokens": 0,
-          "missingPricing": true,
           "modelName": "gpt-unknown",
           "outputTokens": 345
         },
@@ -1098,7 +1097,6 @@ exit: 0
       "dsh-mystery-1",
       "gemini-mystery-1",
       "goose-mystery-1",
-      "gpt-unknown",
       "grok-mystery-1",
       "grok-unknown",
       "hermes-mystery-1",

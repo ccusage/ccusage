@@ -75,7 +75,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
-          "cost": 0.010950000000000003,
+          "cost": 0.010500000000000004,
           "inputTokens": 1000,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 500
@@ -191,7 +191,7 @@ exit: 0
       ],
       "outputTokens": 1640,
       "period": "2025-12-27",
-      "totalCost": 0.049205000000000006,
+      "totalCost": 0.048755000000000014,
       "totalTokens": 11430
     },
     {
@@ -475,7 +475,7 @@ exit: 0
         {
           "cacheCreationTokens": 200,
           "cacheReadTokens": 12000,
-          "cost": 0.32999999999999996,
+          "cost": 0.31499999999999995,
           "inputTokens": 10700,
           "modelName": "claude-opus-4-20250514",
           "outputTokens": 1770
@@ -538,14 +538,6 @@ exit: 0
           "outputTokens": 510
         },
         {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 5000,
-          "cost": 0.008825,
-          "inputTokens": 1400,
-          "modelName": "[openclaw] gpt-5",
-          "outputTokens": 645
-        },
-        {
           "cacheCreationTokens": 401,
           "cacheReadTokens": 14006,
           "cost": 0.007781850000000001,
@@ -576,6 +568,14 @@ exit: 0
           "inputTokens": 700,
           "modelName": "[pi] claude-sonnet-4-20250514",
           "outputTokens": 150
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 5000,
+          "cost": 0.005375,
+          "inputTokens": 1400,
+          "modelName": "[openclaw] gpt-5",
+          "outputTokens": 645
         },
         {
           "cacheCreationTokens": 400,
@@ -766,7 +766,6 @@ exit: 0
           "cacheReadTokens": 0,
           "cost": 0.0,
           "inputTokens": 0,
-          "missingPricing": true,
           "modelName": "qwen-mystery-1",
           "outputTokens": 654
         }
@@ -811,7 +810,7 @@ exit: 0
       ],
       "outputTokens": 19837,
       "period": "2025-12-31",
-      "totalCost": 0.5819851850000001,
+      "totalCost": 0.5635351850000001,
       "totalTokens": 277798
     },
     {
@@ -863,7 +862,7 @@ exit: 0
         {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 100100,
-          "cost": 0.231316,
+          "cost": 0.23101599999999997,
           "inputTokens": 200431,
           "modelName": "qwen3-coder-plus",
           "outputTokens": 2113
@@ -872,7 +871,7 @@ exit: 0
           "cacheCreation1hTokens": 1000,
           "cacheCreationTokens": 1250,
           "cacheReadTokens": 22000,
-          "cost": 0.0519285,
+          "cost": 0.0510285,
           "inputTokens": 6287,
           "modelName": "claude-sonnet-4-20250514",
           "outputTokens": 1242
@@ -886,14 +885,6 @@ exit: 0
           "outputTokens": 169
         },
         {
-          "cacheCreationTokens": 300,
-          "cacheReadTokens": 12355,
-          "cost": 0.02852937500000001,
-          "inputTokens": 5160,
-          "modelName": "gpt-5",
-          "outputTokens": 2206
-        },
-        {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.0175,
@@ -902,20 +893,20 @@ exit: 0
           "outputTokens": 300
         },
         {
+          "cacheCreationTokens": 300,
+          "cacheReadTokens": 12355,
+          "cost": 0.017379375000000002,
+          "inputTokens": 5160,
+          "modelName": "gpt-5",
+          "outputTokens": 2206
+        },
+        {
           "cacheCreationTokens": 600,
           "cacheReadTokens": 17100,
-          "cost": 0.014525,
+          "cost": 0.014275,
           "inputTokens": 4380,
           "modelName": "claude-haiku-4-5-20251001",
           "outputTokens": 1497
-        },
-        {
-          "cacheCreationTokens": 240,
-          "cacheReadTokens": 0,
-          "cost": 0.010530000000000003,
-          "inputTokens": 400,
-          "modelName": "anthropic/claude-sonnet-4.5",
-          "outputTokens": 562
         },
         {
           "cacheCreationTokens": 0,
@@ -950,14 +941,6 @@ exit: 0
           "outputTokens": 160
         },
         {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.005,
-          "inputTokens": 0,
-          "modelName": "[pi] gpt-5",
-          "outputTokens": 500
-        },
-        {
           "cacheCreationTokens": 200,
           "cacheReadTokens": 7000,
           "cost": 0.00475,
@@ -972,6 +955,14 @@ exit: 0
           "inputTokens": 600,
           "modelName": "[openclaw] claude-sonnet-4-20250514",
           "outputTokens": 100
+        },
+        {
+          "cacheCreationTokens": 240,
+          "cacheReadTokens": 0,
+          "cost": 0.004050000000000001,
+          "inputTokens": 400,
+          "modelName": "anthropic/claude-sonnet-4.5",
+          "outputTokens": 562
         },
         {
           "cacheCreationTokens": 200,
@@ -996,14 +987,6 @@ exit: 0
           "inputTokens": 513,
           "modelName": "[openclaw] gpt-5",
           "outputTokens": 254
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.001265,
-          "inputTokens": 100,
-          "modelName": "kimi-k2-thinking",
-          "outputTokens": 482
         },
         {
           "cacheCreationTokens": 50,
@@ -1068,6 +1051,14 @@ exit: 0
           "inputTokens": 500,
           "modelName": "qwen/qwen3-coder",
           "outputTokens": 100
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.000185,
+          "inputTokens": 100,
+          "modelName": "kimi-k2-thinking",
+          "outputTokens": 482
         },
         {
           "cacheCreationTokens": 0,
@@ -1179,7 +1170,6 @@ exit: 0
           "cacheReadTokens": 0,
           "cost": 0.0,
           "inputTokens": 0,
-          "missingPricing": true,
           "modelName": "gpt-unknown",
           "outputTokens": 345
         },
@@ -1259,6 +1249,14 @@ exit: 0
           "cacheCreationTokens": 0,
           "cacheReadTokens": 0,
           "cost": 0.0,
+          "inputTokens": 0,
+          "modelName": "[pi] gpt-5",
+          "outputTokens": 500
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
           "inputTokens": 300,
           "missingPricing": true,
           "modelName": "[pi] pi-mystery-1",
@@ -1329,7 +1327,7 @@ exit: 0
       ],
       "outputTokens": 17537,
       "period": "2026-01-01",
-      "totalCost": 2.3301398149999994,
+      "totalCost": 2.304979815,
       "totalTokens": 1508705
     },
     {
@@ -1373,18 +1371,10 @@ exit: 0
         {
           "cacheCreationTokens": 50,
           "cacheReadTokens": 8550,
-          "cost": 0.1330125,
+          "cost": 0.1240125,
           "inputTokens": 2300,
           "modelName": "claude-opus-4-20250514",
           "outputTokens": 1130
-        },
-        {
-          "cacheCreationTokens": 990,
-          "cacheReadTokens": 18760,
-          "cost": 0.0691455,
-          "inputTokens": 4200,
-          "modelName": "claude-sonnet-4-20250514",
-          "outputTokens": 2747
         },
         {
           "cacheCreationTokens": 0,
@@ -1395,9 +1385,17 @@ exit: 0
           "outputTokens": 500
         },
         {
+          "cacheCreationTokens": 990,
+          "cacheReadTokens": 18760,
+          "cost": 0.0479655,
+          "inputTokens": 4200,
+          "modelName": "claude-sonnet-4-20250514",
+          "outputTokens": 2747
+        },
+        {
           "cacheCreationTokens": 0,
           "cacheReadTokens": 600,
-          "cost": 0.015548750000000002,
+          "cost": 0.007148750000000001,
           "inputTokens": 3388,
           "modelName": "gpt-5",
           "outputTokens": 837
@@ -1465,14 +1463,6 @@ exit: 0
           "inputTokens": 800,
           "modelName": "kimi-for-coding",
           "outputTokens": 300
-        },
-        {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.0013250000000000002,
-          "inputTokens": 100,
-          "modelName": "claude-haiku-4.5",
-          "outputTokens": 245
         },
         {
           "cacheCreationTokens": 0,
@@ -1545,6 +1535,14 @@ exit: 0
           "inputTokens": 500,
           "modelName": "deepseek-v4-flash",
           "outputTokens": 100
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.00009999999999999999,
+          "inputTokens": 100,
+          "modelName": "claude-haiku-4.5",
+          "outputTokens": 245
         },
         {
           "cacheCreationTokens": 0,
@@ -1670,7 +1668,7 @@ exit: 0
       ],
       "outputTokens": 10755,
       "period": "2026-01-02",
-      "totalCost": 0.9085934499999999,
+      "totalCost": 0.8687884499999999,
       "totalTokens": 668978
     },
     {
@@ -1707,7 +1705,7 @@ exit: 0
     "cacheReadTokens": 1308270,
     "inputTokens": 1261097,
     "outputTokens": 60446,
-    "totalCost": 4.287504624999999,
+    "totalCost": 4.203639624999999,
     "totalTokens": 2650838,
     "unpricedModels": [
       "GLM-5.3",
@@ -1727,7 +1725,6 @@ exit: 0
       "dsh-mystery-1",
       "gemini-mystery-1",
       "goose-mystery-1",
-      "gpt-unknown",
       "grok-mystery-1",
       "grok-unknown",
       "hermes-mystery-1",

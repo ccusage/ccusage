@@ -1,5 +1,5 @@
 use ccusage_adapter_common::{
-    dedupe::dedupe_first_wins, source::LoadContext, units::read_typed_units_flat,
+    dedupe::dedupe_preferred, source::LoadContext, units::read_typed_units_flat,
 };
 
 use crate::{LoadedEntry, Result};
@@ -15,10 +15,12 @@ pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
     let loaded = read_typed_units_flat(&files, cx.shared.single_thread, cx.diagnostics, |file| {
         read_wire_file(file, cx.diagnostics)
     });
-    let mut entries = dedupe_first_wins(loaded, KimiUsageEntry::dedupe_key)
-        .into_iter()
-        .map(|entry| kimi_entry_to_loaded(entry, cx.window.timezone(), pricing))
-        .collect::<Vec<_>>();
+    let mut entries = dedupe_preferred(loaded, KimiUsageEntry::dedupe_key, |entry, other| {
+        entry.billable_output_tokens() > other.billable_output_tokens()
+    })
+    .into_iter()
+    .map(|entry| kimi_entry_to_loaded(entry, cx.window.timezone(), pricing))
+    .collect::<Vec<_>>();
     LoadedEntry::sort_by_timestamp(&mut entries);
     Ok(entries)
 }
@@ -28,6 +30,37 @@ mod tests {
     use super::super::paths::KIMI_DATA_DIR_ENV;
     use ccusage_core::{Diagnostics, PricingMap, SkipKind, cli::SharedArgs};
     use ccusage_test_support::{Environment, fs_fixture};
+
+    #[test]
+    fn duplicate_kimi_reports_prefer_the_copy_with_recorded_output() {
+        ccusage_test_support::install_pricing_snapshots();
+        let mut pricing = PricingMap::default();
+        pricing.load_json(r#"{"sample":{"input_cost_per_token":1,"output_cost_per_token":2}}"#);
+        let usage = |tokens: &str| {
+            format!(
+                "{{\"timestamp\":1770983427,\"message\":{{\"type\":\"StatusUpdate\",\"payload\":{{\"message_id\":\"duplicate\",\"token_usage\":{tokens}}}}}}}"
+            )
+        };
+        let partial = usage(r#"{"input_other":100,"total":150}"#);
+        let recorded = usage(r#"{"input_other":100,"output":50,"total":150}"#);
+        for rows in [[&partial, &recorded], [&recorded, &partial]] {
+            let fixture = fs_fixture!({
+                "config.json": r#"{"model":"sample"}"#,
+                "sessions/group/session-a/wire.jsonl": rows.map(String::as_str).join("\n"),
+            });
+            Environment::with_var(KIMI_DATA_DIR_ENV, fixture.root()).run(|| {
+                let entries = ccusage_adapter_common::testing::entries(
+                    &crate::SOURCE,
+                    &SharedArgs::default(),
+                    Default::default(),
+                    Some(&pricing),
+                )
+                .unwrap();
+                assert_eq!(entries.len(), 1);
+                assert_eq!(entries[0].cost, 200.0);
+            })
+        }
+    }
 
     #[test]
     fn loads_status_update_token_usage_from_wire_files() {

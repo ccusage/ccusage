@@ -26,7 +26,7 @@ mod lenient;
 
 pub use lenient::{
     FieldName, FirstField, LenientSeq, LenientString, lenient_array, lenient_f64, lenient_i64,
-    lenient_object, lenient_u64, lenient_vec, non_empty_string,
+    lenient_object, lenient_optional_u64, lenient_u64, lenient_vec, non_empty_string,
 };
 
 const DEFAULT_BUFFER_SIZE: usize = 8 * 1024;

@@ -20,20 +20,20 @@ exit: 0
           "outputTokens": 400
         },
         {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 5000,
-          "cost": 0.008825,
-          "inputTokens": 1400,
-          "modelName": "[openclaw] gpt-5",
-          "outputTokens": 645
-        },
-        {
           "cacheCreationTokens": 1000,
           "cacheReadTokens": 10000,
           "cost": 0.006750000000000001,
           "inputTokens": 2000,
           "modelName": "[openclaw] claude-haiku-4-5-20251001",
           "outputTokens": 500
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 5000,
+          "cost": 0.005375,
+          "inputTokens": 1400,
+          "modelName": "[openclaw] gpt-5",
+          "outputTokens": 645
         },
         {
           "cacheCreationTokens": 0,
@@ -72,7 +72,7 @@ exit: 0
       ],
       "month": "2025-12",
       "outputTokens": 1682,
-      "totalCost": 0.037475,
+      "totalCost": 0.034025,
       "totalTokens": 32133
     },
     {
@@ -141,7 +141,7 @@ exit: 0
     "cacheReadTokens": 40500,
     "inputTokens": 9124,
     "outputTokens": 2876,
-    "totalCost": 0.04979375,
+    "totalCost": 0.04634375,
     "totalTokens": 54700,
     "unpricedModels": [
       "[openclaw] openclaw-mystery-1",

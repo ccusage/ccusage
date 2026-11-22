@@ -133,20 +133,20 @@ exit: 0
           "outputTokens": 160
         },
         {
-          "cacheCreationTokens": 0,
-          "cacheReadTokens": 0,
-          "cost": 0.005,
-          "inputTokens": 0,
-          "modelName": "[pi] gpt-5",
-          "outputTokens": 500
-        },
-        {
           "cacheCreationTokens": 200,
           "cacheReadTokens": 7000,
           "cost": 0.00385,
           "inputTokens": 900,
           "modelName": "[pi] claude-haiku-4-5-20251001",
           "outputTokens": 400
+        },
+        {
+          "cacheCreationTokens": 0,
+          "cacheReadTokens": 0,
+          "cost": 0.0,
+          "inputTokens": 0,
+          "modelName": "[pi] gpt-5",
+          "outputTokens": 500
         },
         {
           "cacheCreationTokens": 0,
@@ -166,7 +166,7 @@ exit: 0
         "[pi] claude-haiku-4-5-20251001"
       ],
       "outputTokens": 1185,
-      "totalCost": 0.0207,
+      "totalCost": 0.0157,
       "totalTokens": 14550
     },
     {
@@ -224,7 +224,7 @@ exit: 0
     "cacheReadTokens": 44419,
     "inputTokens": 14557,
     "outputTokens": 3976,
-    "totalCost": 0.13938685,
+    "totalCost": 0.13438685,
     "totalTokens": 65397,
     "unpricedModels": [
       "[pi] pi-mystery-1",
