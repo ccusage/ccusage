@@ -1,11 +1,18 @@
-use std::path::Path;
+use std::{path::Path, sync::Once};
 
 use ccusage_core::Diagnostics;
 use sqlite::{Connection, OpenFlags, State, Statement, Type};
 
 use crate::{SqliteStage, UnitError, units::read_typed_units_flat};
 
+// NOTE(2026-11-22, SQLite 3.49.1, #2519): Racing first opens crash on arm64 because lazy sqlite3_initialize() can read a null xMutexInit, so initialize once before any worker opens a connection. SQLite fixed this on trunk after 3.54.1 (check-in 37b83ad2f5); drop this once the bundled copy has it. The empty name opens a private temporary database that never touches the disk, because this build omits ":memory:".
+fn initialize_sqlite() {
+    static INITIALIZED: Once = Once::new();
+    INITIALIZED.call_once(|| drop(sqlite::open("")));
+}
+
 pub fn open_read_only(path: &Path) -> Result<Connection, UnitError> {
+    initialize_sqlite();
     let mut connection = Connection::open_with_flags(path, OpenFlags::new().with_read_only())
         .map_err(|error| UnitError::sqlite(SqliteStage::Setup, error.code))?;
     connection
