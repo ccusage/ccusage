@@ -833,9 +833,23 @@ impl PricingMap {
         secondary: Option<&'a PricingRows>,
         models_dev: &impl Fn() -> Option<&'a PricingRows>,
     ) -> Option<CachedHit> {
+        self.search_fuzzy_with_keys(name, lookup, secondary, models_dev, PricingRows::keys)
+    }
+
+    pub(super) fn search_fuzzy_with_keys<'a, I>(
+        &'a self,
+        name: Name<'_>,
+        lookup: Lookup,
+        secondary: Option<&'a PricingRows>,
+        models_dev: &impl Fn() -> Option<&'a PricingRows>,
+        keys: impl Fn(&'a PricingRows) -> I,
+    ) -> Option<CachedHit>
+    where
+        I: Iterator<Item = (usize, &'a str)>,
+    {
         let normalized = name.identity();
         let matches = |key| pricing_key_matches(key, name.raw(), normalized);
-        let base = self.rows.keys().filter(|&(_, key)| matches(key));
+        let base = keys(&self.rows).filter(|&(_, key)| matches(key));
         let resolve = |(id, key)| Some((key, self.rows.at(id)?));
         let primary = if self.overrides.is_empty() {
             Self::fuzzy(base.filter_map(resolve), name.raw(), normalized, lookup)
@@ -880,8 +894,7 @@ impl PricingMap {
             .or_else(|| {
                 let secondary = secondary.filter(|rows| rows.may_match_fuzzy(name.raw()))?;
                 Self::fuzzy(
-                    secondary
-                        .keys()
+                    keys(secondary)
                         .filter(|&(_, key)| matches(key))
                         .filter_map(|(id, key)| Some((key, secondary.at(id)?))),
                     name.raw(),

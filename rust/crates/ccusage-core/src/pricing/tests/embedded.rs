@@ -2,12 +2,15 @@ use super::{
     MatchKind, PricingMap, build_time_models_dev_json, build_time_pricing_json,
     embedded_models_dev_pricing, layered,
 };
-use crate::pricing::{
-    Lookup, Name, PricingRows, data,
-    keys::normalized_pricing_key,
-    rows::{Index, RowMatch, vendor_lookup_id},
+use crate::{
+    fast::{FxHashMap, FxHashSet},
+    pricing::{
+        Lookup, Name, PricingRows, data,
+        keys::{is_qualifier_end, normalized_pricing_key},
+        rows::{Index, RowMatch, vendor_lookup_id},
+    },
 };
-use std::sync::OnceLock;
+use std::{sync::OnceLock, thread};
 
 fn sorted_rows(rows: &PricingRows) -> Vec<String> {
     let mut rows: Vec<_> = rows
@@ -85,15 +88,7 @@ fn a_primary_hit_and_unlisted_synthetic_model_leave_the_secondary_table_cold() {
 
 #[test]
 fn embedded_table_matches_the_rows_loaded_from_its_snapshots() {
-    crate::test_support::install_pricing_snapshots();
-    let mut models_dev = PricingMap::default();
-    models_dev
-        .load_models_dev_json_missing(build_time_models_dev_json())
-        .unwrap();
-    let mut litellm = PricingMap::default();
-    litellm.load_json(build_time_pricing_json());
-    litellm.complete_layers(&models_dev);
-
+    let [litellm, models_dev] = eager_catalogues();
     let embedded = PricingMap::load_embedded();
 
     assert_eq!(sorted_rows(&embedded.rows), sorted_rows(&litellm.rows));
@@ -103,6 +98,18 @@ fn embedded_table_matches_the_rows_loaded_from_its_snapshots() {
     );
     assert_lookup_parity(&embedded, &litellm);
     assert_lookup_parity(embedded_models_dev_pricing(), &models_dev);
+}
+
+fn eager_catalogues() -> [PricingMap; 2] {
+    crate::test_support::install_pricing_snapshots();
+    let mut models_dev = PricingMap::default();
+    models_dev
+        .load_models_dev_json_missing(build_time_models_dev_json())
+        .unwrap();
+    let mut litellm = PricingMap::default();
+    litellm.load_json(build_time_pricing_json());
+    litellm.complete_layers(&models_dev);
+    [litellm, models_dev]
 }
 
 fn assert_lookup_parity(embedded: &PricingMap, eager: &PricingMap) {
@@ -188,6 +195,164 @@ fn assert_lookup_parity(embedded: &PricingMap, eager: &PricingMap) {
             expected.is_none() || embedded.rows.may_match_fuzzy(&query),
             "secondary index rejected a fuzzy hit for {key}"
         );
+    }
+}
+
+#[test]
+fn embedded_query_variants_match_eager_exact_and_fuzzy_lookups() {
+    let [eager_primary, eager_secondary] = eager_catalogues();
+    let lazy_primary = PricingMap::load_embedded();
+    let lazy_secondary = embedded_models_dev_pricing();
+    let empty_primary = PricingMap::default();
+    let queries: FxHashSet<_> = lazy_primary
+        .rows
+        .keys()
+        .chain(lazy_secondary.rows.keys())
+        .flat_map(|(_, key)| {
+            [
+                key.to_owned(),
+                key.to_ascii_uppercase(),
+                key.replace('.', "-"),
+                key.replace('-', "."),
+                format!("{key}-20250101"),
+                format!("{key}[1m]"),
+                format!("{key}:free"),
+                format!("{key}@latest"),
+                format!("x/{key}"),
+                format!("openrouter/{key}"),
+                format!("bedrock/{key}-v1:0"),
+            ]
+            .into_iter()
+            .chain(bare_suffixes(key).map(str::to_owned))
+        })
+        .collect();
+    let queries: Vec<_> = queries.into_iter().collect();
+    assert!(!queries.is_empty());
+    let workers = thread::available_parallelism()
+        .map_or(1, usize::from)
+        .min(8);
+    for (eager, lazy, secondary) in [
+        (&eager_primary, &lazy_primary, false),
+        (&eager_secondary, lazy_secondary, true),
+    ] {
+        let eager_keys = FuzzyKeys::new(&eager.rows);
+        let lazy_keys = FuzzyKeys::new(&lazy.rows);
+        let check = |query: &str| {
+            let cached = OnceLock::new();
+            let name = Name::new(query, &cached);
+            for probe in std::iter::once(name).chain(name.suffixes()) {
+                for fold in [false, true] {
+                    let exact = |rows: &PricingRows| {
+                        rows.exact(probe, Lookup::Pricing, fold)
+                            .map(|found| found.key.to_owned())
+                    };
+                    assert_eq!(
+                        exact(&lazy.rows),
+                        exact(&eager.rows),
+                        "exact {:?} from {query:?} (secondary={secondary}, fold={fold})",
+                        probe.raw()
+                    );
+                }
+            }
+            let fuzzy = |map: &PricingMap, keys: &FuzzyKeys<'_>| {
+                let candidates = keys.candidates(name);
+                let (primary, fallback) = if secondary {
+                    (&empty_primary, Some(map.rows.as_ref()))
+                } else {
+                    (map, None)
+                };
+                primary
+                    .search_fuzzy_with_keys(name, Lookup::Pricing, fallback, &|| fallback, |rows| {
+                        let keys = if std::ptr::eq(rows, map.rows.as_ref()) {
+                            candidates.as_slice()
+                        } else {
+                            &[]
+                        };
+                        keys.iter().copied()
+                    })
+                    .map(|hit| {
+                        assert_eq!(hit.is_models_dev(), secondary);
+                        map.rows.at(hit.id()).unwrap().key.to_owned()
+                    })
+            };
+            assert_eq!(
+                fuzzy(lazy, &lazy_keys),
+                fuzzy(eager, &eager_keys),
+                "fuzzy {query:?} (secondary={secondary})"
+            );
+        };
+        thread::scope(|scope| {
+            for chunk in queries.chunks(queries.len().div_ceil(workers)) {
+                scope.spawn(|| chunk.iter().for_each(|query| check(query)));
+            }
+        });
+    }
+}
+
+fn bare_suffixes(key: &str) -> impl Iterator<Item = &str> {
+    boundaries(key)
+        .filter(|&start| start > 0 && is_qualifier_end(key.as_bytes()[start - 1]))
+        .map(|start| &key[start..])
+}
+
+fn boundaries(key: &str) -> impl Iterator<Item = usize> + '_ {
+    key.char_indices()
+        .map(|(index, _)| index)
+        .chain([key.len()])
+}
+
+type FuzzyKeyIndex<'a> = FxHashMap<String, Vec<(usize, &'a str)>>;
+
+struct FuzzyKeys<'a> {
+    by_identity: FuzzyKeyIndex<'a>,
+    by_suffix: FuzzyKeyIndex<'a>,
+}
+
+impl<'a> FuzzyKeys<'a> {
+    fn new(rows: &'a PricingRows) -> Self {
+        let mut by_identity = FuzzyKeyIndex::default();
+        let mut by_suffix = FuzzyKeyIndex::default();
+        for row @ (_, key) in rows.keys() {
+            let identity = normalized_pricing_key(key);
+            for start in boundaries(&identity).skip(1) {
+                by_suffix
+                    .entry(identity[start..].to_owned())
+                    .or_default()
+                    .push(row);
+            }
+            by_identity
+                .entry(identity.into_owned())
+                .or_default()
+                .push(row);
+        }
+        Self {
+            by_identity,
+            by_suffix,
+        }
+    }
+
+    // NOTE(2026-11-22, #2465): The fuzzy pass can only match a key inside the
+    // query or the query at the end of a key. Index those possible matches to
+    // bound the work per query without using the embedded membership filter.
+    fn candidates(&self, name: Name<'_>) -> Vec<(usize, &'a str)> {
+        let identity = name.identity();
+        let mut rows = Vec::new();
+        rows.extend(self.by_suffix.get(identity).into_iter().flatten().copied());
+        for raw in std::iter::once(name.raw()).chain(bare_suffixes(name.raw())) {
+            let suffix = &identity[identity.len() - raw.len()..];
+            for end in boundaries(suffix) {
+                rows.extend(
+                    self.by_identity
+                        .get(&suffix[..end])
+                        .into_iter()
+                        .flatten()
+                        .copied(),
+                );
+            }
+        }
+        rows.sort_unstable_by_key(|(id, _)| *id);
+        rows.dedup_by_key(|(id, _)| *id);
+        rows
     }
 }
 
