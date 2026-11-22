@@ -327,10 +327,6 @@ pub(super) struct Entries {
 }
 
 impl Entries {
-    pub(super) fn contains_key(&self, key: &str) -> bool {
-        self.literal.contains_key(key)
-    }
-
     pub(super) fn id(&self, key: &str) -> Option<usize> {
         self.literal.get(key).copied()
     }

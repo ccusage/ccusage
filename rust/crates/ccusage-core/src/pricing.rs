@@ -47,6 +47,7 @@ use row::{
 };
 mod rows;
 use rows::{Lookup, PricingRows, RowMatch};
+mod secondary_index;
 mod speed;
 use speed::SpeedMultipliers;
 mod table;
@@ -108,8 +109,8 @@ impl PricingMap {
     fn build_embedded() -> Self {
         let table = embedded_pricing_table();
         Self {
-            rows: Arc::clone(&table.rows.rows),
-            models_dev: Some(Arc::clone(&table.models_dev.rows)),
+            rows: Arc::clone(&table.rows),
+            models_dev: Some(Arc::clone(&embedded_models_dev_pricing().rows)),
             ..Self::default()
         }
     }

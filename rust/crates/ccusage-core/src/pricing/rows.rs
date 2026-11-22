@@ -7,6 +7,7 @@ use crate::fast::FxHashMap;
 
 use super::{
     Entries, Name, Row, Scope, is_pricing_key_separator, last_segment, normalized_pricing_key,
+    secondary_index::SecondaryIndex,
     table::{EmbeddedRows, decode_id},
 };
 
@@ -49,11 +50,28 @@ impl<'a> RowMatch<'a> {
 #[derive(Clone, Debug, Default)]
 pub(super) struct PricingRows {
     pub(super) entries: Entries,
-    embedded: Option<Arc<EmbeddedRows>>,
+    embedded: Option<EmbeddedSource>,
     pub(super) indexes: OnceLock<RowIndexes>,
     pub(super) folded_indexes: OnceLock<FoldedIndexes>,
     exact_only_by_identity: OnceLock<FxHashMap<Box<str>, Option<usize>>>,
-    normalized_keys: OnceLock<Box<[Option<Box<str>>]>>,
+}
+
+#[derive(Clone, Debug)]
+enum EmbeddedSource {
+    Ready(Arc<EmbeddedRows>),
+    Deferred {
+        load: fn() -> &'static EmbeddedRows,
+        index: SecondaryIndex,
+    },
+}
+
+impl EmbeddedSource {
+    fn rows(&self) -> &EmbeddedRows {
+        match self {
+            Self::Ready(rows) => rows,
+            Self::Deferred { load, .. } => load(),
+        }
+    }
 }
 
 type IdentityIndex = FxHashMap<Box<str>, smallvec::SmallVec<[usize; 1]>>;
@@ -155,37 +173,69 @@ pub(super) fn folded_identity(key: &str) -> impl Iterator<Item = u8> + '_ {
 impl PricingRows {
     pub(super) fn from_embedded(rows: EmbeddedRows) -> Self {
         Self {
-            embedded: Some(Arc::new(rows)),
+            embedded: Some(EmbeddedSource::Ready(Arc::new(rows))),
             ..Self::default()
         }
     }
 
+    pub(super) fn from_deferred(
+        load: fn() -> &'static EmbeddedRows,
+        index: SecondaryIndex,
+    ) -> Self {
+        Self {
+            embedded: Some(EmbeddedSource::Deferred { load, index }),
+            ..Self::default()
+        }
+    }
+
+    fn embedded(&self) -> Option<&EmbeddedRows> {
+        self.embedded.as_ref().map(EmbeddedSource::rows)
+    }
+
+    fn secondary_index(&self) -> Option<SecondaryIndex> {
+        match self.embedded.as_ref()? {
+            EmbeddedSource::Deferred { index, .. } => Some(*index),
+            EmbeddedSource::Ready(_) => None,
+        }
+    }
+
+    fn may_contain(&self, key: &str) -> bool {
+        self.secondary_index()
+            .is_none_or(|index| index.may_contain(key))
+    }
+
+    pub(super) fn may_match_fuzzy(&self, key: &str) -> bool {
+        self.secondary_index()
+            .is_none_or(|index| index.may_match_fuzzy(key))
+    }
+
     pub(super) fn make_mutable(&mut self) {
         if let Some(rows) = self.embedded.take() {
-            self.entries = rows.materialize();
+            self.entries = rows.rows().materialize();
         }
         self.indexes.take();
         self.folded_indexes.take();
-        self.normalized_keys.take();
         self.exact_only_by_identity.take();
     }
 
     #[cfg(test)]
     pub(super) fn decode_cache_counts(&self) -> (usize, usize) {
-        self.embedded
-            .as_deref()
+        self.embedded()
             .expect("cache counts require embedded rows")
             .decode_cache_counts()
     }
 
     fn id(&self, key: &str) -> Option<usize> {
-        match &self.embedded {
+        match self.embedded() {
             Some(rows) => rows.id(key),
             None => self.entries.id(key),
         }
     }
 
     pub(super) fn get(&self, key: &str) -> Option<&Row> {
+        if !self.may_contain(key) {
+            return None;
+        }
         self.row(self.id(key)?)
     }
 
@@ -200,22 +250,21 @@ impl PricingRows {
     }
 
     fn row(&self, id: usize) -> Option<&Row> {
-        match &self.embedded {
+        match self.embedded() {
             Some(rows) => rows.row(id),
             None => self.entries.rows.get(id),
         }
     }
 
     pub(super) fn vendor_id(&self, id: usize) -> Option<&str> {
-        match &self.embedded {
+        match self.embedded() {
             Some(rows) => rows.vendor_id(id),
             None => self.entries.rows[id].vendor_id(),
         }
     }
 
     fn len(&self) -> usize {
-        self.embedded
-            .as_deref()
+        self.embedded()
             .map_or(self.entries.rows.len(), EmbeddedRows::len)
     }
 
@@ -223,38 +272,25 @@ impl PricingRows {
         (0..self.len()).filter_map(|id| self.at(id))
     }
 
-    pub(super) fn keys(&self) -> impl Iterator<Item = (usize, &str, &str)> {
-        let embedded = self.embedded.as_deref();
-        let normalized = embedded.is_none().then(|| {
-            self.normalized_keys.get_or_init(|| {
-                self.entries
-                    .rows
-                    .iter()
-                    .map(|row| match normalized_pricing_key(&row.key) {
-                        Cow::Borrowed(_) => None,
-                        Cow::Owned(key) => Some(key.into_boxed_str()),
-                    })
-                    .collect()
-            })
-        });
-        (0..self.len()).map(move |id| match embedded {
-            Some(rows) => (id, rows.key(id), rows.identity(id)),
-            None => {
-                let key = self.entries.rows[id].key.as_ref();
-                let keys = normalized.expect("live pricing keys are normalized before lookup");
-                let identity = keys[id].as_deref().unwrap_or(key);
-                (id, key, identity)
-            }
+    pub(super) fn keys(&self) -> impl Iterator<Item = (usize, &str)> {
+        let embedded = self.embedded();
+        let len = embedded.map_or(self.entries.rows.len(), EmbeddedRows::len);
+        (0..len).map(move |id| {
+            let key = match embedded {
+                Some(rows) => rows.key(id),
+                None => &self.entries.rows[id].key,
+            };
+            (id, key)
         })
     }
 
-    fn indexed_rows<'a>(
+    pub(super) fn indexed_rows<'a>(
         &'a self,
         identity: &str,
         index: Index,
         fold: bool,
     ) -> impl Iterator<Item = RowMatch<'a>> {
-        let (sensitive, folded) = match &self.embedded {
+        let (sensitive, folded) = match self.embedded() {
             Some(rows) => (
                 RowIds::Embedded(rows.indexed_ids(identity, index, false)),
                 RowIds::Embedded(if fold {
@@ -382,6 +418,9 @@ impl PricingRows {
         fold: bool,
         host: Option<u8>,
     ) -> Option<RowMatch<'_>> {
+        if !self.may_contain(name.raw()) {
+            return None;
+        }
         let on_host = |found: &RowMatch<'_>| host.is_none() || found.row.host == host;
         if !fold && let Some(literal) = self.literal(name.raw(), lookup).filter(on_host) {
             return Some(literal);
@@ -409,15 +448,18 @@ impl PricingRows {
     fn indexes(&self) -> &RowIndexes {
         self.indexes.get_or_init(|| {
             let mut indexes = RowIndexes::default();
-            // NOTE(2026-11-21): Normalizing swaps ASCII bytes one for one, so a vendor id, which is a suffix of its key, normalizes to the same suffix of the normalized key. Reusing the cached normalized keys keeps every key to a single normalization.
-            for (id, _, identity) in self.keys() {
-                let found = self.at(id).expect("pricing key has a row");
+            // NOTE(2026-11-21): Normalizing swaps ASCII bytes one for one, so a vendor id, which is a suffix of its key, normalizes to the same suffix of the normalized key. Normalize the full key once while building both live indexes.
+            for found in self.matches() {
+                let identity = normalized_pricing_key(found.key);
                 let index = if found.row.is_bare_hosted(found.key) {
                     &mut indexes.bare_hosted
                 } else {
                     &mut indexes.by_identity
                 };
-                index.entry(identity.into()).or_default().push(found.id);
+                index
+                    .entry(identity.as_ref().into())
+                    .or_default()
+                    .push(found.id);
                 if let Some(id) = vendor_lookup_id(found) {
                     indexes
                         .by_vendor_id
@@ -448,7 +490,10 @@ impl PricingRows {
     }
 
     pub(super) fn contains_exact_only_identity(&self, key: &str, identity: &str) -> bool {
-        if let Some(rows) = &self.embedded {
+        if !self.may_contain(identity) {
+            return false;
+        }
+        if let Some(rows) = self.embedded() {
             return rows.id(key).is_some_and(|id| rows.exact_only(id))
                 || !rows.exact_only_ids(identity).is_empty();
         }
@@ -457,8 +502,11 @@ impl PricingRows {
     }
 
     pub(super) fn exact_only_id(&self, key: &str) -> Option<&str> {
+        if !self.may_contain(key) {
+            return None;
+        }
         let identity = normalized_pricing_key(key);
-        if let Some(rows) = &self.embedded {
+        if let Some(rows) = self.embedded() {
             let [id] = rows.exact_only_ids(&identity) else {
                 return None;
             };
@@ -471,7 +519,7 @@ impl PricingRows {
 
 enum RowIds<'a> {
     Live(&'a [usize]),
-    Embedded(&'a [[u8; 4]]),
+    Embedded(&'a [[u8; 2]]),
 }
 
 impl RowIds<'_> {

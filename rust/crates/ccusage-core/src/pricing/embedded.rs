@@ -2,7 +2,11 @@ use std::sync::OnceLock;
 
 use serde::Deserialize;
 
-use super::table::{PricingTable, decode_pricing_table};
+use super::{
+    PricingMap,
+    secondary_index::{INDEX_BYTES, SecondaryIndex},
+    table::{EmbeddedRows, RecordOffsets, decode_pricing_table},
+};
 
 /// Pricing snapshots supplied by the binary at startup.
 #[derive(Clone, Copy, Debug)]
@@ -11,6 +15,7 @@ pub struct EmbeddedSnapshots {
     pub models_dev_catalog_rules: &'static [u8],
     /// The offline catalogue built by [`encode_pricing_table`](super::encode_pricing_table).
     pub pricing_table: &'static [u8],
+    pub models_dev_table: &'static [u8],
 }
 
 static EMBEDDED_SNAPSHOTS: OnceLock<EmbeddedSnapshots> = OnceLock::new();
@@ -48,9 +53,33 @@ pub(super) fn build_time_models_dev_json() -> &'static str {
     inflate_snapshot(&JSON, ccusage_pricing_snapshots::MODELS_DEV_PRICING)
 }
 
-pub(super) fn embedded_pricing_table() -> &'static PricingTable {
-    static TABLE: OnceLock<PricingTable> = OnceLock::new();
-    TABLE.get_or_init(|| decode_pricing_table(embedded_snapshots().pricing_table))
+pub(super) fn embedded_pricing_table() -> &'static PricingMap {
+    static TABLE: OnceLock<PricingMap> = OnceLock::new();
+    TABLE.get_or_init(|| {
+        PricingMap::from_embedded_rows(decode_pricing_table(
+            embedded_snapshots().pricing_table,
+            RecordOffsets::Absolute,
+        ))
+    })
+}
+
+pub(super) fn embedded_models_dev_rows() -> &'static EmbeddedRows {
+    static TABLE: OnceLock<EmbeddedRows> = OnceLock::new();
+    TABLE.get_or_init(inflate_models_dev_table)
+}
+
+pub(super) fn embedded_models_dev_index() -> SecondaryIndex {
+    SecondaryIndex::new(&embedded_snapshots().models_dev_table[..INDEX_BYTES])
+}
+
+#[cold]
+#[inline(never)]
+fn inflate_models_dev_table() -> EmbeddedRows {
+    static BYTES: OnceLock<Vec<u8>> = OnceLock::new();
+    decode_pricing_table(
+        BYTES.get_or_init(|| inflate(&embedded_snapshots().models_dev_table[INDEX_BYTES..])),
+        RecordOffsets::Delta,
+    )
 }
 
 pub(super) fn models_dev_catalog_rules_json() -> &'static str {
