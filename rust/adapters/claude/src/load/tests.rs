@@ -61,6 +61,7 @@ fn bounded_loaders_filter_after_dedupe_and_keep_full_history_available() {
             None,
             ccusage_adapter_common::source::ProgressOwner::Caller,
             &crate::Diagnostics::new("claude"),
+            || true,
         )
         .unwrap();
         assert!(loaded.detected);
@@ -92,6 +93,7 @@ fn bounded_daily_detection_survives_an_empty_report_window() {
             None,
             ccusage_adapter_common::source::ProgressOwner::Caller,
             &crate::Diagnostics::new("claude"),
+            || true,
         )
         .unwrap();
         assert!(loaded.detected);
@@ -459,6 +461,7 @@ fn malformed_wrapped_advisors_keep_parent_and_valid_siblings() {
             None,
             ccusage_adapter_common::source::ProgressOwner::Caller,
             &daily_diagnostics,
+            || true,
         )
         .unwrap();
         assert_eq!(daily.summaries[0].input_tokens, 110);

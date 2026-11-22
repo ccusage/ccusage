@@ -1,4 +1,5 @@
 use ccusage_adapter_common::{
+    claims::NativeSessions,
     json::JsonText,
     jsonl::{self, Interruption, ReadPolicy},
 };
@@ -15,7 +16,7 @@ use crate::{
     IteratedTokenUsage, Rejection, TimestampMs, TokenUsageRaw,
     cost::{PriceTable, price_resolved_usage},
     date_at,
-    dedupe::{DedupKey, Request},
+    dedupe::{DedupEntry, DedupKey, Request},
     fast::LinePrefilter,
     parse_ts_timestamp,
     paths::extract_project,
@@ -162,19 +163,220 @@ pub(crate) fn read_usage_file<E>(
     mut build: impl FnMut(ParsedUsage<'_>, &[u8]) -> E,
 ) -> Vec<E> {
     let project: Arc<str> = Arc::from(extract_project(path, projects_root));
-    let (path_session_id, _) = crate::paths::extract_session_parts(path, projects_root);
-    let path_session_id: Arc<str> = Arc::from(path_session_id);
-    let mut recorded_session_id = Arc::clone(&path_session_id);
-    let mut entries = Vec::new();
     let mut file_pricing = FilePricing {
         table: pricing,
         models: smallvec::SmallVec::new(),
     };
+    read_dedup_records(
+        path,
+        projects_root,
+        diagnostics,
+        |key, admitted, line, entries| {
+            let Admitted {
+                record: data,
+                timestamp,
+                advisors,
+            } = admitted;
+            let usage = data.message.usage.usage;
+            let raw_model = data.message.model;
+            let (cost, missing_pricing_model, estimated_pricing) =
+                file_pricing.price(raw_model.as_deref(), usage, data.cost_usd, timestamp);
+            let recorded_session_id = data
+                .session_id
+                .is_some()
+                .then(|| Arc::clone(&key.session_id));
+            let parent = ParsedUsage {
+                key,
+                is_sidechain: data.is_sidechain == Some(true),
+                date: date_at(timestamp, tz),
+                project: Arc::clone(&project),
+                usage,
+                cost,
+                missing_pricing_model,
+                estimated_pricing,
+                stored_cost: data
+                    .cost_usd
+                    .filter(|_| matches!(pricing, PriceTable::Auto(_))),
+                raw_model,
+                timestamp_text: data.timestamp,
+                version: data.version,
+                recorded_session_id,
+                cost_usd: data.cost_usd,
+                is_api_error_message: data.is_api_error_message,
+            };
+            let advisors = advisors
+                .usages
+                .into_iter()
+                .enumerate()
+                .map(|(index, advisor)| {
+                    let (cost, missing_pricing_model, estimated_pricing) =
+                        file_pricing.price(Some(&advisor.model), advisor.usage, None, timestamp);
+                    ParsedUsage {
+                        key: parent.key.advisor(index),
+                        is_sidechain: parent.is_sidechain,
+                        date: parent.date,
+                        project: Arc::clone(&project),
+                        usage: advisor.usage,
+                        cost,
+                        missing_pricing_model,
+                        estimated_pricing,
+                        stored_cost: None,
+                        raw_model: Some(advisor.model),
+                        timestamp_text: parent.timestamp_text.clone(),
+                        version: parent.version.clone(),
+                        recorded_session_id: parent.recorded_session_id.clone(),
+                        cost_usd: None,
+                        is_api_error_message: parent.is_api_error_message,
+                    }
+                })
+                .collect::<Vec<_>>();
+            entries.push(build(parent, line));
+            entries.extend(advisors.into_iter().map(|advisor| build(advisor, line)));
+        },
+    )
+}
+
+pub(crate) struct ClaimEntry {
+    key: DedupKey,
+    usage: TokenUsageRaw,
+    is_sidechain: bool,
+    records_cost: bool,
+}
+
+impl ClaimEntry {
+    pub(crate) fn from_entry(entry: &impl DedupEntry) -> Self {
+        Self {
+            key: DedupKey {
+                timestamp: entry.timestamp(),
+                session_id: entry.owned_session_id(),
+                message_id: entry.message_id().map(Box::from),
+                request: entry.request().clone(),
+            },
+            usage: *entry.usage(),
+            is_sidechain: entry.is_sidechain(),
+            records_cost: entry.records_cost(),
+        }
+    }
+}
+
+impl DedupEntry for ClaimEntry {
+    fn timestamp(&self) -> TimestampMs {
+        self.key.timestamp
+    }
+
+    fn session_id(&self) -> &str {
+        &self.key.session_id
+    }
+
+    fn owned_session_id(&self) -> Arc<str> {
+        Arc::clone(&self.key.session_id)
+    }
+
+    fn message_id(&self) -> Option<&str> {
+        self.key.message_id.as_deref()
+    }
+
+    fn request(&self) -> &Request {
+        &self.key.request
+    }
+
+    fn is_sidechain(&self) -> bool {
+        self.is_sidechain
+    }
+
+    fn usage(&self) -> &TokenUsageRaw {
+        &self.usage
+    }
+
+    fn records_cost(&self) -> bool {
+        self.records_cost
+    }
+}
+
+pub(crate) fn read_claim_entries(
+    path: &Path,
+    projects_root: Option<&Path>,
+    diagnostics: &Diagnostics,
+) -> Vec<ClaimEntry> {
+    read_dedup_records(
+        path,
+        projects_root,
+        diagnostics,
+        |key, admitted, _, entries| {
+            let Admitted {
+                record, advisors, ..
+            } = admitted;
+            let is_sidechain = record.is_sidechain == Some(true);
+            let parent = entries.len();
+            entries.push(ClaimEntry {
+                key,
+                usage: record.message.usage.usage,
+                is_sidechain,
+                records_cost: record.cost_usd.is_some(),
+            });
+            for (index, advisor) in advisors.usages.into_iter().enumerate() {
+                entries.push(ClaimEntry {
+                    key: entries[parent].key.advisor(index),
+                    usage: advisor.usage,
+                    is_sidechain,
+                    records_cost: false,
+                });
+            }
+        },
+    )
+}
+
+pub(crate) fn find_mirror_sessions(
+    path: &Path,
+    projects_root: Option<&Path>,
+    diagnostics: &Diagnostics,
+    pending: &mut NativeSessions,
+    found: &mut NativeSessions,
+) {
+    let (path_session, _) = crate::extract_session_parts(path, projects_root);
+    let _ = jsonl::read(path, Some(diagnostics), READ_POLICY, |line, _, _| {
+        match admit(line.json()) {
+            Ok(admitted) if admitted.record.is_sidechain != Some(true) => {
+                let session = admitted
+                    .record
+                    .session_id
+                    .as_deref()
+                    .unwrap_or(&path_session);
+                if let Some(session) = pending.take(session) {
+                    found.insert(session);
+                }
+            }
+            Err(Refusal::Rejected(Rejection::Malformed)) => {
+                crate::diagnostics::rejected(path, line, diagnostics);
+            }
+            Err(Refusal::InvalidTimestamp) => {
+                crate::diagnostics::invalid_timestamp(path, line.index, diagnostics);
+            }
+            _ => {}
+        }
+        if pending.is_empty() {
+            ControlFlow::Break(())
+        } else {
+            ControlFlow::Continue(())
+        }
+    });
+}
+
+fn read_dedup_records<E>(
+    path: &Path,
+    projects_root: Option<&Path>,
+    diagnostics: &Diagnostics,
+    mut build: impl FnMut(DedupKey, Admitted<'_>, &[u8], &mut Vec<E>),
+) -> Vec<E> {
+    let (path_session_id, _) = crate::paths::extract_session_parts(path, projects_root);
+    let path_session_id: Arc<str> = Arc::from(path_session_id);
+    let mut recorded_session_id = Arc::clone(&path_session_id);
+    let mut entries = Vec::new();
     let mut response_chains = ResponseChains::new(&path_session_id);
     let _ = jsonl::read(path, Some(diagnostics), READ_POLICY, |current, _, _| {
         let line = current.bytes();
         let Admitted {
-            record: data,
+            record: mut data,
             timestamp,
             advisors,
         } = match admit(current.json()) {
@@ -235,73 +437,22 @@ pub(crate) fn read_usage_file<E>(
             }
             _ => None,
         };
-        let raw_model = data.message.model;
-        let (cost, missing_pricing_model, estimated_pricing) =
-            file_pricing.price(raw_model.as_deref(), usage, data.cost_usd, timestamp);
-        let parent = ParsedUsage {
-            key: DedupKey {
-                timestamp,
-                session_id,
-                message_id: data.message.id.map(String::into_boxed_str),
-                request: Request::new(data.request_id, response),
-            },
-            is_sidechain: data.is_sidechain == Some(true),
-            date: date_at(timestamp, tz),
-            project: Arc::clone(&project),
-            usage,
-            cost,
-            missing_pricing_model,
-            estimated_pricing,
-            stored_cost: data
-                .cost_usd
-                .filter(|_| matches!(pricing, PriceTable::Auto(_))),
-            raw_model,
-            timestamp_text: data.timestamp,
-            version: data.version,
-            recorded_session_id: data
-                .session_id
-                .is_some()
-                .then(|| Arc::clone(&recorded_session_id)),
-            cost_usd: data.cost_usd,
-            is_api_error_message: data.is_api_error_message,
+        let key = DedupKey {
+            timestamp,
+            session_id,
+            message_id: data.message.id.take().map(String::into_boxed_str),
+            request: Request::new(data.request_id.take(), response),
         };
-        let advisors = advisors
-            .usages
-            .into_iter()
-            .enumerate()
-            .map(|(index, advisor)| {
-                let (cost, missing_pricing_model, estimated_pricing) =
-                    file_pricing.price(Some(&advisor.model), advisor.usage, None, timestamp);
-                ParsedUsage {
-                    key: DedupKey {
-                        timestamp,
-                        session_id: Arc::clone(&parent.key.session_id),
-                        message_id: parent
-                            .key
-                            .message_id
-                            .as_ref()
-                            .map(|id| format!("{id}:advisor:{index}").into_boxed_str()),
-                        request: parent.key.request.clone(),
-                    },
-                    is_sidechain: parent.is_sidechain,
-                    date: parent.date,
-                    project: Arc::clone(&project),
-                    usage: advisor.usage,
-                    cost,
-                    missing_pricing_model,
-                    estimated_pricing,
-                    stored_cost: None,
-                    raw_model: Some(advisor.model),
-                    timestamp_text: parent.timestamp_text.clone(),
-                    version: parent.version.clone(),
-                    recorded_session_id: parent.recorded_session_id.clone(),
-                    cost_usd: None,
-                    is_api_error_message: parent.is_api_error_message,
-                }
-            })
-            .collect::<Vec<_>>();
-        entries.push(build(parent, line));
-        entries.extend(advisors.into_iter().map(|advisor| build(advisor, line)));
+        build(
+            key,
+            Admitted {
+                record: data,
+                timestamp,
+                advisors,
+            },
+            line,
+            &mut entries,
+        );
         ControlFlow::<()>::Continue(())
     });
     entries
