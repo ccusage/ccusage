@@ -5,11 +5,13 @@ Nix and the dev shell set it automatically. Enable `fetch-litellm-pricing`
 for a plain Cargo build that needs to download the locked snapshot.
 Run `just gen-models-dev-pricing` to regenerate the models.dev snapshots.
 
-The build script builds the offline pricing catalog from both snapshots with
-`ccusage_core::pricing::encode_pricing_table` and embeds it as
-`PRICING_TABLE`, so a report decodes finished rows instead of parsing JSON.
-The binary embeds only that table, the LiteLLM source rules and the models.dev
-catalog rules; the JSON snapshots are exported for tests.
+The build script uses `ccusage_core::pricing::encode_pricing_table` to build
+the primary `PRICING_TABLE` and the compressed `MODELS_DEV_TABLE` fallback.
+Reports read primary rows directly from the binary. The fallback stays
+compressed until a lookup passes the membership filter and needs its rows.
+A filter hit can still miss in the catalog. The binary also embeds the LiteLLM
+source rules and the models.dev catalog rules. The JSON snapshots are exported
+for tests.
 
 ## Build layer
 
