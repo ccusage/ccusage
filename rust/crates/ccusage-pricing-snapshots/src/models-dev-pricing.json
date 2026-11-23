@@ -1760,6 +1760,17 @@
 		},
 		"provider": "commandcode"
 	},
+	"Qwen/Qwen3.8-Max-VL-Thinking": {
+		"cost": {
+			"cache_read": 0.25,
+			"input": 2,
+			"output": 6
+		},
+		"limit": {
+			"context": 1000000
+		},
+		"provider": "modal"
+	},
 	"Qwen3-VL-235B-A22B-Thinking": {
 		"cost": {
 			"input": 0.98,
@@ -32228,6 +32239,72 @@
 		},
 		"provider": "nano-gpt"
 	},
+	"primalabs-ai/DeepSeek-V4.1-Flash-1017": {
+		"cost": {
+			"cache_read": 0.0048,
+			"input": 0.24,
+			"output": 0.96
+		},
+		"limit": {
+			"context": 1048576
+		},
+		"provider": "primalabs"
+	},
+	"primalabs-ai/GLM-5.3-Flash": {
+		"cost": {
+			"cache_read": 0.03,
+			"input": 0.15,
+			"output": 0.5
+		},
+		"limit": {
+			"context": 262144
+		},
+		"provider": "primalabs"
+	},
+	"primalabs-ai/Kimi-K3.1-Pro": {
+		"cost": {
+			"cache_read": 0.18,
+			"input": 1.8,
+			"output": 9
+		},
+		"limit": {
+			"context": 1048576
+		},
+		"provider": "primalabs"
+	},
+	"primalabs-ai/MiMo-V2.6-Pro": {
+		"cost": {
+			"cache_read": 0.036,
+			"input": 4,
+			"output": 8
+		},
+		"limit": {
+			"context": 1048576
+		},
+		"provider": "primalabs"
+	},
+	"primalabs-ai/Nemotron-3.5-Lightning-NVFP4": {
+		"cost": {
+			"cache_read": 0.03,
+			"input": 0.15,
+			"output": 0.5
+		},
+		"limit": {
+			"context": 1048576
+		},
+		"provider": "primalabs"
+	},
+	"primalabs-ai/Nemotron-3.5-Super-VL-NVFP4": {
+		"cost": {
+			"cache_read": 0.05,
+			"input": 0.25,
+			"output": 1.5
+		},
+		"limit": {
+			"context": 1048576
+		},
+		"provider": "primalabs"
+	},
 	"prism": {
 		"cost": {
 			"cache_read": 0.22,
@@ -39774,6 +39851,16 @@
 			"context": 32768
 		},
 		"provider": "mistral"
+	},
+	"writer.palmyra-vision-7b": {
+		"cost": {
+			"input": 0.15,
+			"output": 0.6
+		},
+		"limit": {
+			"context": 4096
+		},
+		"provider": "amazon-bedrock"
 	},
 	"writer.palmyra-x4-v1:0": {
 		"cost": {
