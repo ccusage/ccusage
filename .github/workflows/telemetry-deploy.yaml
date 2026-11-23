@@ -42,8 +42,8 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-nix-cache
       - name: Install pinned validation tools
-        run: nix profile install --inputs-from . nixpkgs#nodejs nixpkgs#just .#oxlint .#pnpm
-      - run: pnpm install --frozen-lockfile
+        run: nix profile install --inputs-from . nixpkgs#nodejs nixpkgs#just nixpkgs#bun .#oxlint .#pnpm
+      - run: just install
       - name: Test telemetry Worker
         run: just telemetry::test
       - name: Check TypeScript
