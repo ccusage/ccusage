@@ -89,6 +89,53 @@ fn qwen_session_includes_archived_chat_files() {
     assert_eq!(report["totals"]["totalTokens"], 165);
 }
 
+#[test]
+fn qwen_session_keeps_an_archived_stale_part_of_a_session_active_in_the_window() {
+    let usage = |timestamp: &str, prompt: u32| {
+        format!(
+            r#"{{"type":"assistant","model":"qwen3-coder-plus","timestamp":"{timestamp}","sessionId":"split","usageMetadata":{{"promptTokenCount":{prompt},"candidatesTokenCount":0}}}}"#
+        )
+    };
+    let fixture = fs_fixture!({
+        "qwen/projects/myProject/chats/archive/split.jsonl": usage("2026-01-01T00:00:00.000Z", 10),
+        "qwen/projects/myProject/chats/split.jsonl": usage("2099-01-05T00:00:00.000Z", 100),
+    });
+    for (file, modified) in [
+        (
+            "qwen/projects/myProject/chats/archive/split.jsonl",
+            "2099-01-01T00:00:00Z",
+        ),
+        (
+            "qwen/projects/myProject/chats/split.jsonl",
+            "2099-01-05T01:00:00Z",
+        ),
+    ] {
+        ccusage_test_support::set_modified(
+            &fixture.path(file),
+            ccusage_test_support::instant(modified),
+        );
+    }
+
+    let output = support::hermetic_command(fixture.root())
+        .env("QWEN_DATA_DIR", fixture.path("qwen"))
+        .env("CCUSAGE_TEST_NOW", "2099-01-06T00:00:00Z")
+        .args([
+            "qwen",
+            "session",
+            "--since",
+            "20990104",
+            "--timezone",
+            "UTC",
+        ])
+        .args(["--mode", "display", "--offline", "--json"])
+        .output()
+        .expect("failed to run ccusage");
+    assert!(output.status.success());
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+
+    assert_eq!(report["totals"]["totalTokens"], 110);
+}
+
 fn run_cli(fixture: &Fixture, args: &[&str]) -> String {
     let output = support::hermetic_command(fixture.root())
         .env("QWEN_DATA_DIR", fixture.path("qwen"))

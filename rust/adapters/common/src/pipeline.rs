@@ -73,7 +73,7 @@ pub(crate) fn load_rows(source: &dyn EntrySource, request: &LoadRequest<'_>) -> 
         diagnostics: &diagnostics,
     };
     let entries = load(source, &cx, request.progress)?;
-    let detected = detect(descriptor.detection, &entries);
+    let detected = diagnostics.skipped_stale() || detect(descriptor.detection, &entries);
     let summaries = summarize_in_window(descriptor.window, entries, &cx, |entries, _kind| {
         source.summarize(entries, crate::source::SummaryKind::for_load(request.kind))
     })?;

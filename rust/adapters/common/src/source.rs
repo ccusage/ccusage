@@ -1,14 +1,14 @@
-use std::sync::OnceLock;
+use std::{path::Path, sync::OnceLock};
 
 use serde_json::Value;
 
 use ccusage_core::{
-    Diagnostics, LoadedEntry, PricingMap, ReportWindow, Result, UsageSummary,
+    Diagnostics, LoadedEntry, MILLIS_PER_DAY, PricingMap, ReportWindow, Result, UsageSummary,
     cli::{AgentCommandArgs, AgentReportKind, CodexSpeed, SharedArgs, SourceArgs},
     summary_period,
 };
 
-use crate::{pipeline, rows::SourceRow};
+use crate::{pipeline, rows::SourceRow, timestamps::changed_before};
 
 pub trait UsageSource: Sync {
     fn id(&self) -> &'static str;
@@ -291,6 +291,25 @@ pub struct LoadContext<'a> {
     pub pricing: ReportPricing<'a>,
     pub options: SourceOptions<'a>,
     pub diagnostics: &'a Diagnostics,
+}
+
+impl LoadContext<'_> {
+    // NOTE(2026-11-23, #2531): A log records only timestamps at or before its last change, so one last changed more than a day before a past `--since` holds no usage in the window, the day being a reserve for clocks that disagree. Sources with a log per session skip reading it unless their report keeps whole sessions, and a skipped log still detects the source.
+    pub fn stale_files(&self) -> impl Fn(&Path) -> bool + Sync {
+        let (since, _) = self.window.bounds_ms();
+        let now = self.shared.clock.now().as_millisecond();
+        let cutoff = since
+            .filter(|since| *since <= now)
+            .map(|since| since.saturating_sub(MILLIS_PER_DAY));
+        let diagnostics = self.diagnostics;
+        move |file: &Path| {
+            let stale = cutoff.is_some_and(|cutoff| changed_before(file, cutoff));
+            if stale {
+                diagnostics.skip_stale();
+            }
+            stale
+        }
+    }
 }
 
 pub trait EntrySource: Sync {

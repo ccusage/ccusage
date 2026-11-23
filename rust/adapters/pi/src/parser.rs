@@ -4,6 +4,7 @@ use ccusage_core::{
     pricing::AgentModel,
 };
 use std::{
+    ops::ControlFlow,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -207,6 +208,24 @@ pub(crate) fn read_session_file_data_for_store_with_diagnostics(
         },
         diagnostics,
     )
+}
+
+pub(crate) fn read_session_header(
+    path: &Path,
+    diagnostics: &Diagnostics,
+) -> std::result::Result<PiSessionData, UnitError> {
+    let header = jsonl::read(
+        path,
+        Some(diagnostics),
+        jsonl::ReadPolicy::PLAIN,
+        |line, _, _| ControlFlow::Break(parse_session_header(line.bytes())),
+    )?;
+    Ok(PiSessionData {
+        header: header.flatten(),
+        usage: Vec::new(),
+        replay_usage_path: PiReplayUsagePath::Linear,
+        entries: Vec::new(),
+    })
 }
 
 #[derive(Clone, Copy)]

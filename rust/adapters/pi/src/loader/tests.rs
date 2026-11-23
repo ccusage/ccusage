@@ -609,6 +609,64 @@ fn uses_raw_parent_stream_for_nested_forks() {
 }
 
 #[test]
+fn reads_only_the_header_of_a_session_last_changed_before_since() {
+    let fixture = Fixture::new();
+    let root = fixture.write_file(
+        "sessions/project-a/root.jsonl",
+        [
+            session_line("root", "2098-12-01T00:00:00.000Z", None),
+            usage_line("2098-12-01T01:00:00.000Z", 100, 10, 20, 3),
+        ]
+        .join("\n"),
+    );
+    let child = fixture.write_file(
+        "sessions/project-a/child.jsonl",
+        [
+            session_line("child", "2099-01-09T12:00:00.000Z", Some(&root)),
+            usage_line("2098-12-01T01:00:00.000Z", 100, 10, 20, 3),
+            usage_line("2099-01-09T12:00:00.000Z", 300, 30, 40, 5),
+        ]
+        .join("\n"),
+    );
+    let grandchild = fixture.write_file(
+        "sessions/project-a/grandchild.jsonl",
+        [
+            session_line("grandchild", "2099-01-11T00:00:00.000Z", Some(&child)),
+            usage_line("2098-12-01T01:00:00.000Z", 100, 10, 20, 3),
+            usage_line("2099-01-09T12:00:00.000Z", 300, 30, 40, 5),
+            usage_line("2099-01-11T01:00:00.000Z", 400, 40, 50, 6),
+        ]
+        .join("\n"),
+    );
+    for (file, modified) in [
+        (&root, "2099-01-05T00:00:00Z"),
+        (&child, "2099-01-09T12:00:00Z"),
+        (&grandchild, "2099-01-11T02:00:00Z"),
+    ] {
+        ccusage_test_support::set_modified(file, ccusage_test_support::instant(modified));
+    }
+    let shared = SharedArgs {
+        mode: CostMode::Display,
+        since: Some("20990110".parse().unwrap()),
+        timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+        clock: ccusage_core::cli::ReportClock::Fixed(
+            ccusage_test_support::instant("2099-12-31T00:00:00Z").into(),
+        ),
+        ..SharedArgs::default()
+    };
+
+    let entries = load_default(&shared, fixture.path("sessions"), None);
+
+    assert_eq!(
+        entries
+            .iter()
+            .map(|entry| (entry.session_id.as_ref(), entry.usage.input_tokens))
+            .collect::<Vec<_>>(),
+        [("child", 100), ("child", 300), ("grandchild", 400)]
+    );
+}
+
+#[test]
 fn compares_every_effective_usage_field_before_suppressing_replay() {
     let fixture = Fixture::new();
     let parent = fixture.write_file(
