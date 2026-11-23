@@ -430,18 +430,6 @@
 		},
 		"provider": "moneo"
 	},
-	"DeepSeek-V4-Flash-0423": {
-		"cost": {
-			"cache_read": 0.028,
-			"input": 0.14,
-			"output": 0.28
-		},
-		"exactOnly": true,
-		"limit": {
-			"context": 1048576
-		},
-		"provider": "wafer.ai"
-	},
 	"Doctor-Shotgun/MS3.2-24B-Magnum-Diamond": {
 		"cost": {
 			"cache_read": 0.2465,
@@ -7692,7 +7680,7 @@
 		"limit": {
 			"context": 1048576
 		},
-		"provider": "llmgateway"
+		"provider": "concentrate"
 	},
 	"bee-brood": {
 		"cost": {
@@ -9530,25 +9518,25 @@
 	},
 	"clef": {
 		"cost": {
-			"input": 0.2245,
+			"input": 0.24,
 			"output": 0
 		},
 		"exactOnly": true,
 		"limit": {
-			"context": 16384
+			"context": 65536
 		},
-		"provider": "melious"
+		"provider": "concentrate"
 	},
 	"clef-flash": {
 		"cost": {
-			"input": 0.033675,
+			"input": 0.038,
 			"output": 0
 		},
 		"exactOnly": true,
 		"limit": {
-			"context": 16384
+			"context": 24576
 		},
-		"provider": "melious"
+		"provider": "concentrate"
 	},
 	"cline-pass/deepseek-v4-flash": {
 		"cost": {
@@ -9975,6 +9963,17 @@
 			"context": 1048576
 		},
 		"provider": "llmgateway-providers"
+	},
+	"codestral": {
+		"cost": {
+			"input": 0.3,
+			"output": 0.9
+		},
+		"exactOnly": true,
+		"limit": {
+			"context": 128000
+		},
+		"provider": "concentrate"
 	},
 	"codestral-2": {
 		"cost": {
@@ -12139,14 +12138,15 @@
 	},
 	"deepseek-r1-0528": {
 		"cost": {
-			"input": 0.574,
-			"output": 2.294
+			"cache_read": 0.35,
+			"input": 0.7,
+			"output": 2.5
 		},
 		"exactOnly": true,
 		"limit": {
-			"context": 131072
+			"context": 163840
 		},
-		"provider": "alibaba-cn"
+		"provider": "concentrate"
 	},
 	"deepseek-r1-distill-llama-70b": {
 		"cost": {
@@ -12239,14 +12239,15 @@
 	},
 	"deepseek-v3-1": {
 		"cost": {
-			"input": 0.574,
-			"output": 1.721
+			"cache_read": 0.13,
+			"input": 0.25,
+			"output": 0.95
 		},
 		"exactOnly": true,
 		"limit": {
 			"context": 131072
 		},
-		"provider": "alibaba-cn"
+		"provider": "concentrate"
 	},
 	"deepseek-v3-2-exp": {
 		"cost": {
@@ -12305,6 +12306,17 @@
 		},
 		"provider": "302ai"
 	},
+	"deepseek-v4-1-fast": {
+		"cost": {
+			"cache_read": 0.014,
+			"input": 0.6,
+			"output": 2.4
+		},
+		"limit": {
+			"context": 1000000
+		},
+		"provider": "concentrate"
+	},
 	"deepseek-v4-1-flash-260910": {
 		"cost": {
 			"cache_read": 0.003,
@@ -12351,6 +12363,18 @@
 			"context": 1048576
 		},
 		"provider": "deepseek"
+	},
+	"deepseek-v4-flash-0423": {
+		"cost": {
+			"cache_read": 0.018,
+			"input": 0.09,
+			"output": 0.18
+		},
+		"exactOnly": true,
+		"limit": {
+			"context": 1000000
+		},
+		"provider": "concentrate"
 	},
 	"deepseek-v4-flash-0731": {
 		"cost": {
@@ -15921,13 +15945,13 @@
 	},
 	"gemma-3-12b": {
 		"cost": {
-			"input": 0.15,
-			"output": 0.5
+			"input": 0.09,
+			"output": 0.29
 		},
 		"limit": {
-			"context": 131072
+			"context": 128000
 		},
-		"provider": "neon"
+		"provider": "concentrate"
 	},
 	"gemma-3-12b-it": {
 		"cost": {
@@ -16006,6 +16030,16 @@
 			"context": 131072
 		},
 		"provider": "nano-gpt"
+	},
+	"gemma-4-26b": {
+		"cost": {
+			"input": 0.13,
+			"output": 0.4
+		},
+		"limit": {
+			"context": 262144
+		},
+		"provider": "concentrate"
 	},
 	"gemma-4-26b-a4b": {
 		"cost": {
@@ -19896,6 +19930,16 @@
 		},
 		"provider": "cortecs"
 	},
+	"gpt-oss-safeguard-20b": {
+		"cost": {
+			"input": 0.07,
+			"output": 0.2
+		},
+		"limit": {
+			"context": 131072
+		},
+		"provider": "concentrate"
+	},
 	"gpt-oss:120b": {
 		"cost": {
 			"cache_read": 0.014,
@@ -20495,7 +20539,7 @@
 		},
 		"provider": "xai"
 	},
-	"grok-build-0-1": {
+	"grok-build-0.1": {
 		"cost": {
 			"cache_read": 0.2,
 			"input": 1,
@@ -20515,7 +20559,7 @@
 		"limit": {
 			"context": 256000
 		},
-		"provider": "llmgateway"
+		"provider": "concentrate"
 	},
 	"grok-code-fast-1": {
 		"cost": {
@@ -21011,14 +21055,14 @@
 	},
 	"hy4": {
 		"cost": {
-			"cache_read": 0.0343,
-			"input": 0.3429,
-			"output": 1.2
+			"cache_read": 0.021,
+			"input": 0.417,
+			"output": 1.2505
 		},
 		"limit": {
-			"context": 1048576
+			"context": 1000000
 		},
-		"provider": "kenari"
+		"provider": "concentrate"
 	},
 	"hy4-flash": {
 		"cost": {
@@ -21054,6 +21098,17 @@
 			"context": 128000
 		},
 		"provider": "nano-gpt"
+	},
+	"ibm-granite-micro": {
+		"cost": {
+			"input": 0.017,
+			"output": 0.112
+		},
+		"exactOnly": true,
+		"limit": {
+			"context": 131000
+		},
+		"provider": "concentrate"
 	},
 	"ibm-granite/granite-4.2-8b": {
 		"cost": {
@@ -21575,15 +21630,15 @@
 	},
 	"inkling": {
 		"cost": {
-			"cache_read": 0.185096,
-			"input": 1.0888,
-			"output": 4.40964
+			"cache_read": 0.27,
+			"input": 1.2,
+			"output": 5
 		},
 		"exactOnly": true,
 		"limit": {
 			"context": 1048576
 		},
-		"provider": "hyper"
+		"provider": "concentrate"
 	},
 	"inkling-2-small": {
 		"cost": {
@@ -21734,6 +21789,16 @@
 		},
 		"provider": "opencode"
 	},
+	"jev-1.13.0": {
+		"cost": {
+			"input": 0.042,
+			"output": 0
+		},
+		"limit": {
+			"context": 64000
+		},
+		"provider": "concentrate"
+	},
 	"jev-1.14": {
 		"cost": {
 			"input": 0.042,
@@ -21743,6 +21808,16 @@
 			"context": 64000
 		},
 		"provider": "opencode"
+	},
+	"jev-1.14.0": {
+		"cost": {
+			"input": 0.042,
+			"output": 0
+		},
+		"limit": {
+			"context": 64000
+		},
+		"provider": "concentrate"
 	},
 	"jiunsong/supergemma4-26b-uncensored": {
 		"cost": {
@@ -23892,6 +23967,19 @@
 		},
 		"provider": "tencent-token-plan"
 	},
+	"minimax-m2-1-highspeed": {
+		"cost": {
+			"cache_read": 0.03,
+			"cache_write": 0.375,
+			"input": 0.6,
+			"output": 2.4
+		},
+		"exactOnly": true,
+		"limit": {
+			"context": 204800
+		},
+		"provider": "concentrate"
+	},
 	"minimax-m2.1-lightning": {
 		"cost": {
 			"input": 0.12,
@@ -24241,6 +24329,26 @@
 		},
 		"provider": "mistral"
 	},
+	"ministral-3-3b": {
+		"cost": {
+			"input": 0.1,
+			"output": 0.1
+		},
+		"limit": {
+			"context": 256000
+		},
+		"provider": "concentrate"
+	},
+	"ministral-3-8b": {
+		"cost": {
+			"input": 0.15,
+			"output": 0.15
+		},
+		"limit": {
+			"context": 256000
+		},
+		"provider": "concentrate"
+	},
 	"ministral-3b": {
 		"cost": {
 			"input": 0.04,
@@ -24521,6 +24629,17 @@
 		},
 		"provider": "requesty"
 	},
+	"mistral-medium-3.1": {
+		"cost": {
+			"input": 0.4,
+			"output": 2
+		},
+		"exactOnly": true,
+		"limit": {
+			"context": 128000
+		},
+		"provider": "concentrate"
+	},
 	"mistral-medium-3.5": {
 		"cost": {
 			"cache_read": 0.154,
@@ -24642,6 +24761,26 @@
 			"context": 256000
 		},
 		"provider": "venice"
+	},
+	"mistral-small-3.1": {
+		"cost": {
+			"input": 0.351,
+			"output": 0.555
+		},
+		"limit": {
+			"context": 128000
+		},
+		"provider": "concentrate"
+	},
+	"mistral-small-3.2": {
+		"cost": {
+			"input": 0.1,
+			"output": 0.3
+		},
+		"limit": {
+			"context": 128000
+		},
+		"provider": "concentrate"
 	},
 	"mistral-small-3.2-24b-instruct-2506": {
 		"cost": {
@@ -26506,6 +26645,29 @@
 		},
 		"provider": "digitalocean"
 	},
+	"muse-ember": {
+		"cost": {
+			"cache_read": 0.004,
+			"input": 0.1,
+			"output": 0.5,
+			"tiers": [
+				{
+					"cache_read": 0.012,
+					"input": 0.3,
+					"output": 1.5,
+					"tier": {
+						"size": 200001,
+						"type": "context"
+					}
+				}
+			]
+		},
+		"exactOnly": true,
+		"limit": {
+			"context": 1000000
+		},
+		"provider": "concentrate"
+	},
 	"muse-ember-1.0": {
 		"cost": {
 			"cache_read": 0.004,
@@ -26622,15 +26784,15 @@
 	},
 	"muse-wonder": {
 		"cost": {
-			"cache_read": 0.25,
-			"input": 5,
-			"output": 25
+			"cache_read": 0.2,
+			"input": 4,
+			"output": 20
 		},
 		"exactOnly": true,
 		"limit": {
 			"context": 1048576
 		},
-		"provider": "venice"
+		"provider": "concentrate"
 	},
 	"muse-wonder-1.0": {
 		"cost": {
@@ -26879,6 +27041,27 @@
 		},
 		"provider": "edenai"
 	},
+	"nemotron-3-120b": {
+		"cost": {
+			"input": 0.075,
+			"output": 0.4
+		},
+		"limit": {
+			"context": 262144
+		},
+		"provider": "concentrate"
+	},
+	"nemotron-3-nano-30b": {
+		"cost": {
+			"cache_read": 0.03,
+			"input": 0.05,
+			"output": 0.2
+		},
+		"limit": {
+			"context": 262144
+		},
+		"provider": "concentrate"
+	},
 	"nemotron-3-nano-omni": {
 		"cost": {
 			"cache_read": 0.1,
@@ -26967,14 +27150,14 @@
 	},
 	"nemotron-3-ultra-nvfp4": {
 		"cost": {
-			"cache_read": 0.12,
-			"input": 0.6,
-			"output": 2.4
+			"cache_read": 0.1,
+			"input": 1,
+			"output": 3
 		},
 		"limit": {
-			"context": 262144
+			"context": 1000000
 		},
-		"provider": "requesty"
+		"provider": "concentrate"
 	},
 	"nemotron-3.5-content-safety": {
 		"cost": {
@@ -26996,6 +27179,17 @@
 			"context": 1048576
 		},
 		"provider": "cheapest-token"
+	},
+	"nemotron-lightning-3.5-30b": {
+		"cost": {
+			"cache_read": 0.03,
+			"input": 0.06,
+			"output": 0.24
+		},
+		"limit": {
+			"context": 262144
+		},
+		"provider": "concentrate"
 	},
 	"nemotron-lightning-3.5-30b-a3b": {
 		"cost": {
@@ -27203,13 +27397,24 @@
 	},
 	"nova-2-lite": {
 		"cost": {
-			"input": 0.373,
-			"output": 3.144
+			"input": 0.3,
+			"output": 2.5
 		},
 		"limit": {
 			"context": 1000000
 		},
-		"provider": "cortecs"
+		"provider": "concentrate"
+	},
+	"nova-lite": {
+		"cost": {
+			"input": 0.06,
+			"output": 0.24
+		},
+		"exactOnly": true,
+		"limit": {
+			"context": 300000
+		},
+		"provider": "concentrate"
 	},
 	"nova-lite-v1": {
 		"cost": {
@@ -27222,6 +27427,17 @@
 		},
 		"provider": "cortecs"
 	},
+	"nova-micro": {
+		"cost": {
+			"input": 0.035,
+			"output": 0.14
+		},
+		"exactOnly": true,
+		"limit": {
+			"context": 128000
+		},
+		"provider": "concentrate"
+	},
 	"nova-micro-v1": {
 		"cost": {
 			"input": 0.04,
@@ -27232,6 +27448,17 @@
 			"context": 128000
 		},
 		"provider": "cortecs"
+	},
+	"nova-pro": {
+		"cost": {
+			"input": 0.8,
+			"output": 3.2
+		},
+		"exactOnly": true,
+		"limit": {
+			"context": 300000
+		},
+		"provider": "concentrate"
 	},
 	"nova-pro-v1": {
 		"cost": {
@@ -33822,6 +34049,17 @@
 		},
 		"provider": "alibaba"
 	},
+	"qwen3-235b-a22b-instruct": {
+		"cost": {
+			"input": 0.09,
+			"output": 0.55
+		},
+		"exactOnly": true,
+		"limit": {
+			"context": 262144
+		},
+		"provider": "concentrate"
+	},
 	"qwen3-235b-a22b-instruct-2507": {
 		"cost": {
 			"cache_read": 0.018,
@@ -33866,6 +34104,16 @@
 		},
 		"provider": "moneo"
 	},
+	"qwen3-30b": {
+		"cost": {
+			"input": 0.12,
+			"output": 0.5
+		},
+		"limit": {
+			"context": 40960
+		},
+		"provider": "concentrate"
+	},
 	"qwen3-30b-a3b": {
 		"cost": {
 			"input": 0.11,
@@ -33886,6 +34134,17 @@
 			"context": 32768
 		},
 		"provider": "zerogpu"
+	},
+	"qwen3-30b-a3b-instruct": {
+		"cost": {
+			"input": 0.1,
+			"output": 0.3
+		},
+		"exactOnly": true,
+		"limit": {
+			"context": 262144
+		},
+		"provider": "concentrate"
 	},
 	"qwen3-30b-a3b-instruct-2507": {
 		"cost": {
@@ -34012,6 +34271,17 @@
 			"context": 262144
 		},
 		"provider": "phase"
+	},
+	"qwen3-coder-480b-a35b": {
+		"cost": {
+			"cache_read": 0.1,
+			"input": 0.3,
+			"output": 1
+		},
+		"limit": {
+			"context": 262144
+		},
+		"provider": "concentrate"
 	},
 	"qwen3-coder-480b-a35b-instruct": {
 		"cost": {
@@ -34190,6 +34460,16 @@
 			"context": 256000
 		},
 		"provider": "venice"
+	},
+	"qwen3-next-80b-a3b": {
+		"cost": {
+			"input": 0.14,
+			"output": 1.2
+		},
+		"limit": {
+			"context": 262144
+		},
+		"provider": "concentrate"
 	},
 	"qwen3-next-80b-a3b-instruct": {
 		"cost": {
