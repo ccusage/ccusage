@@ -184,7 +184,7 @@ catalogs:
       specifier: 2.0.0-rc.2
       version: 2.0.0-rc.2
     '@cloudflare/workers-types':
-      specifier: ^5.20261018.1
+      specifier: ^5.20261119.1
       version: 5.20261120.1
     '@hono/zod-validator':
       specifier: ^0.9.1
