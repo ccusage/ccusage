@@ -3930,6 +3930,16 @@
 		},
 		"provider": "edenai"
 	},
+	"amazon/writer.palmyra-vision-7b": {
+		"cost": {
+			"input": 0.15,
+			"output": 0.6
+		},
+		"limit": {
+			"context": 4096
+		},
+		"provider": "edenai"
+	},
 	"amazon/zai.glm-4.7-flash": {
 		"cost": {
 			"input": 0.07,
@@ -11324,6 +11334,17 @@
 		},
 		"limit": {
 			"context": 131072
+		},
+		"provider": "llmgateway-providers"
+	},
+	"deepinfra/hy4": {
+		"cost": {
+			"cache_read": 0.042,
+			"input": 0.834,
+			"output": 2.501
+		},
+		"limit": {
+			"context": 1048576
 		},
 		"provider": "llmgateway-providers"
 	},
@@ -40520,6 +40541,28 @@
 		},
 		"provider": "poe"
 	},
+	"xai/grok-4.20-multi-agent-0309": {
+		"cost": {
+			"cache_read": 0.2,
+			"input": 1.25,
+			"output": 2.5,
+			"tiers": [
+				{
+					"cache_read": 0.4,
+					"input": 2.5,
+					"output": 5,
+					"tier": {
+						"size": 200000,
+						"type": "context"
+					}
+				}
+			]
+		},
+		"limit": {
+			"context": 1000000
+		},
+		"provider": "edenai"
+	},
 	"xai/grok-4.20-non-reasoning": {
 		"cost": {
 			"cache_read": 0.2,
@@ -41373,9 +41416,9 @@
 	},
 	"z-ai/glm-5.1:thinking": {
 		"cost": {
-			"cache_read": 0.247,
-			"input": 1.33,
-			"output": 4.18
+			"cache_read": 0.26,
+			"input": 1.4,
+			"output": 4.4
 		},
 		"limit": {
 			"context": 204800
@@ -42638,7 +42681,7 @@
 	"~deepseek/deepseek-v4-flash-latest": {
 		"cost": {
 			"cache_read": 0.035,
-			"input": 0.0443,
+			"input": 0.0434,
 			"output": 0.3
 		},
 		"limit": {
