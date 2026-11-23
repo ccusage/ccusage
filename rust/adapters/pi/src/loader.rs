@@ -38,6 +38,7 @@ fn load_entries_for_context(
 ) -> Result<Vec<LoadedEntry>> {
     let pricing = cx.pricing.table(cx.shared.mode);
     let shared = cx.shared;
+    let stale = cx.stale_files();
     let mut discovered_files = Vec::new();
     let mut loaded_files = Vec::new();
     for path in paths {
@@ -46,6 +47,10 @@ fn load_entries_for_context(
         // NOTE(2026-09-15, #1714): pi-subagents writes debug transcripts under `subagent-artifacts/` that copy calls without their session header or entry IDs. Skip that directory and retain the primary `run-*/` child sessions.
         files.retain(|file| !is_subagent_artifact_transcript(file));
         let loaded = read_typed_units(&files, shared.single_thread, cx.diagnostics, |file| {
+            // NOTE(2026-11-23, #2531): A stale session's header keeps its forks' lineage valid, so a live grandchild still suppresses what it replays from its live parent. Only the header is read, and the records a child replays from that session predate the window.
+            if stale(file) {
+                return parser::read_session_header(file, cx.diagnostics);
+            }
             parser::read_session_file_data_for_store_with_diagnostics(
                 file,
                 path,

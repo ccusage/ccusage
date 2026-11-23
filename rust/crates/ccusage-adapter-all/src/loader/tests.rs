@@ -1379,6 +1379,38 @@ fn load_rows_filters_a_source_by_its_own_date_window() {
 }
 
 #[test]
+fn load_rows_detects_a_source_whose_logs_all_predate_the_window() {
+    ccusage_test_support::install_pricing_snapshots();
+    let fixture = fs_fixture!({
+        "pi/sessions/project-a/agent_pi-session.jsonl": r#"{"type":"message","timestamp":"2026-01-02T00:00:00.000Z","message":{"role":"assistant","model":"gpt-5","usage":{"input":30,"output":40}}}"#,
+    });
+    isolated_source_environment(&fixture).run(|| {
+        let shared = SharedArgs {
+            json: true,
+            mode: crate::cli::CostMode::Display,
+            offline: true,
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+            since: Some("20990110".parse().unwrap()),
+            clock: ccusage_core::cli::ReportClock::Fixed(
+                ccusage_test_support::instant("2099-01-11T00:00:00Z").into(),
+            ),
+            ..SharedArgs::default()
+        };
+
+        let result = load_rows(
+            AgentReportKind::Daily,
+            &shared,
+            &NO_SOURCES,
+            WeekDay::Monday,
+        )
+        .unwrap();
+
+        assert!(result.rows.is_empty());
+        assert!(result.detected_agents.contains(&"pi"));
+    })
+}
+
+#[test]
 fn loads_codex_and_pi_with_source_pricing_speed_and_date_options() {
     ccusage_test_support::install_pricing_snapshots();
     let fixture = fs_fixture!({

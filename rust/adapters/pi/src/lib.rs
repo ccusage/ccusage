@@ -140,6 +140,76 @@ mod tests {
     }
 
     #[test]
+    fn session_report_leaves_out_what_a_child_replays_from_a_stale_parent() {
+        ccusage_test_support::install_pricing_snapshots();
+        let usage = |timestamp: &str, input: u32| {
+            format!(
+                r#"{{"type":"message","timestamp":"{timestamp}","message":{{"role":"assistant","model":"gpt-5","usage":{{"input":{input},"output":1}}}}}}"#
+            )
+        };
+        let fixture = fs_fixture!({
+            "sessions/project-a/root.jsonl": [
+                r#"{"type":"session","id":"root","timestamp":"2098-12-01T00:00:00.000Z"}"#.to_owned(),
+                usage("2098-12-01T01:00:00.000Z", 100),
+            ]
+            .join("\n"),
+        });
+        let root = fixture.path("sessions/project-a/root.jsonl");
+        let child = fixture.write_file(
+            "sessions/project-a/child.jsonl",
+            [
+                format!(
+                    r#"{{"type":"session","id":"child","timestamp":"2099-01-10T12:00:00.000Z","parentSession":{}}}"#,
+                    serde_json::Value::from(root.to_string_lossy())
+                ),
+                usage("2098-12-01T01:00:00.000Z", 100),
+                usage("2099-01-10T12:00:00.000Z", 300),
+            ]
+            .join("\n"),
+        );
+        for (file, modified) in [
+            (&root, "2099-01-05T00:00:00Z"),
+            (&child, "2099-01-10T13:00:00Z"),
+        ] {
+            ccusage_test_support::set_modified(file, ccusage_test_support::instant(modified));
+        }
+        let shared = crate::cli::SharedArgs {
+            mode: crate::cli::CostMode::Display,
+            since: Some("20990110".parse().unwrap()),
+            timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+            clock: ccusage_core::cli::ReportClock::Fixed(
+                ccusage_test_support::instant("2099-12-31T00:00:00Z").into(),
+            ),
+            offline: true,
+            ..crate::cli::SharedArgs::default()
+        };
+        let sessions = fixture.path("sessions");
+
+        let rows = SOURCE
+            .load_rows(&LoadRequest {
+                kind: ccusage_adapter_common::source::LoadKind::for_report(
+                    AgentReportKind::Session,
+                ),
+                shared: &shared,
+                options: SourceOptions {
+                    pi_path: sessions.to_str(),
+                    ..SourceOptions::default()
+                },
+                pricing: None,
+                progress: ProgressOwner::Caller,
+            })
+            .unwrap();
+
+        assert_eq!(
+            rows.rows
+                .iter()
+                .map(|row| (row.period.as_str(), row.input_tokens))
+                .collect::<Vec<_>>(),
+            [("child", 300)]
+        );
+    }
+
+    #[test]
     fn malformed_selected_message_is_diagnosed_without_dropping_following_usage() {
         ccusage_test_support::install_pricing_snapshots();
         let fixture = fs_fixture!({

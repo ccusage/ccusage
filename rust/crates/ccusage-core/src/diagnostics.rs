@@ -232,6 +232,7 @@ impl Tally {
 struct State {
     notes: BTreeMap<PathBuf, String>,
     tallies: [Tally; SkipKind::ALL.len()],
+    skipped_stale: bool,
 }
 
 fn sample_order(left: &Skip, right: &Skip) -> std::cmp::Ordering {
@@ -321,6 +322,17 @@ impl Diagnostics {
         for (tally, other) in state.tallies.iter_mut().zip(&other.tallies) {
             tally.merge(other);
         }
+        state.skipped_stale |= other.skipped_stale;
+    }
+
+    /// Records that the source skipped a log last changed before the report window.
+    pub fn skip_stale(&self) {
+        self.state().skipped_stale = true;
+    }
+
+    /// Reports whether the source skipped any log last changed before the report window.
+    pub fn skipped_stale(&self) -> bool {
+        self.state().skipped_stale
     }
 
     pub fn skipped(&self, kind: SkipKind) -> u64 {

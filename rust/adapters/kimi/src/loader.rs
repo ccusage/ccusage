@@ -10,7 +10,9 @@ use super::{
 };
 
 pub(crate) fn load_entries(cx: &LoadContext<'_>) -> Result<Vec<LoadedEntry>> {
-    let files = discover_wire_files(cx.diagnostics)?;
+    let mut files = discover_wire_files(cx.diagnostics)?;
+    let stale = cx.stale_files();
+    files.retain(|file| !stale(file.as_ref()));
     let pricing = cx.pricing.table(cx.shared.mode);
     let loaded = read_typed_units_flat(&files, cx.shared.single_thread, cx.diagnostics, |file| {
         read_wire_file(file, cx.diagnostics)
@@ -182,6 +184,47 @@ mod tests {
             .unwrap();
 
             assert!(entries.is_empty());
+        })
+    }
+
+    #[test]
+    fn skips_a_wire_file_last_changed_before_the_window() {
+        ccusage_test_support::install_pricing_snapshots();
+        let fixture = fs_fixture!({
+            "sessions/group/stale/wire.jsonl":
+                r#"{"timestamp":1770983427,"message":{"type":"StatusUpdate","payload":{"token_usage":{"input_other":100,"output":50}}}}"#,
+            "sessions/group/live/wire.jsonl":
+                r#"{"timestamp":1770983427,"message":{"type":"StatusUpdate","payload":{"token_usage":{"input_other":7,"output":3}}}}"#,
+        });
+        for (session, modified) in [
+            ("stale", "2099-01-01T00:00:00Z"),
+            ("live", "2099-01-05T00:00:00Z"),
+        ] {
+            ccusage_test_support::set_modified(
+                &fixture.path(format!("sessions/group/{session}/wire.jsonl")),
+                ccusage_test_support::instant(modified),
+            );
+        }
+        Environment::with_var(KIMI_DATA_DIR_ENV, fixture.root()).run(|| {
+            let shared = SharedArgs {
+                timezone: Some(ccusage_core::cli::ReportTimezone::UTC),
+                since: Some("20990104".parse().unwrap()),
+                clock: ccusage_core::cli::ReportClock::Fixed(
+                    ccusage_test_support::instant("2099-01-06T00:00:00Z").into(),
+                ),
+                ..SharedArgs::default()
+            };
+            let entries = ccusage_adapter_common::testing::entries(
+                &crate::SOURCE,
+                &shared,
+                Default::default(),
+                Some(&PricingMap::load_embedded()),
+            )
+            .unwrap();
+
+            assert_eq!(entries.len(), 1);
+            assert_eq!(entries[0].session_id.as_ref(), "live");
+            assert_eq!(entries[0].usage.input_tokens, 7);
         })
     }
 

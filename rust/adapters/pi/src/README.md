@@ -45,6 +45,10 @@ mismatch and all later records remain in the child session. Missing, malformed,
 self-referential, or cyclic lineage is left unchanged so usage is not discarded
 speculatively.
 
+With `--since`, a session file last changed more than a day before the since
+date has only its header read. That keeps the lineage valid, so a recent
+grandchild still drops the usage it replays from its recent parent.
+
 pi-subagents writes derived debug transcripts under `subagent-artifacts/`
 directories inside the sessions tree. Those transcripts duplicate calls already
 recorded in the primary session files, so the loader skips any `.jsonl` file
