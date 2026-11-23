@@ -13474,6 +13474,28 @@
 		},
 		"provider": "novita-ai"
 	},
+	"deepseekv4.1-flash-1017": {
+		"cost": {
+			"cache_read": 0.00265957,
+			"input": 0.14893617,
+			"output": 0.58510638
+		},
+		"limit": {
+			"context": 1048576
+		},
+		"provider": "sarvam"
+	},
+	"deepseekv4.1-flash-1017-interactive": {
+		"cost": {
+			"cache_read": 0.00531915,
+			"input": 0.26595745,
+			"output": 1.11702128
+		},
+		"limit": {
+			"context": 1048576
+		},
+		"provider": "sarvam"
+	},
 	"devstral-2-123b-instruct-2512": {
 		"cost": {
 			"input": 0.57,
@@ -16330,13 +16352,14 @@
 	},
 	"gemma4": {
 		"cost": {
-			"input": 0.57,
-			"output": 1.71
+			"cache_read": 0.10638298,
+			"input": 0.37234043,
+			"output": 0.95744681
 		},
 		"limit": {
 			"context": 262144
 		},
-		"provider": "greenpt"
+		"provider": "sarvam"
 	},
 	"gemma4-26b": {
 		"cost": {
@@ -17044,14 +17067,14 @@
 	},
 	"glm5.3": {
 		"cost": {
-			"cache_read": 0.029484,
-			"input": 1.37592,
-			"output": 4.32432
+			"cache_read": 0.21276596,
+			"input": 1.34042553,
+			"output": 4.14893617
 		},
 		"limit": {
-			"context": 1000000
+			"context": 1048576
 		},
-		"provider": "nan"
+		"provider": "sarvam"
 	},
 	"glm5.3-754b": {
 		"cost": {
@@ -17066,14 +17089,14 @@
 	},
 	"glm5.3-flash": {
 		"cost": {
-			"cache_read": 0.029484,
-			"input": 0.14742,
-			"output": 0.4914
+			"cache_read": 0.02659574,
+			"input": 0.14361702,
+			"output": 0.4787234
 		},
 		"limit": {
-			"context": 1000000
+			"context": 1048576
 		},
-		"provider": "nan"
+		"provider": "sarvam"
 	},
 	"global.amazon.nova-2-lite-v1:0": {
 		"cost": {
@@ -35777,12 +35800,24 @@
 	},
 	"sarvam-105b": {
 		"cost": {
-			"cache_read": 0.05263423,
-			"input": 0.15790269,
-			"output": 0.63161075
+			"cache_read": 0.00265957,
+			"input": 0.10638298,
+			"output": 0.26595745
 		},
 		"limit": {
-			"context": 131072
+			"context": 128000
+		},
+		"provider": "sarvam"
+	},
+	"sarvam-105b-conversations": {
+		"cost": {
+			"cache_read": 0.00265957,
+			"input": 0.10638298,
+			"output": 0.26595745
+		},
+		"exactOnly": true,
+		"limit": {
+			"context": 32000
 		},
 		"provider": "sarvam"
 	},
@@ -38110,6 +38145,17 @@
 			"context": 32000
 		},
 		"provider": "cloudflare-ai-gateway"
+	},
+	"ultramarine-1-flash": {
+		"cost": {
+			"cache_read": 0.03,
+			"input": 0.15,
+			"output": 0.5
+		},
+		"limit": {
+			"context": 1048573
+		},
+		"provider": "concentrate"
 	},
 	"umans-coder": {
 		"cost": {
