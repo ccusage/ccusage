@@ -12,6 +12,16 @@ catalogs:
     vitepress: 2.0.0-alpha.21
     vitepress-plugin-group-icons: ^1.8.2
     vitepress-plugin-llms: ^1.15.0
+  telemetry:
+    '@tanstack/charts': ^1.5.0
+    '@cloudflare/vite-plugin': 2.0.0-rc.2
+    '@cloudflare/workers-types': ^5.20261018.1
+    '@hono/zod-validator': ^0.9.1
+    cf: 1.0.0-rc.2
+    hono: ^4.13.13
+    json-schema-to-ts: ^3.1.1
+    vite: ^8.3.4
+    zod: ^4.6.7
   types:
     '@types/node': ^26.6.6
     '@types/react': ^19.3.0

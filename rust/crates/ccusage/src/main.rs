@@ -1,6 +1,7 @@
 mod adapter;
 mod cli;
 mod http;
+mod telemetry;
 
 use std::process::ExitCode;
 
@@ -28,14 +29,23 @@ fn main() -> Result<ExitCode> {
         Ok(None) => return Ok(ExitCode::SUCCESS),
         Err(status) => return Ok(status),
     };
-    match command {
+    let ping = telemetry::start(
+        Some(&command),
+        command.shared().is_some_and(|shared| shared.offline),
+    );
+    let result = match command {
         Command::All(args) => adapter::all::run(args),
         Command::Claude { report, project } => {
             adapter::claude::run_report(report, project.as_deref())
         }
         Command::Statusline(args) => adapter::claude::run_statusline(args),
         Command::Agent(agent, args) => adapter::all::runner(agent, args),
-    }?;
+        Command::Telemetry(action) => telemetry::run(action),
+    };
+    if let Some(ping) = ping {
+        ping.finish();
+    }
+    result?;
     Ok(ExitCode::SUCCESS)
 }
 

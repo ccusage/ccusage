@@ -64,6 +64,10 @@ For directory variables, a blank override falls back to the default locations, a
 
 Specifies where ccusage should look for Claude Code data. See [Claude Code](/guide/claude/) for default paths, multiple-directory behavior, and Claude-specific examples.
 
+## Telemetry
+
+`CCUSAGE_TELEMETRY_DISABLED`, `DO_NOT_TRACK`, and `CI` disable the anonymous daily usage ping when their value is non-empty and is neither `0` nor `false`. The comparison ignores surrounding whitespace, and `false` is case-insensitive. `CCUSAGE_TELEMETRY_DEBUG=1` prints the payload instead of sending it. See [Telemetry](/guide/telemetry) for exactly what is sent.
+
 ## LOG_LEVEL
 
 Controls warnings, progress, and pricing logs. `LOG_LEVEL=0` also hides table titles; table rows and JSON data are unchanged. `--debug` still prints skipped-input details.

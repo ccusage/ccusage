@@ -7,3 +7,8 @@ reason = "the distributed CLI"
 package = "ccusage-config"
 bin = "generate-config-schema"
 reason = "writes apps/ccusage/config-schema.json; the config-schema flake check runs it"
+
+[[production]]
+package = "ccusage-telemetry"
+bin = "generate-telemetry-schema"
+reason = "writes apps/telemetry/src/v1/ping-schema.gen.ts; the telemetry-schema flake check runs it"

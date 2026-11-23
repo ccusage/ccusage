@@ -23,6 +23,21 @@ pub(crate) fn fetch_json(url: &str, load: &mut dyn FnMut(&str) -> bool) -> io::R
     fetch_json_with_cache_dir(url, cache_dir.as_deref(), load)
 }
 
+pub(crate) fn post_json(url: &str, body: &str, timeout: Duration) -> io::Result<()> {
+    let status = http_agent(timeout)
+        .post(url)
+        .header("content-type", "application/json")
+        .send(body)
+        .map_err(|error| io::Error::other(error.to_string()))?
+        .status()
+        .as_u16();
+    if (200..300).contains(&status) {
+        Ok(())
+    } else {
+        Err(io::Error::other(format!("HTTP {status}")))
+    }
+}
+
 fn default_cache_dir() -> Option<PathBuf> {
     cache_dir_under(
         Environment::current()
@@ -50,15 +65,7 @@ fn fetch_json_with_cache_dir(
     let cache = cache_dir.map(|dir| CacheEntry::for_url(dir, url));
     let cached = cache.as_ref().and_then(CacheEntry::read);
 
-    let agent = ureq::Agent::config_builder()
-        .timeout_global(Some(Duration::from_secs(PRICING_FETCH_TIMEOUT_SECONDS)))
-        .tls_config(
-            ureq::tls::TlsConfig::builder()
-                .unversioned_rustls_crypto_provider(Arc::new(tls::provider()))
-                .build(),
-        )
-        .build()
-        .new_agent();
+    let agent = http_agent(Duration::from_secs(PRICING_FETCH_TIMEOUT_SECONDS));
     let mut request = agent.get(url);
     if let Some(cached) = cached.as_ref() {
         request = request.header("if-none-match", &cached.etag);
@@ -110,6 +117,18 @@ fn fetch_json_with_cache_dir(
         cache.write(etag, &body);
     }
     Ok(())
+}
+
+fn http_agent(timeout: Duration) -> ureq::Agent {
+    ureq::Agent::config_builder()
+        .timeout_global(Some(timeout))
+        .tls_config(
+            ureq::tls::TlsConfig::builder()
+                .unversioned_rustls_crypto_provider(Arc::new(tls::provider()))
+                .build(),
+        )
+        .build()
+        .new_agent()
 }
 
 fn read_bounded_body(mut reader: impl Read, max_bytes: u64) -> io::Result<String> {

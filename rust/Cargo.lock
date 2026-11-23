@@ -122,6 +122,7 @@ dependencies = [
  "ccusage-core",
  "ccusage-environment",
  "ccusage-pricing-snapshots",
+ "ccusage-telemetry",
  "ccusage-test-support",
  "insta",
  "jiff",
@@ -129,6 +130,7 @@ dependencies = [
  "ring",
  "rustls",
  "rustls-webpki",
+ "serde",
  "serde_json",
  "sqlite",
  "ureq",
@@ -510,6 +512,15 @@ dependencies = [
  "ccusage-environment",
  "miniz_oxide",
  "minreq",
+ "serde_json",
+]
+
+[[package]]
+name = "ccusage-telemetry"
+version = "0.0.0"
+dependencies = [
+ "schemars",
+ "serde",
  "serde_json",
 ]
 

@@ -1,4 +1,5 @@
 mod ccusage 'apps/ccusage'
+mod telemetry 'apps/telemetry'
 mod docs
 mod rust
 
@@ -54,7 +55,7 @@ test: rust::test test-node
 
 # Run Node's built-in test runner for TypeScript package and tooling tests
 test-node:
-    TZ=UTC node --test 'apps/ccusage/**/*.test.ts' 'nix/tools/**/*.test.ts'
+    TZ=UTC node --test 'apps/ccusage/**/*.test.ts' 'apps/telemetry/**/*.test.ts' 'nix/tools/**/*.test.ts'
 
 # Generate real-sized benchmark fixtures for PR performance comparisons; `--size-mib`, `--codex-size-mib`, `--grok-size-mib`, and `--opencode-size-mib` shrink each one
 [positional-arguments]

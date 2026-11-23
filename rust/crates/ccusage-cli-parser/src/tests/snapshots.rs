@@ -83,6 +83,10 @@ fn command_snapshot(command: Command) -> Value {
             "contextMediumThreshold": args.context_thresholds.medium(),
             "debug": args.debug,
         }),
+        Command::Telemetry(action) => json!({
+            "type": "telemetry",
+            "action": format!("{action:?}"),
+        }),
         Command::Agent(_, AgentCommand::Statusline(args)) => json!({
             "type": "codex-statusline",
             "shared": shared_snapshot(&args.shared),

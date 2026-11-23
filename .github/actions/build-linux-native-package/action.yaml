@@ -15,6 +15,9 @@ inputs:
   save-nix-cache:
     description: Whether this job may persist the Nix store; forwarded to setup-nix-cache as `save`.
     default: 'true'
+  telemetry-enabled:
+    description: Whether this official release build should report usage.
+    default: 'false'
 runs:
   using: composite
   steps:
@@ -24,21 +27,29 @@ runs:
         save: ${{ inputs.save-nix-cache }}
 
     - name: Build Linux static binary and check its target under the unsafe_code forbid
+      id: build
       shell: bash
       env:
         ARCH: ${{ inputs.arch }}
-      run: nix build ".#ccusage-release-linux-$ARCH" ".#ccusage-release-linux-$ARCH.passthru.unsafeCodeCheck"
+        TELEMETRY_ENABLED: ${{ inputs.telemetry-enabled }}
+      run: |
+        package="ccusage-release-linux-$ARCH"
+        if [ "$TELEMETRY_ENABLED" = "true" ]; then
+          package="$package-telemetry"
+        fi
+        echo "package=$package" >> "$GITHUB_OUTPUT"
+        nix build ".#$package" ".#$package.passthru.unsafeCodeCheck"
 
     - name: Root current Crane artifacts for cache save
       if: inputs.save-nix-cache == 'true'
       shell: bash
       env:
-        ARCH: ${{ inputs.arch }}
+        PACKAGE: ${{ steps.build.outputs.package }}
       run: |
         system="$(nix eval --impure --raw --expr builtins.currentSystem)"
         user_gcroot="/nix/var/nix/gcroots/per-user/$(id -un)/ci"
         mkdir -p "$user_gcroot"
-        nix build ".#packages.$system.ccusage-release-linux-$ARCH.passthru.cacheRoot" \
+        nix build ".#packages.$system.$PACKAGE.passthru.cacheRoot" \
           --out-link "$user_gcroot/ccusage-cargo-artifacts"
 
     - name: Stage native package
@@ -46,6 +57,7 @@ runs:
       env:
         ARCH: ${{ inputs.arch }}
         BINARY: ${{ inputs.binary }}
+        CCUSAGE_TELEMETRY_ENABLED: ${{ inputs.telemetry-enabled }}
       run: apps/ccusage/scripts/stage-native-package.nu --platform linux --arch "$ARCH" --binary "$BINARY"
 
     - name: Archive native package binary

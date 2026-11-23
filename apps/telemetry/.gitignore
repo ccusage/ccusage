@@ -1,0 +1,3 @@
+.cloudflare/
+.wrangler/
+dist/

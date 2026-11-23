@@ -18,5 +18,5 @@ pub use types::{
     CliConfig, CodexSpeed, CodexStatuslineArgs, ColorChoice, Command, CostMode, CostSource,
     DATE_BOUND_FORMATS, DailyArgs, NamedPiStore, NoConfig, PeriodUnit, PricingOverride,
     ReportClock, ReportTimezone, SessionArgs, SharedArgs, SortOrder, SourceArgs, StatuslineArgs,
-    VisualBurnRate, WeekDay, WeeklyArgs, session_cost_ordering,
+    TelemetryAction, VisualBurnRate, WeekDay, WeeklyArgs, session_cost_ordering,
 };

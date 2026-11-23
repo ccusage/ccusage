@@ -13,6 +13,7 @@ mod help_codegen;
 
 const CLI_HELP_JSON: &str = "src/cli-help.json";
 const CLI_COMMANDS_JSON: &str = "src/cli-commands.json";
+const ROOT_NON_REPORT_COMMANDS: &[&str] = &["telemetry"];
 
 fn main() -> Result<(), String> {
     println!("cargo:rerun-if-changed={CLI_HELP_JSON}");
@@ -125,6 +126,7 @@ fn check_agent_pages(command_spec: &Value) -> Result<(), String> {
     let mut leaf_pages = BTreeMap::<&str, BTreeSet<&str>>::new();
     for page in pages {
         match page_path(page)?[..] {
+            [agent] if ROOT_NON_REPORT_COMMANDS.contains(&agent) => {}
             [agent] => {
                 if let Some(commands) = page["commands"].as_array() {
                     index_pages.insert(agent, command_names(commands)?.collect::<BTreeSet<_>>());
@@ -178,7 +180,7 @@ fn check_agent_pages(command_spec: &Value) -> Result<(), String> {
     let root_reports = root
         .iter()
         .copied()
-        .filter(|name| !agent_names.contains(name))
+        .filter(|name| !agent_names.contains(name) && !ROOT_NON_REPORT_COMMANDS.contains(name))
         .collect::<BTreeSet<_>>();
     let default_agent = &table[AGENTS[0].name];
     if &root_reports != default_agent {

@@ -49,9 +49,14 @@
     lib.mkIf pkgs.stdenv.hostPlatform.isLinux {
       packages = {
         "ccusage-release-linux-${arch}" = config.packages.ccusage-static;
+        "ccusage-release-linux-${arch}-telemetry" = config.packages.ccusage-static-telemetry;
         # NOTE(2026-06-11, #1279): Blacksmith trims the sticky disk to Nix GC roots. Expose the static build artifacts so CI can root them across runs.
         ccusage-static = staticPackage {
           llvmProfdata = "${rustToolchain}/lib/rustlib/${pkgs.stdenv.hostPlatform.rust.rustcTarget}/bin/llvm-profdata";
+        };
+        ccusage-static-telemetry = staticPackage {
+          llvmProfdata = "${rustToolchain}/lib/rustlib/${pkgs.stdenv.hostPlatform.rust.rustcTarget}/bin/llvm-profdata";
+          telemetryEnabled = true;
         };
         # NOTE(2026-11-21, #2457): PGO profiles vary between training runs. The PR perf comparison builds this untrained twin so it measures code changes, not profile noise.
         ccusage-static-no-pgo = staticPackage {

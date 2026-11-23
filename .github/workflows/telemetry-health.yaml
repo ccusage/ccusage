@@ -1,0 +1,23 @@
+name: Check telemetry rollup
+
+on:
+  schedule:
+    - cron: '23 2 * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  check:
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 2
+    steps:
+      - name: Check the latest completed UTC day
+        run: |
+          telemetry_day=$(date -u -d yesterday +%F)
+          curl --fail --silent --show-error --max-time 30 https://telemetry.ccusage.com/v1/stats \
+            | jq --exit-status --arg expected "$telemetry_day" '.days[-1].date == $expected'

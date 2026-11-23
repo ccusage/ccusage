@@ -11,16 +11,20 @@
   llvmProfdata ? null,
   maxMissingFunctions ? 0,
   extraRustflags ? "",
+  telemetryEnabled ? false,
 }:
 let
   cargoExtraArgs = "-p ccusage --bin ccusage --target ${target}";
+  telemetryArgs = pkgs.lib.optionalAttrs telemetryEnabled {
+    CCUSAGE_TELEMETRY_ENDPOINT = "https://telemetry.ccusage.com/v1/ping";
+  };
   withExtraRustflags =
     args:
     args
     // pkgs.lib.optionalAttrs (extraRustflags != "") {
       RUSTFLAGS = "${args.RUSTFLAGS} ${extraRustflags}";
     };
-  commonArgs = withExtraRustflags (package.passthru.commonArgs // overrides) // {
+  commonArgs = withExtraRustflags (package.passthru.commonArgs // overrides // telemetryArgs) // {
     inherit cargoExtraArgs;
   };
   depsOnlyArgs = withExtraRustflags (package.passthru.depsOnlyArgs // overrides) // {

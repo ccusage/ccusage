@@ -110,6 +110,7 @@ jobs:
           binary: ${{ matrix.binary }}
           cache-scope: ${{ matrix.name }}
           save-nix-cache: false
+          telemetry-enabled: 'true'
       - uses: ./.github/actions/build-macos-nix-native-package
         if: matrix.platform == 'darwin'
         with:
@@ -117,12 +118,14 @@ jobs:
           binary: ${{ matrix.binary }}
           cache-scope: ${{ matrix.name }}
           save-nix-cache: false
+          telemetry-enabled: 'true'
       - uses: ./.github/actions/build-windows-native-package
         if: matrix.platform == 'win32'
         with:
           arch: ${{ matrix.arch }}
           binary: ${{ matrix.binary }}
           save-cargo-cache: ${{ matrix.arch == 'arm64' }}
+          telemetry-enabled: 'true'
 
   npm:
     needs:
@@ -160,6 +163,8 @@ jobs:
             tar -xf "$archive"
           done
       - name: Publish native packages
+        env:
+          CCUSAGE_TELEMETRY_ENABLED: 'true'
         run: pnpm --recursive --filter='./packages/ccusage-*' publish --provenance --no-git-checks --access public
       - name: Wait for native package registry availability
         run: .github/scripts/npm-registry-gate.nu

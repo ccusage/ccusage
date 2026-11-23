@@ -75,6 +75,14 @@ pub enum Command {
     },
     Statusline(StatuslineArgs),
     Agent(StandardAgent, AgentCommand),
+    Telemetry(TelemetryAction),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TelemetryAction {
+    Status,
+    Enable,
+    Disable,
 }
 
 pub enum ClaudeReport {
@@ -120,7 +128,7 @@ impl Command {
                 ClaudeReport::Blocks(args) => &args.shared,
             }),
             Self::Agent(_, AgentCommand::Statusline(args)) => Some(&args.shared),
-            Self::Statusline(_) => None,
+            Self::Statusline(_) | Self::Telemetry(_) => None,
         }
     }
 
@@ -135,7 +143,7 @@ impl Command {
                 ClaudeReport::Blocks(args) => &mut args.shared,
             }),
             Self::Agent(_, AgentCommand::Statusline(args)) => Some(&mut args.shared),
-            Self::Statusline(_) => None,
+            Self::Statusline(_) | Self::Telemetry(_) => None,
         }
     }
 
@@ -148,7 +156,9 @@ impl Command {
                 ClaudeReport::Weekly(args) => Some((PeriodUnit::Week, args.start_of_week)),
                 ClaudeReport::Session(_) | ClaudeReport::Blocks(_) => None,
             },
-            Self::Statusline(_) | Self::Agent(_, AgentCommand::Statusline(_)) => None,
+            Self::Statusline(_)
+            | Self::Telemetry(_)
+            | Self::Agent(_, AgentCommand::Statusline(_)) => None,
         }
     }
 }

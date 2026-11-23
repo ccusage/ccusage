@@ -80,6 +80,10 @@
 				"description": "Display compact status line for Claude Code hooks with hybrid time+file caching (Beta)"
 			},
 			{
+				"name": "telemetry",
+				"description": "Manage usage telemetry preferences"
+			},
+			{
 				"name": "claude",
 				"description": "Show Claude Code usage commands"
 			},
@@ -197,6 +201,16 @@
 			"description": "Display compact status line for Claude Code hooks with hybrid time+file caching (Beta)",
 			"usage": "ccusage statusline <OPTIONS>",
 			"options": "statusline_options"
+		},
+		{
+			"path": ["telemetry"],
+			"description": "Manage usage telemetry preferences.",
+			"usage": "ccusage telemetry <ACTION>",
+			"commands": [
+				{ "name": "status", "description": "Show the current telemetry status" },
+				{ "name": "enable", "description": "Enable usage telemetry" },
+				{ "name": "disable", "description": "Disable usage telemetry" }
+			]
 		},
 		{
 			"path": ["claude"],

@@ -1,0 +1,24 @@
+{
+	"name": "@ccusage/telemetry",
+	"version": "0.0.0",
+	"private": true,
+	"description": "Cloudflare Worker that collects the anonymous ccusage daily usage ping",
+	"type": "module",
+	"scripts": {
+		"build": "cf build",
+		"deploy": "cf deploy",
+		"dev": "cf dev"
+	},
+	"devDependencies": {
+		"@cloudflare/vite-plugin": "catalog:telemetry",
+		"@cloudflare/workers-types": "catalog:telemetry",
+		"@hono/zod-validator": "catalog:telemetry",
+		"@tanstack/charts": "catalog:telemetry",
+		"@types/node": "catalog:types",
+		"cf": "catalog:telemetry",
+		"hono": "catalog:telemetry",
+		"json-schema-to-ts": "catalog:telemetry",
+		"vite": "catalog:telemetry",
+		"zod": "catalog:telemetry"
+	}
+}

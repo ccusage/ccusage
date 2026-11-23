@@ -36,6 +36,7 @@ ccusage-config = { path = "crates/ccusage-config" }
 ccusage-core = { path = "crates/ccusage-core" }
 ccusage-environment = { path = "crates/ccusage-environment" }
 ccusage-pricing-snapshots = { path = "crates/ccusage-pricing-snapshots" }
+ccusage-telemetry = { path = "crates/ccusage-telemetry" }
 ccusage-terminal = { path = "crates/ccusage-terminal" }
 ccusage-test-support = { path = "crates/ccusage-test-support", features = ["test-environment"] }
 ccusage-zstd = { path = "crates/ccusage-zstd" }

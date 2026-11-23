@@ -189,6 +189,10 @@ bunx ccusage monthly --compact  # Compact monthly report
 - 🌍 **Timezone Support**: Configure timezone for date grouping with `--timezone` option
 - ⚙️ **Configuration Files**: Set defaults with JSON configuration files, complete with IDE autocomplete and validation
 
+## Telemetry
+
+After a first-run notice, official releases send at most one usage ping per UTC day (version, OS, CPU architecture, first command name, and a random installation ID) to understand adoption. Nothing from your agent logs is sent. Collection is off with `--offline` and in CI. Opt out with `ccusage telemetry disable` or `DO_NOT_TRACK=1`. The client, collector, release pipeline and [aggregate dashboard](https://telemetry.ccusage.com/) are public. See [Telemetry](https://ccusage.com/guide/telemetry) for details.
+
 ## Documentation
 
 Full documentation is available at **[ccusage.com](https://ccusage.com/)**

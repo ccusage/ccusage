@@ -1,0 +1,20 @@
+[private]
+default:
+    @just --list
+
+# Run the collector locally
+dev:
+    pnpm run dev
+
+# Deploy the Worker to Cloudflare
+deploy:
+    pnpm run deploy
+
+# Regenerate src/v1/ping-schema.gen.ts from the Rust `Ping` type
+generate-schema:
+    cargo run --quiet --manifest-path ../../rust/Cargo.toml -p ccusage-telemetry --bin generate-telemetry-schema -- src/v1/ping-schema.gen.ts
+    oxfmt --write src/v1/ping-schema.gen.ts
+
+# Run the Worker's Node tests
+test:
+    TZ=UTC node --test src/v1/ping.test.ts src/rollup.test.ts src/stats.test.ts

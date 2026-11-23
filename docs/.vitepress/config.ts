@@ -59,6 +59,7 @@ export default defineConfig({
 		nav: [
 			{ text: 'Guide', link: '/guide/' },
 			{ text: 'Blog', link: '/blog/' },
+			{ text: 'Statistics', link: 'https://telemetry.ccusage.com/' },
 			{
 				text: 'Links',
 				items: [
@@ -126,6 +127,7 @@ export default defineConfig({
 						{ text: 'Environment Variables', link: '/guide/environment-variables' },
 						{ text: 'Configuration Files', link: '/guide/config-files' },
 						{ text: 'Cost Calculation Modes', link: '/guide/cost-modes' },
+						{ text: 'Telemetry', link: '/guide/telemetry' },
 					],
 				},
 				{

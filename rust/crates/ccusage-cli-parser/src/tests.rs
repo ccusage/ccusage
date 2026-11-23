@@ -16,6 +16,7 @@ mod precedence;
 mod sections;
 mod snapshots;
 mod statusline;
+mod telemetry;
 mod validation;
 mod week_start;
 

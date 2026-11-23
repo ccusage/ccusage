@@ -16,6 +16,9 @@ inputs:
   save-nix-cache:
     description: Whether this job may persist the Nix store; forwarded to setup-nix-cache as `save`.
     default: 'true'
+  telemetry-enabled:
+    description: Whether this official release build should report usage.
+    default: 'false'
 runs:
   using: composite
   steps:
@@ -30,8 +33,12 @@ runs:
       shell: bash
       env:
         ARCH: ${{ inputs.arch }}
+        TELEMETRY_ENABLED: ${{ inputs.telemetry-enabled }}
       run: |
         package="ccusage-release-darwin-$ARCH"
+        if [ "$TELEMETRY_ENABLED" = "true" ]; then
+          package="$package-telemetry"
+        fi
         echo "package=$package" >> "$GITHUB_OUTPUT"
         nix build ".#$package" ".#$package.passthru.unsafeCodeCheck"
 
@@ -40,6 +47,7 @@ runs:
       env:
         ARCH: ${{ inputs.arch }}
         BINARY: ${{ inputs.binary }}
+        CCUSAGE_TELEMETRY_ENABLED: ${{ inputs.telemetry-enabled }}
       run: apps/ccusage/scripts/stage-native-package.nu --platform darwin --arch "$ARCH" --binary "$BINARY"
 
     - name: Archive native package binary

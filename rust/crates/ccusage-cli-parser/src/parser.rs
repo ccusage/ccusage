@@ -5,7 +5,8 @@ use crate::help::help_text_for_args;
 use ccusage_cli::{
     AgentCommand, AgentCommandArgs, AgentCommandKind, AgentId, AgentReportKind, BlocksArgs,
     BlocksOption, ClaudeReport, ClaudeStatuslineOption, CliConfig, Command, ReportTimezone,
-    SessionArgs, SessionLength, SharedArgs, StandardAgent, StatuslineArgs, WeekDay, WeeklyArgs,
+    SessionArgs, SessionLength, SharedArgs, StandardAgent, StatuslineArgs, TelemetryAction,
+    WeekDay, WeeklyArgs,
 };
 
 mod agents;
@@ -113,9 +114,14 @@ fn parse_invocation(
     config: &dyn CliConfig,
     known_timezone: Option<&ReportTimezone>,
 ) -> Result<Command, String> {
-    if let Some(message) = config.config_error() {
+    let is_telemetry_command = ccusage_cli::command_tokens(&parser.args)
+        .first()
+        .map(String::as_str)
+        == Some("telemetry");
+    if !is_telemetry_command && let Some(message) = config.config_error() {
         return Err(message.to_string());
     }
+
     let mut root_options = RootOptions::default();
     while let Some(arg) = parser.peek() {
         if !arg.starts_with('-') {
@@ -127,7 +133,14 @@ fn parse_invocation(
         root_options.shared_flags.push(read_shared_flag(parser)?);
     }
 
-    let mut command = match parser.next() {
+    let command = parser.next();
+    if command.as_deref() == Some("telemetry") {
+        let command = parse_telemetry_command(parser)?;
+        parser.finish()?;
+        return Ok(command);
+    }
+
+    let mut command = match command {
         None => {
             let shared = root_options.shared(config, false);
             Command::All(root_options.into_agent_args(shared, AgentReportKind::Daily))
@@ -217,6 +230,20 @@ fn parse_command(
         "session" => parse_top_level_session_command(parser, shared, config, root_options),
         _ => Err(format!("Unknown command '{command}'")),
     }
+}
+
+fn parse_telemetry_command(parser: &mut ArgParser) -> Result<Command, String> {
+    let action = match parser.next().as_deref() {
+        None | Some("status") => TelemetryAction::Status,
+        Some("enable") => TelemetryAction::Enable,
+        Some("disable") => TelemetryAction::Disable,
+        Some(other) => {
+            return Err(format!(
+                "Unknown telemetry action '{other}'. Expected status, enable, or disable."
+            ));
+        }
+    };
+    Ok(Command::Telemetry(action))
 }
 
 fn parse_extra_command(
