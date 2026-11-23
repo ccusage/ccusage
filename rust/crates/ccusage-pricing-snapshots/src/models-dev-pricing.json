@@ -12825,8 +12825,8 @@
 	"deepseek/deepseek-chat-v3-0324": {
 		"cost": {
 			"cache_read": 0.14812,
-			"input": 0.30682,
-			"output": 1.20612
+			"input": 0.2645,
+			"output": 1.058
 		},
 		"limit": {
 			"context": 128000
@@ -18539,9 +18539,9 @@
 	},
 	"google/gemma-4-26b-a4b-it:thinking": {
 		"cost": {
-			"cache_read": 0.028,
-			"input": 0.056,
-			"output": 0.192
+			"cache_read": 0.046,
+			"input": 0.07,
+			"output": 0.24
 		},
 		"limit": {
 			"context": 262144
@@ -31535,11 +31535,44 @@
 		},
 		"provider": "nano-gpt"
 	},
+	"orca/orcacyber-hy4-flash": {
+		"cost": {
+			"cache_read": 0.003,
+			"input": 0.07,
+			"output": 0.281
+		},
+		"limit": {
+			"context": 1048064
+		},
+		"provider": "nano-gpt"
+	},
+	"orca/orcacyber-inkling-2-mini": {
+		"cost": {
+			"cache_read": 0.05,
+			"input": 0.2,
+			"output": 0.5
+		},
+		"limit": {
+			"context": 1048064
+		},
+		"provider": "nano-gpt"
+	},
 	"orca/orcacyber-k3.1-pro": {
 		"cost": {
 			"cache_read": 0.35,
 			"input": 2,
 			"output": 5
+		},
+		"limit": {
+			"context": 1048064
+		},
+		"provider": "nano-gpt"
+	},
+	"orca/orcacyber-ling-3.2-flash": {
+		"cost": {
+			"cache_read": 0.12,
+			"input": 0.6,
+			"output": 1.8
 		},
 		"limit": {
 			"context": 1048064
@@ -31577,6 +31610,17 @@
 		},
 		"limit": {
 			"context": 261632
+		},
+		"provider": "nano-gpt"
+	},
+	"orca/orcacyber-step-5-preview": {
+		"cost": {
+			"cache_read": 0.2,
+			"input": 2,
+			"output": 5.4
+		},
+		"limit": {
+			"context": 999488
 		},
 		"provider": "nano-gpt"
 	},
@@ -41106,7 +41150,7 @@
 	},
 	"z-ai/glm-4.7-flash:thinking": {
 		"cost": {
-			"cache_read": 0.03025,
+			"cache_read": 0.0605,
 			"input": 0.0605,
 			"output": 0.4
 		},
