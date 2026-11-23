@@ -391,6 +391,7 @@
 		"hy4-preview",
 		"image-01",
 		"inkling",
+		"inkling-2-mini",
 		"inkling-2-small",
 		"inkling-small",
 		"jamba-large",
@@ -688,8 +689,6 @@
 		"rnj-1-instruct",
 		"sakana-namazu",
 		"sarvam-105b",
-		"sarvam-30b",
-		"sarvam-m",
 		"schematron-v2-small",
 		"schematron-v2-turbo",
 		"seed-1-6",
@@ -757,9 +756,7 @@
 		"claude-opus-5-5": ["fast"],
 		"gpt-4-1": ["fast"],
 		"gpt-4-1-mini": ["fast"],
-		"gpt-4-1-nano": ["fast"],
 		"gpt-4o": ["fast"],
-		"gpt-4o-2024-05-13": ["fast"],
 		"gpt-4o-mini": ["fast"],
 		"gpt-5": ["fast", "flex"],
 		"gpt-5-1": ["fast", "flex"],
@@ -782,8 +779,7 @@
 		"gpt-6-astra": ["fast", "flex", "pro", "ultrafast"],
 		"gpt-6-luna": ["fast", "flex", "pro"],
 		"gpt-6-sol": ["fast", "flex", "pro"],
-		"o3": ["fast", "flex"],
-		"o4-mini": ["fast", "flex"]
+		"o3": ["fast", "flex"]
 	},
 	"assetPricedModelIds": [
 		"arrow-2",

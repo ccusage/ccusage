@@ -4682,54 +4682,6 @@
 		},
 		"provider": "fastrouter"
 	},
-	"anthropic/claude-opus-4.1:thinking": {
-		"cost": {
-			"cache_read": 1.5,
-			"cache_write": 18.75,
-			"input": 15,
-			"output": 75
-		},
-		"limit": {
-			"context": 200000
-		},
-		"provider": "nano-gpt"
-	},
-	"anthropic/claude-opus-4.1:thinking:1024": {
-		"cost": {
-			"cache_read": 1.5,
-			"cache_write": 18.75,
-			"input": 15,
-			"output": 75
-		},
-		"limit": {
-			"context": 200000
-		},
-		"provider": "nano-gpt"
-	},
-	"anthropic/claude-opus-4.1:thinking:32768": {
-		"cost": {
-			"cache_read": 1.5,
-			"cache_write": 18.75,
-			"input": 15,
-			"output": 75
-		},
-		"limit": {
-			"context": 200000
-		},
-		"provider": "nano-gpt"
-	},
-	"anthropic/claude-opus-4.1:thinking:8192": {
-		"cost": {
-			"cache_read": 1.5,
-			"cache_write": 18.75,
-			"input": 15,
-			"output": 75
-		},
-		"limit": {
-			"context": 200000
-		},
-		"provider": "nano-gpt"
-	},
 	"anthropic/claude-opus-4.5": {
 		"cost": {
 			"cache_read": 0.529,
@@ -7630,17 +7582,6 @@
 			"context": 1000000
 		},
 		"provider": "ofox"
-	},
-	"baseten/Kimi-K2-Instruct-FP4": {
-		"cost": {
-			"cache_read": 0.2,
-			"input": 0.4,
-			"output": 1.8
-		},
-		"limit": {
-			"context": 131072
-		},
-		"provider": "nano-gpt"
 	},
 	"baseten/bison-1": {
 		"cost": {
@@ -11867,7 +11808,7 @@
 	},
 	"deepseek-ai/DeepSeek-V3.1:thinking": {
 		"cost": {
-			"cache_read": 0.1,
+			"cache_read": 0.13,
 			"input": 0.2,
 			"output": 0.7
 		},
@@ -13529,24 +13470,26 @@
 	},
 	"devstral-2512": {
 		"cost": {
-			"input": 0.4,
-			"output": 2
+			"cache_read": 0.045,
+			"input": 0.478,
+			"output": 2.392
 		},
 		"limit": {
-			"context": 262144
+			"context": 256000
 		},
-		"provider": "mistral"
+		"provider": "cortecs"
 	},
 	"devstral-latest": {
 		"cost": {
-			"input": 0.4,
-			"output": 2
+			"cache_read": 0.44,
+			"input": 0.44,
+			"output": 2.2
 		},
 		"exactOnly": true,
 		"limit": {
-			"context": 262144
+			"context": 256000
 		},
-		"provider": "mistral"
+		"provider": "requesty"
 	},
 	"devstral-latest@eu": {
 		"cost": {
@@ -13559,17 +13502,6 @@
 			"context": 256000
 		},
 		"provider": "requesty"
-	},
-	"devstral-medium-latest": {
-		"cost": {
-			"input": 0.4,
-			"output": 2
-		},
-		"exactOnly": true,
-		"limit": {
-			"context": 262144
-		},
-		"provider": "mistral"
 	},
 	"dola-seed-2-1-turbo-260628": {
 		"cost": {
@@ -15134,16 +15066,6 @@
 			"context": 2000000
 		},
 		"provider": "302ai"
-	},
-	"gemini-2.5-computer-use-preview-10-2025": {
-		"cost": {
-			"input": 1.25,
-			"output": 10
-		},
-		"limit": {
-			"context": 128000
-		},
-		"provider": "google"
 	},
 	"gemini-2.5-flash": {
 		"cost": {
@@ -18617,9 +18539,9 @@
 	},
 	"google/gemma-4-26b-a4b-it:thinking": {
 		"cost": {
-			"cache_read": 0.0375,
-			"input": 0.0675,
-			"output": 0.225
+			"cache_read": 0.028,
+			"input": 0.056,
+			"output": 0.192
 		},
 		"limit": {
 			"context": 262144
@@ -18681,17 +18603,6 @@
 		},
 		"provider": "nano-gpt"
 	},
-	"gpt-3.5-turbo": {
-		"cost": {
-			"cache_read": 0,
-			"input": 0.5,
-			"output": 1.5
-		},
-		"limit": {
-			"context": 16385
-		},
-		"provider": "openai"
-	},
 	"gpt-3.5-turbo-0125": {
 		"cost": {
 			"input": 0.5,
@@ -18725,16 +18636,6 @@
 		},
 		"provider": "azure"
 	},
-	"gpt-4": {
-		"cost": {
-			"input": 30,
-			"output": 60
-		},
-		"limit": {
-			"context": 8192
-		},
-		"provider": "openai"
-	},
 	"gpt-4-turbo": {
 		"cost": {
 			"input": 10,
@@ -18744,7 +18645,7 @@
 		"limit": {
 			"context": 128000
 		},
-		"provider": "openai"
+		"provider": "azure"
 	},
 	"gpt-4-turbo-vision": {
 		"cost": {
@@ -18815,7 +18716,7 @@
 		"limit": {
 			"context": 1047576
 		},
-		"provider": "openai"
+		"provider": "azure"
 	},
 	"gpt-4.1-nano@eu": {
 		"cost": {
@@ -18847,17 +18748,6 @@
 			"input": 2.5,
 			"output": 10
 		},
-		"limit": {
-			"context": 128000
-		},
-		"provider": "openai"
-	},
-	"gpt-4o-2024-05-13": {
-		"cost": {
-			"input": 5,
-			"output": 15
-		},
-		"exactOnly": true,
 		"limit": {
 			"context": 128000
 		},
@@ -19189,7 +19079,7 @@
 		"limit": {
 			"context": 128000
 		},
-		"provider": "openai"
+		"provider": "opencode"
 	},
 	"gpt-5.3-codex-xhigh": {
 		"cost": {
@@ -21695,6 +21585,18 @@
 		},
 		"provider": "concentrate"
 	},
+	"inkling-2-mini-uncensored": {
+		"cost": {
+			"cache_read": 0.0286,
+			"input": 0.1429,
+			"output": 0.7143
+		},
+		"exactOnly": true,
+		"limit": {
+			"context": 262144
+		},
+		"provider": "kenari"
+	},
 	"inkling-2-small": {
 		"cost": {
 			"cache_read": 0.061,
@@ -22112,18 +22014,6 @@
 			"context": 262144
 		},
 		"provider": "302ai"
-	},
-	"kimi-k2-instruct-fast": {
-		"cost": {
-			"cache_read": 0.2,
-			"input": 0.4,
-			"output": 1.8
-		},
-		"exactOnly": true,
-		"limit": {
-			"context": 131072
-		},
-		"provider": "nano-gpt"
 	},
 	"kimi-k2-thinking": {
 		"cost": {
@@ -22938,8 +22828,9 @@
 	},
 	"magistral-medium-latest": {
 		"cost": {
-			"input": 2,
-			"output": 5
+			"cache_read": 0.15,
+			"input": 1.5,
+			"output": 7.5
 		},
 		"exactOnly": true,
 		"limit": {
@@ -24384,6 +24275,18 @@
 		},
 		"provider": "mistral"
 	},
+	"ministral-14b-latest": {
+		"cost": {
+			"cache_read": 0.02,
+			"input": 0.2,
+			"output": 0.2
+		},
+		"exactOnly": true,
+		"limit": {
+			"context": 262144
+		},
+		"provider": "mistral"
+	},
 	"ministral-3-3b": {
 		"cost": {
 			"input": 0.1,
@@ -24507,6 +24410,7 @@
 	},
 	"mistral-embed": {
 		"cost": {
+			"cache_read": 0.01,
 			"input": 0.1,
 			"output": 0
 		},
@@ -24585,18 +24489,6 @@
 		},
 		"provider": "cortecs"
 	},
-	"mistral-large-4-0-8": {
-		"cost": {
-			"cache_read": 0.07,
-			"input": 0.7,
-			"output": 2.1
-		},
-		"exactOnly": true,
-		"limit": {
-			"context": 1048576
-		},
-		"provider": "mistral"
-	},
 	"mistral-large-4@eu": {
 		"cost": {
 			"cache_read": 0.07,
@@ -24637,19 +24529,9 @@
 			"output": 2
 		},
 		"limit": {
-			"context": 131072
+			"context": 128000
 		},
-		"provider": "mistral"
-	},
-	"mistral-medium-2508": {
-		"cost": {
-			"input": 0.4,
-			"output": 2
-		},
-		"limit": {
-			"context": 262144
-		},
-		"provider": "mistral"
+		"provider": "azure"
 	},
 	"mistral-medium-2604": {
 		"cost": {
@@ -24782,7 +24664,7 @@
 		"limit": {
 			"context": 128000
 		},
-		"provider": "mistral"
+		"provider": "llmgateway"
 	},
 	"mistral-small-2603": {
 		"cost": {
@@ -26421,17 +26303,6 @@
 		},
 		"limit": {
 			"context": 256000
-		},
-		"provider": "nano-gpt"
-	},
-	"moonshotai/kimi-k2-instruct-0711": {
-		"cost": {
-			"cache_read": 0.2,
-			"input": 0.4,
-			"output": 1.8
-		},
-		"limit": {
-			"context": 128000
 		},
 		"provider": "nano-gpt"
 	},
@@ -28575,7 +28446,7 @@
 		"limit": {
 			"context": 200000
 		},
-		"provider": "openai"
+		"provider": "azure"
 	},
 	"o1-mini": {
 		"cost": {
@@ -28588,17 +28459,6 @@
 			"context": 128000
 		},
 		"provider": "helicone"
-	},
-	"o1-pro": {
-		"cost": {
-			"input": 150,
-			"output": 600
-		},
-		"exactOnly": true,
-		"limit": {
-			"context": 200000
-		},
-		"provider": "openai"
 	},
 	"o3": {
 		"cost": {
@@ -28621,7 +28481,7 @@
 		"limit": {
 			"context": 200000
 		},
-		"provider": "openai"
+		"provider": "azure"
 	},
 	"o3-pro": {
 		"cost": {
@@ -28643,7 +28503,7 @@
 		"limit": {
 			"context": 200000
 		},
-		"provider": "openai"
+		"provider": "azure"
 	},
 	"o4-mini@eu": {
 		"cost": {
@@ -28699,17 +28559,6 @@
 			"context": 262144
 		},
 		"provider": "augure"
-	},
-	"open-mistral-nemo": {
-		"cost": {
-			"input": 0.15,
-			"output": 0.15
-		},
-		"exactOnly": true,
-		"limit": {
-			"context": 128000
-		},
-		"provider": "mistral"
 	},
 	"open-qwen-3.8-flash-next": {
 		"cost": {
@@ -31555,9 +31404,9 @@
 	},
 	"openai/o3-pro-2025-06-10": {
 		"cost": {
-			"cache_read": 11,
-			"input": 22,
-			"output": 88
+			"cache_read": 10,
+			"input": 20,
+			"output": 80
 		},
 		"limit": {
 			"context": 200000
@@ -32215,16 +32064,6 @@
 			"context": 32000
 		},
 		"provider": "azure"
-	},
-	"pixtral-12b": {
-		"cost": {
-			"input": 0.15,
-			"output": 0.15
-		},
-		"limit": {
-			"context": 128000
-		},
-		"provider": "mistral"
 	},
 	"pixtral-12b-2409": {
 		"cost": {
@@ -33947,7 +33786,7 @@
 			"output": 0.6
 		},
 		"limit": {
-			"context": 262144
+			"context": 65536
 		},
 		"provider": "nano-gpt"
 	},
@@ -37701,9 +37540,9 @@
 	},
 	"thinkingmachines/inkling-2-mini": {
 		"cost": {
-			"cache_read": 0.015,
-			"input": 0.075,
-			"output": 0.3
+			"cache_read": 0.0075,
+			"input": 0.0375,
+			"output": 0.15
 		},
 		"limit": {
 			"context": 1048576
