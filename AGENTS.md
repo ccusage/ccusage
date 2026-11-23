@@ -15,3 +15,9 @@ Read the nearest `AGENTS.md` before editing:
 - `apps/ccusage/AGENTS.md` - published npm package
 - `rust/adapters/AGENTS.md` - adapter crates
 - `docs/AGENTS.md` - VitePress documentation site
+
+## Credit
+
+When a change reuses someone else's commit, branch, fork, or PR, including one
+linked from an issue, credit them with a `Co-authored-by:` trailer as the
+`commit` skill describes.
