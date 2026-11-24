@@ -51,7 +51,7 @@
 			"enabled": false
 		},
 		{
-			"description": "The flake's nixpkgs owns the pnpm version; checks.pnpm-version requires packageManager to follow it.",
+			"description": "The flake's nixpkgs owns the pnpm version; `nix fmt` rewrites packageManager to follow it.",
 			"matchManagers": ["npm"],
 			"matchDepTypes": ["packageManager"],
 			"matchPackageNames": ["pnpm"],

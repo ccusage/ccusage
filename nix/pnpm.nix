@@ -1,18 +1,29 @@
-_: {
+{ lib, ... }:
+{
   perSystem =
     { config, pkgs, ... }:
     let
-      manifest = builtins.fromJSON (builtins.readFile ../package.json);
       expected = "pnpm@${config.packages.pnpm.version}";
+      syncPackageManager = pkgs.writeShellApplication {
+        name = "sync-pnpm-package-manager";
+        runtimeInputs = [ pkgs.jq ];
+        text = ''
+          for manifest in "$@"; do
+            if [[ "$(jq -r '.packageManager' "$manifest")" != '${expected}' ]]; then
+              tmp="$(mktemp)"
+              jq --tab --arg expected '${expected}' '.packageManager = $expected' "$manifest" > "$tmp"
+              mv "$tmp" "$manifest"
+            fi
+          done
+        '';
+      };
     in
     {
       packages.pnpm = pkgs.pnpm_12;
-      checks.pnpm-version = pkgs.runCommand "pnpm-version-check" { } ''
-        if [ '${manifest.packageManager}' != '${expected}' ]; then
-          echo "ERROR: package.json packageManager must be ${expected}, matching the flake." >&2
-          exit 1
-        fi
-        touch "$out"
-      '';
+      treefmt.settings.formatter.pnpm-package-manager = {
+        command = lib.getExe syncPackageManager;
+        includes = [ "package.json" ];
+        priority = 0;
+      };
     };
 }
