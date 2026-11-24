@@ -6,7 +6,10 @@
       expected = "pnpm@${config.packages.pnpm.version}";
       syncPackageManager = pkgs.writeShellApplication {
         name = "sync-pnpm-package-manager";
-        runtimeInputs = [ pkgs.jq ];
+        runtimeInputs = [
+          pkgs.coreutils
+          pkgs.jq
+        ];
         text = ''
           for manifest in "$@"; do
             if [[ "$(jq -r '.packageManager' "$manifest")" != '${expected}' ]]; then
