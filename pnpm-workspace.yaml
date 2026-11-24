@@ -15,7 +15,7 @@ catalogs:
   telemetry:
     '@tanstack/charts': ^1.5.0
     '@cloudflare/vite-plugin': 2.0.0-rc.3
-    '@cloudflare/workers-types': ^5.20261120.1
+    '@cloudflare/workers-types': ^5.20261121.1
     '@hono/zod-validator': ^0.9.1
     cf: 1.0.0-rc.2
     hono: ^4.13.19
