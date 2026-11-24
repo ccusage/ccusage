@@ -20,7 +20,7 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     litellm = {
-      url = "file+https://raw.githubusercontent.com/BerriAI/litellm/f409bfd8025f1da52cf7342e98175b14c0a025aa/model_prices_and_context_window.json";
+      url = "file+https://raw.githubusercontent.com/BerriAI/litellm/b2e1ccca8de3e1d8ffd103a323674b6d0b0ca504/model_prices_and_context_window.json";
       flake = false;
     };
     models-dev = {
