@@ -40702,9 +40702,9 @@
 	},
 	"xiaomi/mimo-v2.5-pro": {
 		"cost": {
-			"cache_read": 0.096,
-			"input": 0.48,
-			"output": 1.8,
+			"cache_read": 0.2,
+			"input": 1,
+			"output": 3,
 			"tiers": [
 				{
 					"cache_read": 0.4,
@@ -40718,9 +40718,9 @@
 			]
 		},
 		"limit": {
-			"context": 262144
+			"context": 1048576
 		},
-		"provider": "kilo"
+		"provider": "zenmux"
 	},
 	"xiaomi/mimo-v2.5-pro:thinking": {
 		"cost": {
@@ -42551,9 +42551,9 @@
 	},
 	"~deepseek/deepseek-pro-latest": {
 		"cost": {
-			"cache_read": 0.044,
-			"input": 1.32,
-			"output": 3.96
+			"cache_read": 0.097,
+			"input": 0.111,
+			"output": 4.44
 		},
 		"exactOnly": true,
 		"limit": {
