@@ -10,8 +10,8 @@ it and the collector Worker in `apps/telemetry` that receives it.
 - `bin/generate_telemetry_schema.rs` — writes
   `apps/telemetry/src/v1/ping-schema.gen.ts`, which the Worker validates against
   and derives its TypeScript type from. Run it through
-  `just telemetry::generate-schema`; the `telemetry-schema` flake check fails when
-  the committed module drifts.
+  `just telemetry::generate-schema`, or let `nix fmt` regenerate it whenever this
+  crate changes.
 
 The rest of the client — when to send, opt-outs, the stored state — stays in the
 binary's `telemetry.rs`, since only the payload has to be shared.

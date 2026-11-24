@@ -12,8 +12,7 @@ deploy:
 
 # Regenerate src/v1/ping-schema.gen.ts from the Rust `Ping` type
 generate-schema:
-    cargo run --quiet --manifest-path ../../rust/Cargo.toml -p ccusage-telemetry --bin generate-telemetry-schema -- src/v1/ping-schema.gen.ts
-    oxfmt --write src/v1/ping-schema.gen.ts
+    cd ../.. && nix run .#generate-telemetry-schema
 
 # Run the Worker's Node tests
 test:

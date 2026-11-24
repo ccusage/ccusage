@@ -4,7 +4,7 @@
 //! [`Ping`] is the single definition of the wire format. The Worker never
 //! restates it: `generate-telemetry-schema` turns it into a JSON Schema module
 //! that the Worker validates against and derives its TypeScript type from, and
-//! the `telemetry-schema` flake check fails when that module drifts.
+//! `nix fmt` regenerates that module whenever this crate changes.
 
 use schemars::{JsonSchema, r#gen::SchemaSettings};
 use serde::Serialize;
