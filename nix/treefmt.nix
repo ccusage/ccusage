@@ -19,42 +19,66 @@ in
     let
       inherit (config.packages.ccusage.passthru) commonArgs workspaceArtifacts;
       cargoArtifacts = workspaceArtifacts.foundation;
-      generateConfigSchema = craneLib.buildPackage (
-        commonArgs
-        // {
-          pname = "generate-config-schema";
-          inherit cargoArtifacts;
-          cargoExtraArgs = "-p ccusage-config --bin generate-config-schema --features schema";
-          doCheck = false;
-          meta = {
-            mainProgram = "generate-config-schema";
-          };
-        }
-      );
-      schemaGen = pkgs.writeShellApplication {
+      mkSchemaGen =
+        {
+          name,
+          crate,
+          bin,
+          features ? [ ],
+          output,
+        }:
+        let
+          featureArgs = lib.optionalString (
+            features != [ ]
+          ) " --features ${lib.concatStringsSep "," features}";
+          generator = craneLib.buildPackage (
+            commonArgs
+            // {
+              pname = bin;
+              inherit cargoArtifacts;
+              cargoExtraArgs = "-p ${crate} --bin ${bin}${featureArgs}";
+              doCheck = false;
+              meta.mainProgram = bin;
+            }
+          );
+        in
+        pkgs.writeShellApplication {
+          inherit name;
+          runtimeInputs = [
+            pkgs.coreutils
+            pkgs.diffutils
+            pkgs.oxfmt
+            generator
+          ];
+          text = ''
+            tmp="$(mktemp --suffix=.${lib.last (lib.splitString "." output)})"
+            trap 'rm -f "$tmp"' EXIT
+            # NOTE(2026-11-20, #2343): a dev shell reuses this wrapper from its last
+            # evaluation, so a baked-in generator misses newer fields. The dev
+            # shell sets this variable to build from the working tree; the pure flake
+            # check leaves it unset and keeps the store-built generator.
+            if [[ -n "''${CCUSAGE_SCHEMA_GEN_FROM_WORKSPACE:-}" ]]; then
+              cargo run --locked --quiet --manifest-path rust/Cargo.toml \
+                -p ${crate}${featureArgs} --bin ${bin} -- "$tmp"
+            else
+              ${bin} "$tmp"
+            fi
+            oxfmt --write "$tmp"
+            cmp -s "$tmp" ${output} || cp "$tmp" ${output}
+          '';
+        };
+      schemaGen = mkSchemaGen {
         name = "ccusage-schema-gen";
-        runtimeInputs = [
-          pkgs.coreutils
-          pkgs.diffutils
-          pkgs.oxfmt
-          generateConfigSchema
-        ];
-        text = ''
-          tmp="$(mktemp --suffix=.json)"
-          trap 'rm -f "$tmp"' EXIT
-          # NOTE(2026-11-20, #2343): a dev shell reuses this wrapper from its last
-          # evaluation, so a baked-in generator misses newer config fields. The dev
-          # shell sets this variable to build from the working tree; the pure flake
-          # check leaves it unset and keeps the store-built generator.
-          if [[ -n "''${CCUSAGE_SCHEMA_GEN_FROM_WORKSPACE:-}" ]]; then
-            cargo run --locked --manifest-path rust/Cargo.toml \
-              -p ccusage-config --features schema --bin generate-config-schema -- "$tmp"
-          else
-            generate-config-schema "$tmp"
-          fi
-          oxfmt --write "$tmp"
-          cmp -s "$tmp" apps/ccusage/config-schema.json || cp "$tmp" apps/ccusage/config-schema.json
-        '';
+        crate = "ccusage-config";
+        bin = "generate-config-schema";
+        features = [ "schema" ];
+        output = "apps/ccusage/config-schema.json";
+      };
+      telemetrySchemaGen = mkSchemaGen {
+        name = "ccusage-telemetry-schema-gen";
+        crate = "ccusage-telemetry";
+        bin = "generate-telemetry-schema";
+        output = "apps/telemetry/src/v1/ping-schema.gen.ts";
       };
       generateBunNix = pkgs.writeShellApplication {
         name = "generate-bun-nix";
@@ -175,12 +199,25 @@ in
             ];
             priority = 10;
           };
+          telemetry-schema-gen = {
+            command = lib.getExe telemetrySchemaGen;
+            includes = [
+              "apps/telemetry/src/v1/ping-schema.gen.ts"
+              "rust/crates/ccusage-telemetry/src/*.rs"
+              "rust/crates/ccusage-telemetry/src/bin/*.rs"
+            ];
+            priority = 10;
+          };
         };
       };
 
       apps.generate-schema = {
         type = "app";
         program = lib.getExe schemaGen;
+      };
+      apps.generate-telemetry-schema = {
+        type = "app";
+        program = lib.getExe telemetrySchemaGen;
       };
       apps.generate-bun-nix = {
         type = "app";

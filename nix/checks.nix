@@ -82,44 +82,6 @@ in
         sourceRoot = "source/rust";
         cargoExtraArgs = "--all";
       };
-      generateTelemetrySchema = craneLib.buildPackage (
-        commonArgs
-        // {
-          pname = "generate-telemetry-schema";
-          inherit cargoArtifacts;
-          cargoExtraArgs = "-p ccusage-telemetry --bin generate-telemetry-schema";
-          doCheck = false;
-          meta = {
-            mainProgram = "generate-telemetry-schema";
-          };
-        }
-      );
-      telemetry-schema =
-        pkgs.runCommand "telemetry-schema-check"
-          {
-            src = repoSrc;
-            nativeBuildInputs = [
-              generateTelemetrySchema
-              pkgs.oxfmt
-              pkgs.diffutils
-            ];
-          }
-          ''
-            cp -R "$src" source
-            chmod -R u+w source
-            cd source
-
-            generate-telemetry-schema generated.ts
-            oxfmt --write generated.ts
-
-            if ! diff -u apps/telemetry/src/v1/ping-schema.gen.ts generated.ts; then
-              echo "ERROR: apps/telemetry/src/v1/ping-schema.gen.ts is out of sync with the Rust Ping type." >&2
-              echo "Run 'just telemetry::generate-schema' and commit the result." >&2
-              exit 1
-            fi
-
-            touch "$out"
-          '';
       bun-nix =
         mkRepoCheck "bun-nix-check"
           [
@@ -197,7 +159,6 @@ in
           ccusage-clippy
           ccusage-fmt
           ccusage-hawk
-          telemetry-schema
           ccusage-unsafe-code
           ;
         oxlint = mkRepoCheck "oxlint-check" [ config.packages.oxlint ] ''
