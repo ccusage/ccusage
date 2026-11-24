@@ -9873,7 +9873,7 @@
 	},
 	"cloudflare/clef-flash": {
 		"cost": {
-			"input": 0.019,
+			"input": 0.038,
 			"output": 0
 		},
 		"exactOnly": true,
@@ -11283,6 +11283,17 @@
 			"cache_read": 0.042,
 			"input": 0.834,
 			"output": 2.501
+		},
+		"limit": {
+			"context": 1048576
+		},
+		"provider": "llmgateway-providers"
+	},
+	"deepinfra/hy4-flash": {
+		"cost": {
+			"cache_read": 0.003,
+			"input": 0.07,
+			"output": 0.281
 		},
 		"limit": {
 			"context": 1048576
@@ -21199,7 +21210,7 @@
 			"output": 0.18
 		},
 		"limit": {
-			"context": 262144
+			"context": 131072
 		},
 		"provider": "kilo"
 	},
@@ -26590,7 +26601,7 @@
 		},
 		"exactOnly": true,
 		"limit": {
-			"context": 1000000
+			"context": 1048576
 		},
 		"provider": "concentrate"
 	},
@@ -32501,10 +32512,10 @@
 	},
 	"qwen-4-max": {
 		"cost": {
-			"cache_read": 0.07500000000000001,
-			"cache_write": 1.875,
-			"input": 1.5,
-			"output": 4.5
+			"cache_read": 0.09375,
+			"cache_write": 2.34375,
+			"input": 1.875,
+			"output": 5.625
 		},
 		"limit": {
 			"context": 1000000
@@ -37605,6 +37616,18 @@
 		},
 		"provider": "prime"
 	},
+	"thinkingmachines/inkling-2-small-fast": {
+		"cost": {
+			"cache_read": 0.06,
+			"cache_write": 0.3,
+			"input": 0.3,
+			"output": 1
+		},
+		"limit": {
+			"context": 1048576
+		},
+		"provider": "prime"
+	},
 	"thinkingmachines/inkling:thinking": {
 		"cost": {
 			"cache_read": 0.17,
@@ -39222,6 +39245,28 @@
 		},
 		"limit": {
 			"context": 1000000
+		},
+		"provider": "llmgateway-providers"
+	},
+	"vertex-openai/deepseek-v4.1-flash-1017": {
+		"cost": {
+			"cache_read": 0.006,
+			"input": 0.3,
+			"output": 1.2
+		},
+		"limit": {
+			"context": 1048576
+		},
+		"provider": "llmgateway-providers"
+	},
+	"vertex-openai/deepseek-v4.1-flash-latest": {
+		"cost": {
+			"cache_read": 0.006,
+			"input": 0.3,
+			"output": 1.2
+		},
+		"limit": {
+			"context": 1048576
 		},
 		"provider": "llmgateway-providers"
 	},
@@ -42564,7 +42609,7 @@
 	"~deepseek/deepseek-v4-flash-latest": {
 		"cost": {
 			"cache_read": 0.035,
-			"input": 0.0434,
+			"input": 0.0443,
 			"output": 0.3
 		},
 		"limit": {
