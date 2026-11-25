@@ -90,6 +90,12 @@ if (import.meta.vitest) {
 			vi.useRealTimers();
 		});
 
+		it('is the handler the route file exports as GET', async () => {
+			const route = await import('../routes/v1/stats.ts');
+
+			expect(route.GET).toBe(getPublicStats);
+		});
+
 		it('publishes only public snapshot fields', async () => {
 			const get = vi.fn(async () => JSON.stringify(stored));
 
