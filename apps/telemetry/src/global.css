@@ -18,6 +18,12 @@
 	--weekly: #18794e;
 	--monthly: #a65d0b;
 	--code: #f1f1f1;
+	--series-1: #2a78d6;
+	--series-2: #eb6834;
+	--series-3: #1baf7a;
+	--series-4: #eda100;
+	--series-5: #e87ba4;
+	--series-other: #7d7c76;
 }
 :root[data-theme='dark'] {
 	color-scheme: dark;
@@ -31,6 +37,12 @@
 	--weekly: #62cba2;
 	--monthly: #e6b66e;
 	--code: #161618;
+	--series-1: #3987e5;
+	--series-2: #d95926;
+	--series-3: #199e70;
+	--series-4: #c98500;
+	--series-5: #d55181;
+	--series-other: #575652;
 }
 @media (prefers-color-scheme: dark) {
 	:root:not([data-theme='light']) {
@@ -45,6 +57,12 @@
 		--weekly: #62cba2;
 		--monthly: #e6b66e;
 		--code: #161618;
+		--series-1: #3987e5;
+		--series-2: #d95926;
+		--series-3: #199e70;
+		--series-4: #c98500;
+		--series-5: #d55181;
+		--series-other: #575652;
 	}
 }
 * {

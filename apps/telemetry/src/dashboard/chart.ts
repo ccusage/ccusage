@@ -1,9 +1,11 @@
-import { defineChart, lineY } from '@tanstack/charts';
+import { barY, defineChart, lineY, stack } from '@tanstack/charts';
+import { scaleBand } from '@tanstack/charts/scales/band';
 import { scaleLinear } from '@tanstack/charts/scales/linear';
 import { scaleUtc } from '@tanstack/charts/scales/time';
 import { tooltip } from '@tanstack/charts/tooltip';
 
 import { DAY_MS, dateFormat, numberFormat, utcDay } from './format.ts';
+import { seriesColorVariable, type ShareView } from './share.ts';
 
 export type ActivityDay = {
 	date: string;
@@ -118,6 +120,67 @@ export function createChartDefinition(
 			use: tooltip,
 			format: (point) =>
 				`${dateFormat.format(point.xValue)} · ${point.datum.label}: ${numberFormat.format(point.yValue)}`,
+		},
+	});
+}
+
+export function readSeriesColors(root: HTMLElement, keys: readonly string[]): Map<string, string> {
+	const styles = getComputedStyle(root);
+	return new Map(
+		keys.map((key) => [key, styles.getPropertyValue(seriesColorVariable(keys, key)).trim()]),
+	);
+}
+
+export function createShareDefinition(
+	view: ShareView,
+	colors: ChartColors,
+	series: Map<string, string>,
+) {
+	const percent = new Intl.NumberFormat('en-GB', { style: 'percent', maximumFractionDigits: 1 });
+	const tickEvery = Math.max(1, Math.ceil(view.dates.length / 5));
+	return defineChart({
+		marks: [
+			barY(view.rows, {
+				x: 'date',
+				y: 'users',
+				z: 'key',
+				fill: (row) => series.get(row.key) ?? colors.muted,
+				stroke: colors.background,
+				strokeWidth: 1,
+				layout: stack({ order: [...view.keys], offset: 'normalize' }),
+				inset: 1,
+			}),
+		],
+		theme: {
+			foreground: colors.muted,
+			muted: colors.muted,
+			grid: colors.border,
+			background: colors.background,
+		},
+		scales: {
+			x: {
+				scale: scaleBand<string>().domain(view.dates).padding(0.15),
+				axis: {
+					ticks: {
+						values: view.dates.filter((_, index) => index % tickEvery === tickEvery - 1),
+						format: (value) => dateFormat.format(utcDay(String(value))),
+					},
+					tickLabels: { fontSize: 12, thin: { priority: 'ends' } },
+				},
+			},
+			y: {
+				scale: scaleLinear().domain([0, 1]),
+				grid: { stroke: colors.border, strokeOpacity: 0.65 },
+				axis: {
+					ticks: { count: 5, format: (value) => percent.format(value) },
+					tickLabels: { fontSize: 12 },
+				},
+			},
+		},
+		tooltip: {
+			use: tooltip,
+			format: (point) =>
+				`${dateFormat.format(utcDay(point.datum.date))} · ${point.datum.key}: ${numberFormat.format(point.datum.users)} (${percent.format(point.datum.share)})`,
 		},
 	});
 }

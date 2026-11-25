@@ -2,11 +2,13 @@
 	import faviconUrl from '../../../docs/public/favicon.svg?url';
 	import '../src/global.css';
 	import ActivityChart from '../src/components/ActivityChart.svelte' with { island: 'load' };
-	import Breakdown from '../src/components/Breakdown.svelte';
+	import ShareHistory from '../src/components/ShareHistory.svelte' with { island: 'visible' };
+	import ShareSummary from '../src/components/ShareSummary.svelte';
 	import SiteNav from '../src/components/SiteNav.svelte';
 	import StatCard from '../src/components/StatCard.svelte';
 	import ThemeToggle from '../src/components/ThemeToggle.svelte' with { island: 'load' };
-	import { DAY_MS, numberFormat, utcDay } from '../src/dashboard/format.ts';
+	import { DAY_MS, numberFormat, trailingDates, utcDay } from '../src/dashboard/format.ts';
+	import { shareView } from '../src/dashboard/share.ts';
 	import type { Props } from './index.server.ts';
 
 	let { stats, unavailable, now }: Props = $props();
@@ -50,6 +52,9 @@
 	);
 	const count = (value: number | undefined) => (value === undefined ? '—' : numberFormat.format(value));
 	const emptyBreakdown = $derived(latest ? 'No recorded activity.' : 'No recorded activity yet.');
+	const shareDates = $derived(latest ? trailingDates(latest.date, 30) : []);
+	const platforms = $derived(shareView(days, 'platform', shareDates));
+	const versions = $derived(shareView(days, 'version', shareDates));
 </script>
 
 <svelte:head>
@@ -100,19 +105,28 @@
 		</div>
 		<ActivityChart days={activity} {now} {unavailable} />
 		<div class="split">
-			<Breakdown
-				title="Platforms"
-				caption="Latest available day · up to 20 groups"
-				rows={latest?.byPlatform.map(({ os, arch, users }) => ({ label: `${os} / ${arch}`, users })) ??
-					[]}
-				emptyLabel={emptyBreakdown}
-			/>
-			<Breakdown
-				title="Versions"
-				caption="Latest available day · up to 20 versions"
-				rows={latest?.byVersion.map(({ version, users }) => ({ label: version, users })) ?? []}
-				emptyLabel={emptyBreakdown}
-			/>
+			<section class="panel" aria-labelledby="platforms-title">
+				<h2 id="platforms-title">Platforms</h2>
+				<p class="meta">
+					Latest available day · up to 20 groups · shares of daily active environments
+				</p>
+				<ShareSummary view={platforms} emptyLabel={emptyBreakdown} />
+				<ShareHistory
+					view={platforms}
+					label="Daily share of active environments by platform over the last 30 UTC days. Exact values are in the table below."
+				/>
+			</section>
+			<section class="panel" aria-labelledby="versions-title">
+				<h2 id="versions-title">Versions</h2>
+				<p class="meta">
+					Latest available day · up to 20 versions · shares of daily active environments
+				</p>
+				<ShareSummary view={versions} emptyLabel={emptyBreakdown} />
+				<ShareHistory
+					view={versions}
+					label="Daily share of active environments by version over the last 30 UTC days. Exact values are in the table below."
+				/>
+			</section>
 		</div>
 	</section>
 	<section class="method" aria-labelledby="method-title">
