@@ -78,7 +78,7 @@ in
         name = "ccusage-telemetry-schema-gen";
         crate = "ccusage-telemetry";
         bin = "generate-telemetry-schema";
-        output = "apps/telemetry/src/v1/ping-schema.gen.ts";
+        output = "telemetry/src/v1/ping-schema.gen.ts";
       };
       generateBunNix = pkgs.writeShellApplication {
         name = "generate-bun-nix";
@@ -202,7 +202,7 @@ in
           telemetry-schema-gen = {
             command = lib.getExe telemetrySchemaGen;
             includes = [
-              "apps/telemetry/src/v1/ping-schema.gen.ts"
+              "telemetry/src/v1/ping-schema.gen.ts"
               "rust/crates/ccusage-telemetry/src/*.rs"
               "rust/crates/ccusage-telemetry/src/bin/*.rs"
             ];

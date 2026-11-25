@@ -12,7 +12,7 @@ deploy:
 
 # Regenerate src/v1/ping-schema.gen.ts from the Rust `Ping` type
 generate-schema:
-    cd ../.. && nix run .#generate-telemetry-schema
+    cd .. && nix run .#generate-telemetry-schema
 
 # Run the Worker's Node tests
 test:

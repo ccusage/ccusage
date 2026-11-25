@@ -247,42 +247,6 @@ importers:
         specifier: workspace:*
         version: link:../../packages/ccusage-win32-x64
 
-  apps/telemetry:
-    devDependencies:
-      '@cloudflare/workers-types':
-        specifier: catalog:telemetry
-        version: 5.20261121.1
-      '@hono/zod-validator':
-        specifier: catalog:telemetry
-        version: 0.9.1(hono@4.13.19)(zod@4.6.7)
-      '@tanstack/charts':
-        specifier: catalog:telemetry
-        version: 1.5.0(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(svelte@5.59.1)(vue@3.5.45)
-      '@types/node':
-        specifier: catalog:types
-        version: 26.6.6
-      '@void/svelte':
-        specifier: catalog:telemetry
-        version: 1.11.0(svelte@5.59.1)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(void@1.11.0(@types/node@26.6.6)(arktype@2.2.10)(kysely@0.29.9)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(svelte@5.59.1)(valibot@1.5.0)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(vue@3.5.45)(workerd@1.20261117.1)(zod@4.6.7))
-      hono:
-        specifier: catalog:telemetry
-        version: 4.13.19
-      json-schema-to-ts:
-        specifier: catalog:telemetry
-        version: 3.1.1
-      svelte:
-        specifier: catalog:telemetry
-        version: 5.59.1
-      vite:
-        specifier: catalog:telemetry
-        version: 8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
-      void:
-        specifier: catalog:telemetry
-        version: 1.11.0(@types/node@26.6.6)(arktype@2.2.10)(kysely@0.29.9)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(svelte@5.59.1)(valibot@1.5.0)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(vue@3.5.45)(workerd@1.20261117.1)(zod@4.6.7)
-      zod:
-        specifier: catalog:telemetry
-        version: 4.6.7
-
   docs:
     devDependencies:
       '@ryoppippi/vite-plugin-cloudflare-redirect':
@@ -318,6 +282,42 @@ importers:
   packages/ccusage-win32-arm64: {}
 
   packages/ccusage-win32-x64: {}
+
+  telemetry:
+    devDependencies:
+      '@cloudflare/workers-types':
+        specifier: catalog:telemetry
+        version: 5.20261121.1
+      '@hono/zod-validator':
+        specifier: catalog:telemetry
+        version: 0.9.1(hono@4.13.19)(zod@4.6.7)
+      '@tanstack/charts':
+        specifier: catalog:telemetry
+        version: 1.5.0(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(svelte@5.59.1)(vue@3.5.45)
+      '@types/node':
+        specifier: catalog:types
+        version: 26.6.6
+      '@void/svelte':
+        specifier: catalog:telemetry
+        version: 1.11.0(svelte@5.59.1)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(void@1.11.0(@types/node@26.6.6)(arktype@2.2.10)(kysely@0.29.9)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(svelte@5.59.1)(valibot@1.5.0)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(vue@3.5.45)(workerd@1.20261117.1)(zod@4.6.7))
+      hono:
+        specifier: catalog:telemetry
+        version: 4.13.19
+      json-schema-to-ts:
+        specifier: catalog:telemetry
+        version: 3.1.1
+      svelte:
+        specifier: catalog:telemetry
+        version: 5.59.1
+      vite:
+        specifier: catalog:telemetry
+        version: 8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
+      void:
+        specifier: catalog:telemetry
+        version: 1.11.0(@types/node@26.6.6)(arktype@2.2.10)(kysely@0.29.9)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(svelte@5.59.1)(valibot@1.5.0)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(vue@3.5.45)(workerd@1.20261117.1)(zod@4.6.7)
+      zod:
+        specifier: catalog:telemetry
+        version: 4.6.7
 
 packages:
 

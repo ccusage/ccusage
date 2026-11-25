@@ -1,6 +1,7 @@
 packages:
   - apps/*
   - docs
+  - telemetry
   - packages/*
 
 catalogMode: strict

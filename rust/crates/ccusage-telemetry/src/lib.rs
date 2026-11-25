@@ -1,5 +1,5 @@
 //! The anonymous daily usage ping, shared by the CLI that sends it and the
-//! collector Worker in `apps/telemetry` that validates it.
+//! collector Worker in `telemetry` that validates it.
 //!
 //! [`Ping`] is the single definition of the wire format. The Worker never
 //! restates it: `generate-telemetry-schema` turns it into a JSON Schema module

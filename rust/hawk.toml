@@ -11,4 +11,4 @@ reason = "writes apps/ccusage/config-schema.json; the config-schema flake check 
 [[production]]
 package = "ccusage-telemetry"
 bin = "generate-telemetry-schema"
-reason = "writes apps/telemetry/src/v1/ping-schema.gen.ts; the treefmt `telemetry-schema-gen` formatter runs it"
+reason = "writes telemetry/src/v1/ping-schema.gen.ts; the treefmt `telemetry-schema-gen` formatter runs it"

@@ -5,6 +5,7 @@
 	"workspaces": [
 		"apps/*",
 		"docs",
+		"telemetry",
 		"packages/*"
 	],
 	"type": "module",

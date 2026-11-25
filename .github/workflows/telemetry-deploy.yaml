@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - apps/telemetry/**
+      - telemetry/**
       - docs/public/logo.svg
       - docs/public/favicon.svg
       - pnpm-lock.yaml

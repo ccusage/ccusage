@@ -54,7 +54,7 @@
 		height: 24px;
 		flex-shrink: 0;
 		border-radius: 6px;
-		background: url('../../../../docs/public/logo.svg') center / contain no-repeat;
+		background: url('../../../docs/public/logo.svg') center / contain no-repeat;
 	}
 	.nav-links {
 		display: flex;

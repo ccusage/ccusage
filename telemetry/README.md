@@ -60,7 +60,7 @@ just telemetry::deploy  # deploy to Cloudflare with void deploy
 
 ## Automated deployment
 
-The `Deploy telemetry Worker` GitHub Actions workflow tests, builds, and deploys the Worker when changes to `apps/telemetry/` or its workspace lockfiles reach `main`. It can also be run manually from `main` with **Actions → Deploy telemetry Worker → Run workflow**. Runs are serialized so two deployments cannot race.
+The `Deploy telemetry Worker` GitHub Actions workflow tests, builds, and deploys the Worker when changes to `telemetry/` or its workspace lockfiles reach `main`. It can also be run manually from `main` with **Actions → Deploy telemetry Worker → Run workflow**. Runs are serialized so two deployments cannot race.
 
 Before the first run, create a GitHub environment named `telemetry-production`, allow deployments from `main` only, and add these environment secrets:
 

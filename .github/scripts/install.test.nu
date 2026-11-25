@@ -7,7 +7,7 @@ def main []: nothing -> nothing {
     let fixture = mktemp -d
     try {
         mkdir ($fixture | path join bin) ($fixture | path join node_modules)
-        for module in [apps/ccusage apps/telemetry docs rust] {
+        for module in [apps/ccusage telemetry docs rust] {
             mkdir ($fixture | path join $module)
             "build:\n\ntest:\n" | save ($fixture | path join $module justfile)
         }

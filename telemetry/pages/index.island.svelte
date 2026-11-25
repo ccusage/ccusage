@@ -1,5 +1,5 @@
 <script lang="ts">
-	import faviconUrl from '../../../docs/public/favicon.svg?url';
+	import faviconUrl from '../../docs/public/favicon.svg?url';
 	import '../src/global.css';
 	import ActivityChart from '../src/components/ActivityChart.svelte' with { island: 'load' };
 	import ShareHistory from '../src/components/ShareHistory.svelte' with { island: 'visible' };
@@ -159,7 +159,7 @@
 	</section>
 	<footer>
 		<a href="/v1/stats">Download aggregate JSON</a>
-		<a href="https://github.com/ccusage/ccusage/tree/main/apps/telemetry">Inspect the source</a>
+		<a href="https://github.com/ccusage/ccusage/tree/main/telemetry">Inspect the source</a>
 		<a href="https://github.com/sponsors/ryoppippi">Support ccusage</a>
 	</footer>
 </main>

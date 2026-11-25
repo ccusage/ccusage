@@ -1,14 +1,14 @@
 # ccusage-telemetry
 
 The wire format of the anonymous daily usage ping, shared by the CLI that sends
-it and the collector Worker in `apps/telemetry` that receives it.
+it and the collector Worker in `telemetry` that receives it.
 
 ## Owns
 
 - `lib.rs` — the `Ping` type, the single definition of the payload, and
   `generate_schema_module`, which renders its JSON Schema as a TypeScript module.
 - `bin/generate_telemetry_schema.rs` — writes
-  `apps/telemetry/src/v1/ping-schema.gen.ts`, which the Worker validates against
+  `telemetry/src/v1/ping-schema.gen.ts`, which the Worker validates against
   and derives its TypeScript type from. Run it through
   `just telemetry::generate-schema`, or let `nix fmt` regenerate it whenever this
   crate changes.
