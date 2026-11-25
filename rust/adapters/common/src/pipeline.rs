@@ -371,7 +371,8 @@ mod tests {
         let warnings = rows.diagnostics.warnings(&shared);
         assert!(
             warnings
-                .contains(&"fake: unreadable: /data/broken.json: permission denied".to_string()),
+                .iter()
+                .any(|warning| warning == "fake: unreadable: /data/broken.json: permission denied"),
             "{warnings:?}"
         );
     }
