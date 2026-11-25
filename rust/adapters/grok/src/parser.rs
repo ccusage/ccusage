@@ -144,7 +144,7 @@ struct SessionMeta {
 const COST_USD_TICKS_PER_USD: f64 = 1e10;
 
 fn cost_usd_from_ticks(ticks: u64) -> Option<f64> {
-    (ticks > 0).then(|| ticks as f64 / COST_USD_TICKS_PER_USD)
+    (ticks > 0).then_some(ticks as f64 / COST_USD_TICKS_PER_USD)
 }
 
 fn split_tokens(input: u64, cached: u64) -> (u64, u64) {
