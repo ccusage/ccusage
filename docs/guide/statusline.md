@@ -194,6 +194,7 @@ The statusline command:
 - Outputs a single line suitable for status bar display
 - **Uses offline mode by default** for instant response times without network dependencies
 - Can be configured to use online mode with `--no-offline` for latest pricing data
+- Sends the anonymous daily [telemetry](/guide/telemetry) ping at most once per UTC day without printing a notice, from a detached background process so the statusline never waits for it. Opt out with `ccusage telemetry disable`, `CCUSAGE_TELEMETRY_DISABLED=1`, or an explicit `--offline`
 
 ### Beta Notice
 

@@ -1,6 +1,6 @@
 # Telemetry
 
-Official ccusage releases collect minimal usage data so the project can understand adoption and platform support. Collection is on by default after the first-run notice, sends at most one small ping per UTC day, and can be turned off with one command. Agent logs stay on your machine.
+Official ccusage releases collect minimal usage data so the project can understand adoption and platform support. Collection is on by default after the first-run notice (statusline commands have no notice; see below), sends at most one small ping per UTC day, and can be turned off with one command. Agent logs stay on your machine.
 
 ## Fully Transparent
 
@@ -16,7 +16,7 @@ Builds you compile yourself with `cargo build` contain no collector address and 
 
 ## What Is Sent
 
-After the first-run notice, the first eligible ccusage run of each UTC day sends one JSON document:
+After the first-run notice, or from the first statusline run, the first eligible ccusage run of each UTC day sends one JSON document:
 
 ```json
 {
@@ -39,7 +39,7 @@ After the first-run notice, the first eligible ccusage run of each UTC day sends
 
 That is the complete list. ccusage never sends anything read from your agent logs: no token counts, costs, model names, project names, paths, session IDs, or prompts. Arguments and option values are not sent either.
 
-The ping runs in the background. It never changes report output, never writes to stdout, and a slow or failed request is dropped without a retry.
+The ping is sent by a short-lived background copy of ccusage, so the command you ran, including statusline, never waits for the network. It never changes report output, never writes to stdout, and a slow or failed request is dropped without a retry.
 
 ## What Is Stored
 
@@ -64,7 +64,9 @@ Each scheduled run recomputes the previous three completed UTC days and rebuilds
 
 ## First-Run Notice
 
-The first eligible invocation saves its notification state and prints a short notice to stderr explaining what is collected and how to opt out. That invocation does not send a ping; collection can start on a subsequent invocation. `--json` output on stdout is unaffected. The `statusline` command neither prints the notice nor sends anything until another command has shown it. Environments that only use statusline therefore remain unmeasured until that happens.
+The first eligible invocation saves its notification state and prints a short notice to stderr explaining what is collected and how to opt out. That invocation does not send a ping; collection can start on a subsequent invocation. `--json` output on stdout is unaffected.
+
+The `statusline` and `codex statusline` commands print no notice. Claude Code consumes their output and redraws it every few seconds, so a notice there would never be read. They send the daily ping without one, and this page and the [statusline guide](/guide/statusline) disclose it instead. Opting out works the same way for them.
 
 ## Opting Out
 
@@ -79,7 +81,7 @@ export CCUSAGE_TELEMETRY_DISABLED=1
 export DO_NOT_TRACK=1
 ```
 
-Telemetry is also off automatically in CI and when `--offline` is selected. If the settings cannot be read or updated safely, no ping is sent.
+Telemetry is also off automatically in CI and when you select `--offline` on the command line or in the config file. Statusline commands use offline pricing by default; that default does not turn telemetry off, but an explicit `--offline` does. If the settings cannot be read or updated safely, no ping is sent.
 
 Disabling deletes the stored anonymous ID, so enabling it again later starts over as a new anonymous user.
 

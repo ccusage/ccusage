@@ -64,7 +64,7 @@ impl SharedFlag {
             Self::DebugSamples(value) => shared.debug_samples = value,
             Self::Order(value) => shared.order = Some(value),
             Self::Breakdown => shared.breakdown = true,
-            Self::Offline(value) => shared.offline = value,
+            Self::Offline(value) => shared.select_offline(value),
             Self::Color(value) => shared.color = value,
             Self::Jq(value) => shared.jq = Some(value),
             Self::Config | Self::Timezone => {}

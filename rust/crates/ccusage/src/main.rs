@@ -32,10 +32,7 @@ fn main() -> Result<ExitCode> {
         Ok(None) => return Ok(ExitCode::SUCCESS),
         Err(status) => return Ok(status),
     };
-    telemetry::start(
-        Some(&command),
-        command.shared().is_some_and(|shared| shared.offline),
-    );
+    telemetry::start(Some(&command));
     let result = match command {
         Command::All(args) => adapter::all::run(args),
         Command::Claude { report, project } => {

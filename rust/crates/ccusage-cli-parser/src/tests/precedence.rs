@@ -81,12 +81,14 @@ fn offline_flags_override_config_in_both_directions_and_positions() {
                     .collect::<Vec<_>>();
                 let config = ccusage_config::ConfigContext::from_args(&config_args);
                 let command = parse_with_config(&argv, &config);
-                let offline = if let Command::Statusline(args) = &command {
-                    args.offline
+                let (offline, selected) = if let Command::Statusline(args) = &command {
+                    (args.offline, args.offline_selected)
                 } else {
-                    command.shared().unwrap().offline
+                    let shared = command.shared().unwrap();
+                    (shared.offline, shared.offline_selected)
                 };
                 assert_eq!(offline, expected, "{argv:?}, {config_json}");
+                assert_eq!(selected, expected, "{argv:?}, {config_json}");
             }
         }
     }

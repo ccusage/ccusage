@@ -50,8 +50,8 @@ struct Plan {
     send: bool,
 }
 
-pub(crate) fn start(command: Option<&Command>, offline: bool) {
-    let _ = send_daily_ping(command, offline);
+pub(crate) fn start(command: Option<&Command>) {
+    let _ = send_daily_ping(command);
 }
 
 pub(crate) fn run_sender() -> bool {
@@ -67,11 +67,11 @@ pub(crate) fn run_sender() -> bool {
     true
 }
 
-fn send_daily_ping(command: Option<&Command>, offline: bool) -> Option<()> {
+fn send_daily_ping(command: Option<&Command>) -> Option<()> {
     if matches!(command, Some(Command::Telemetry(_))) {
         return None;
     }
-    if offline || command_offline(command) {
+    if command_offline(command) {
         return None;
     }
     if env_disabled(env_var).is_some() {
@@ -88,7 +88,7 @@ fn send_daily_ping(command: Option<&Command>, offline: bool) -> Option<()> {
         print_debug_payload(&state, command);
         return None;
     }
-    // NOTE(2026-11-22): Statusline output is consumed by Claude Code. Defer the notice until a normal invocation.
+    // NOTE(2026-11-25): Statusline output is consumed by Claude Code and redrawn every few seconds, so a notice there is never read. Statusline sends without one; the statusline and telemetry guides disclose it instead.
     let can_notify = !is_statusline(command);
     let now = unix_seconds();
     // NOTE(2026-11-22): The first eligible invocation only shows the notice. This lets users opt out before a ping.
@@ -222,7 +222,7 @@ fn plan(state: &mut State, now: u64, can_notify: bool) -> Plan {
         state.notified_at = Some(now);
     }
     let today = now / SECONDS_PER_DAY;
-    let send = !notice && state.notified_at.is_some() && state.last_sent_day != Some(today);
+    let send = !notice && state.last_sent_day != Some(today);
     if send {
         state.last_sent_day = Some(today);
     }
@@ -280,11 +280,11 @@ fn report_name(kind: AgentReportKind) -> &'static str {
 
 fn command_offline(command: Option<&Command>) -> bool {
     if let Some(Command::Statusline(args)) = command {
-        return args.offline;
+        return args.offline_selected;
     }
     command
         .and_then(Command::shared)
-        .is_some_and(|args| args.offline)
+        .is_some_and(|args| args.offline_selected)
 }
 
 fn is_statusline(command: Option<&Command>) -> bool {
@@ -503,17 +503,32 @@ mod tests {
     }
 
     #[test]
-    fn statusline_does_not_send_before_a_notice() {
+    fn statusline_sends_once_a_day_without_a_notice() {
         let mut state = State::default();
+        let day = 20_000 * SECONDS_PER_DAY;
 
         assert_eq!(
-            plan(&mut state, 0, false),
+            plan(&mut state, day, false),
+            Plan {
+                notice: false,
+                send: true
+            }
+        );
+        assert_eq!(
+            plan(&mut state, day + 5, false),
             Plan {
                 notice: false,
                 send: false
             }
         );
         assert_eq!(state.notified_at, None);
+        assert_eq!(
+            plan(&mut state, day + 60, true),
+            Plan {
+                notice: true,
+                send: false
+            }
+        );
     }
 
     #[test]
@@ -620,11 +635,10 @@ mod tests {
 
     #[test]
     fn offline_commands_never_enter_the_send_plan() {
+        let mut shared = ccusage_cli::SharedArgs::default();
+        shared.select_offline(true);
         let args = ccusage_cli::AgentCommandArgs {
-            shared: ccusage_cli::SharedArgs {
-                offline: true,
-                ..ccusage_cli::SharedArgs::default()
-            },
+            shared,
             kind: AgentReportKind::Daily,
             session_id: None,
             sections: None,
@@ -639,6 +653,18 @@ mod tests {
             ccusage_cli::StandardAgent::Codex,
             args
         ))));
+    }
+
+    #[test]
+    fn statusline_offline_blocks_only_when_the_user_selects_it() {
+        let mut statusline = ccusage_cli::StatuslineArgs::default();
+        assert!(statusline.offline);
+        assert!(!command_offline(Some(&Command::Statusline(
+            statusline.clone()
+        ))));
+
+        statusline.select_offline(true);
+        assert!(command_offline(Some(&Command::Statusline(statusline))));
     }
 
     #[test]
