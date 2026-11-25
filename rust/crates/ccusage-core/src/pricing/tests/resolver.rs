@@ -1048,11 +1048,6 @@ fn a_vendors_free_row_through_a_paid_host_bills_a_marked_estimate_of_the_paid_li
             (0.08, 0.478, true),
         ),
         (
-            "novita/zai-org/glm-4.7-flash",
-            &[("novita/zai-org/glm-4.7-flash", MatchKind::Fuzzy)][..],
-            (0.08, 0.478, true),
-        ),
-        (
             "glm-4.7-flash",
             &[
                 ("glm-4.7-flash", MatchKind::Fuzzy),

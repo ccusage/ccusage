@@ -449,7 +449,7 @@ mod paid_host_estimates {
         let pricing = ccusage_core::PricingMap::load_embedded();
         for (provider, estimated) in [("novita-ai", true), ("ollama", false)] {
             let value: KiloMessage = serde_json::from_value(serde_json::json!({
-                "role": "assistant", "modelID": "zai-org/glm-4.7-flash", "providerID": provider,
+                "role": "assistant", "modelID": "glm-4.7-flash", "providerID": provider,
                 "time": {"created": 1_767_312_000_000_i64},
                 "tokens": {"input": 1_000_000, "output": 100_000}
             }))

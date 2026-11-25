@@ -1043,7 +1043,7 @@ fn a_hyphenated_paid_host_marks_a_free_vendor_model_as_an_estimate() {
                 "id": "message-a",
                 "sessionID": "session-a",
                 "providerID": provider,
-                "modelID": "zai-org/glm-4.7-flash",
+                "modelID": "glm-4.7-flash",
                 "time": {"created": 1767312000000i64},
                 "tokens": {"input": 1000000, "output": 100000}
             })),
