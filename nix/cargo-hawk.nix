@@ -65,7 +65,7 @@ stdenvNoCC.mkDerivation {
           --unset DYLD_LIBRARY_PATH --unset DYLD_FALLBACK_LIBRARY_PATH
       done
     ''}
-    # NOTE(2026-11-25): Stable rustc rejects the nightly-only frontend flags, and Cargo prefers RUSTFLAGS over build.rustflags, so always export RUSTFLAGS without them.
+    # NOTE(2026-11-25): Stable rustc rejects the nightly-only frontend flags. Cargo prefers RUSTFLAGS over build.rustflags, so the wrapper always exports RUSTFLAGS without them.
     wrapProgram "$out/bin/cargo-hawk" \
       ${lib.optionalString stdenv.hostPlatform.isDarwin ''--prefix PATH : "$out/libexec/hawk-tools" ''}\
       --prefix PATH : ${rustToolchain}/bin \

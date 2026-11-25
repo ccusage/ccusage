@@ -27,7 +27,7 @@ let
   };
   cargoConfig = builtins.fromTOML (builtins.readFile (root + /.cargo/config.toml));
   cargoConfigEnv = cargoConfig.env;
-  # NOTE(2026-11-25): Cargo ignores build.rustflags whenever RUSTFLAGS is set, so every RUSTFLAGS here has to carry them.
+  # NOTE(2026-11-25): Cargo ignores build.rustflags whenever RUSTFLAGS is set. The dev shell and these builds set RUSTFLAGS, so they append the flags themselves.
   frontendRustflags = lib.concatStringsSep " " cargoConfig.build.rustflags;
   # NOTE(2026-07-27, #1428): Apple ld64 lacks identical-code folding. Link with lld on Darwin to fold duplicate adapter instantiations.
   linkerRustflags =
