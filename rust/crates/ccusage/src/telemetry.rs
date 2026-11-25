@@ -1,9 +1,9 @@
 use std::{
     env, fs,
     fs::File,
-    io,
+    io::{self, Read, Write},
     path::{Path, PathBuf},
-    sync::mpsc,
+    process::Stdio,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -19,17 +19,9 @@ use crate::{Result, http};
 const ENDPOINT: Option<&str> = option_env!("CCUSAGE_TELEMETRY_ENDPOINT");
 const DOCS_URL: &str = "https://ccusage.com/guide/telemetry";
 const SEND_TIMEOUT: Duration = Duration::from_secs(3);
-const EXIT_WAIT: Duration = Duration::from_millis(500);
+const SENDER_VAR: &str = "CCUSAGE_TELEMETRY_SENDER";
 const SECONDS_PER_DAY: u64 = 86_400;
 const DISABLE_VARS: [&str; 2] = ["CCUSAGE_TELEMETRY_DISABLED", "DO_NOT_TRACK"];
-
-pub(crate) struct PendingPing(mpsc::Receiver<()>);
-
-impl PendingPing {
-    pub(crate) fn finish(self) {
-        let _ = self.0.recv_timeout(EXIT_WAIT);
-    }
-}
 
 #[derive(Debug, Eq, PartialEq)]
 enum Disabled {
@@ -58,7 +50,24 @@ struct Plan {
     send: bool,
 }
 
-pub(crate) fn start(command: Option<&Command>, offline: bool) -> Option<PendingPing> {
+pub(crate) fn start(command: Option<&Command>, offline: bool) {
+    let _ = send_daily_ping(command, offline);
+}
+
+pub(crate) fn run_sender() -> bool {
+    if env_var(SENDER_VAR).is_none() {
+        return false;
+    }
+    let mut body = String::new();
+    if let Some(url) = ENDPOINT
+        && io::stdin().read_to_string(&mut body).is_ok()
+    {
+        let _ = http::post_json(url, &body, SEND_TIMEOUT);
+    }
+    true
+}
+
+fn send_daily_ping(command: Option<&Command>, offline: bool) -> Option<()> {
     if matches!(command, Some(Command::Telemetry(_))) {
         return None;
     }
@@ -68,7 +77,7 @@ pub(crate) fn start(command: Option<&Command>, offline: bool) -> Option<PendingP
     if env_disabled(env_var).is_some() {
         return None;
     }
-    let url = ENDPOINT?;
+    ENDPOINT?;
     let path = state_path()?;
     let _lock = StateLock::try_acquire(&path).ok()?;
     let mut state = load_state(&path).ok()?;
@@ -98,13 +107,44 @@ pub(crate) fn start(command: Option<&Command>, offline: bool) -> Option<PendingP
     drop(_lock);
 
     let body = serde_json::to_string(&payload(state.anonymous_id.as_deref()?, command)).ok()?;
-    let (done, finished) = mpsc::channel();
-    ccusage_core::parallel::spawn_worker(move || {
-        let _ = http::post_json(url, &body, SEND_TIMEOUT);
-        let _ = done.send(());
-    });
-    Some(PendingPing(finished))
+    spawn_sender(&body).ok()
 }
+
+// NOTE(2026-11-25): A sender thread dies when the command exits, and statusline exits within milliseconds. A detached process lets the request finish without delaying any command.
+fn spawn_sender(body: &str) -> io::Result<()> {
+    let mut command = std::process::Command::new(env::current_exe()?);
+    command
+        .env(SENDER_VAR, "1")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    detach(&mut command);
+    let mut child = command.spawn()?;
+    let written = child
+        .stdin
+        .take()
+        .ok_or_else(|| io::Error::other("sender stdin is unavailable"))
+        .and_then(|mut stdin| stdin.write_all(body.as_bytes()));
+    ccusage_core::parallel::spawn_worker(move || child.wait());
+    written
+}
+
+#[cfg(unix)]
+fn detach(command: &mut std::process::Command) {
+    use std::os::unix::process::CommandExt;
+    command.process_group(0);
+}
+
+#[cfg(windows)]
+fn detach(command: &mut std::process::Command) {
+    use std::os::windows::process::CommandExt;
+    const DETACHED_PROCESS: u32 = 0x0000_0008;
+    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+    command.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
+}
+
+#[cfg(not(any(unix, windows)))]
+fn detach(_command: &mut std::process::Command) {}
 
 pub(crate) fn run(action: TelemetryAction) -> Result<()> {
     let path = state_path().ok_or_else(|| {

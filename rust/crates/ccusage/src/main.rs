@@ -22,6 +22,9 @@ fn install_embedded_snapshots() {
 }
 
 fn main() -> Result<ExitCode> {
+    if telemetry::run_sender() {
+        return Ok(ExitCode::SUCCESS);
+    }
     install_embedded_snapshots();
     pricing::set_json_fetcher(http::fetch_json);
     let command = match cli::parse() {
@@ -29,7 +32,7 @@ fn main() -> Result<ExitCode> {
         Ok(None) => return Ok(ExitCode::SUCCESS),
         Err(status) => return Ok(status),
     };
-    let ping = telemetry::start(
+    telemetry::start(
         Some(&command),
         command.shared().is_some_and(|shared| shared.offline),
     );
@@ -42,9 +45,6 @@ fn main() -> Result<ExitCode> {
         Command::Agent(agent, args) => adapter::all::runner(agent, args),
         Command::Telemetry(action) => telemetry::run(action),
     };
-    if let Some(ping) = ping {
-        ping.finish();
-    }
     result?;
     Ok(ExitCode::SUCCESS)
 }
