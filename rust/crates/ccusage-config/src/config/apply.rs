@@ -55,10 +55,10 @@ pub(super) fn apply_config_to_statusline_args(args: &mut StatuslineArgs, config:
     for options in config.option_maps() {
         let options = options.statusline.clone();
         if let Some(offline) = options.offline {
-            args.offline = offline;
+            args.select_offline(offline);
         }
         if options.no_offline == Some(true) {
-            args.offline = false;
+            args.select_offline(false);
         }
         if let Some(visual_burn_rate) = options.visual_burn_rate {
             args.visual_burn_rate = visual_burn_rate.into();
@@ -323,10 +323,10 @@ fn apply_shared_options(shared: &mut SharedArgs, options: SharedOptions) {
         shared.breakdown = breakdown;
     }
     if let Some(offline) = options.offline {
-        shared.offline = offline;
+        shared.select_offline(offline);
     }
     if options.no_offline == Some(true) {
-        shared.offline = false;
+        shared.select_offline(false);
     }
     if options.color == Some(true) {
         shared.color = ColorChoice::Always;

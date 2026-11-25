@@ -1,9 +1,9 @@
 use std::{
     env, fs,
     fs::File,
-    io,
+    io::{self, Read, Write},
     path::{Path, PathBuf},
-    sync::mpsc,
+    process::Stdio,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -19,17 +19,9 @@ use crate::{Result, http};
 const ENDPOINT: Option<&str> = option_env!("CCUSAGE_TELEMETRY_ENDPOINT");
 const DOCS_URL: &str = "https://ccusage.com/guide/telemetry";
 const SEND_TIMEOUT: Duration = Duration::from_secs(3);
-const EXIT_WAIT: Duration = Duration::from_millis(500);
+const SENDER_VAR: &str = "CCUSAGE_TELEMETRY_SENDER";
 const SECONDS_PER_DAY: u64 = 86_400;
 const DISABLE_VARS: [&str; 2] = ["CCUSAGE_TELEMETRY_DISABLED", "DO_NOT_TRACK"];
-
-pub(crate) struct PendingPing(mpsc::Receiver<()>);
-
-impl PendingPing {
-    pub(crate) fn finish(self) {
-        let _ = self.0.recv_timeout(EXIT_WAIT);
-    }
-}
 
 #[derive(Debug, Eq, PartialEq)]
 enum Disabled {
@@ -58,17 +50,34 @@ struct Plan {
     send: bool,
 }
 
-pub(crate) fn start(command: Option<&Command>, offline: bool) -> Option<PendingPing> {
+pub(crate) fn start(command: Option<&Command>) {
+    let _ = send_daily_ping(command);
+}
+
+pub(crate) fn run_sender() -> bool {
+    if env_var(SENDER_VAR).is_none() {
+        return false;
+    }
+    let mut body = String::new();
+    if let Some(url) = ENDPOINT
+        && io::stdin().read_to_string(&mut body).is_ok()
+    {
+        let _ = http::post_json(url, &body, SEND_TIMEOUT);
+    }
+    true
+}
+
+fn send_daily_ping(command: Option<&Command>) -> Option<()> {
     if matches!(command, Some(Command::Telemetry(_))) {
         return None;
     }
-    if offline || command_offline(command) {
+    if command_offline(command) {
         return None;
     }
     if env_disabled(env_var).is_some() {
         return None;
     }
-    let url = ENDPOINT?;
+    ENDPOINT?;
     let path = state_path()?;
     let _lock = StateLock::try_acquire(&path).ok()?;
     let mut state = load_state(&path).ok()?;
@@ -79,7 +88,7 @@ pub(crate) fn start(command: Option<&Command>, offline: bool) -> Option<PendingP
         print_debug_payload(&state, command);
         return None;
     }
-    // NOTE(2026-11-22): Statusline output is consumed by Claude Code. Defer the notice until a normal invocation.
+    // NOTE(2026-11-25): Statusline output is consumed by Claude Code and redrawn every few seconds, so a notice there is never read. Statusline sends without one; the statusline and telemetry guides disclose it instead.
     let can_notify = !is_statusline(command);
     let now = unix_seconds();
     // NOTE(2026-11-22): The first eligible invocation only shows the notice. This lets users opt out before a ping.
@@ -98,13 +107,44 @@ pub(crate) fn start(command: Option<&Command>, offline: bool) -> Option<PendingP
     drop(_lock);
 
     let body = serde_json::to_string(&payload(state.anonymous_id.as_deref()?, command)).ok()?;
-    let (done, finished) = mpsc::channel();
-    ccusage_core::parallel::spawn_worker(move || {
-        let _ = http::post_json(url, &body, SEND_TIMEOUT);
-        let _ = done.send(());
-    });
-    Some(PendingPing(finished))
+    spawn_sender(&body).ok()
 }
+
+// NOTE(2026-11-25): A sender thread dies when the command exits, and statusline exits within milliseconds. A detached process lets the request finish without delaying any command.
+fn spawn_sender(body: &str) -> io::Result<()> {
+    let mut command = std::process::Command::new(env::current_exe()?);
+    command
+        .env(SENDER_VAR, "1")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    detach(&mut command);
+    let mut child = command.spawn()?;
+    let written = child
+        .stdin
+        .take()
+        .ok_or_else(|| io::Error::other("sender stdin is unavailable"))
+        .and_then(|mut stdin| stdin.write_all(body.as_bytes()));
+    ccusage_core::parallel::spawn_worker(move || child.wait());
+    written
+}
+
+#[cfg(unix)]
+fn detach(command: &mut std::process::Command) {
+    use std::os::unix::process::CommandExt;
+    command.process_group(0);
+}
+
+#[cfg(windows)]
+fn detach(command: &mut std::process::Command) {
+    use std::os::windows::process::CommandExt;
+    const DETACHED_PROCESS: u32 = 0x0000_0008;
+    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+    command.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
+}
+
+#[cfg(not(any(unix, windows)))]
+fn detach(_command: &mut std::process::Command) {}
 
 pub(crate) fn run(action: TelemetryAction) -> Result<()> {
     let path = state_path().ok_or_else(|| {
@@ -182,7 +222,7 @@ fn plan(state: &mut State, now: u64, can_notify: bool) -> Plan {
         state.notified_at = Some(now);
     }
     let today = now / SECONDS_PER_DAY;
-    let send = !notice && state.notified_at.is_some() && state.last_sent_day != Some(today);
+    let send = !notice && state.last_sent_day != Some(today);
     if send {
         state.last_sent_day = Some(today);
     }
@@ -240,11 +280,11 @@ fn report_name(kind: AgentReportKind) -> &'static str {
 
 fn command_offline(command: Option<&Command>) -> bool {
     if let Some(Command::Statusline(args)) = command {
-        return args.offline;
+        return args.offline_selected;
     }
     command
         .and_then(Command::shared)
-        .is_some_and(|args| args.offline)
+        .is_some_and(|args| args.offline_selected)
 }
 
 fn is_statusline(command: Option<&Command>) -> bool {
@@ -463,17 +503,32 @@ mod tests {
     }
 
     #[test]
-    fn statusline_does_not_send_before_a_notice() {
+    fn statusline_sends_once_a_day_without_a_notice() {
         let mut state = State::default();
+        let day = 20_000 * SECONDS_PER_DAY;
 
         assert_eq!(
-            plan(&mut state, 0, false),
+            plan(&mut state, day, false),
+            Plan {
+                notice: false,
+                send: true
+            }
+        );
+        assert_eq!(
+            plan(&mut state, day + 5, false),
             Plan {
                 notice: false,
                 send: false
             }
         );
         assert_eq!(state.notified_at, None);
+        assert_eq!(
+            plan(&mut state, day + 60, true),
+            Plan {
+                notice: true,
+                send: false
+            }
+        );
     }
 
     #[test]
@@ -580,11 +635,10 @@ mod tests {
 
     #[test]
     fn offline_commands_never_enter_the_send_plan() {
+        let mut shared = ccusage_cli::SharedArgs::default();
+        shared.select_offline(true);
         let args = ccusage_cli::AgentCommandArgs {
-            shared: ccusage_cli::SharedArgs {
-                offline: true,
-                ..ccusage_cli::SharedArgs::default()
-            },
+            shared,
             kind: AgentReportKind::Daily,
             session_id: None,
             sections: None,
@@ -599,6 +653,18 @@ mod tests {
             ccusage_cli::StandardAgent::Codex,
             args
         ))));
+    }
+
+    #[test]
+    fn statusline_offline_blocks_only_when_the_user_selects_it() {
+        let mut statusline = ccusage_cli::StatuslineArgs::default();
+        assert!(statusline.offline);
+        assert!(!command_offline(Some(&Command::Statusline(
+            statusline.clone()
+        ))));
+
+        statusline.select_offline(true);
+        assert!(command_offline(Some(&Command::Statusline(statusline))));
     }
 
     #[test]

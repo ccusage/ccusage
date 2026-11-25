@@ -349,7 +349,7 @@ fn parse_statusline_command(
     let mut args = StatuslineArgs::default();
     config.apply_statusline_args(&mut args);
     if let Some(offline) = offline_override {
-        args.offline = offline;
+        args.select_offline(offline);
     }
     args.debug = shared.debug;
     args.color = shared.color;
@@ -359,8 +359,8 @@ fn parse_statusline_command(
     let mut medium = None;
     while parser.peek().is_some() {
         match command_option(parser, options, "statusline")? {
-            ClaudeStatuslineOption::Offline => args.offline = true,
-            ClaudeStatuslineOption::NoOffline => args.offline = false,
+            ClaudeStatuslineOption::Offline => args.select_offline(true),
+            ClaudeStatuslineOption::NoOffline => args.select_offline(false),
             ClaudeStatuslineOption::VisualBurnRate => {
                 args.visual_burn_rate =
                     parse_visual_burn_rate(&parser.value_for("--visual-burn-rate")?)?

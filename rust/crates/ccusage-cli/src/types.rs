@@ -178,6 +178,8 @@ pub struct SharedArgs {
     pub order: Option<SortOrder>,
     pub breakdown: bool,
     pub offline: bool,
+    /// Whether the user chose `offline` through the CLI or config rather than a command default.
+    pub offline_selected: bool,
     pub color: ColorChoice,
     pub timezone: Option<ReportTimezone>,
     pub jq: Option<String>,
@@ -199,6 +201,11 @@ impl SharedArgs {
             debug_samples: 5,
             ..Self::default()
         }
+    }
+
+    pub fn select_offline(&mut self, offline: bool) {
+        self.offline = offline;
+        self.offline_selected = offline;
     }
 }
 
@@ -243,6 +250,8 @@ pub struct StatuslineArgs {
     pub color: ColorChoice,
     pub mode: CostMode,
     pub offline: bool,
+    /// Whether the user chose `offline` through the CLI or config rather than the statusline default.
+    pub offline_selected: bool,
     pub visual_burn_rate: VisualBurnRate,
     pub cost_source: CostSource,
     pub cache: bool,
@@ -366,6 +375,7 @@ impl Default for StatuslineArgs {
             color: ColorChoice::Auto,
             mode: CostMode::Auto,
             offline: crate::agents::CLAUDE_STATUSLINE.offline_by_default(),
+            offline_selected: false,
             visual_burn_rate: VisualBurnRate::Off,
             cost_source: CostSource::Auto,
             cache: true,
@@ -376,6 +386,13 @@ impl Default for StatuslineArgs {
             model_label_aliases: HashMap::new(),
             pricing_overrides: BTreeMap::new(),
         }
+    }
+}
+
+impl StatuslineArgs {
+    pub fn select_offline(&mut self, offline: bool) {
+        self.offline = offline;
+        self.offline_selected = offline;
     }
 }
 

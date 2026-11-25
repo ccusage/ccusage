@@ -48,7 +48,14 @@ fn parses_codex_statusline_with_offline_pricing_by_default() {
         panic!("expected codex statusline command");
     };
     assert!(args.shared.offline);
+    assert!(!args.shared.offline_selected);
     assert!(args.session_id.is_none());
+
+    let cli = parse(&["ccusage", "codex", "statusline", "--offline"]);
+    let Command::Agent(StandardAgent::Codex, AgentCommand::Statusline(args)) = cli else {
+        panic!("expected codex statusline command");
+    };
+    assert!(args.shared.offline_selected);
 
     let cli = parse(&[
         "ccusage",
@@ -157,5 +164,24 @@ fn codex_statusline_rejects_explicit_reversed_windows_in_every_scope() {
             error,
             "The --since date '20260605' is later than the --until date '20260603'."
         );
+    }
+}
+
+#[test]
+fn statusline_offline_default_is_not_a_user_selection() {
+    let Command::Statusline(args) = parse(&["ccusage", "statusline"]) else {
+        panic!("expected statusline");
+    };
+    assert!(args.offline);
+    assert!(!args.offline_selected);
+
+    for argv in [
+        &["ccusage", "statusline", "--offline"][..],
+        &["ccusage", "--offline", "statusline"][..],
+    ] {
+        let Command::Statusline(args) = parse(argv) else {
+            panic!("expected statusline");
+        };
+        assert!(args.offline_selected, "{argv:?}");
     }
 }
