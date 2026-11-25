@@ -179,7 +179,7 @@ if (import.meta.vitest) {
 
 		it('rejects a snapshot containing more than 90 days', async () => {
 			const days = Array.from({ length: 91 }, (_, index) => ({
-				date: new Date(Date.UTC(2026, 10, 24 - index)).toISOString().slice(0, 10),
+				date: new Date(Date.UTC(2026, 10, 24 - 90 + index)).toISOString().slice(0, 10),
 				generatedAt: '2026-11-25T00:15:42Z',
 				dailyActiveUsers: 1,
 				weeklyActiveUsers: 1,
