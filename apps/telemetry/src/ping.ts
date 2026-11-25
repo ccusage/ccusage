@@ -1,20 +1,17 @@
-import { zValidator } from '@hono/zod-validator';
-import { Hono } from 'hono';
 import type { FromSchema } from 'json-schema-to-ts';
 import * as z from 'zod';
 import type { JSONSchema } from 'zod/v4/core';
 
-import type { Env } from '../env.ts';
-import { pingJsonSchema } from './ping-schema.gen.ts';
+import { pingJsonSchema } from './v1/ping-schema.gen.ts';
 
 const MAX_BODY_BYTES = 1024;
 
-const headerSchema = z.object({
+export const headerSchema = z.object({
 	'content-type': z.string().startsWith('application/json'),
 	'content-length': z.coerce.number().int().nonnegative().max(MAX_BODY_BYTES),
 });
 
-type Ping = FromSchema<typeof pingJsonSchema>;
+export type Ping = FromSchema<typeof pingJsonSchema>;
 
 type Mutable<T> = T extends readonly (infer Item)[]
 	? Mutable<Item>[]
@@ -27,18 +24,11 @@ const mutablePingJsonSchema: JSONSchema.JSONSchema = pingJsonSchema as unknown a
 	typeof pingJsonSchema
 >;
 
-const pingSchema = z.fromJSONSchema(mutablePingJsonSchema) as z.ZodType<Ping>;
+export const pingSchema = z.fromJSONSchema(mutablePingJsonSchema) as z.ZodType<Ping>;
 
-export const ping = new Hono<Env>().post(
-	'/',
-	zValidator('header', headerSchema),
-	zValidator('json', pingSchema),
-	(c) => {
-		const ping = c.req.valid('json');
-		c.env.PINGS.writeDataPoint({
-			indexes: [ping.anonymousId],
-			blobs: [ping.event, ping.version, ping.os, ping.arch, ping.command],
-		});
-		return c.body(null, 204);
-	},
-);
+export function recordPing(pings: AnalyticsEngineDataset, ping: Ping): void {
+	pings.writeDataPoint({
+		indexes: [ping.anonymousId],
+		blobs: [ping.event, ping.version, ping.os, ping.arch, ping.command],
+	});
+}

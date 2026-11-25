@@ -2,7 +2,7 @@
 default:
     @just --list
 
-# Run the collector locally
+# Run the Worker locally
 dev:
     pnpm run dev
 
@@ -16,4 +16,4 @@ generate-schema:
 
 # Run the Worker's Node tests
 test:
-    TZ=UTC node --test src/v1/ping.test.ts src/rollup.test.ts src/stats.test.ts
+    TZ=UTC node --test src/*.test.ts

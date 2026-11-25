@@ -1,9 +1,24 @@
 import assert from 'node:assert/strict';
 import { describe, it, mock } from 'node:test';
+import { Hono } from 'hono';
+import type { CloudEnv } from 'void';
+
+import { loadDashboard, type Props } from '../pages/index.server.ts';
+import { GET as stats } from '../routes/v1/stats.ts';
+import { purgePublicStatsCache } from './stats.ts';
 
 const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
-const { app } = await import('./index.ts');
-const { purgePublicStatsCache } = await import('./stats.ts');
+let loaded: Props | undefined;
+const app = new Hono<CloudEnv>()
+	.get('/v1/stats', async (c) => {
+		const response = await stats(c);
+		if (!(response instanceof Response)) throw new Error('The stats route must return a Response');
+		return response;
+	})
+	.get('/', async (c) => {
+		loaded = await loadDashboard(c);
+		return c.body(null);
+	});
 
 function snapshot(extra: Record<string, unknown> = {}) {
 	return {
@@ -180,31 +195,35 @@ void describe('public statistics', () => {
 	});
 });
 
-void describe('dashboard delivery', () => {
-	void it('serves the Vite-built dashboard asset with restrictive same-origin resource headers', async () => {
-		const html = '<!doctype html><script type="module" src="/assets/dashboard.js"></script>';
-		let servedRequest: RequestInfo | URL | undefined;
+void describe('dashboard page', () => {
+	void it('loads the snapshot with restrictive headers and the same edge lifetime as the API', async (t) => {
+		t.after(() => mock.timers.reset());
+		mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-11-25T12:00:00Z') });
+		const current = snapshot({
+			generatedAt: '2026-11-25T00:15:42Z',
+			days: [{ ...snapshot().days[0], date: '2026-11-24' }],
+		});
 		const response = await app.request(
 			'/',
 			{},
-			{
-				ASSETS: {
-					fetch: async (request: RequestInfo | URL) => {
-						servedRequest = request;
-						return new Response(html, {
-							headers: { 'Content-Type': 'text/html; charset=utf-8' },
-						});
-					},
-				},
-			},
+			{ ROLLUPS: { get: async () => JSON.stringify(current) } },
 		);
-		assert.equal(servedRequest instanceof Request ? new URL(servedRequest.url).pathname : '', '/');
 		assert.equal(response.status, 200);
 		assert.match(response.headers.get('content-security-policy') ?? '', /script-src 'self'/);
-		assert.match(response.headers.get('content-security-policy') ?? '', /font-src 'self'/);
 		assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
 		assert.equal(response.headers.get('referrer-policy'), 'no-referrer');
-		assert.match(response.headers.get('cache-control') ?? '', /max-age=300/);
-		assert.equal(await response.text(), html);
+		assert.equal(response.headers.get('cloudflare-cdn-cache-control'), 'public, max-age=44100');
+		assert.equal(response.headers.get('cache-tag'), 'public-stats');
+		assert.equal(loaded?.unavailable, false);
+		assert.equal(loaded.stats?.days[0]?.date, '2026-11-24');
+		assert.equal(JSON.stringify(loaded).includes('byCommand'), false);
+	});
+
+	void it('renders an uncacheable unavailable state when the snapshot cannot be read', async () => {
+		const response = await app.request('/', {}, { ROLLUPS: { get: async () => '{' } });
+		assert.equal(response.status, 200);
+		assert.equal(response.headers.get('cache-control'), 'no-store');
+		assert.equal(loaded?.stats, null);
+		assert.equal(loaded.unavailable, true);
 	});
 });

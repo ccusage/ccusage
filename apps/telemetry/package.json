@@ -5,20 +5,21 @@
 	"description": "Cloudflare Worker that collects the anonymous ccusage daily usage ping",
 	"type": "module",
 	"scripts": {
-		"build": "cf build",
-		"deploy": "cf deploy",
-		"dev": "cf dev"
+		"build": "vite build",
+		"deploy": "void deploy --platform cloudflare",
+		"dev": "vite dev"
 	},
 	"devDependencies": {
-		"@cloudflare/vite-plugin": "catalog:telemetry",
 		"@cloudflare/workers-types": "catalog:telemetry",
 		"@hono/zod-validator": "catalog:telemetry",
 		"@tanstack/charts": "catalog:telemetry",
 		"@types/node": "catalog:types",
-		"cf": "catalog:telemetry",
+		"@void/svelte": "catalog:telemetry",
 		"hono": "catalog:telemetry",
 		"json-schema-to-ts": "catalog:telemetry",
+		"svelte": "catalog:telemetry",
 		"vite": "catalog:telemetry",
+		"void": "catalog:telemetry",
 		"zod": "catalog:telemetry"
 	}
 }
