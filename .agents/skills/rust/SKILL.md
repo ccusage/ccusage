@@ -24,8 +24,9 @@ Reserve `pub` for consumers in other crates. `just hawk` fails on every Hawk
 finding, and `nix flake check` runs the same gate. Every binary the repository
 ships or runs in a check has a `[[production]]` entry in `rust/hawk.toml`; add a
 missing one first. Then fix `unnecessary_public` by narrowing the item, never by
-editing `rust/hawk.toml` to silence it. Update the Hawk
-archive pins in `nix/cargo-hawk.nix` with the compiler in `rust-toolchain.toml`.
+editing `rust/hawk.toml` to silence it. Hawk runs on the stable Rust its archive
+was built against, not the nightly in `rust-toolchain.toml`; bump both together in
+`nix/cargo-hawk.nix`.
 
 ## Pricing embedding
 

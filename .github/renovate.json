@@ -45,7 +45,7 @@
 			"allowedVersions": "<0.9.0"
 		},
 		{
-			"description": "A Rust toolchain bump needs a matching cargo-hawk archive and rust-overlay revision.",
+			"description": "A nightly toolchain bump needs a rust-overlay revision that already carries it.",
 			"matchManagers": ["rust-toolchain"],
 			"matchDepTypes": ["toolchain"],
 			"enabled": false

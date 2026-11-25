@@ -1,3 +1,6 @@
+[build]
+rustflags = ["-Zunstable-options", "--jobs-frontend=0"]
+
 [env]
 SQLITE_DEFAULT_MEMSTATUS = "0"
 SQLITE_OMIT_AUTHORIZATION = "1"

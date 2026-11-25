@@ -25,7 +25,10 @@ let
       craneLib.filterCargoSources path type
       || builtins.match "(adapters|crates)/[^/]+/src/.*" relativePath != null;
   };
-  cargoConfigEnv = (builtins.fromTOML (builtins.readFile (root + /.cargo/config.toml))).env;
+  cargoConfig = builtins.fromTOML (builtins.readFile (root + /.cargo/config.toml));
+  cargoConfigEnv = cargoConfig.env;
+  # NOTE(2026-11-25): Cargo ignores build.rustflags whenever RUSTFLAGS is set, so every RUSTFLAGS here has to carry them.
+  frontendRustflags = lib.concatStringsSep " " cargoConfig.build.rustflags;
   # NOTE(2026-07-27, #1428): Apple ld64 lacks identical-code folding. Link with lld on Darwin to fold duplicate adapter instantiations.
   linkerRustflags =
     lib.optionalString stdenv.hostPlatform.isLinux "-C link-arg=-fuse-ld=mold"
@@ -48,7 +51,8 @@ let
       # NOTE(2026-11-16, #1251): libc 0.2.191 links -liconv on Apple targets. Strip the unused dylib so the binary runs on Macs without a Nix store.
       lib.optionalString stdenv.hostPlatform.isDarwin "-C link-arg=-Wl,-dead_strip_dylibs "
       + linkerRustflags
-      + " -C link-arg=-Wl,--icf=all";
+      + " -C link-arg=-Wl,--icf=all "
+      + frontendRustflags;
     nativeBuildInputs = [
       pkg-config
     ]
@@ -120,6 +124,7 @@ craneLib.buildPackage (
         commonArgs
         dependencyArtifacts
         depsOnlyArgs
+        frontendRustflags
         systemDylibsGate
         linkerRustflags
         unsafeCodeCheck
