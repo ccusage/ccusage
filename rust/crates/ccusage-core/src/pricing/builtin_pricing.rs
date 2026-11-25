@@ -399,4 +399,11 @@ pub(super) const CURATED_LIST_PRICES: &[Supplement] = &[
         pricing: default_write_rates(0.1e-6, 0.4e-6, 0.025e-6, &WRITES_AT_INPUT_RATE),
         context_limit: None,
     },
+    // NOTE(2026-11-25): Alibaba Cloud Model Studio listed qwen3-coder-plus at $1 input and $5 output per 1M for prompts up to 32K tokens (LiteLLM's `dashscope/qwen3-coder-plus` row, sourced from https://www.alibabacloud.com/help/en/model-studio/models). Alibaba retired it and models.dev dropped its row in https://github.com/anomalyco/models.dev/commit/6e08b664c, which left only reseller `qwen/` and `bailian/` listings to answer Qwen Code's logs. Cache rates follow Alibaba's implicit-cache ratios (100% write, 20% hit).
+    Supplement {
+        provider: "dashscope",
+        model: "qwen3-coder-plus",
+        pricing: rates(1e-6, 5e-6, 1e-6, 0.2e-6),
+        context_limit: None,
+    },
 ];

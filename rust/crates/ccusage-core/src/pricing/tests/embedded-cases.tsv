@@ -106,7 +106,7 @@
 085-claude|o3|F:o3|2/8|S2|o3|
 085-claude|claude-opus-4.8|F:claude-opus-4.8|5/25|S2|claude-opus-4-8|
 085-claude|grok-4-3|F:grok-4-3|1.25/2.5|S2|grok-4.3|
-085-claude|qwen3-coder-plus|F:qwen3-coder-plus|1/5|S4|qwen3-coder-plus|
+085-claude|qwen3-coder-plus|F:qwen3-coder-plus|1/5|S2|qwen3-coder-plus|
 085-claude|claude-sonnet-4|F:claude-sonnet-4|3/15|S2|claude-sonnet-4|
 086-claude|kimi-k2.7-code-highspeed|F:kimi-k2.7-code-highspeed|7/8|S1|kimi-k2-7-code-highspeed|kimi-k2-7-code-highspeed:7/
 087-hermes|deepseek-v4-flash-20260812|F:deepseek-v4-flash-20260812|0.3/1.2|S5|deepseek-v4-flash|
