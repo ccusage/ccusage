@@ -5,7 +5,7 @@
 		"moduleDetection": "force",
 		"module": "Preserve",
 		"moduleResolution": "bundler",
-		"types": ["@cloudflare/workers-types", "node", "vitest/globals"],
+		"types": ["@cloudflare/workers-types", "node", "vitest/globals", "vitest/importMeta"],
 		"allowImportingTsExtensions": true,
 		"strict": true,
 		"noUncheckedIndexedAccess": true,
