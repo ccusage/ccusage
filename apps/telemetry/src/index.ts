@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 
 import type { Env } from './env.ts';
 import { previousUtcDay, writeRecentRollups } from './rollup.ts';
-import { stats } from './stats.ts';
+import { purgePublicStatsCache, stats } from './stats.ts';
 import { v1 } from './v1/index.ts';
 
 export const app = new Hono<Env>()
@@ -28,6 +28,10 @@ export const app = new Hono<Env>()
 export default {
 	fetch: app.fetch,
 	scheduled(controller, env, ctx) {
-		ctx.waitUntil(writeRecentRollups(env, previousUtcDay(controller.scheduledTime), new Date()));
+		ctx.waitUntil(
+			writeRecentRollups(env, previousUtcDay(controller.scheduledTime), new Date()).then(() =>
+				purgePublicStatsCache(ctx.cache),
+			),
+		);
 	},
 } satisfies ExportedHandler<Env['Bindings']>;

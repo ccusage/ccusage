@@ -1,6 +1,7 @@
 import { bindings, defineConfig, triggers } from 'cf/config';
 
 import * as entrypoint from './src/index.ts' with { type: 'cf-worker' };
+import { ROLLUP_CRON } from './src/rollup.ts';
 
 export default defineConfig({
 	accountId: 'e721638321cf56dac84472ad22a161ed',
@@ -10,7 +11,8 @@ export default defineConfig({
 		entrypoint,
 		assets: { runWorkerFirst: ['/'] },
 		domains: ['telemetry.ccusage.com'],
-		triggers: [triggers.scheduled({ schedule: '15 0 * * *' })],
+		triggers: [triggers.scheduled({ schedule: ROLLUP_CRON })],
+		cache: { enabled: true },
 		observability: { enabled: false },
 		env: {
 			ASSETS: bindings.assets(),

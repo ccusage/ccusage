@@ -56,11 +56,11 @@ Each breakdown keeps up to 20 groups with the highest observed counts per day. S
 
 An active environment means a distinct random installation ID observed in the relevant window, not a verified person. Multiple devices and reset IDs can increase counts; opt-outs, blocked requests and failed sends can reduce them. These are adoption indicators, not an exact population or a guaranteed lower bound. Command breakdowns are omitted because only the first command of each UTC day is reported.
 
-Daily aggregates are generated after 00:15 UTC. The [aggregate JSON](https://telemetry.ccusage.com/v1/stats) is cached for up to one hour at the edge and five minutes in browsers. Missing days appear as gaps, not zero activity. An empty dashboard means no aggregates are available yet; an error or stale data is shown explicitly.
+Daily aggregates are generated after 00:15 UTC. The [aggregate JSON](https://telemetry.ccusage.com/v1/stats) is cached at the edge until the next aggregate is published, and for up to five minutes in browsers. Missing days appear as gaps, not zero activity. An empty dashboard means no aggregates are available yet; an error or stale data is shown explicitly.
 
 Analytics Engine can sample data, particularly over longer query windows. New aggregates include `samplingObserved` to report whether a query observed a sampling interval greater than one; older archives may omit that metadata. The interval is not an error estimate, and counts are not scaled by it. The dashboard warns about observed sampling and inconsistent window counts, such as a monthly count below the weekly count, without changing the returned figures. See Cloudflare's [sampling documentation](https://developers.cloudflare.com/analytics/analytics-engine/sampling/) and [sampling FAQ](https://developers.cloudflare.com/analytics/faq/wae-faqs/).
 
-Each scheduled run recomputes the previous three completed UTC days and rebuilds the public snapshot from daily archives. This recovers missed runs within that lookback and repairs a corrupted public snapshot without discarding valid archives. Longer outages remain visible as gaps. A daily GitHub Actions health check runs at 02:23 UTC, after the public cache can refresh, and fails if the previous UTC day is absent. Workers request logs remain disabled.
+Each scheduled run recomputes the previous three completed UTC days and rebuilds the public snapshot from daily archives. This recovers missed runs within that lookback and repairs a corrupted public snapshot without discarding valid archives. Longer outages remain visible as gaps. A daily GitHub Actions health check runs at 02:23 UTC and fails if the previous UTC day is absent. Workers request logs remain disabled.
 
 ## First-Run Notice
 

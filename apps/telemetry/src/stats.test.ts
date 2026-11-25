@@ -1,30 +1,9 @@
 import assert from 'node:assert/strict';
-import { after, beforeEach, describe, it } from 'node:test';
+import { describe, it, mock } from 'node:test';
 
 const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
-const cacheEntries = new Map<string, Response>();
-const cacheDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'caches');
-Object.defineProperty(globalThis, 'caches', {
-	configurable: true,
-	value: {
-		open: async (name: string) => {
-			assert.equal(name, 'ccusage-public-stats');
-			return {
-				match: async (key: RequestInfo) =>
-					cacheEntries.get(key instanceof Request ? key.url : String(key))?.clone(),
-				put: async (key: RequestInfo, response: Response) => {
-					cacheEntries.set(key instanceof Request ? key.url : String(key), response.clone());
-				},
-			};
-		},
-	},
-});
 const { app } = await import('./index.ts');
-beforeEach(() => cacheEntries.clear());
-after(() => {
-	if (cacheDescriptor) Object.defineProperty(globalThis, 'caches', cacheDescriptor);
-	else Reflect.deleteProperty(globalThis, 'caches');
-});
+const { purgePublicStatsCache } = await import('./stats.ts');
 
 function snapshot(extra: Record<string, unknown> = {}) {
 	return {
@@ -48,23 +27,28 @@ function snapshot(extra: Record<string, unknown> = {}) {
 }
 
 void describe('public statistics', () => {
-	void it('uses one KV snapshot read per cache miss and shares cached data across query strings', async () => {
-		let reads = 0;
-		const env = {
-			ROLLUPS: {
-				get: async (key: string) => {
-					reads++;
-					assert.equal(key, 'public-stats.json');
-					return JSON.stringify(snapshot());
+	void it('publishes only public snapshot fields with Workers Cache headers', async () => {
+		const response = await app.request(
+			'/v1/stats',
+			{},
+			{
+				ROLLUPS: {
+					get: async (key: string) => {
+						assert.equal(key, 'public-stats.json');
+						return JSON.stringify(snapshot());
+					},
 				},
 			},
-		};
-		const first = await app.request('/v1/stats?first=1', {}, env);
-		assert.equal(first.status, 200);
-		assert.match(first.headers.get('cache-control') ?? '', /max-age=300, s-maxage=3600/);
-		assert.equal(reads, 1);
+		);
+		assert.equal(response.status, 200);
+		assert.equal(response.headers.get('cache-tag'), 'public-stats');
+		assert.match(response.headers.get('cache-control') ?? '', /^public, max-age=\d+$/);
+		assert.match(
+			response.headers.get('cloudflare-cdn-cache-control') ?? '',
+			/^public, max-age=\d+$/,
+		);
 
-		const body = await first.json();
+		const body = await response.json();
 		assert.equal(JSON.stringify(body).includes('private'), false);
 		assert.equal(JSON.stringify(body).includes('byCommand'), false);
 		assert.deepEqual(body, {
@@ -81,16 +65,67 @@ void describe('public statistics', () => {
 				},
 			],
 		});
-
-		assert.equal((await app.request('/v1/stats?second=2', {}, env)).status, 200);
-		assert.equal(reads, 1);
-		assert.equal(cacheEntries.size, 1);
 	});
 
-	void it('returns a cacheable empty state before the first rollup without inventing zero days', async () => {
+	void it('caches a current snapshot at the edge until the next rollup', async (t) => {
+		t.after(() => mock.timers.reset());
+		mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-11-25T12:00:00Z') });
+		const current = snapshot({
+			generatedAt: '2026-11-25T00:15:42Z',
+			days: [{ ...snapshot().days[0], date: '2026-11-24' }],
+		});
+		const response = await app.request(
+			'/v1/stats',
+			{},
+			{ ROLLUPS: { get: async () => JSON.stringify(current) } },
+		);
+		assert.equal(response.status, 200);
+		assert.equal(response.headers.get('cloudflare-cdn-cache-control'), 'public, max-age=44100');
+		assert.equal(response.headers.get('cache-control'), 'public, max-age=300');
+	});
+
+	void it('keeps a snapshot without yesterday at the edge only briefly', async (t) => {
+		t.after(() => mock.timers.reset());
+		mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-11-25T00:15:10Z') });
+		const pending = snapshot({
+			generatedAt: '2026-11-24T00:15:42Z',
+			days: [{ ...snapshot().days[0], date: '2026-11-23' }],
+		});
+		const response = await app.request(
+			'/v1/stats',
+			{},
+			{ ROLLUPS: { get: async () => JSON.stringify(pending) } },
+		);
+		assert.equal(response.status, 200);
+		assert.equal(response.headers.get('cloudflare-cdn-cache-control'), 'public, max-age=60');
+		assert.equal(response.headers.get('cache-control'), 'public, max-age=60');
+	});
+
+	void it('purges the public statistics tag and surfaces purge failures', async () => {
+		const purged: unknown[] = [];
+		await purgePublicStatsCache({
+			purge: async (options) => {
+				purged.push(options);
+				return { success: true, errors: [] };
+			},
+			invalidate: async () => ({ success: true, errors: [] }),
+		});
+		assert.deepEqual(purged, [{ tags: ['public-stats'] }]);
+
+		await assert.rejects(purgePublicStatsCache(undefined), /Workers Cache is not enabled/);
+		await assert.rejects(
+			purgePublicStatsCache({
+				purge: async () => ({ success: false, errors: [{ code: 1, message: 'denied' }] }),
+				invalidate: async () => ({ success: true, errors: [] }),
+			}),
+			/denied/,
+		);
+	});
+
+	void it('returns a briefly cached empty state before the first rollup without inventing zero days', async () => {
 		const response = await app.request('/v1/stats', {}, { ROLLUPS: { get: async () => null } });
 		assert.equal(response.status, 200);
-		assert.match(response.headers.get('cache-control') ?? '', /max-age=300, s-maxage=3600/);
+		assert.equal(response.headers.get('cloudflare-cdn-cache-control'), 'public, max-age=60');
 		assert.deepEqual(await response.json(), { generatedAt: null, days: [] });
 	});
 
