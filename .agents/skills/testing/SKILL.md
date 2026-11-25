@@ -25,3 +25,11 @@ Read [Rust tests](references/rust.md) for fixtures, snapshots, pricing, and mode
 
 Read [Node tests](references/node-test.md) for launcher and JS tooling tests.
 Test CLI runtime behavior in Rust.
+
+## Telemetry Worker
+
+`telemetry/` tests run with Vitest, never `node:test`. Write them in-source in an
+`if (import.meta.vitest)` block of the module they cover, using the Vitest globals,
+with no separate `*.test.ts` files. Keep tests out of `routes/` and `pages/`: put the
+handler in `src/` and re-export it from the route file. Write test values inline
+instead of building them with helper functions.
