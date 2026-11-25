@@ -1,3 +1,5 @@
 .cloudflare/
 .wrangler/
 dist/
+.void/
+.void-wrangler.jsonc

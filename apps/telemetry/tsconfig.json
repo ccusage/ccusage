@@ -1,7 +1,7 @@
 {
 	"compilerOptions": {
 		"target": "ESNext",
-		"lib": ["ESNext"],
+		"lib": ["ESNext", "DOM", "DOM.Iterable"],
 		"moduleDetection": "force",
 		"module": "Preserve",
 		"moduleResolution": "bundler",
@@ -14,5 +14,12 @@
 		"erasableSyntaxOnly": true,
 		"skipLibCheck": true
 	},
-	"include": ["src/**/*.ts", "cloudflare.config.ts", "vite.config.ts"]
+	"include": [
+		"src/**/*.ts",
+		"routes/**/*.ts",
+		"crons/**/*.ts",
+		"pages/**/*.ts",
+		"void.config.ts",
+		"vite.config.ts"
+	]
 }

@@ -5,6 +5,7 @@
 		"target",
 		"node_modules",
 		"coverage",
+		".void",
 		".git",
 		".claude/settings.local.json",
 		"nix/tools/models-dev-gen/gen.ts"

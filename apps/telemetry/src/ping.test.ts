@@ -2,8 +2,17 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { FromSchema } from 'json-schema-to-ts';
 
-import { app } from '../index.ts';
-import { pingJsonSchema } from './ping-schema.gen.ts';
+import { Hono } from 'hono';
+import type { CloudEnv } from 'void';
+
+import { POST } from '../routes/v1/ping.ts';
+import { pingJsonSchema } from './v1/ping-schema.gen.ts';
+
+const app = new Hono<CloudEnv>().post('/v1/ping', async (c) => {
+	const response = await POST(c);
+	if (!(response instanceof Response)) throw new Error('The ping route must return a Response');
+	return response;
+});
 
 const validPing = {
 	event: 'cli_daily_active',
@@ -93,12 +102,5 @@ void describe('POST /v1/ping', () => {
 			assert.equal((await post(body, env, options)).status, 400, JSON.stringify(options));
 		}
 		assert.equal(points.length, 0);
-	});
-
-	void it('serves nothing outside POST /v1/ping', async () => {
-		const { env } = recordingEnv();
-
-		assert.equal((await app.request('/v1/ping', { method: 'GET' }, env)).status, 404);
-		assert.equal((await app.request('/ping', { method: 'POST' }, env)).status, 404);
 	});
 });

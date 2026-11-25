@@ -1,0 +1,143 @@
+@font-face {
+	font-family: Inter;
+	font-style: normal;
+	font-weight: 100 900;
+	font-display: swap;
+	src: url('../../../docs/node_modules/vitepress/dist/client/theme-default/fonts/inter-roman-latin.woff2')
+		format('woff2');
+}
+:root {
+	color-scheme: light;
+	--bg: #fff;
+	--panel: #f6f6f7;
+	--text: #3c3c43;
+	--muted: #67676c;
+	--border: #e2e2e3;
+	--accent: #3451b2;
+	--daily: #3451b2;
+	--weekly: #18794e;
+	--monthly: #a65d0b;
+	--code: #f1f1f1;
+}
+:root[data-theme='dark'] {
+	color-scheme: dark;
+	--bg: #1b1b1f;
+	--panel: #202127;
+	--text: #dfdfd6;
+	--muted: #98989f;
+	--border: #2e2e32;
+	--accent: #a8b1ff;
+	--daily: #a8b1ff;
+	--weekly: #62cba2;
+	--monthly: #e6b66e;
+	--code: #161618;
+}
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme='light']) {
+		color-scheme: dark;
+		--bg: #1b1b1f;
+		--panel: #202127;
+		--text: #dfdfd6;
+		--muted: #98989f;
+		--border: #2e2e32;
+		--accent: #a8b1ff;
+		--daily: #a8b1ff;
+		--weekly: #62cba2;
+		--monthly: #e6b66e;
+		--code: #161618;
+	}
+}
+* {
+	box-sizing: border-box;
+}
+body {
+	margin: 0;
+	background: var(--bg);
+	color: var(--text);
+	font:
+		16px/1.7 Inter,
+		-apple-system,
+		BlinkMacSystemFont,
+		sans-serif;
+	-webkit-font-smoothing: antialiased;
+}
+a {
+	color: var(--accent);
+	text-underline-offset: 3px;
+}
+button {
+	font: inherit;
+	cursor: pointer;
+}
+a:focus-visible,
+button:focus-visible,
+summary:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 4px;
+}
+.skip-link {
+	position: fixed;
+	top: 8px;
+	left: 8px;
+	z-index: 5;
+	transform: translateY(-150%);
+	background: var(--bg);
+	padding: 4px 12px;
+}
+.skip-link:focus {
+	transform: none;
+}
+main {
+	max-width: 1120px;
+	margin: auto;
+	padding: 48px 32px 64px;
+}
+h1 {
+	font-size: 32px;
+	line-height: 40px;
+	letter-spacing: -0.02em;
+	font-weight: 600;
+	margin: 0 0 16px;
+}
+h2 {
+	font-size: 20px;
+	line-height: 28px;
+	letter-spacing: -0.02em;
+	font-weight: 600;
+	margin: 0;
+}
+p {
+	margin: 12px 0;
+	color: var(--muted);
+}
+.meta {
+	font-size: 13px;
+}
+.panel {
+	border: 1px solid var(--border);
+	border-radius: 12px;
+	padding: 24px;
+	background: var(--bg);
+}
+code {
+	border-radius: 4px;
+	padding: 3px 6px;
+	background: var(--code);
+	color: var(--accent);
+	font-size: 0.85em;
+}
+[hidden] {
+	display: none !important;
+}
+@media (max-width: 700px) {
+	main {
+		padding: 32px 20px 48px;
+	}
+	h1 {
+		font-size: 28px;
+		line-height: 36px;
+	}
+	.panel {
+		padding: 20px 16px;
+	}
+}
