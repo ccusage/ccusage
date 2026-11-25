@@ -14,6 +14,6 @@ deploy:
 generate-schema:
     cd .. && nix run .#generate-telemetry-schema
 
-# Run the Worker's Node tests
+# Run the Worker's Vitest tests
 test:
-    TZ=UTC node --test src/*.test.ts
+    pnpm run test

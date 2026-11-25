@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
 
 import { OTHER_KEY, shareView } from './dashboard/share.ts';
 import type { PublicDailyRollup } from './rollup.ts';
@@ -20,8 +19,8 @@ function day(
 	};
 }
 
-void describe('share view', () => {
-	void it('keeps the five largest groups of the latest day and folds the rest into Other', () => {
+describe('share view', () => {
+	it('keeps the five largest groups of the latest day and folds the rest into Other', () => {
 		const days = [
 			day('2026-11-23', 10, [
 				['1', 6],
@@ -68,7 +67,7 @@ void describe('share view', () => {
 		assert.equal(view.latest?.groups.length, 6);
 	});
 
-	void it('never reports a negative remainder when sampled groups exceed the daily count', () => {
+	it('never reports a negative remainder when sampled groups exceed the daily count', () => {
 		const view = shareView(
 			[
 				day('2026-11-24', 5, [
@@ -89,7 +88,7 @@ void describe('share view', () => {
 		);
 	});
 
-	void it('has no series before the first aggregate', () => {
+	it('has no series before the first aggregate', () => {
 		assert.deepEqual(shareView([], 'platform', []), {
 			keys: [],
 			latest: null,

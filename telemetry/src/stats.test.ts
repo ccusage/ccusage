@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { describe, it, mock } from 'node:test';
 import { Hono } from 'hono';
 import type { CloudEnv } from 'void';
 
@@ -41,8 +40,8 @@ function snapshot(extra: Record<string, unknown> = {}) {
 	};
 }
 
-void describe('public statistics', () => {
-	void it('publishes only public snapshot fields with Workers Cache headers', async () => {
+describe('public statistics', () => {
+	it('publishes only public snapshot fields with Workers Cache headers', async () => {
 		const response = await app.request(
 			'/v1/stats',
 			{},
@@ -82,9 +81,11 @@ void describe('public statistics', () => {
 		});
 	});
 
-	void it('caches a current snapshot at the edge until the next rollup', async (t) => {
-		t.after(() => mock.timers.reset());
-		mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-11-25T12:00:00Z') });
+	it('caches a current snapshot at the edge until the next rollup', async () => {
+		onTestFinished(() => {
+			vi.useRealTimers();
+		});
+		vi.useFakeTimers({ now: Date.parse('2026-11-25T12:00:00Z'), toFake: ['Date'] });
 		const current = snapshot({
 			generatedAt: '2026-11-25T00:15:42Z',
 			days: [{ ...snapshot().days[0], date: '2026-11-24' }],
@@ -99,9 +100,11 @@ void describe('public statistics', () => {
 		assert.equal(response.headers.get('cache-control'), 'public, max-age=300');
 	});
 
-	void it('keeps a snapshot without yesterday at the edge only briefly', async (t) => {
-		t.after(() => mock.timers.reset());
-		mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-11-25T00:15:10Z') });
+	it('keeps a snapshot without yesterday at the edge only briefly', async () => {
+		onTestFinished(() => {
+			vi.useRealTimers();
+		});
+		vi.useFakeTimers({ now: Date.parse('2026-11-25T00:15:10Z'), toFake: ['Date'] });
 		const pending = snapshot({
 			generatedAt: '2026-11-24T00:15:42Z',
 			days: [{ ...snapshot().days[0], date: '2026-11-23' }],
@@ -116,7 +119,7 @@ void describe('public statistics', () => {
 		assert.equal(response.headers.get('cache-control'), 'public, max-age=60');
 	});
 
-	void it('purges the public statistics tag and surfaces purge failures', async () => {
+	it('purges the public statistics tag and surfaces purge failures', async () => {
 		const purged: unknown[] = [];
 		await purgePublicStatsCache({
 			purge: async (options) => {
@@ -137,20 +140,20 @@ void describe('public statistics', () => {
 		);
 	});
 
-	void it('returns a briefly cached empty state before the first rollup without inventing zero days', async () => {
+	it('returns a briefly cached empty state before the first rollup without inventing zero days', async () => {
 		const response = await app.request('/v1/stats', {}, { ROLLUPS: { get: async () => null } });
 		assert.equal(response.status, 200);
 		assert.equal(response.headers.get('cloudflare-cdn-cache-control'), 'public, max-age=60');
 		assert.deepEqual(await response.json(), { generatedAt: null, days: [] });
 	});
 
-	void it('returns an uncacheable error when the snapshot is corrupt', async () => {
+	it('returns an uncacheable error when the snapshot is corrupt', async () => {
 		const response = await app.request('/v1/stats', {}, { ROLLUPS: { get: async () => '{' } });
 		assert.equal(response.status, 503);
 		assert.equal(response.headers.get('cache-control'), 'no-store');
 	});
 
-	void it('returns an uncacheable error when the snapshot read fails', async () => {
+	it('returns an uncacheable error when the snapshot read fails', async () => {
 		const response = await app.request(
 			'/v1/stats',
 			{},
@@ -166,7 +169,7 @@ void describe('public statistics', () => {
 		assert.equal(response.headers.get('cache-control'), 'no-store');
 	});
 
-	void it('rejects a snapshot containing more than 90 days', async () => {
+	it('rejects a snapshot containing more than 90 days', async () => {
 		const day = {
 			date: yesterday,
 			generatedAt: `${yesterday}T23:59:00Z`,
@@ -195,10 +198,12 @@ void describe('public statistics', () => {
 	});
 });
 
-void describe('dashboard page', () => {
-	void it('loads the snapshot with restrictive headers and the same edge lifetime as the API', async (t) => {
-		t.after(() => mock.timers.reset());
-		mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-11-25T12:00:00Z') });
+describe('dashboard page', () => {
+	it('loads the snapshot with restrictive headers and the same edge lifetime as the API', async () => {
+		onTestFinished(() => {
+			vi.useRealTimers();
+		});
+		vi.useFakeTimers({ now: Date.parse('2026-11-25T12:00:00Z'), toFake: ['Date'] });
 		const current = snapshot({
 			generatedAt: '2026-11-25T00:15:42Z',
 			days: [{ ...snapshot().days[0], date: '2026-11-24' }],
@@ -219,7 +224,7 @@ void describe('dashboard page', () => {
 		assert.equal(JSON.stringify(loaded).includes('byCommand'), false);
 	});
 
-	void it('renders an uncacheable unavailable state when the snapshot cannot be read', async () => {
+	it('renders an uncacheable unavailable state when the snapshot cannot be read', async () => {
 		const response = await app.request('/', {}, { ROLLUPS: { get: async () => '{' } });
 		assert.equal(response.status, 200);
 		assert.equal(response.headers.get('cache-control'), 'no-store');

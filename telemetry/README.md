@@ -41,7 +41,7 @@ Each new rollup records `samplingObserved` from `APPROX_MAX(sampleInterval)` in 
 
 The three-day lookback recovers recent missed runs; longer outages remain visible as gaps. Rejected scheduled promises appear in Cloudflare's Cron Trigger Past Events status. The `Check telemetry rollup` GitHub workflow checks the public snapshot daily at 02:23 UTC and fails when yesterday's aggregate is missing. It can also be dispatched manually and requires no Cloudflare credentials. Request logging stays disabled.
 
-The rollup reads the dataset through an Analytics SQL binding, so it needs no API token. Keep this account on Workers Free: KV operations fail at their free quota rather than billing for overages. No R2 subscription is required. That binding has no local simulation, so the scheduled rollup cannot run in local development; the Node tests cover the rollup without it.
+The rollup reads the dataset through an Analytics SQL binding, so it needs no API token. Keep this account on Workers Free: KV operations fail at their free quota rather than billing for overages. No R2 subscription is required. That binding has no local simulation, so the scheduled rollup cannot run in local development; the tests cover the rollup without it.
 
 ## Recipes
 
@@ -54,7 +54,7 @@ The Worker is a [Void](https://void.cloud/guide/) app deployed straight to the c
 
 ```bash
 just telemetry::dev     # run locally with vite dev
-just telemetry::test    # Node tests
+just telemetry::test    # Vitest tests
 just telemetry::deploy  # deploy to Cloudflare with void deploy
 ```
 

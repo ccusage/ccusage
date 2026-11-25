@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
 
 import {
 	type DailyRollup,
@@ -92,15 +91,15 @@ function fakeEnv(initial: Record<string, string> = {}) {
 	return { env, queries, gets, puts, values };
 }
 
-void describe('previousUtcDay', () => {
-	void it('returns the UTC day before the trigger fired', () => {
+describe('previousUtcDay', () => {
+	it('returns the UTC day before the trigger fired', () => {
 		assert.equal(previousUtcDay(Date.UTC(2026, 9, 22, 0, 15)), '2026-10-21');
 		assert.equal(previousUtcDay(Date.UTC(2026, 0, 1, 0, 15)), '2025-12-31');
 	});
 });
 
-void describe('writeDailyRollup', () => {
-	void it('archives the daily rollup and publishes a sanitized 90-day snapshot from archives', async () => {
+describe('writeDailyRollup', () => {
+	it('archives the daily rollup and publishes a sanitized 90-day snapshot from archives', async () => {
 		const initial = {
 			...archiveHistory('2026-07-23', '2026-10-20'),
 			'public-stats.json': '{',
@@ -159,7 +158,7 @@ void describe('writeDailyRollup', () => {
 		});
 	});
 
-	void it('publishes a first snapshot without history backfill', async () => {
+	it('publishes a first snapshot without history backfill', async () => {
 		const { env, gets, puts, values } = fakeEnv();
 
 		await writeDailyRollup(env, '2026-10-21', new Date('2026-10-22T00:15:00Z'));
@@ -176,7 +175,7 @@ void describe('writeDailyRollup', () => {
 		);
 	});
 
-	void it('bounds legacy archive breakdowns at publication without changing totals or archives', async () => {
+	it('bounds legacy archive breakdowns at publication without changing totals or archives', async () => {
 		const legacy = {
 			date: '2026-10-20',
 			generatedAt: '2026-10-21T00:15:00Z',
@@ -212,7 +211,7 @@ void describe('writeDailyRollup', () => {
 		assert.equal(values.get('daily/2026-10-20.json'), stored);
 	});
 
-	void it('replaces an older day without dropping newer archive data', async () => {
+	it('replaces an older day without dropping newer archive data', async () => {
 		const { env, puts, values } = fakeEnv(archiveHistory('2026-07-24', '2026-10-21'));
 
 		await writeDailyRollup(env, '2026-10-20', new Date('2026-10-22T00:15:00Z'));
@@ -228,7 +227,7 @@ void describe('writeDailyRollup', () => {
 		assert.equal(puts.length, 2);
 	});
 
-	void it('fails closed when an authoritative archive is corrupt', async () => {
+	it('fails closed when an authoritative archive is corrupt', async () => {
 		const { env, puts, values } = fakeEnv({
 			...archiveHistory('2026-07-24', '2026-10-20'),
 			'daily/2026-10-01.json': '{',
@@ -243,7 +242,7 @@ void describe('writeDailyRollup', () => {
 		assert.equal(values.get('public-stats.json'), '{');
 	});
 
-	void it('bounds every query to whole UTC days ending at midnight after the date', async () => {
+	it('bounds every query to whole UTC days ending at midnight after the date', async () => {
 		const { env, queries } = fakeEnv();
 
 		await writeDailyRollup(env, '2026-10-21', new Date('2026-10-22T00:15:00Z'));
@@ -266,7 +265,7 @@ void describe('writeDailyRollup', () => {
 		);
 	});
 
-	void it('marks observed sampling without scaling distinct-user counts', async () => {
+	it('marks observed sampling without scaling distinct-user counts', async () => {
 		const { env } = fakeEnv();
 		const query = env.ANALYTICS.query.bind(env.ANALYTICS);
 		env.ANALYTICS.query = async (request) => {
@@ -286,7 +285,7 @@ void describe('writeDailyRollup', () => {
 		assert.deepEqual(rollup.byVersion, [{ version: '20.0.38', users: 10 }]);
 	});
 
-	void it('limits all breakdown queries while preserving full distinct-user totals', async () => {
+	it('limits all breakdown queries while preserving full distinct-user totals', async () => {
 		const { env, queries } = fakeEnv();
 
 		const rollup = await writeDailyRollup(env, '2026-10-21', new Date('2026-10-22T00:15:00Z'));
@@ -305,7 +304,7 @@ void describe('writeDailyRollup', () => {
 		);
 	});
 
-	void it('does not publish zeros when Analytics Engine returns no count row', async () => {
+	it('does not publish zeros when Analytics Engine returns no count row', async () => {
 		const { env, puts } = fakeEnv();
 		env.ANALYTICS.query = async () => ({ data: [] });
 
@@ -313,7 +312,7 @@ void describe('writeDailyRollup', () => {
 		assert.equal(puts.length, 0);
 	});
 
-	void it('rejects rows that do not match the expected shape instead of writing them', async () => {
+	it('rejects rows that do not match the expected shape instead of writing them', async () => {
 		const { env, puts } = fakeEnv();
 		env.ANALYTICS.query = async () => ({ data: [{ users: 'many' }] });
 
@@ -322,8 +321,8 @@ void describe('writeDailyRollup', () => {
 	});
 });
 
-void describe('writeRecentRollups', () => {
-	void it('recovers recent missed dates and rebuilds a corrupt public snapshot within 23 operations', async () => {
+describe('writeRecentRollups', () => {
+	it('recovers recent missed dates and rebuilds a corrupt public snapshot within 23 operations', async () => {
 		const { env, queries, gets, puts, values } = fakeEnv({
 			...archiveHistory('2026-07-24', '2026-10-18'),
 			'public-stats.json': '{',
@@ -357,7 +356,7 @@ void describe('writeRecentRollups', () => {
 		assert.equal(snapshot.generatedAt, '2026-10-22T00:15:00.000Z');
 	});
 
-	void it('keeps genuine archive gaps instead of creating zero-valued days', async () => {
+	it('keeps genuine archive gaps instead of creating zero-valued days', async () => {
 		const { env, values } = fakeEnv({
 			...archiveHistory('2026-07-24', '2026-10-18', ['2026-10-05']),
 		});
@@ -376,7 +375,7 @@ void describe('writeRecentRollups', () => {
 		);
 	});
 
-	void it('fails closed if an authoritative archive cannot be parsed', async () => {
+	it('fails closed if an authoritative archive cannot be parsed', async () => {
 		const { env, puts, values } = fakeEnv({
 			...archiveHistory('2026-07-24', '2026-10-18'),
 			'daily/2026-10-05.json': '{',

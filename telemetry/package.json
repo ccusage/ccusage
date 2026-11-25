@@ -7,7 +7,8 @@
 	"scripts": {
 		"build": "vite build",
 		"deploy": "void deploy --platform cloudflare",
-		"dev": "vite dev"
+		"dev": "vite dev",
+		"test": "vitest run"
 	},
 	"devDependencies": {
 		"@cloudflare/workers-types": "catalog:telemetry",
@@ -19,6 +20,7 @@
 		"json-schema-to-ts": "catalog:telemetry",
 		"svelte": "catalog:telemetry",
 		"vite": "catalog:telemetry",
+		"vitest": "catalog:telemetry",
 		"void": "catalog:telemetry",
 		"zod": "catalog:telemetry"
 	}
