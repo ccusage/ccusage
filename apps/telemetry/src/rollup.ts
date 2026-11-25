@@ -2,6 +2,8 @@ import * as z from 'zod';
 
 const DATASET = 'events.analyticsEngine.ccusage_telemetry';
 const DAY_MS = 24 * 60 * 60 * 1000;
+const ROLLUP_MINUTE_UTC = 15;
+export const ROLLUP_CRON = `${ROLLUP_MINUTE_UTC} 0 * * *`;
 export const PUBLIC_STATS_KEY = 'public-stats.json';
 const MAX_PUBLIC_DAYS = 90;
 const MAX_BREAKDOWN_ROWS = 20;
@@ -66,6 +68,11 @@ export function parsePublicStats(stored: string, today = new Date().toISOString(
 		previousDate = day.date;
 	}
 	return snapshot;
+}
+
+export function nextRollupTime(now: number): number {
+	const todayRollup = Date.parse(`${isoDate(now)}T00:00:00Z`) + ROLLUP_MINUTE_UTC * 60 * 1000;
+	return now < todayRollup ? todayRollup : todayRollup + DAY_MS;
 }
 
 export function previousUtcDay(scheduledTime: number): string {
