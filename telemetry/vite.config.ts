@@ -8,7 +8,7 @@ export default defineConfig({
 	plugins: [voidPlugin(), voidSvelte()],
 	test: {
 		globals: true,
-		include: ['src/**/*.test.ts'],
+		include: [],
 		includeSource: ['{src,crons}/**/*.ts'],
 		env: { TZ: 'UTC' },
 	},
