@@ -245,3 +245,490 @@ async function breakdown<Row>(
 function isoDate(ms: number): string {
 	return new Date(ms).toISOString().slice(0, 10);
 }
+
+if (import.meta.vitest) {
+	const archives = new Map<string, string>(
+		Array.from({ length: 120 }, (_, index) => {
+			const date = new Date(Date.UTC(2026, 6, 1 + index)).toISOString().slice(0, 10);
+			return [
+				`daily/${date}.json`,
+				JSON.stringify({
+					date,
+					generatedAt: `${date}T23:59:00Z`,
+					dailyActiveUsers: 2,
+					weeklyActiveUsers: 4,
+					monthlyActiveUsers: 7,
+					byPlatform: [{ os: 'linux', arch: 'x86_64', users: 2 }],
+					byVersion: [{ version: '20.0.37', users: 2 }],
+					byCommand: [{ command: 'daily', users: 2 }],
+				}),
+			];
+		}),
+	);
+
+	const analytics: RollupBindings['ANALYTICS'] = {
+		query: async ({ query, params }) => {
+			const { start } = Object.fromEntries(Object.entries(params ?? {}));
+			if (query.includes('GROUP BY os, arch')) {
+				return {
+					data: [
+						{ os: 'macos', arch: 'aarch64', users: '7', maxSampleInterval: '1' },
+						{ os: 'linux', arch: 'x86_64', users: '3', maxSampleInterval: '1' },
+					],
+				};
+			}
+			if (query.includes('GROUP BY version')) {
+				return { data: [{ version: '20.0.38', users: '10', maxSampleInterval: '1' }] };
+			}
+			if (query.includes('GROUP BY command')) {
+				return {
+					data: [
+						{ command: 'daily', users: '6', maxSampleInterval: '1' },
+						{ command: 'statusline', users: '4', maxSampleInterval: '1' },
+					],
+				};
+			}
+			if (start === '2026-09-22T00:00:00.000Z') {
+				return { data: [{ users: '42', maxSampleInterval: '1' }] };
+			}
+			if (start === '2026-10-15T00:00:00.000Z') {
+				return { data: [{ users: '25', maxSampleInterval: '1' }] };
+			}
+			return { data: [{ users: '10', maxSampleInterval: '1' }] };
+		},
+	};
+
+	describe('previousUtcDay', () => {
+		it.each([
+			{ scheduledTime: Date.UTC(2026, 9, 22, 0, 15), expected: '2026-10-21' },
+			{ scheduledTime: Date.UTC(2026, 0, 1, 0, 15), expected: '2025-12-31' },
+		])('returns $expected for a trigger at $scheduledTime', ({ scheduledTime, expected }) => {
+			expect(previousUtcDay(scheduledTime)).toBe(expected);
+		});
+	});
+
+	describe('writeDailyRollup', () => {
+		it('archives the daily rollup and publishes a sanitized 90-day snapshot from archives', async () => {
+			const values = new Map(
+				[...archives].filter(
+					([key]) => key >= 'daily/2026-07-23.json' && key <= 'daily/2026-10-20.json',
+				),
+			);
+			values.set(PUBLIC_STATS_KEY, '{');
+			const get = vi.fn(
+				async (keys: string[]) => new Map(keys.map((key) => [key, values.get(key) ?? null])),
+			);
+			const put = vi.fn(async (key: string, value: string) => {
+				values.set(key, value);
+			});
+
+			const rollup = await writeDailyRollup(
+				{ ANALYTICS: analytics, ROLLUPS: { get, put } },
+				'2026-10-21',
+				new Date('2026-10-22T00:15:00Z'),
+			);
+
+			expect(rollup).toEqual({
+				date: '2026-10-21',
+				generatedAt: '2026-10-22T00:15:00.000Z',
+				dailyActiveUsers: 10,
+				weeklyActiveUsers: 25,
+				monthlyActiveUsers: 42,
+				samplingObserved: false,
+				byPlatform: [
+					{ os: 'macos', arch: 'aarch64', users: 7 },
+					{ os: 'linux', arch: 'x86_64', users: 3 },
+				],
+				byVersion: [{ version: '20.0.38', users: 10 }],
+				byCommand: [
+					{ command: 'daily', users: 6 },
+					{ command: 'statusline', users: 4 },
+				],
+			});
+			expect(get).toHaveBeenCalledOnce();
+			expect(get.mock.calls[0]?.[0]).toHaveLength(90);
+			expect(get.mock.calls[0]?.[0]).not.toContain(PUBLIC_STATS_KEY);
+			expect(put.mock.calls.map(([key]) => key)).toEqual([
+				'daily/2026-10-21.json',
+				PUBLIC_STATS_KEY,
+			]);
+			expect(JSON.parse(values.get('daily/2026-10-21.json') ?? '')).toEqual(rollup);
+
+			const published = values.get(PUBLIC_STATS_KEY) ?? '';
+			expect(published).not.toContain('anonymousId');
+			expect(published).not.toContain('private');
+			expect(published).not.toContain('byCommand');
+			const snapshot = parsePublicStats(published, '2026-10-22');
+			expect(snapshot.generatedAt).toBe('2026-10-22T00:15:00.000Z');
+			expect(snapshot.days).toHaveLength(90);
+			expect(snapshot.days[0]?.date).toBe('2026-07-24');
+			expect(snapshot.days[0]).not.toHaveProperty('samplingObserved');
+			expect(snapshot.days.at(-1)).toEqual({
+				date: '2026-10-21',
+				generatedAt: '2026-10-22T00:15:00.000Z',
+				dailyActiveUsers: 10,
+				weeklyActiveUsers: 25,
+				monthlyActiveUsers: 42,
+				samplingObserved: false,
+				byPlatform: [
+					{ os: 'macos', arch: 'aarch64', users: 7 },
+					{ os: 'linux', arch: 'x86_64', users: 3 },
+				],
+				byVersion: [{ version: '20.0.38', users: 10 }],
+			});
+		});
+
+		it('publishes a first snapshot without history backfill', async () => {
+			const values = new Map<string, string>();
+			const get = vi.fn(
+				async (keys: string[]) => new Map(keys.map((key) => [key, values.get(key) ?? null])),
+			);
+			const put = vi.fn(async (key: string, value: string) => {
+				values.set(key, value);
+			});
+
+			await writeDailyRollup(
+				{ ANALYTICS: analytics, ROLLUPS: { get, put } },
+				'2026-10-21',
+				new Date('2026-10-22T00:15:00Z'),
+			);
+
+			expect(get.mock.calls[0]?.[0]).toHaveLength(90);
+			expect(put.mock.calls.map(([key]) => key)).toEqual([
+				'daily/2026-10-21.json',
+				PUBLIC_STATS_KEY,
+			]);
+			const snapshot = parsePublicStats(values.get(PUBLIC_STATS_KEY) ?? '', '2026-10-22');
+			expect(snapshot.days.map(({ date }) => date)).toEqual(['2026-10-21']);
+		});
+
+		it('bounds legacy archive breakdowns at publication without changing totals or archives', async () => {
+			const legacy = {
+				date: '2026-10-20',
+				generatedAt: '2026-10-21T00:15:00Z',
+				dailyActiveUsers: 100,
+				weeklyActiveUsers: 200,
+				monthlyActiveUsers: 300,
+				byPlatform: Array.from({ length: 25 }, (_, index) => ({
+					os: `platform-${index}`,
+					arch: 'x86_64',
+					users: index + 1,
+				})),
+				byVersion: Array.from({ length: 25 }, (_, index) => ({
+					version: `20.0.${index}`,
+					users: index + 1,
+				})),
+				byCommand: [{ command: 'daily', users: 100 }],
+			} satisfies DailyRollup;
+			const stored = JSON.stringify(legacy);
+			const values = new Map([['daily/2026-10-20.json', stored]]);
+
+			await writeDailyRollup(
+				{
+					ANALYTICS: analytics,
+					ROLLUPS: {
+						get: async (keys) => new Map(keys.map((key) => [key, values.get(key) ?? null])),
+						put: async (key, value) => values.set(key, value),
+					},
+				},
+				'2026-10-21',
+				new Date('2026-10-22T00:15:00Z'),
+			);
+
+			const snapshot = parsePublicStats(values.get(PUBLIC_STATS_KEY) ?? '', '2026-10-22');
+			expect(snapshot.days.find(({ date }) => date === legacy.date)).toStrictEqual({
+				date: legacy.date,
+				generatedAt: legacy.generatedAt,
+				dailyActiveUsers: 100,
+				weeklyActiveUsers: 200,
+				monthlyActiveUsers: 300,
+				byPlatform: legacy.byPlatform.toReversed().slice(0, 20),
+				byVersion: legacy.byVersion.toReversed().slice(0, 20),
+			});
+			expect(values.get('daily/2026-10-20.json')).toBe(stored);
+		});
+
+		it('replaces an older day without dropping newer archive data', async () => {
+			const values = new Map(
+				[...archives].filter(
+					([key]) => key >= 'daily/2026-07-24.json' && key <= 'daily/2026-10-21.json',
+				),
+			);
+			const put = vi.fn(async (key: string, value: string) => {
+				values.set(key, value);
+			});
+
+			await writeDailyRollup(
+				{
+					ANALYTICS: analytics,
+					ROLLUPS: {
+						get: async (keys) => new Map(keys.map((key) => [key, values.get(key) ?? null])),
+						put,
+					},
+				},
+				'2026-10-20',
+				new Date('2026-10-22T00:15:00Z'),
+			);
+
+			const snapshot = parsePublicStats(values.get(PUBLIC_STATS_KEY) ?? '', '2026-10-22');
+			expect(snapshot.days).toHaveLength(90);
+			expect(snapshot.days.at(-1)?.date).toBe('2026-10-21');
+			expect(snapshot.generatedAt).toBe('2026-10-21T23:59:00Z');
+			expect(snapshot.days.find(({ date }) => date === '2026-10-20')).toMatchObject({
+				dailyActiveUsers: 10,
+				samplingObserved: false,
+			});
+			expect(put).toHaveBeenCalledTimes(2);
+		});
+
+		it('fails closed when an authoritative archive is corrupt', async () => {
+			const values = new Map(
+				[...archives].filter(
+					([key]) => key >= 'daily/2026-07-24.json' && key <= 'daily/2026-10-20.json',
+				),
+			);
+			values.set('daily/2026-10-01.json', '{');
+			values.set(PUBLIC_STATS_KEY, '{');
+			const put = vi.fn(async (key: string, value: string) => {
+				values.set(key, value);
+			});
+
+			await expect(
+				writeDailyRollup(
+					{
+						ANALYTICS: analytics,
+						ROLLUPS: {
+							get: async (keys) => new Map(keys.map((key) => [key, values.get(key) ?? null])),
+							put,
+						},
+					},
+					'2026-10-21',
+					new Date('2026-10-22T00:15:00Z'),
+				),
+			).rejects.toThrow();
+			expect(put.mock.calls.map(([key]) => key)).toEqual(['daily/2026-10-21.json']);
+			expect(values.get(PUBLIC_STATS_KEY)).toBe('{');
+		});
+
+		it('bounds every query to whole UTC days ending at midnight after the date', async () => {
+			const query = vi.fn((request: AnalyticsSQLQuery) => analytics.query(request));
+
+			await writeDailyRollup(
+				{
+					ANALYTICS: { query },
+					ROLLUPS: {
+						get: async (keys) => new Map(keys.map((key) => [key, null])),
+						put: async () => {},
+					},
+				},
+				'2026-10-21',
+				new Date('2026-10-22T00:15:00Z'),
+			);
+
+			const queries = query.mock.calls.map(([request]) => request.query);
+			expect(queries).toEqual(
+				Array.from({ length: 6 }, () =>
+					expect.stringMatching(
+						/count\(DISTINCT index1\) AS users, approx_max\(sampleInterval\) AS maxSampleInterval FROM events\.analyticsEngine\.ccusage_telemetry WHERE timestamp >= \$start AND timestamp < \$end/,
+					),
+				),
+			);
+			expect(queries.join('\n')).not.toContain('toDateTime');
+			expect(new Set(query.mock.calls.map(([request]) => JSON.stringify(request.params)))).toEqual(
+				new Set([
+					JSON.stringify({ start: '2026-10-21T00:00:00.000Z', end: '2026-10-22T00:00:00.000Z' }),
+					JSON.stringify({ start: '2026-10-15T00:00:00.000Z', end: '2026-10-22T00:00:00.000Z' }),
+					JSON.stringify({ start: '2026-09-22T00:00:00.000Z', end: '2026-10-22T00:00:00.000Z' }),
+				]),
+			);
+		});
+
+		it('marks observed sampling without scaling distinct-user counts', async () => {
+			const rollup = await writeDailyRollup(
+				{
+					ANALYTICS: {
+						query: async (request) =>
+							request.query.includes('GROUP BY version')
+								? { data: [{ version: '20.0.38', users: '10', maxSampleInterval: '3' }] }
+								: analytics.query(request),
+					},
+					ROLLUPS: {
+						get: async (keys) => new Map(keys.map((key) => [key, null])),
+						put: async () => {},
+					},
+				},
+				'2026-10-21',
+				new Date('2026-10-22T00:15:00Z'),
+			);
+
+			expect(rollup.samplingObserved).toBe(true);
+			expect(rollup.dailyActiveUsers).toBe(10);
+			expect(rollup.byVersion).toEqual([{ version: '20.0.38', users: 10 }]);
+		});
+
+		it('limits all breakdown queries while preserving full distinct-user totals', async () => {
+			const query = vi.fn((request: AnalyticsSQLQuery) => analytics.query(request));
+
+			const rollup = await writeDailyRollup(
+				{
+					ANALYTICS: { query },
+					ROLLUPS: {
+						get: async (keys) => new Map(keys.map((key) => [key, null])),
+						put: async () => {},
+					},
+				},
+				'2026-10-21',
+				new Date('2026-10-22T00:15:00Z'),
+			);
+
+			const queries = query.mock.calls.map(([request]) => request.query);
+			expect(queries.filter((sql) => sql.includes('GROUP BY'))).toEqual(
+				Array.from({ length: 3 }, () => expect.stringMatching(/ORDER BY users DESC LIMIT 20$/)),
+			);
+			expect(queries.filter((sql) => !sql.includes('GROUP BY'))).toEqual(
+				Array.from({ length: 3 }, () => expect.not.stringContaining('LIMIT')),
+			);
+			expect([
+				rollup.dailyActiveUsers,
+				rollup.weeklyActiveUsers,
+				rollup.monthlyActiveUsers,
+			]).toEqual([10, 25, 42]);
+		});
+
+		it('does not publish zeros when Analytics Engine returns no count row', async () => {
+			const put = vi.fn(async () => {});
+
+			await expect(
+				writeDailyRollup(
+					{
+						ANALYTICS: { query: async () => ({ data: [] }) },
+						ROLLUPS: { get: async (keys) => new Map(keys.map((key) => [key, null])), put },
+					},
+					'2026-10-21',
+					new Date('2026-10-22T00:15:00Z'),
+				),
+			).rejects.toThrow();
+			expect(put).not.toHaveBeenCalled();
+		});
+
+		it('rejects rows that do not match the expected shape instead of writing them', async () => {
+			const put = vi.fn(async () => {});
+
+			await expect(
+				writeDailyRollup(
+					{
+						ANALYTICS: { query: async () => ({ data: [{ users: 'many' }] }) },
+						ROLLUPS: { get: async (keys) => new Map(keys.map((key) => [key, null])), put },
+					},
+					'2026-10-21',
+					new Date('2026-10-22T00:15:00Z'),
+				),
+			).rejects.toThrow();
+			expect(put).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('writeRecentRollups', () => {
+		it('recovers recent missed dates and rebuilds a corrupt public snapshot within 23 operations', async () => {
+			const values = new Map(
+				[...archives].filter(
+					([key]) => key >= 'daily/2026-07-24.json' && key <= 'daily/2026-10-18.json',
+				),
+			);
+			values.set(PUBLIC_STATS_KEY, '{');
+			const query = vi.fn((request: AnalyticsSQLQuery) => analytics.query(request));
+			const get = vi.fn(
+				async (keys: string[]) => new Map(keys.map((key) => [key, values.get(key) ?? null])),
+			);
+			const put = vi.fn(async (key: string, value: string) => {
+				values.set(key, value);
+			});
+
+			const rollups = await writeRecentRollups(
+				{ ANALYTICS: { query }, ROLLUPS: { get, put } },
+				'2026-10-21',
+				new Date('2026-10-22T00:15:00Z'),
+			);
+
+			expect(rollups.map(({ date }) => date)).toEqual(['2026-10-19', '2026-10-20', '2026-10-21']);
+			expect(query).toHaveBeenCalledTimes(18);
+			expect(get).toHaveBeenCalledOnce();
+			expect(get.mock.calls[0]?.[0]).toHaveLength(90);
+			expect(put.mock.calls.map(([key]) => key)).toEqual([
+				'daily/2026-10-19.json',
+				'daily/2026-10-20.json',
+				'daily/2026-10-21.json',
+				PUBLIC_STATS_KEY,
+			]);
+			const snapshot = parsePublicStats(values.get(PUBLIC_STATS_KEY) ?? '', '2026-10-22');
+			expect(snapshot.days).toHaveLength(90);
+			expect(snapshot.days.slice(-3).map(({ date }) => date)).toEqual([
+				'2026-10-19',
+				'2026-10-20',
+				'2026-10-21',
+			]);
+			expect(snapshot.generatedAt).toBe('2026-10-22T00:15:00.000Z');
+		});
+
+		it('keeps genuine archive gaps instead of creating zero-valued days', async () => {
+			const values = new Map(
+				[...archives].filter(
+					([key]) =>
+						key >= 'daily/2026-07-24.json' &&
+						key <= 'daily/2026-10-18.json' &&
+						key !== 'daily/2026-10-05.json',
+				),
+			);
+
+			await writeRecentRollups(
+				{
+					ANALYTICS: analytics,
+					ROLLUPS: {
+						get: async (keys) => new Map(keys.map((key) => [key, values.get(key) ?? null])),
+						put: async (key, value) => values.set(key, value),
+					},
+				},
+				'2026-10-21',
+				new Date('2026-10-22T00:15:00Z'),
+			);
+
+			const snapshot = parsePublicStats(values.get(PUBLIC_STATS_KEY) ?? '', '2026-10-22');
+			expect(snapshot.days).toHaveLength(89);
+			expect(snapshot.days.map(({ date }) => date)).not.toContain('2026-10-05');
+			expect(snapshot.days.map(({ dailyActiveUsers }) => dailyActiveUsers)).not.toContain(0);
+		});
+
+		it('fails closed if an authoritative archive cannot be parsed', async () => {
+			const values = new Map(
+				[...archives].filter(
+					([key]) => key >= 'daily/2026-07-24.json' && key <= 'daily/2026-10-18.json',
+				),
+			);
+			values.set('daily/2026-10-05.json', '{');
+			values.set(PUBLIC_STATS_KEY, '{');
+			const put = vi.fn(async (key: string, value: string) => {
+				values.set(key, value);
+			});
+
+			await expect(
+				writeRecentRollups(
+					{
+						ANALYTICS: analytics,
+						ROLLUPS: {
+							get: async (keys) => new Map(keys.map((key) => [key, values.get(key) ?? null])),
+							put,
+						},
+					},
+					'2026-10-21',
+					new Date('2026-10-22T00:15:00Z'),
+				),
+			).rejects.toThrow();
+			expect(put.mock.calls.map(([key]) => key)).toEqual([
+				'daily/2026-10-19.json',
+				'daily/2026-10-20.json',
+				'daily/2026-10-21.json',
+			]);
+			expect(values.get(PUBLIC_STATS_KEY)).toBe('{');
+		});
+	});
+}
