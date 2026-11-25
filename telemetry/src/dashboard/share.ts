@@ -64,3 +64,93 @@ export function seriesColorVariable(keys: readonly string[], key: string): strin
 	const index = keys.indexOf(key);
 	return key === OTHER_KEY || index < 0 ? '--series-other' : `--series-${index + 1}`;
 }
+
+if (import.meta.vitest) {
+	describe('shareView', () => {
+		it('keeps the five largest groups of the latest day and folds the rest into Other', () => {
+			const days = [
+				{
+					date: '2026-11-23',
+					generatedAt: '2026-11-23T23:59:00Z',
+					dailyActiveUsers: 10,
+					weeklyActiveUsers: 10,
+					monthlyActiveUsers: 10,
+					byPlatform: [],
+					byVersion: [
+						{ version: '1', users: 6 },
+						{ version: '2', users: 4 },
+					],
+				},
+				{
+					date: '2026-11-24',
+					generatedAt: '2026-11-24T23:59:00Z',
+					dailyActiveUsers: 100,
+					weeklyActiveUsers: 100,
+					monthlyActiveUsers: 100,
+					byPlatform: [],
+					byVersion: [
+						{ version: 'a', users: 40 },
+						{ version: 'b', users: 20 },
+						{ version: 'c', users: 10 },
+						{ version: 'd', users: 9 },
+						{ version: 'e', users: 8 },
+						{ version: 'f', users: 7 },
+					],
+				},
+			] satisfies PublicDailyRollup[];
+
+			const view = shareView(days, 'version', ['2026-11-22', '2026-11-23', '2026-11-24']);
+
+			expect(view.keys).toEqual(['a', 'b', 'c', 'd', 'e', OTHER_KEY]);
+			expect(view.rows.map(({ date, key, users }) => [date, key, users])).toEqual([
+				['2026-11-23', 'a', 0],
+				['2026-11-23', 'b', 0],
+				['2026-11-23', 'c', 0],
+				['2026-11-23', 'd', 0],
+				['2026-11-23', 'e', 0],
+				['2026-11-23', OTHER_KEY, 10],
+				['2026-11-24', 'a', 40],
+				['2026-11-24', 'b', 20],
+				['2026-11-24', 'c', 10],
+				['2026-11-24', 'd', 9],
+				['2026-11-24', 'e', 8],
+				['2026-11-24', OTHER_KEY, 13],
+			]);
+			expect(view.latest?.groups).toHaveLength(6);
+		});
+
+		it('never reports a negative remainder when sampled groups exceed the daily count', () => {
+			const days = [
+				{
+					date: '2026-11-24',
+					generatedAt: '2026-11-24T23:59:00Z',
+					dailyActiveUsers: 5,
+					weeklyActiveUsers: 5,
+					monthlyActiveUsers: 5,
+					byPlatform: [],
+					byVersion: [
+						{ version: 'a', users: 4 },
+						{ version: 'b', users: 3 },
+					],
+				},
+			] satisfies PublicDailyRollup[];
+
+			const view = shareView(days, 'version', ['2026-11-24']);
+
+			expect(view.rows.map(({ key, users }) => [key, users])).toEqual([
+				['a', 4],
+				['b', 3],
+				[OTHER_KEY, 0],
+			]);
+		});
+
+		it('has no series before the first aggregate', () => {
+			expect(shareView([], 'platform', [])).toEqual({
+				keys: [],
+				latest: null,
+				rows: [],
+				dates: [],
+			});
+		});
+	});
+}
