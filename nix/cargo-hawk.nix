@@ -5,13 +5,13 @@
   stdenvNoCC,
   autoPatchelfHook,
   makeWrapper,
-  rustToolchain,
+  rust-bin,
+  frontendRustflags,
 }:
 let
   version = "0.1.18";
-  # NOTE(2026-11-16, #2119): Hawk links rustc_private. Its archive needs the exact Rust channel it was built against.
-  supportedRustChannel = "1.100.0";
-  toolchain = builtins.fromTOML (builtins.readFile ../rust-toolchain.toml);
+  # NOTE(2026-11-25, #2119): Hawk links rustc_private. Its archive needs the exact stable Rust it was built against, not the workspace's nightly.
+  rustToolchain = rust-bin.stable."1.100.0".minimal;
   archives = {
     aarch64-darwin = {
       target = "aarch64-apple-darwin";
@@ -30,8 +30,6 @@ let
     archives.${stdenv.hostPlatform.system}
       or (throw "cargo-hawk has no release for ${stdenv.hostPlatform.system}");
 in
-assert lib.assertMsg (toolchain.toolchain.channel == supportedRustChannel)
-  "cargo-hawk ${version} requires Rust ${supportedRustChannel}, but rust-toolchain.toml pins ${toolchain.toolchain.channel}";
 stdenvNoCC.mkDerivation {
   pname = "cargo-hawk";
   inherit version;
@@ -43,9 +41,10 @@ stdenvNoCC.mkDerivation {
 
   sourceRoot = "cargo-hawk-${archive.target}";
 
-  nativeBuildInputs =
-    lib.optionals stdenv.hostPlatform.isLinux [ autoPatchelfHook ]
-    ++ lib.optionals stdenv.hostPlatform.isDarwin [ makeWrapper ];
+  nativeBuildInputs = [
+    makeWrapper
+  ]
+  ++ lib.optionals stdenv.hostPlatform.isLinux [ autoPatchelfHook ];
   buildInputs = lib.optionals stdenv.hostPlatform.isLinux [
     stdenv.cc.cc.lib
     rustToolchain
@@ -65,11 +64,19 @@ stdenvNoCC.mkDerivation {
         makeWrapper "${stdenv.cc.bintools}/bin/$tool" "$out/libexec/hawk-tools/$tool" \
           --unset DYLD_LIBRARY_PATH --unset DYLD_FALLBACK_LIBRARY_PATH
       done
-      wrapProgram "$out/bin/cargo-hawk" \
-        --prefix PATH : "$out/libexec/hawk-tools"
     ''}
+    # NOTE(2026-11-25): Stable rustc rejects the nightly-only frontend flags. Cargo prefers RUSTFLAGS over build.rustflags, so the wrapper always exports RUSTFLAGS without them.
+    wrapProgram "$out/bin/cargo-hawk" \
+      ${lib.optionalString stdenv.hostPlatform.isDarwin ''--prefix PATH : "$out/libexec/hawk-tools" ''}\
+      --prefix PATH : ${rustToolchain}/bin \
+      --set CARGO ${rustToolchain}/bin/cargo \
+      --set RUSTC ${rustToolchain}/bin/rustc \
+      --set RUSTDOC ${rustToolchain}/bin/rustdoc \
+      --run ${lib.escapeShellArg ''export RUSTFLAGS="''${RUSTFLAGS//${frontendRustflags}/}"''}
     runHook postInstall
   '';
+
+  passthru = { inherit rustToolchain; };
 
   meta = {
     description = "Workspace-aware Cargo lint for unnecessary public Rust APIs";

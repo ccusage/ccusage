@@ -11,7 +11,6 @@ in
       system,
       pkgs,
       craneLib,
-      rustToolchain,
       ...
     }:
     let
@@ -34,7 +33,7 @@ in
         inherit bunNodeModules;
         modelsDevSrc = inputs.models-dev;
       };
-      cargo-hawk = pkgs.callPackage ./cargo-hawk.nix { inherit rustToolchain; };
+      cargo-hawk = pkgs.callPackage ./cargo-hawk.nix { inherit (ccusage.passthru) frontendRustflags; };
       blacksmith = pkgs.callPackage ../nix/tools/blacksmith { };
       actionlint = pkgs.callPackage ./actionlint.nix { };
       oxlint = pkgs.callPackage ../nix/tools/oxlint { inherit bunCli; };
