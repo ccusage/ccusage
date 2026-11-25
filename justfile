@@ -53,9 +53,10 @@ typecheck:
 [parallel]
 test: rust::test test-node
 
-# Run Node's built-in test runner for TypeScript package and tooling tests
+# Run the TypeScript package and tooling tests
 test-node:
-    TZ=UTC node --test 'apps/ccusage/**/*.test.ts' 'telemetry/**/*.test.ts' 'nix/tools/**/*.test.ts'
+    TZ=UTC node --test 'apps/ccusage/**/*.test.ts' 'nix/tools/**/*.test.ts'
+    just telemetry::test
 
 # Generate real-sized benchmark fixtures for PR performance comparisons; `--size-mib`, `--codex-size-mib`, `--grok-size-mib`, and `--opencode-size-mib` shrink each one
 [positional-arguments]

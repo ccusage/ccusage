@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
 import type { FromSchema } from 'json-schema-to-ts';
 
 import { Hono } from 'hono';
@@ -54,8 +53,8 @@ async function post(
 	return app.request('/v1/ping', { method: 'POST', body, headers }, env);
 }
 
-void describe('POST /v1/ping', () => {
-	void it('stores only the documented fields of a valid ping', async () => {
+describe('POST /v1/ping', () => {
+	it('stores only the documented fields of a valid ping', async () => {
 		const { env, points } = recordingEnv();
 
 		const response = await post(JSON.stringify({ ...validPing, ip: '203.0.113.1' }), env);
@@ -69,7 +68,7 @@ void describe('POST /v1/ping', () => {
 		]);
 	});
 
-	void it('rejects malformed pings without storing', async () => {
+	it('rejects malformed pings without storing', async () => {
 		const { env, points } = recordingEnv();
 		const cases = [
 			'{',
@@ -89,7 +88,7 @@ void describe('POST /v1/ping', () => {
 		assert.equal(points.length, 0);
 	});
 
-	void it('rejects bad headers before reading the body', async () => {
+	it('rejects bad headers before reading the body', async () => {
 		const { env, points } = recordingEnv();
 		const body = JSON.stringify(validPing);
 		const cases = [
