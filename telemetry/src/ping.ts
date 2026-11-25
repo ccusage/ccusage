@@ -62,6 +62,12 @@ if (import.meta.vitest) {
 	} as const satisfies Ping;
 
 	describe('POST /v1/ping', () => {
+		it('is the handler the route file exports as POST', async () => {
+			const route = await import('../routes/v1/ping.ts');
+
+			expect(route.POST).toBe(postPing);
+		});
+
 		it('stores only the documented fields of a valid ping', async () => {
 			const writeDataPoint = vi.fn();
 			const body = JSON.stringify({ ...validPing, ip: '203.0.113.1' });
