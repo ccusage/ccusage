@@ -145,7 +145,7 @@ For Claude Code-specific setup and features, start from the [Claude Code data so
 ## Privacy & Security
 
 - **Local Analysis** - Your agent logs, prompts and costs are analyzed on your machine and are never sent
-- **Minimal Usage Statistics** - Official releases send an opt-out daily usage ping after a first-run notice. See [Telemetry](./telemetry.md) for the payload, public dashboard and opt-out controls
+- **Minimal Usage Statistics** - Official releases send an opt-out daily usage ping, after a first-run notice or, for statusline commands, without one. See [Telemetry](./telemetry.md) for the payload, public dashboard and opt-out controls
 - **Read-Only Logs** - ccusage never modifies your agent logs
 - **Open Source** - Full transparency in how your data is processed
 
