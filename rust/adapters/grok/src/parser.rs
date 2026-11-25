@@ -173,7 +173,10 @@ fn pricing_candidates(raw_model: &str) -> Vec<(String, MatchKind)> {
         return candidates;
     }
 
-    let normalized = stripped.trim_suffix("-build");
+    let normalized = stripped.strip_suffix("-build-fast").map_or_else(
+        || stripped.trim_suffix("-build").to_string(),
+        |model| format!("{model}-fast"),
+    );
     let raw_kind = if normalized == stripped {
         MatchKind::Fuzzy
     } else {
@@ -183,7 +186,7 @@ fn pricing_candidates(raw_model: &str) -> Vec<(String, MatchKind)> {
     push(stripped.to_string(), raw_kind);
     push(format!("xai/{stripped}"), raw_kind);
     push(format!("x-ai/{stripped}"), raw_kind);
-    push(normalized.to_string(), MatchKind::Fuzzy);
+    push(normalized.clone(), MatchKind::Fuzzy);
     push(format!("xai/{normalized}"), MatchKind::Fuzzy);
     push(format!("x-ai/{normalized}"), MatchKind::Fuzzy);
     candidates
@@ -717,6 +720,17 @@ mod tests {
             ]
         );
         assert_eq!(
+            pricing_candidates("grok-4.7-build-fast"),
+            vec![
+                exact("grok-4.7-build-fast"),
+                exact("xai/grok-4.7-build-fast"),
+                exact("x-ai/grok-4.7-build-fast"),
+                fuzzy("grok-4.7-fast"),
+                fuzzy("xai/grok-4.7-fast"),
+                fuzzy("x-ai/grok-4.7-fast"),
+            ]
+        );
+        assert_eq!(
             pricing_candidates("grok-4.5"),
             vec![
                 fuzzy("grok-4.5"),
@@ -754,6 +768,28 @@ mod tests {
         };
         assert_eq!(cost("grok-unreleased-9.9"), 2.0);
         assert_eq!(cost("grok-unreleased-9.9-build"), 2.0);
+    }
+
+    #[test]
+    fn prices_grok_build_fast_at_xai_fast_rates() {
+        ccusage_test_support::install_pricing_snapshots();
+        let pricing = ccusage_core::PricingMap::load_embedded();
+        let (cost, missing, _) = price_grok_usage(
+            "grok-4.7-build-fast",
+            TokenUsageRaw {
+                input_tokens: 1_000_000,
+                output_tokens: 1_000_000,
+                cache_read_input_tokens: 500_000,
+                ..TokenUsageRaw::default()
+            },
+            None,
+            None,
+            CostMode::Calculate,
+            PriceTable::Calculate(&pricing),
+        );
+
+        assert_eq!(missing, None);
+        assert!((cost - (4.0 + 0.5 * 1.0 + 12.0)).abs() < 1e-9, "{cost}");
     }
 
     #[test]

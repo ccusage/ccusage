@@ -1,6 +1,6 @@
 use super::{
     CacheDefaults, LongContext, LongContextMode, LongContextRates, Pricing, Supplement,
-    data::{WRITES_AT_INPUT_RATE, WRITES_SURCHARGED},
+    data::{WRITES_AT_INPUT_RATE, WRITES_SURCHARGED, XAI_LONG_CONTEXT_THRESHOLD},
     rates,
 };
 
@@ -140,6 +140,26 @@ pub(super) const BUILTIN_PRICING: &[Supplement] = &[
             ..rates(1.25e-6, 2.5e-6, 1.25e-6, 0.125e-6)
         },
         context_limit: Some(1000000),
+    },
+    // NOTE(2026-11-25, #2545): xAI lists Grok 4.7 Fast, sold only in Cursor and Grok Build and absent from both catalogues, at $4 input, $1 cached and $12 output per 1M, and $6 / $1.50 / $18 for every token of a request above 200K, at https://docs.x.ai/developers/pricing. xAI bills no cache writes, so a write costs the input rate.
+    Supplement {
+        provider: "xai",
+        model: "grok-4.7-fast",
+        pricing: Pricing {
+            long_context: Some(LongContext {
+                threshold: XAI_LONG_CONTEXT_THRESHOLD,
+                mode: LongContextMode::WholeRequest,
+                rates: LongContextRates {
+                    input: Some(6e-6),
+                    output: Some(18e-6),
+                    cache_create: Some(6e-6),
+                    cache_read: Some(1.5e-6),
+                    cache_create_1h: None,
+                },
+            }),
+            ..rates(4e-6, 12e-6, 4e-6, 1e-6)
+        },
+        context_limit: Some(500000),
     },
     Supplement {
         provider: "moonshot",

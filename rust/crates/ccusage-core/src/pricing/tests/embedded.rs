@@ -563,6 +563,31 @@ fn offline_prices_models_outside_the_claude_and_moonshot_families() {
 }
 
 #[test]
+fn offline_prices_grok_4_7_fast_at_xai_list_rates_with_its_long_context_tier() {
+    crate::test_support::install_pricing_snapshots();
+    let pricing = PricingMap::load_embedded();
+    let fast = pricing.find("grok-4.7-fast").unwrap();
+
+    assert_eq!(
+        (fast.input, fast.output, fast.cache_create, fast.cache_read),
+        (4e-6, 12e-6, Some(4e-6), Some(1e-6))
+    );
+    let long = fast.long_context.unwrap();
+    assert_eq!(long.threshold, 199_999);
+    assert_eq!(long.mode, super::super::LongContextMode::WholeRequest);
+    assert_eq!(
+        (
+            long.rates.input,
+            long.rates.output,
+            long.rates.cache_create,
+            long.rates.cache_read
+        ),
+        (Some(6e-6), Some(18e-6), Some(6e-6), Some(1.5e-6))
+    );
+    assert_eq!(pricing.context_limit("grok-4.7-fast"), Some(500_000));
+}
+
+#[test]
 fn embedded_pricing_includes_z_ai_glm_models_for_offline_reports() {
     crate::test_support::install_pricing_snapshots();
     let pricing = PricingMap::load_embedded();

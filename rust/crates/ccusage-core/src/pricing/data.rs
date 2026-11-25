@@ -319,7 +319,7 @@ pub(super) static HOSTS: &[HostListing] = &[
 pub(super) static VENDOR_SPELLINGS: &[(&str, &str)] = &[("google", "gemini")];
 
 // NOTE(2026-11-21, #2227): xAI lists separate "(≥ 200k prompt tokens)" rows and bills every token of such a request at them at https://docs.x.ai/developers/pricing. LiteLLM's above-200k fields on xAI's own rows describe that tier, not a marginal one. A request is long when its context exceeds the threshold, so 199,999 makes a 200,000-token prompt long.
-const XAI_LONG_CONTEXT_THRESHOLD: u64 = 199_999;
+pub(super) const XAI_LONG_CONTEXT_THRESHOLD: u64 = 199_999;
 
 pub(super) struct WholeRequestVendor {
     pub(super) model_families: &'static [&'static str],
