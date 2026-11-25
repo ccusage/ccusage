@@ -261,7 +261,7 @@ if (import.meta.vitest) {
 					byPlatform: [{ os: 'linux', arch: 'x86_64', users: 2 }],
 					byVersion: [{ version: '20.0.37', users: 2 }],
 					byCommand: [{ command: 'daily', users: 2 }],
-				}),
+				} satisfies DailyRollup),
 			];
 		}),
 	);
