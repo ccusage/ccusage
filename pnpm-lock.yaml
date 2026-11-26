@@ -193,7 +193,7 @@ catalogs:
       specifier: 1.11.0
       version: 1.11.0
     hono:
-      specifier: ^4.13.20
+      specifier: ^4.13.21
       version: 4.13.21
     json-schema-to-ts:
       specifier: ^3.1.1
