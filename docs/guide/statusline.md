@@ -20,7 +20,7 @@ args = ["codex", "statusline", "--mcp"]
 status_line_provider = { server = "ccusage", tool = "ccusage_codex_statusline" }
 ```
 
-Merge these entries into existing tables, then restart Codex. To select the provider interactively, open `/statusline`, choose **Choose a status line provider**, and select **ccusage Codex usage**. Register the provider in the user config on the connected app-server host: Codex rejects project-level MCP providers for the statusline. The installed `ccusage` binary and its log directories must be accessible on that host.
+Merge these entries into existing tables, then restart Codex. To select the provider interactively, open `/statusline`, choose **Choose a status line provider**, and select **ccusage Codex usage**. Register the provider in the user config on the connected app-server host: Codex rejects project-level MCP providers for the statusline. The installed `ccusage` binary and the Codex session logs it reads must be accessible on that host. Those logs live under `CODEX_HOME` (default `~/.codex`) in `sessions/` and `archived_sessions/`.
 
 Like the Claude Code statusline, the provider shows the current model and reasoning level, **session cost** and **today's cost**. Session usage includes the displayed thread's stored rollouts across days, including consumption before backtracking. Today's cost covers all local Codex threads in the selected timezone. Token counts describe recorded consumption rather than remaining context.
 
