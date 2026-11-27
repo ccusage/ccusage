@@ -1,0 +1,49 @@
+{
+	"name": "main",
+	"target": "branch",
+	"enforcement": "disabled",
+	"conditions": {
+		"ref_name": {
+			"exclude": [],
+			"include": ["~DEFAULT_BRANCH"]
+		}
+	},
+	"rules": [
+		{
+			"type": "deletion"
+		},
+		{
+			"type": "non_fast_forward"
+		},
+		{
+			"type": "required_status_checks",
+			"parameters": {
+				"strict_required_status_checks_policy": false,
+				"do_not_enforce_on_create": false,
+				"required_status_checks": [
+					{
+						"context": "Detect code changes",
+						"integration_id": 15368
+					},
+					{
+						"context": "Validate PR title",
+						"integration_id": 15368
+					},
+					{
+						"context": "lint-check",
+						"integration_id": 15368
+					},
+					{
+						"context": "test",
+						"integration_id": 15368
+					},
+					{
+						"context": "npm-publish-dry-run-and-upload-pkg-pr-now",
+						"integration_id": 15368
+					}
+				]
+			}
+		}
+	],
+	"bypass_actors": []
+}

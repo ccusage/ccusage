@@ -44,3 +44,11 @@ merge commit and triggers the publish workflow. The bump is patch by default;
 label a merged PR `minor` or `major` to raise it.
 
 https://github.com/Songmu/tagpr
+
+## Branch Rules
+
+The repository rulesets live in `.github/rulesets/*.json`, one rulesets API body
+per file, matched to the live ruleset by `name`. Change them there, never in the
+repository settings. After the change merges, a maintainer runs
+`just ruleset-apply`, then `just ruleset-diff` to confirm the live rulesets
+match; `ruleset-diff` fails while any differs.

@@ -179,3 +179,13 @@ update-models-dev-pricing:
     nix flake update models-dev
     just gen-models-dev-pricing
     just check
+
+# Create or update the live rulesets to match .github/rulesets
+[positional-arguments]
+ruleset-apply *args:
+    nu --no-config-file scripts/ruleset.nu apply "$@"
+
+# Show how the live rulesets differ from .github/rulesets; fails when they do
+[positional-arguments]
+ruleset-diff *args:
+    nu --no-config-file scripts/ruleset.nu diff "$@"
