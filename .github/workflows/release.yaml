@@ -22,37 +22,37 @@ jobs:
     runs-on: blacksmith-32vcpu-ubuntu-2404
     timeout-minutes: 15
     permissions:
-      contents: write
-      pull-requests: write
-      issues: read
+      contents: read
     outputs:
       tag: ${{ steps.tagpr.outputs.tag }}
       pull_request: ${{ steps.tagpr.outputs.pull_request }}
     steps:
+      - name: Require the release App's secrets
+        env:
+          CLIENT_ID: ${{ secrets.RELEASE_APP_CLIENT_ID }}
+          PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+        run: |
+          if [ -z "$CLIENT_ID" ] || [ -z "$PRIVATE_KEY" ]; then
+            echo "::error title=Release App secrets missing::Set RELEASE_APP_CLIENT_ID and RELEASE_APP_PRIVATE_KEY; see the development skill's Releases section."
+            exit 1
+          fi
+      - id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-issues: read
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: main
           fetch-depth: 0
+          persist-credentials: false
       - id: tagpr
         uses: Songmu/tagpr@047aec4b6c0ce166f52958b5a97f5a3d927fd65b # v1.22.0
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  ci:
-    needs: tagpr
-    if: needs.tagpr.outputs.tag == '' && needs.tagpr.outputs.pull_request != ''
-    runs-on: blacksmith-2vcpu-ubuntu-2404
-    timeout-minutes: 5
-    permissions:
-      actions: write
-    steps:
-      - name: Dispatch CI on the release branch
-        env:
-          GH_TOKEN: ${{ github.token }}
-          HEAD_REF: ${{ fromJSON(needs.tagpr.outputs.pull_request).head.ref }}
-        run: |
-          gh workflow run ci.yaml --repo "$GITHUB_REPOSITORY" --ref "$HEAD_REF"
-          gh workflow run check-pr-title.yaml --repo "$GITHUB_REPOSITORY" --ref "$HEAD_REF"
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
 
   build-native-packages:
     name: ${{ matrix.name }}

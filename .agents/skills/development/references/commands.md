@@ -44,3 +44,12 @@ merge commit and triggers the publish workflow. The bump is patch by default;
 label a merged PR `minor` or `major` to raise it.
 
 https://github.com/Songmu/tagpr
+
+tagpr runs with an installation token of the release GitHub App, not
+`GITHUB_TOKEN`, so the release PR gets the same CI and title checks as any
+other; never dispatch CI or post commit statuses for it. The App is owned by
+the `ccusage` organization, installed on this repository only, has no webhook,
+and has repository permissions Contents read/write, Pull requests read/write,
+Issues read, and nothing else. Its Client ID is the `RELEASE_APP_CLIENT_ID`
+secret and its private key (the whole `.pem`) is `RELEASE_APP_PRIVATE_KEY`;
+the tagpr job fails up front when either is missing.
