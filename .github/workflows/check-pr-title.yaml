@@ -9,9 +9,6 @@ on:
       - synchronize
   merge_group:
     types: [checks_requested]
-  workflow_dispatch:
-  push:
-    branches: ['tagpr-from-*']
 
 permissions:
   pull-requests: read
@@ -66,37 +63,3 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: scripts/validate-commit-scope.nu pr
-
-  # NOTE(2026-11-10, #2062): Dispatch check runs do not attach to the release PR. Post commit statuses on the same SHA to satisfy the required title checks.
-  release-pr-statuses:
-    name: Release PR title statuses
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
-    runs-on: blacksmith-2vcpu-ubuntu-2404
-    timeout-minutes: 5
-    permissions:
-      pull-requests: read
-      statuses: write
-    steps:
-      - name: Post title check statuses
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REF_NAME: ${{ github.ref_name }}
-        run: |
-          if [[ "$REF_NAME" != tagpr-from-* ]]; then
-            echo "::error::Only tagpr release branches get title statuses."
-            exit 1
-          fi
-          release_prs="$(gh api "repos/$GITHUB_REPOSITORY/pulls" \
-            -f state=open -f head="$GITHUB_REPOSITORY_OWNER:$REF_NAME" --method GET \
-            --jq "[.[] | select(.head.sha == \"$GITHUB_SHA\" and .user.login == \"github-actions[bot]\")] | length")"
-          if [ "$release_prs" -eq 0 ]; then
-            echo "::error::${GITHUB_SHA} is not the head of an open tagpr release PR from ${REF_NAME}."
-            exit 1
-          fi
-          for context in 'Validate PR title' 'Validate PR title scope'; do
-            gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
-              -f state=success \
-              -f context="$context" \
-              -f description='Release PR title comes from the tagpr template' \
-              -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-          done
