@@ -10,7 +10,8 @@ def main []: nothing -> nothing {
     help main
 }
 
-# Create or update each file's ruleset, leaving those that already match alone.
+# Create or update each file's ruleset, printing what changes, and leave those that already
+# match alone.
 def "main apply" [
     --repo: string = '{owner}/{repo}' # owner/name; gh fills the default from the git remote
 ]: nothing -> nothing {
@@ -28,6 +29,7 @@ def "main apply" [
                 print $"($ruleset.name) is up to date"
             }
             $id => {
+                show-diff $ruleset | ignore
                 (gh-send
                     PUT
                     $"repos/($repo)/rulesets/($id)"
@@ -43,25 +45,27 @@ def "main apply" [
 def "main diff" [
     --repo: string = '{owner}/{repo}' # owner/name; gh fills the default from the git remote
 ]: nothing -> nothing {
-    let results = rulesets $repo
-    | each {|ruleset|
-        let live = mktemp --tmpdir
-        let want = mktemp --tmpdir
-        $ruleset.live | to json --indent 2 | save --force $live
-        $ruleset.want | to json --indent 2 | save --force $want
-        let result = ^diff -u --label $"live ($ruleset.name)" --label $ruleset.file $live $want
-        | complete
-        rm $live $want
-        match $result.exit_code {
-            0 => { print $"($ruleset.name) matches ($ruleset.file)" }
-            1 => { print --no-newline $result.stdout }
-            _ => { error make {msg: $result.stderr} }
-        }
-        $result.exit_code != 0
-    }
+    let results = rulesets $repo | each {|ruleset| show-diff $ruleset }
     if ($results | any {|it| $it }) {
         exit 1
     }
+}
+
+# Print how a live ruleset differs from its file, and whether it does.
+def show-diff [ruleset: record]: nothing -> bool {
+    let live = mktemp --tmpdir
+    let want = mktemp --tmpdir
+    $ruleset.live | to json --indent 2 | save --force $live
+    $ruleset.want | to json --indent 2 | save --force $want
+    let result = ^diff -u --label $"live ($ruleset.name)" --label $ruleset.file $live $want
+    | complete
+    rm $live $want
+    match $result.exit_code {
+        0 => { print $"($ruleset.name) matches ($ruleset.file)" }
+        1 => { print --no-newline $result.stdout }
+        _ => { error make {msg: $result.stderr} }
+    }
+    $result.exit_code != 0
 }
 
 # Each file's ruleset beside the live one of its name (null when there is none), both reduced
@@ -82,9 +86,21 @@ def rulesets [repo: string]: nothing -> table {
             file: ($file.name | path relative-to (pwd))
             id: $id
             want: $want
-            live: (if $id == null { null } else { gh-get $"repos/($repo)/rulesets/($id)" | first | comparable })
+            live: (if $id == null { null } else { live-ruleset $repo $id })
         }
     }
+}
+
+# GitHub leaves `bypass_actors` out for a caller who can't edit the ruleset, and comparing
+# without it would report a match nobody checked.
+def live-ruleset [repo: string, id: int]: nothing -> record {
+    let ruleset = gh-get $"repos/($repo)/rulesets/($id)" | first
+    if 'bypass_actors' not-in ($ruleset | columns) {
+        error make {
+            msg: $"reading ($ruleset.name)'s bypass actors needs admin access to ($repo)"
+        }
+    }
+    $ruleset | comparable
 }
 
 # The fields a ruleset file holds, with every record's keys sorted, so equal rulesets compare
