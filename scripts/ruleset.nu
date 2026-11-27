@@ -43,7 +43,7 @@ def "main apply" [
 def "main diff" [
     --repo: string = '{owner}/{repo}' # owner/name; gh fills the default from the git remote
 ]: nothing -> nothing {
-    let differs = rulesets $repo
+    let results = rulesets $repo
     | each {|ruleset|
         let live = mktemp --tmpdir
         let want = mktemp --tmpdir
@@ -59,8 +59,7 @@ def "main diff" [
         }
         $result.exit_code != 0
     }
-    | any {|it| $it }
-    if $differs {
+    if ($results | any {|it| $it }) {
         exit 1
     }
 }
