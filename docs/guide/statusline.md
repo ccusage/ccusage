@@ -4,7 +4,7 @@ ccusage provides compact usage summaries for Claude Code and Codex. Claude Code 
 
 ## Codex native statusline (experimental)
 
-This integration was verified with the public Codex `0.171.0-alpha.13` prerelease. It requires Codex's experimental `tui_extensions_statusline` feature; Codex `0.170.0` stable does not include the native provider reader.
+Codex CLI `0.171.0` and later supports custom native statuslines. The feature is experimental and disabled by default. Enable **Custom status line** in `/experimental` and restart Codex, or enable `tui_extensions_statusline` directly in the configuration below. See the [official Codex statusline guide](https://github.com/openai/codex/blob/rust-v0.172.0/codex-rs/skills/src/assets/samples/create-statusline/SKILL.md).
 
 Add the following to your user-level `~/.codex/config.toml`, using an absolute path to the installed `ccusage` binary:
 
@@ -20,7 +20,7 @@ args = ["codex", "statusline", "--mcp"]
 status_line_provider = { server = "ccusage", tool = "ccusage_codex_statusline" }
 ```
 
-Merge these entries into existing tables, then restart Codex. You can also select **ccusage Codex usage** in `/statusline`. Register the provider in the user config: Codex rejects project-level MCP providers for the statusline.
+Merge these entries into existing tables, then restart Codex. To select the provider interactively, open `/statusline`, choose **Choose a status line provider**, and select **ccusage Codex usage**. Register the provider in the user config on the connected app-server host: Codex rejects project-level MCP providers for the statusline. The installed `ccusage` binary and its log directories must be accessible on that host.
 
 Like the Claude Code statusline, the provider shows the current model and reasoning level, **session cost** and **today's cost**. Session usage includes the displayed thread's stored rollouts across days, including consumption before backtracking. Today's cost covers all local Codex threads in the selected timezone. Token counts describe recorded consumption rather than remaining context.
 
