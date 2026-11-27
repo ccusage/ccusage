@@ -78,12 +78,12 @@ jobs:
             arch: x64
             binary: result/bin/ccusage
           - name: build-mac-arm64
-            os: blacksmith-12vcpu-macos-27
+            os: blacksmith-12vcpu-macos-26
             platform: darwin
             arch: arm64
             binary: result/bin/ccusage
           - name: build-mac-x64
-            os: blacksmith-12vcpu-macos-27
+            os: blacksmith-12vcpu-macos-26
             platform: darwin
             arch: x64
             binary: result/bin/ccusage
