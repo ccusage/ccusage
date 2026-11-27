@@ -511,7 +511,7 @@ jobs:
     if: ${{ always() }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
-      - uses: Kesin11/actions-timeline@460b1f8a750077029ad3589824d371b200e91dcf # v3.2.1
+      - uses: Kesin11/actions-timeline@d547cc51bd6e8016ac50219eeb29a9eb385a2546 # v4.0.0
 
   ci-gate:
     name: ci gate
