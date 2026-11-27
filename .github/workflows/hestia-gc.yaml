@@ -21,6 +21,6 @@ jobs:
     permissions:
       actions: write
       contents: read
-    uses: x-ryoppippi/setup-nix/.github/workflows/gc.yaml@7e74b323c73835866702959671962c581f289cc0 # v0.0.6
+    uses: x-ryoppippi/setup-nix/.github/workflows/gc.yaml@a714471bae36af3bdff1c1e0946b8939952c5820 # v0.0.7
     with:
       dry-run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run }}
