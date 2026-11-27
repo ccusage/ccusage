@@ -30,7 +30,7 @@ Codex weekly reports start on Monday by default. Set [`startOfWeek`](/guide/conf
 
 ## Statusline
 
-`ccusage codex statusline --mcp` provides usage and estimated cost inside Codex's native statusline. Its stdio MCP server is built into the Rust binary and adds no MCP SDK or runtime dependency. See [native statusline setup](/guide/statusline#codex-native-statusline-experimental).
+`ccusage codex statusline --mcp` provides usage and estimated cost inside Codex CLI `0.171.0` and later. Enable **Custom status line** in Codex's `/experimental` menu, restart Codex, and follow the [native statusline setup](/guide/statusline#codex-native-statusline-experimental) to register and select ccusage. Its stdio MCP server is built into the Rust binary and adds no MCP SDK or runtime dependency.
 
 `ccusage codex statusline` prints today's Codex token usage and estimated cost as one plain line, using embedded pricing by default. It reads local Codex session logs and does not need input on stdin.
 
