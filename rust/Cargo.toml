@@ -75,7 +75,7 @@ ureq = { version = "3.5.2", default-features = false, features = [
 	"rustls-webpki-roots",
 ] }
 zstd = { version = "0.14.5", default-features = false }
-zstd-sys = { version = "2.1.3", default-features = false, features = ["experimental"] }
+zstd-sys = { version = "2.2.0", default-features = false, features = ["experimental"] }
 
 [profile.release]
 codegen-units = 1
