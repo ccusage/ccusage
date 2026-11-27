@@ -215,8 +215,8 @@ catalogs:
       version: 4.6.7
   types:
     '@types/node':
-      specifier: ^26.6.6
-      version: 26.6.6
+      specifier: ^26.6.7
+      version: 26.6.10
     '@types/react':
       specifier: ^19.3.0
       version: 19.3.0
@@ -229,7 +229,7 @@ importers:
     devDependencies:
       '@types/node':
         specifier: catalog:types
-        version: 26.6.6
+        version: 26.6.10
     optionalDependencies:
       '@ccusage/ccusage-darwin-arm64':
         specifier: workspace:*
@@ -254,22 +254,22 @@ importers:
     devDependencies:
       '@ryoppippi/vite-plugin-cloudflare-redirect':
         specifier: catalog:docs
-        version: 1.1.3(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+        version: 1.1.3(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
       '@types/node':
         specifier: catalog:types
-        version: 26.6.6
+        version: 26.6.10
       '@types/react':
         specifier: catalog:types
         version: 19.3.0
       cf:
         specifier: catalog:docs
-        version: 1.0.0-rc.5(@types/node@26.6.6)
+        version: 1.0.0-rc.5(@types/node@26.6.10)
       vitepress:
         specifier: catalog:docs
-        version: 2.0.0-alpha.21(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(postcss@8.5.32)(tsx@4.23.15)(yaml@2.9.1)
+        version: 2.0.0-alpha.21(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(postcss@8.5.32)(tsx@4.23.15)(yaml@2.9.1)
       vitepress-plugin-group-icons:
         specifier: catalog:docs
-        version: 1.8.2(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+        version: 1.8.2(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
       vitepress-plugin-llms:
         specifier: catalog:docs
         version: 1.15.0(supports-color@10.2.2)
@@ -299,10 +299,10 @@ importers:
         version: 1.5.0(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(svelte@5.59.1)(vue@3.5.45)
       '@types/node':
         specifier: catalog:types
-        version: 26.6.6
+        version: 26.6.10
       '@void/svelte':
         specifier: catalog:telemetry
-        version: 1.11.0(svelte@5.59.1)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(void@1.11.0(@types/node@26.6.6)(arktype@2.2.10)(kysely@0.29.9)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(svelte@5.59.1)(valibot@1.5.0)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(vitest@5.1.1(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)))(vue@3.5.45)(workerd@1.20261123.1)(zod@4.6.7))
+        version: 1.11.0(svelte@5.59.1)(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(void@1.11.0(@types/node@26.6.10)(arktype@2.2.10)(kysely@0.29.9)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(svelte@5.59.1)(valibot@1.5.0)(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(vitest@5.1.1(@types/node@26.6.10)(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)))(vue@3.5.45)(workerd@1.20261123.1)(zod@4.6.7))
       hono:
         specifier: catalog:telemetry
         version: 4.13.21
@@ -314,13 +314,13 @@ importers:
         version: 5.59.1
       vite:
         specifier: catalog:telemetry
-        version: 8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
+        version: 8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
       vitest:
         specifier: catalog:telemetry
-        version: 5.1.1(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+        version: 5.1.1(@types/node@26.6.10)(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
       void:
         specifier: catalog:telemetry
-        version: 1.11.0(@types/node@26.6.6)(arktype@2.2.10)(kysely@0.29.9)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(svelte@5.59.1)(valibot@1.5.0)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(vitest@5.1.1(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)))(vue@3.5.45)(workerd@1.20261123.1)(zod@4.6.7)
+        version: 1.11.0(@types/node@26.6.10)(arktype@2.2.10)(kysely@0.29.9)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(svelte@5.59.1)(valibot@1.5.0)(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(vitest@5.1.1(@types/node@26.6.10)(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)))(vue@3.5.45)(workerd@1.20261123.1)(zod@4.6.7)
       zod:
         specifier: catalog:telemetry
         version: 4.6.7
@@ -1630,8 +1630,8 @@ packages:
   '@types/ms@2.1.0':
     resolution: {integrity: sha512-GsCCIZDE/p3i96vtEqx+7dBUGXrc7zeSK3wwPHIaRThS+9OhWIXRqzs4d6k1SVU8g91DrNRWxWUGhp5KXQb2VA==}
 
-  '@types/node@26.6.6':
-    resolution: {integrity: sha512-MzQj+8Kx3XI40OmUAE6Qoh58ZMNstNNMwn2nfd3qWsfe7nDNSqJNzes4njhz6AHwrSHOffSLwXU6yb474Q4aog==}
+  '@types/node@26.6.10':
+    resolution: {integrity: sha512-WJuPHoGB8WNQuTksNF7SOQpnH02PXeDYz4iueWbBT6/hTWnShY5F3T/hoJA3fY9+uYReDZ7pyTKKx83jQa7aGg==}
 
   '@types/react@19.3.0':
     resolution: {integrity: sha512-N0rFCuH9YoxG9/m61l9MfpJKfmLOVU0em7ipIz6TRgSSkvReLB9vL85GB+yr8Bs5leqpvg96JSwF4ZS1s4viQg==}
@@ -3329,12 +3329,12 @@ snapshots:
       nanostores: 1.5.5
       zod: 4.6.7
 
-  '@better-auth/drizzle-adapter@1.7.27(@better-auth/core@1.7.27(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(better-call@1.4.6(zod@4.6.7))(jose@6.2.18)(kysely@0.29.9)(nanostores@1.5.5))(@better-auth/utils@0.5.1)(drizzle-orm@0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.6))(pg@8.23.1))':
+  '@better-auth/drizzle-adapter@1.7.27(@better-auth/core@1.7.27(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(better-call@1.4.6(zod@4.6.7))(jose@6.2.18)(kysely@0.29.9)(nanostores@1.5.5))(@better-auth/utils@0.5.1)(drizzle-orm@0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1))':
     dependencies:
       '@better-auth/core': 1.7.27(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(better-call@1.4.6(zod@4.6.7))(jose@6.2.18)(kysely@0.29.9)(nanostores@1.5.5)
       '@better-auth/utils': 0.5.1
     optionalDependencies:
-      drizzle-orm: 0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.6))(pg@8.23.1)
+      drizzle-orm: 0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1)
 
   '@better-auth/kysely-adapter@1.7.27(@better-auth/core@1.7.27(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(better-call@1.4.6(zod@4.6.7))(jose@6.2.18)(kysely@0.29.9)(nanostores@1.5.5))(@better-auth/utils@0.5.1)(kysely@0.29.9)':
     dependencies:
@@ -3388,9 +3388,9 @@ snapshots:
     dependencies:
       zod: 4.6.6
 
-  '@cloudflare/runtime-types@0.1.29(@types/node@26.6.6)':
+  '@cloudflare/runtime-types@0.1.29(@types/node@26.6.10)':
     dependencies:
-      miniflare: 5.20261116.0-beta(@types/node@26.6.6)
+      miniflare: 5.20261116.0-beta(@types/node@26.6.10)
       workerd: 1.20261116.1
     transitivePeerDependencies:
       - '@types/node'
@@ -3398,9 +3398,9 @@ snapshots:
       - kerberos
       - utf-8-validate
 
-  '@cloudflare/runtime-types@0.1.34(@types/node@26.6.6)':
+  '@cloudflare/runtime-types@0.1.34(@types/node@26.6.10)':
     dependencies:
-      miniflare: 5.20261123.1-beta(@types/node@26.6.6)
+      miniflare: 5.20261123.1-beta(@types/node@26.6.10)
       workerd: 1.20261123.1
     transitivePeerDependencies:
       - '@types/node'
@@ -3419,15 +3419,15 @@ snapshots:
     optionalDependencies:
       workerd: 1.20261123.1
 
-  '@cloudflare/vite-plugin@2.0.0-rc.0(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(workerd@1.20261123.1)':
+  '@cloudflare/vite-plugin@2.0.0-rc.0(@types/node@26.6.10)(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(workerd@1.20261123.1)':
     dependencies:
       '@cloudflare/build-output-utils': 1.0.0-rc.0
       '@cloudflare/config': 1.0.0-rc.0
-      '@cloudflare/runtime-types': 0.1.29(@types/node@26.6.6)
+      '@cloudflare/runtime-types': 0.1.29(@types/node@26.6.10)
       '@cloudflare/unenv-preset': 2.16.2(unenv@2.0.0-rc.24)(workerd@1.20261123.1)
-      miniflare: 5.20261116.0-beta(@types/node@26.6.6)
+      miniflare: 5.20261116.0-beta(@types/node@26.6.10)
       unenv: 2.0.0-rc.24
-      vite: 8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
+      vite: 8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
       ws: 8.21.0
     transitivePeerDependencies:
       - '@types/node'
@@ -3466,32 +3466,32 @@ snapshots:
   '@cloudflare/workerd-windows-64@1.20261123.1':
     optional: true
 
-  '@cloudflare/workers-auth@0.18.6(vitest@5.1.1(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)))':
+  '@cloudflare/workers-auth@0.18.6(vitest@5.1.1(@types/node@26.6.10)(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)))':
     dependencies:
-      '@cloudflare/workers-utils': 0.56.0(vitest@5.1.1(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)))
+      '@cloudflare/workers-utils': 0.56.0(vitest@5.1.1(@types/node@26.6.10)(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)))
       undici: 7.30.2
     optionalDependencies:
-      vitest: 5.1.1(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+      vitest: 5.1.1(@types/node@26.6.10)(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
 
   '@cloudflare/workers-types@5.20261124.1': {}
 
-  '@cloudflare/workers-utils@0.54.2(vitest@5.1.1(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)))':
+  '@cloudflare/workers-utils@0.54.2(vitest@5.1.1(@types/node@26.6.10)(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)))':
     dependencies:
       '@cspotcode/source-map-support': 0.8.1
       chalk: 5.3.0
       dotenv: 16.3.1
       undici: 7.30.1
     optionalDependencies:
-      vitest: 5.1.1(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+      vitest: 5.1.1(@types/node@26.6.10)(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
 
-  '@cloudflare/workers-utils@0.56.0(vitest@5.1.1(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)))':
+  '@cloudflare/workers-utils@0.56.0(vitest@5.1.1(@types/node@26.6.10)(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)))':
     dependencies:
       '@cspotcode/source-map-support': 0.8.1
       chalk: 5.3.0
       dotenv: 16.3.1
       undici: 7.30.2
     optionalDependencies:
-      vitest: 5.1.1(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+      vitest: 5.1.1(@types/node@26.6.10)(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
 
   '@cspotcode/source-map-support@0.8.1':
     dependencies:
@@ -4045,11 +4045,11 @@ snapshots:
 
   '@rolldown/pluginutils@1.0.1': {}
 
-  '@ryoppippi/vite-plugin-cloudflare-redirect@1.1.3(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))':
+  '@ryoppippi/vite-plugin-cloudflare-redirect@1.1.3(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))':
     dependencies:
       cloudflare-redirect-parser: 1.0.0
       defu: 6.1.7
-      vite: 8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
+      vite: 8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
 
   '@shikijs/core@4.6.0':
     dependencies:
@@ -4106,14 +4106,14 @@ snapshots:
     dependencies:
       acorn: 8.19.0
 
-  '@sveltejs/vite-plugin-svelte@7.3.1(svelte@5.59.1)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))':
+  '@sveltejs/vite-plugin-svelte@7.3.1(svelte@5.59.1)(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))':
     dependencies:
       deepmerge: 4.3.1
       magic-string: 1.4.5
       obug: 2.2.1
       svelte: 5.59.1
-      vite: 8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
-      vitefu: 1.1.4(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+      vite: 8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
+      vitefu: 1.1.4(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
 
   '@tanstack/charts@1.5.0(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(svelte@5.59.1)(vue@3.5.45)':
     dependencies:
@@ -4205,7 +4205,7 @@ snapshots:
 
   '@types/ms@2.1.0': {}
 
-  '@types/node@26.6.6':
+  '@types/node@26.6.10':
     dependencies:
       undici-types: 8.9.0
 
@@ -4219,20 +4219,20 @@ snapshots:
 
   '@ungap/structured-clone@1.4.0': {}
 
-  '@vitejs/plugin-vue@6.0.10(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(vue@3.5.45)':
+  '@vitejs/plugin-vue@6.0.10(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(vue@3.5.45)':
     dependencies:
       '@rolldown/pluginutils': 1.0.1
-      vite: 8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
+      vite: 8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
       vue: 3.5.45
 
-  '@vitest/mocker@5.1.1(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))':
+  '@vitest/mocker@5.1.1(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))':
     dependencies:
       '@jridgewell/trace-mapping': 0.3.31
       '@vitest/spy': 5.1.1
       estree-walker: 3.0.3
       magic-string: 1.4.5
     optionalDependencies:
-      vite: 8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
+      vite: 8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
 
   '@vitest/spy@5.1.1': {}
 
@@ -4257,12 +4257,12 @@ snapshots:
       '@void/deploy-core': 1.11.0
       pathslash: 0.1.0
 
-  '@void/svelte@1.11.0(svelte@5.59.1)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(void@1.11.0(@types/node@26.6.6)(arktype@2.2.10)(kysely@0.29.9)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(svelte@5.59.1)(valibot@1.5.0)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(vitest@5.1.1(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)))(vue@3.5.45)(workerd@1.20261123.1)(zod@4.6.7))':
+  '@void/svelte@1.11.0(svelte@5.59.1)(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(void@1.11.0(@types/node@26.6.10)(arktype@2.2.10)(kysely@0.29.9)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(svelte@5.59.1)(valibot@1.5.0)(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(vitest@5.1.1(@types/node@26.6.10)(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)))(vue@3.5.45)(workerd@1.20261123.1)(zod@4.6.7))':
     dependencies:
-      '@sveltejs/vite-plugin-svelte': 7.3.1(svelte@5.59.1)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+      '@sveltejs/vite-plugin-svelte': 7.3.1(svelte@5.59.1)(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
       svelte: 5.59.1
-      vite: 8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
-      void: 1.11.0(@types/node@26.6.6)(arktype@2.2.10)(kysely@0.29.9)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(svelte@5.59.1)(valibot@1.5.0)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(vitest@5.1.1(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)))(vue@3.5.45)(workerd@1.20261123.1)(zod@4.6.7)
+      vite: 8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
+      void: 1.11.0(@types/node@26.6.10)(arktype@2.2.10)(kysely@0.29.9)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(svelte@5.59.1)(valibot@1.5.0)(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(vitest@5.1.1(@types/node@26.6.10)(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)))(vue@3.5.45)(workerd@1.20261123.1)(zod@4.6.7)
 
   '@vue/compiler-core@3.5.45':
     dependencies:
@@ -4396,10 +4396,10 @@ snapshots:
 
   balanced-match@4.0.4: {}
 
-  better-auth@1.7.27(drizzle-kit@0.31.11)(drizzle-orm@0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.6))(pg@8.23.1))(mysql2@3.24.6(@types/node@26.6.6))(pg@8.23.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(svelte@5.59.1)(vitest@5.1.1(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)))(vue@3.5.45):
+  better-auth@1.7.27(drizzle-kit@0.31.11)(drizzle-orm@0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1))(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(svelte@5.59.1)(vitest@5.1.1(@types/node@26.6.10)(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)))(vue@3.5.45):
     dependencies:
       '@better-auth/core': 1.7.27(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(better-call@1.4.6(zod@4.6.7))(jose@6.2.18)(kysely@0.29.9)(nanostores@1.5.5)
-      '@better-auth/drizzle-adapter': 1.7.27(@better-auth/core@1.7.27(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(better-call@1.4.6(zod@4.6.7))(jose@6.2.18)(kysely@0.29.9)(nanostores@1.5.5))(@better-auth/utils@0.5.1)(drizzle-orm@0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.6))(pg@8.23.1))
+      '@better-auth/drizzle-adapter': 1.7.27(@better-auth/core@1.7.27(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(better-call@1.4.6(zod@4.6.7))(jose@6.2.18)(kysely@0.29.9)(nanostores@1.5.5))(@better-auth/utils@0.5.1)(drizzle-orm@0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1))
       '@better-auth/kysely-adapter': 1.7.27(@better-auth/core@1.7.27(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(better-call@1.4.6(zod@4.6.7))(jose@6.2.18)(kysely@0.29.9)(nanostores@1.5.5))(@better-auth/utils@0.5.1)(kysely@0.29.9)
       '@better-auth/memory-adapter': 1.7.27(@better-auth/core@1.7.27(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(better-call@1.4.6(zod@4.6.7))(jose@6.2.18)(kysely@0.29.9)(nanostores@1.5.5))(@better-auth/utils@0.5.1)
       '@better-auth/mongo-adapter': 1.7.27(@better-auth/core@1.7.27(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(better-call@1.4.6(zod@4.6.7))(jose@6.2.18)(kysely@0.29.9)(nanostores@1.5.5))(@better-auth/utils@0.5.1)
@@ -4417,13 +4417,13 @@ snapshots:
       zod: 4.6.7
     optionalDependencies:
       drizzle-kit: 0.31.11
-      drizzle-orm: 0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.6))(pg@8.23.1)
-      mysql2: 3.24.6(@types/node@26.6.6)
+      drizzle-orm: 0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1)
+      mysql2: 3.24.6(@types/node@26.6.10)
       pg: 8.23.1
       react: 19.3.1
       react-dom: 19.3.1(react@19.3.1)
       svelte: 5.59.1
-      vitest: 5.1.1(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+      vitest: 5.1.1(@types/node@26.6.10)(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
       vue: 3.5.45
     transitivePeerDependencies:
       - '@opentelemetry/api'
@@ -4455,26 +4455,26 @@ snapshots:
 
   ccount@2.0.1: {}
 
-  cf@1.0.0-rc.0(@types/node@26.6.6):
+  cf@1.0.0-rc.0(@types/node@26.6.10):
     dependencies:
       '@cloudflare/build-output-utils': 1.0.0-rc.0
       '@cloudflare/config': 1.0.0-rc.0
-      '@cloudflare/runtime-types': 0.1.29(@types/node@26.6.6)
+      '@cloudflare/runtime-types': 0.1.29(@types/node@26.6.10)
       blake3-wasm: 2.1.5
-      miniflare: 5.20261116.0-beta(@types/node@26.6.6)
+      miniflare: 5.20261116.0-beta(@types/node@26.6.10)
     transitivePeerDependencies:
       - '@types/node'
       - bufferutil
       - kerberos
       - utf-8-validate
 
-  cf@1.0.0-rc.5(@types/node@26.6.6):
+  cf@1.0.0-rc.5(@types/node@26.6.10):
     dependencies:
       '@cloudflare/build-output-utils': 1.0.0-rc.4
       '@cloudflare/config': 1.0.0-rc.4
-      '@cloudflare/runtime-types': 0.1.34(@types/node@26.6.6)
+      '@cloudflare/runtime-types': 0.1.34(@types/node@26.6.10)
       blake3-wasm: 2.1.5
-      miniflare: 5.20261123.1-beta(@types/node@26.6.6)
+      miniflare: 5.20261123.1-beta(@types/node@26.6.10)
     transitivePeerDependencies:
       - '@types/node'
       - bufferutil
@@ -4656,10 +4656,10 @@ snapshots:
 
   dotenv@16.3.1: {}
 
-  drizzle-arktype@0.1.3(arktype@2.2.10)(drizzle-orm@0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.6))(pg@8.23.1)):
+  drizzle-arktype@0.1.3(arktype@2.2.10)(drizzle-orm@0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1)):
     dependencies:
       arktype: 2.2.10
-      drizzle-orm: 0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.6))(pg@8.23.1)
+      drizzle-orm: 0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1)
 
   drizzle-kit@0.31.11:
     dependencies:
@@ -4668,22 +4668,22 @@ snapshots:
       esbuild: 0.25.12
       tsx: 4.23.15
 
-  drizzle-orm@0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.6))(pg@8.23.1):
+  drizzle-orm@0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1):
     optionalDependencies:
       '@cloudflare/workers-types': 5.20261124.1
       better-sqlite3: 13.2.0
       kysely: 0.29.9
-      mysql2: 3.24.6(@types/node@26.6.6)
+      mysql2: 3.24.6(@types/node@26.6.10)
       pg: 8.23.1
 
-  drizzle-valibot@0.4.2(drizzle-orm@0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.6))(pg@8.23.1))(valibot@1.5.0):
+  drizzle-valibot@0.4.2(drizzle-orm@0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1))(valibot@1.5.0):
     dependencies:
-      drizzle-orm: 0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.6))(pg@8.23.1)
+      drizzle-orm: 0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1)
       valibot: 1.5.0
 
-  drizzle-zod@0.8.3(drizzle-orm@0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.6))(pg@8.23.1))(zod@4.6.7):
+  drizzle-zod@0.8.3(drizzle-orm@0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1))(zod@4.6.7):
     dependencies:
-      drizzle-orm: 0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.6))(pg@8.23.1)
+      drizzle-orm: 0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1)
       zod: 4.6.7
 
   email-validator@2.0.4: {}
@@ -5220,10 +5220,10 @@ snapshots:
 
   mime@4.1.2: {}
 
-  miniflare@5.20261116.0-beta(@types/node@26.6.6):
+  miniflare@5.20261116.0-beta(@types/node@26.6.10):
     dependencies:
       '@cspotcode/source-map-support': 0.8.1
-      sharp: 0.35.5(@types/node@26.6.6)
+      sharp: 0.35.5(@types/node@26.6.10)
       undici: 7.30.1
       workerd: 1.20261116.1
       ws: 8.21.0
@@ -5233,10 +5233,10 @@ snapshots:
       - bufferutil
       - utf-8-validate
 
-  miniflare@5.20261123.1-beta(@types/node@26.6.6):
+  miniflare@5.20261123.1-beta(@types/node@26.6.10):
     dependencies:
       '@cspotcode/source-map-support': 0.8.1
-      sharp: 0.35.5(@types/node@26.6.6)
+      sharp: 0.35.5(@types/node@26.6.10)
       undici: 7.30.2
       workerd: 1.20261123.1
       ws: 8.21.0
@@ -5255,9 +5255,9 @@ snapshots:
 
   ms@2.1.3: {}
 
-  mysql2@3.24.6(@types/node@26.6.6):
+  mysql2@3.24.6(@types/node@26.6.10):
     dependencies:
-      '@types/node': 26.6.6
+      '@types/node': 26.6.10
       aws-ssl-profiles: 1.1.2
       generate-function: 2.3.1
       iconv-lite: 0.7.3
@@ -5465,7 +5465,7 @@ snapshots:
 
   set-cookie-parser@3.2.3: {}
 
-  sharp@0.35.5(@types/node@26.6.6):
+  sharp@0.35.5(@types/node@26.6.10):
     dependencies:
       '@img/colour': 1.1.0
       detect-libc: 2.1.2
@@ -5496,7 +5496,7 @@ snapshots:
       '@img/sharp-win32-arm64': 0.35.5
       '@img/sharp-win32-ia32': 0.35.5
       '@img/sharp-win32-x64': 0.35.5
-      '@types/node': 26.6.6
+      '@types/node': 26.6.10
 
   shiki@4.6.0:
     dependencies:
@@ -5671,7 +5671,7 @@ snapshots:
       '@types/unist': 3.0.3
       vfile-message: 4.0.4
 
-  vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1):
+  vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1):
     dependencies:
       lightningcss: 1.33.0
       picomatch: 4.0.7
@@ -5679,24 +5679,24 @@ snapshots:
       rolldown: 1.2.19
       tinyglobby: 0.2.17
     optionalDependencies:
-      '@types/node': 26.6.6
+      '@types/node': 26.6.10
       esbuild: 0.28.2
       fsevents: 2.3.3
       jiti: 2.7.0
       tsx: 4.23.15
       yaml: 2.9.1
 
-  vitefu@1.1.4(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)):
+  vitefu@1.1.4(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)):
     optionalDependencies:
-      vite: 8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
+      vite: 8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
 
-  vitepress-plugin-group-icons@1.8.2(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)):
+  vitepress-plugin-group-icons@1.8.2(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)):
     dependencies:
       '@iconify-json/logos': 1.2.19
       '@iconify-json/vscode-icons': 1.2.96
       '@iconify/utils': 3.1.7
     optionalDependencies:
-      vite: 8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
+      vite: 8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
 
   vitepress-plugin-llms@1.15.0(supports-color@10.2.2):
     dependencies:
@@ -5717,7 +5717,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  vitepress@2.0.0-alpha.21(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(postcss@8.5.32)(tsx@4.23.15)(yaml@2.9.1):
+  vitepress@2.0.0-alpha.21(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(postcss@8.5.32)(tsx@4.23.15)(yaml@2.9.1):
     dependencies:
       '@docsearch/css': 4.7.1
       '@docsearch/js': 4.7.1
@@ -5725,7 +5725,7 @@ snapshots:
       '@iconify-json/simple-icons': 1.2.101
       '@shikijs/transformers': 4.6.0
       '@types/markdown-it': 14.2.0
-      '@vitejs/plugin-vue': 6.0.10(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(vue@3.5.45)
+      '@vitejs/plugin-vue': 6.0.10(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(vue@3.5.45)
       '@vue/devtools-api': 8.2.1
       '@vue/shared': 3.5.45
       '@vueuse/core': 15.0.0(vue@3.5.45)
@@ -5734,7 +5734,7 @@ snapshots:
       mark.js: 8.11.1
       minisearch: 7.2.0
       shiki: 4.6.0
-      vite: 8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
+      vite: 8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
       vue: 3.5.45
     optionalDependencies:
       postcss: 8.5.32
@@ -5764,10 +5764,10 @@ snapshots:
       - universal-cookie
       - yaml
 
-  vitest@5.1.1(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)):
+  vitest@5.1.1(@types/node@26.6.10)(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)):
     dependencies:
       '@types/chai': 5.2.3
-      '@vitest/mocker': 5.1.1(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+      '@vitest/mocker': 5.1.1(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
       chai: 6.3.0
       es-module-lexer: 2.3.2
       expect-type: 1.4.0
@@ -5778,39 +5778,39 @@ snapshots:
       tinybench: 6.2.4
       tinyexec: 1.3.1
       tinyglobby: 0.2.17
-      vite: 8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
+      vite: 8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
       why-is-node-running: 3.2.1
     optionalDependencies:
-      '@types/node': 26.6.6
+      '@types/node': 26.6.10
     transitivePeerDependencies:
       - msw
 
-  void@1.11.0(@types/node@26.6.6)(arktype@2.2.10)(kysely@0.29.9)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(svelte@5.59.1)(valibot@1.5.0)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(vitest@5.1.1(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)))(vue@3.5.45)(workerd@1.20261123.1)(zod@4.6.7):
+  void@1.11.0(@types/node@26.6.10)(arktype@2.2.10)(kysely@0.29.9)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(svelte@5.59.1)(valibot@1.5.0)(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(vitest@5.1.1(@types/node@26.6.10)(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)))(vue@3.5.45)(workerd@1.20261123.1)(zod@4.6.7):
     dependencies:
       '@cloudflare/build-output-utils': 1.0.0-rc.0
       '@cloudflare/codemods': 0.8.2
       '@cloudflare/config': 1.0.0-rc.0
       '@cloudflare/sandbox': 1.0.3
-      '@cloudflare/vite-plugin': 2.0.0-rc.0(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(workerd@1.20261123.1)
-      '@cloudflare/workers-auth': 0.18.6(vitest@5.1.1(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)))
+      '@cloudflare/vite-plugin': 2.0.0-rc.0(@types/node@26.6.10)(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(workerd@1.20261123.1)
+      '@cloudflare/workers-auth': 0.18.6(vitest@5.1.1(@types/node@26.6.10)(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)))
       '@cloudflare/workers-types': 5.20261124.1
-      '@cloudflare/workers-utils': 0.54.2(vitest@5.1.1(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)))
+      '@cloudflare/workers-utils': 0.54.2(vitest@5.1.1(@types/node@26.6.10)(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)))
       '@napi-rs/keyring': 2.1.2
       '@void/deploy-cloudflare': 1.11.0
       '@void/deploy-core': 1.11.0
       '@void/edge': 1.11.0
       '@void/isr': 1.11.0
       '@void/platform': 1.11.0
-      better-auth: 1.7.27(drizzle-kit@0.31.11)(drizzle-orm@0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.6))(pg@8.23.1))(mysql2@3.24.6(@types/node@26.6.6))(pg@8.23.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(svelte@5.59.1)(vitest@5.1.1(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)))(vue@3.5.45)
+      better-auth: 1.7.27(drizzle-kit@0.31.11)(drizzle-orm@0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1))(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(svelte@5.59.1)(vitest@5.1.1(@types/node@26.6.10)(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)))(vue@3.5.45)
       better-sqlite3: 13.2.0
       blake3-jit: 1.1.1
-      cf: 1.0.0-rc.0(@types/node@26.6.6)
+      cf: 1.0.0-rc.0(@types/node@26.6.10)
       devalue: 6.0.3
-      drizzle-arktype: 0.1.3(arktype@2.2.10)(drizzle-orm@0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.6))(pg@8.23.1))
+      drizzle-arktype: 0.1.3(arktype@2.2.10)(drizzle-orm@0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1))
       drizzle-kit: 0.31.11
-      drizzle-orm: 0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.6))(pg@8.23.1)
-      drizzle-valibot: 0.4.2(drizzle-orm@0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.6))(pg@8.23.1))(valibot@1.5.0)
-      drizzle-zod: 0.8.3(drizzle-orm@0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.6))(pg@8.23.1))(zod@4.6.7)
+      drizzle-orm: 0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1)
+      drizzle-valibot: 0.4.2(drizzle-orm@0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1))(valibot@1.5.0)
+      drizzle-zod: 0.8.3(drizzle-orm@0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1))(zod@4.6.7)
       email-validator: 2.0.4
       gray-matter: 4.0.3
       hono: 4.13.21
@@ -5818,15 +5818,15 @@ snapshots:
       jiti: 2.7.0
       jsonc-parser: 3.3.1
       mime: 4.1.2
-      miniflare: 5.20261116.0-beta(@types/node@26.6.6)
+      miniflare: 5.20261116.0-beta(@types/node@26.6.10)
       minimatch: 11.0.8
-      mysql2: 3.24.6(@types/node@26.6.6)
+      mysql2: 3.24.6(@types/node@26.6.10)
       pg: 8.23.1
       postal-mime: 4.2.1
       proper-lockfile: 4.1.2
       smol-toml: 1.9.1
       terminal-link: 5.0.0
-      vite: 8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
+      vite: 8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
       yaml: 2.9.1
     optionalDependencies:
       arktype: 2.2.10
