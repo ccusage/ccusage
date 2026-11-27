@@ -81,7 +81,7 @@ def main []: nothing -> nothing {
     let matrix = core matrix $refs (core select-targets 'linux-x64 darwin-arm64')
     assert equal ($matrix | get id) [main-linux-x64 main-darwin-arm64 feat-x-linux-x64 feat-x-darwin-arm64]
     assert equal ($matrix | get 3 | select os cache_scope symbols sha) {
-        os: blacksmith-12vcpu-macos-26
+        os: blacksmith-12vcpu-macos-27
         cache_scope: build-mac-arm64
         symbols: false
         sha: feat/x0000000000000000
