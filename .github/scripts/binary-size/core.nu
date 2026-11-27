@@ -21,7 +21,7 @@ export const targets = [
     }
     {
         target: darwin-arm64
-        os: blacksmith-12vcpu-macos-27
+        os: blacksmith-12vcpu-macos-26
         package: ccusage-release-darwin-arm64
         fallback: ccusage
         cache_scope: build-mac-arm64
