@@ -3,7 +3,7 @@
 	"version": "1.94.0",
 	"private": true,
 	"dependencies": {
-		"oxlint": "1.94.0",
+		"oxlint": "1.95.0",
 		"tsrs": "7.1.0-beta.tsrs5"
 	}
 }
