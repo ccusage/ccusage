@@ -1,6 +1,6 @@
 self-hosted-runner:
   labels:
-    - blacksmith-12vcpu-macos-26
+    - blacksmith-12vcpu-macos-27
     - blacksmith-2vcpu-ubuntu-2404
     - blacksmith-32vcpu-ubuntu-2404
     - blacksmith-32vcpu-ubuntu-2404-arm
