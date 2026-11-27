@@ -181,7 +181,7 @@ catalogs:
       version: 1.15.0
   telemetry:
     '@cloudflare/workers-types':
-      specifier: ^5.20261123.1
+      specifier: ^5.20261124.1
       version: 5.20261124.1
     '@hono/zod-validator':
       specifier: ^0.9.1
