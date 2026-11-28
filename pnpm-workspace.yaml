@@ -9,7 +9,7 @@ catalogMode: strict
 catalogs:
   docs:
     '@ryoppippi/vite-plugin-cloudflare-redirect': ^1.1.3
-    cf: 1.0.0-rc.5
+    cf: 1.0.0-rc.6
     vitepress: 2.0.0-alpha.21
     vitepress-plugin-group-icons: ^1.8.2
     vitepress-plugin-llms: ^1.15.0
