@@ -193,8 +193,8 @@ catalogs:
       specifier: 1.11.0
       version: 1.11.0
     hono:
-      specifier: ^4.13.21
-      version: 4.13.21
+      specifier: ^4.13.22
+      version: 4.13.22
     json-schema-to-ts:
       specifier: ^3.1.1
       version: 3.1.1
@@ -293,7 +293,7 @@ importers:
         version: 5.20261124.1
       '@hono/zod-validator':
         specifier: catalog:telemetry
-        version: 0.9.1(hono@4.13.21)(zod@4.6.7)
+        version: 0.9.1(hono@4.13.22)(zod@4.6.7)
       '@tanstack/charts':
         specifier: catalog:telemetry
         version: 1.5.0(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(svelte@5.59.1)(vue@3.5.45)
@@ -305,7 +305,7 @@ importers:
         version: 1.11.0(svelte@5.59.1)(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(void@1.11.0(@types/node@26.6.10)(arktype@2.2.10)(kysely@0.29.9)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(svelte@5.59.1)(valibot@1.5.0)(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(vitest@5.1.1(@types/node@26.6.10)(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)))(vue@3.5.45)(workerd@1.20261123.1)(zod@4.6.7))
       hono:
         specifier: catalog:telemetry
-        version: 4.13.21
+        version: 4.13.22
       json-schema-to-ts:
         specifier: catalog:telemetry
         version: 3.1.1
@@ -2388,8 +2388,8 @@ packages:
   hast-util-whitespace@3.0.0:
     resolution: {integrity: sha512-88JUN06ipLwsnv+dVn+OIYOvAuvBMy/Qoi6O7mQHxdPXpjy+Cd6xRkWwux7DKO+4sYILtLBRIKgsdpS2gQc7qw==}
 
-  hono@4.13.21:
-    resolution: {integrity: sha512-h9UsguqfVk4kjUwLvQpHOmOaJpW10jz9lp8bvKUUa04wJG/fabKFBqXZ06D6LFaeKQZtUZRVeg0gfkTTEsX7Mw==}
+  hono@4.13.22:
+    resolution: {integrity: sha512-wncKd5/40Pj8grx0RZ2fgNIicFEmVFwIHT5UFLTnphR8I6AQWFf9c2JoM6ZJ9g8y4pMzg3sNlCVNe0m2Yclg0Q==}
     engines: {node: '>=16.9.0'}
 
   hookable@5.5.3:
@@ -3758,9 +3758,9 @@ snapshots:
   '@esbuild/win32-x64@0.28.2':
     optional: true
 
-  '@hono/zod-validator@0.9.1(hono@4.13.21)(zod@4.6.7)':
+  '@hono/zod-validator@0.9.1(hono@4.13.22)(zod@4.6.7)':
     dependencies:
-      hono: 4.13.21
+      hono: 4.13.22
       zod: 4.6.7
 
   '@iconify-json/logos@1.2.19':
@@ -4865,7 +4865,7 @@ snapshots:
     dependencies:
       '@types/hast': 3.0.5
 
-  hono@4.13.21: {}
+  hono@4.13.22: {}
 
   hookable@5.5.3: {}
 
@@ -5813,7 +5813,7 @@ snapshots:
       drizzle-zod: 0.8.3(drizzle-orm@0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1))(zod@4.6.7)
       email-validator: 2.0.4
       gray-matter: 4.0.3
-      hono: 4.13.21
+      hono: 4.13.22
       ignore: 7.0.16
       jiti: 2.7.0
       jsonc-parser: 3.3.1
