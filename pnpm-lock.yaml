@@ -215,7 +215,7 @@ catalogs:
       version: 4.6.7
   types:
     '@types/node':
-      specifier: ^26.6.7
+      specifier: ^26.6.10
       version: 26.6.10
     '@types/react':
       specifier: ^19.3.1
