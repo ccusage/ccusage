@@ -1,6 +1,6 @@
 {
 	"name": "@ccusage/ccusage-linux-arm64",
-	"version": "20.1.2",
+	"version": "20.1.3",
 	"description": "Static native ccusage binary for Linux arm64",
 	"license": "MIT",
 	"repository": {
