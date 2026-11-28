@@ -14,7 +14,7 @@ catalogs:
     vitepress-plugin-group-icons: ^1.8.2
     vitepress-plugin-llms: ^1.15.0
   telemetry:
-    '@cloudflare/workers-types': ^5.20261124.1
+    '@cloudflare/workers-types': ^5.20261125.1
     '@hono/zod-validator': ^0.9.1
     '@tanstack/charts': ^1.5.0
     '@void/svelte': 1.11.0

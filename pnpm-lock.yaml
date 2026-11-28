@@ -181,8 +181,8 @@ catalogs:
       version: 1.15.0
   telemetry:
     '@cloudflare/workers-types':
-      specifier: ^5.20261124.1
-      version: 5.20261124.1
+      specifier: ^5.20261125.1
+      version: 5.20261125.1
     '@hono/zod-validator':
       specifier: ^0.9.1
       version: 0.9.1
@@ -290,7 +290,7 @@ importers:
     devDependencies:
       '@cloudflare/workers-types':
         specifier: catalog:telemetry
-        version: 5.20261124.1
+        version: 5.20261125.1
       '@hono/zod-validator':
         specifier: catalog:telemetry
         version: 0.9.1(hono@4.13.22)(zod@4.6.7)
@@ -548,8 +548,8 @@ packages:
       vitest:
         optional: true
 
-  '@cloudflare/workers-types@5.20261124.1':
-    resolution: {integrity: sha512-n99jv9oDm6AYg7dTkRYJVgD5GhXG14Cd8rLDtbld28ZjGJVKFtQPXJxnVoOV2IBSRuqHt0PnP/4oqoiUKw2SAA==}
+  '@cloudflare/workers-types@5.20261125.1':
+    resolution: {integrity: sha512-FBFIY/srJZZtZjxyH56AerZ0ZDbhr6Ifa5O707q0f7YzHmzqd+2zD3vG6d8cAcSDL/heJvsP7eEAsYRLFd7jpw==}
 
   '@cloudflare/workers-utils@0.54.2':
     resolution: {integrity: sha512-EKdpirq8S1YZa/QzYI40UQC9uehUgSgdIQYpOeePzCYaOQ5QxM+Gy37RC7xBi7M0+G3nloO2UGqLup7DEtiGmQ==}
@@ -3329,12 +3329,12 @@ snapshots:
       nanostores: 1.5.5
       zod: 4.6.7
 
-  '@better-auth/drizzle-adapter@1.7.27(@better-auth/core@1.7.27(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(better-call@1.4.6(zod@4.6.7))(jose@6.2.18)(kysely@0.29.9)(nanostores@1.5.5))(@better-auth/utils@0.5.1)(drizzle-orm@0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1))':
+  '@better-auth/drizzle-adapter@1.7.27(@better-auth/core@1.7.27(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(better-call@1.4.6(zod@4.6.7))(jose@6.2.18)(kysely@0.29.9)(nanostores@1.5.5))(@better-auth/utils@0.5.1)(drizzle-orm@0.45.4(@cloudflare/workers-types@5.20261125.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1))':
     dependencies:
       '@better-auth/core': 1.7.27(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(better-call@1.4.6(zod@4.6.7))(jose@6.2.18)(kysely@0.29.9)(nanostores@1.5.5)
       '@better-auth/utils': 0.5.1
     optionalDependencies:
-      drizzle-orm: 0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1)
+      drizzle-orm: 0.45.4(@cloudflare/workers-types@5.20261125.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1)
 
   '@better-auth/kysely-adapter@1.7.27(@better-auth/core@1.7.27(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(better-call@1.4.6(zod@4.6.7))(jose@6.2.18)(kysely@0.29.9)(nanostores@1.5.5))(@better-auth/utils@0.5.1)(kysely@0.29.9)':
     dependencies:
@@ -3473,7 +3473,7 @@ snapshots:
     optionalDependencies:
       vitest: 5.1.1(@types/node@26.6.10)(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
 
-  '@cloudflare/workers-types@5.20261124.1': {}
+  '@cloudflare/workers-types@5.20261125.1': {}
 
   '@cloudflare/workers-utils@0.54.2(vitest@5.1.1(@types/node@26.6.10)(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)))':
     dependencies:
@@ -4249,7 +4249,7 @@ snapshots:
 
   '@void/isr@1.11.0':
     dependencies:
-      '@cloudflare/workers-types': 5.20261124.1
+      '@cloudflare/workers-types': 5.20261125.1
       '@void/edge': 1.11.0
 
   '@void/platform@1.11.0':
@@ -4396,10 +4396,10 @@ snapshots:
 
   balanced-match@4.0.4: {}
 
-  better-auth@1.7.27(drizzle-kit@0.31.11)(drizzle-orm@0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1))(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(svelte@5.59.1)(vitest@5.1.1(@types/node@26.6.10)(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)))(vue@3.5.45):
+  better-auth@1.7.27(drizzle-kit@0.31.11)(drizzle-orm@0.45.4(@cloudflare/workers-types@5.20261125.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1))(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(svelte@5.59.1)(vitest@5.1.1(@types/node@26.6.10)(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)))(vue@3.5.45):
     dependencies:
       '@better-auth/core': 1.7.27(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(better-call@1.4.6(zod@4.6.7))(jose@6.2.18)(kysely@0.29.9)(nanostores@1.5.5)
-      '@better-auth/drizzle-adapter': 1.7.27(@better-auth/core@1.7.27(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(better-call@1.4.6(zod@4.6.7))(jose@6.2.18)(kysely@0.29.9)(nanostores@1.5.5))(@better-auth/utils@0.5.1)(drizzle-orm@0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1))
+      '@better-auth/drizzle-adapter': 1.7.27(@better-auth/core@1.7.27(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(better-call@1.4.6(zod@4.6.7))(jose@6.2.18)(kysely@0.29.9)(nanostores@1.5.5))(@better-auth/utils@0.5.1)(drizzle-orm@0.45.4(@cloudflare/workers-types@5.20261125.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1))
       '@better-auth/kysely-adapter': 1.7.27(@better-auth/core@1.7.27(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(better-call@1.4.6(zod@4.6.7))(jose@6.2.18)(kysely@0.29.9)(nanostores@1.5.5))(@better-auth/utils@0.5.1)(kysely@0.29.9)
       '@better-auth/memory-adapter': 1.7.27(@better-auth/core@1.7.27(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(better-call@1.4.6(zod@4.6.7))(jose@6.2.18)(kysely@0.29.9)(nanostores@1.5.5))(@better-auth/utils@0.5.1)
       '@better-auth/mongo-adapter': 1.7.27(@better-auth/core@1.7.27(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(better-call@1.4.6(zod@4.6.7))(jose@6.2.18)(kysely@0.29.9)(nanostores@1.5.5))(@better-auth/utils@0.5.1)
@@ -4417,7 +4417,7 @@ snapshots:
       zod: 4.6.7
     optionalDependencies:
       drizzle-kit: 0.31.11
-      drizzle-orm: 0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1)
+      drizzle-orm: 0.45.4(@cloudflare/workers-types@5.20261125.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1)
       mysql2: 3.24.6(@types/node@26.6.10)
       pg: 8.23.1
       react: 19.3.1
@@ -4656,10 +4656,10 @@ snapshots:
 
   dotenv@16.3.1: {}
 
-  drizzle-arktype@0.1.3(arktype@2.2.10)(drizzle-orm@0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1)):
+  drizzle-arktype@0.1.3(arktype@2.2.10)(drizzle-orm@0.45.4(@cloudflare/workers-types@5.20261125.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1)):
     dependencies:
       arktype: 2.2.10
-      drizzle-orm: 0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1)
+      drizzle-orm: 0.45.4(@cloudflare/workers-types@5.20261125.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1)
 
   drizzle-kit@0.31.11:
     dependencies:
@@ -4668,22 +4668,22 @@ snapshots:
       esbuild: 0.25.12
       tsx: 4.23.15
 
-  drizzle-orm@0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1):
+  drizzle-orm@0.45.4(@cloudflare/workers-types@5.20261125.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1):
     optionalDependencies:
-      '@cloudflare/workers-types': 5.20261124.1
+      '@cloudflare/workers-types': 5.20261125.1
       better-sqlite3: 13.2.0
       kysely: 0.29.9
       mysql2: 3.24.6(@types/node@26.6.10)
       pg: 8.23.1
 
-  drizzle-valibot@0.4.2(drizzle-orm@0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1))(valibot@1.5.0):
+  drizzle-valibot@0.4.2(drizzle-orm@0.45.4(@cloudflare/workers-types@5.20261125.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1))(valibot@1.5.0):
     dependencies:
-      drizzle-orm: 0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1)
+      drizzle-orm: 0.45.4(@cloudflare/workers-types@5.20261125.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1)
       valibot: 1.5.0
 
-  drizzle-zod@0.8.3(drizzle-orm@0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1))(zod@4.6.7):
+  drizzle-zod@0.8.3(drizzle-orm@0.45.4(@cloudflare/workers-types@5.20261125.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1))(zod@4.6.7):
     dependencies:
-      drizzle-orm: 0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1)
+      drizzle-orm: 0.45.4(@cloudflare/workers-types@5.20261125.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1)
       zod: 4.6.7
 
   email-validator@2.0.4: {}
@@ -5793,7 +5793,7 @@ snapshots:
       '@cloudflare/sandbox': 1.0.3
       '@cloudflare/vite-plugin': 2.0.0-rc.0(@types/node@26.6.10)(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(workerd@1.20261123.1)
       '@cloudflare/workers-auth': 0.18.6(vitest@5.1.1(@types/node@26.6.10)(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)))
-      '@cloudflare/workers-types': 5.20261124.1
+      '@cloudflare/workers-types': 5.20261125.1
       '@cloudflare/workers-utils': 0.54.2(vitest@5.1.1(@types/node@26.6.10)(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)))
       '@napi-rs/keyring': 2.1.2
       '@void/deploy-cloudflare': 1.11.0
@@ -5801,16 +5801,16 @@ snapshots:
       '@void/edge': 1.11.0
       '@void/isr': 1.11.0
       '@void/platform': 1.11.0
-      better-auth: 1.7.27(drizzle-kit@0.31.11)(drizzle-orm@0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1))(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(svelte@5.59.1)(vitest@5.1.1(@types/node@26.6.10)(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)))(vue@3.5.45)
+      better-auth: 1.7.27(drizzle-kit@0.31.11)(drizzle-orm@0.45.4(@cloudflare/workers-types@5.20261125.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1))(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(svelte@5.59.1)(vitest@5.1.1(@types/node@26.6.10)(vite@8.3.8(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)))(vue@3.5.45)
       better-sqlite3: 13.2.0
       blake3-jit: 1.1.1
       cf: 1.0.0-rc.0(@types/node@26.6.10)
       devalue: 6.0.3
-      drizzle-arktype: 0.1.3(arktype@2.2.10)(drizzle-orm@0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1))
+      drizzle-arktype: 0.1.3(arktype@2.2.10)(drizzle-orm@0.45.4(@cloudflare/workers-types@5.20261125.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1))
       drizzle-kit: 0.31.11
-      drizzle-orm: 0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1)
-      drizzle-valibot: 0.4.2(drizzle-orm@0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1))(valibot@1.5.0)
-      drizzle-zod: 0.8.3(drizzle-orm@0.45.4(@cloudflare/workers-types@5.20261124.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1))(zod@4.6.7)
+      drizzle-orm: 0.45.4(@cloudflare/workers-types@5.20261125.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1)
+      drizzle-valibot: 0.4.2(drizzle-orm@0.45.4(@cloudflare/workers-types@5.20261125.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1))(valibot@1.5.0)
+      drizzle-zod: 0.8.3(drizzle-orm@0.45.4(@cloudflare/workers-types@5.20261125.1)(better-sqlite3@13.2.0)(kysely@0.29.9)(mysql2@3.24.6(@types/node@26.6.10))(pg@8.23.1))(zod@4.6.7)
       email-validator: 2.0.4
       gray-matter: 4.0.3
       hono: 4.13.22
