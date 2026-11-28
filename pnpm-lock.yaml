@@ -168,8 +168,8 @@ catalogs:
       specifier: ^1.1.3
       version: 1.1.3
     cf:
-      specifier: 1.0.0-rc.5
-      version: 1.0.0-rc.5
+      specifier: 1.0.0-rc.6
+      version: 1.0.0-rc.6
     vitepress:
       specifier: 2.0.0-alpha.21
       version: 2.0.0-alpha.21
@@ -263,7 +263,7 @@ importers:
         version: 19.3.3
       cf:
         specifier: catalog:docs
-        version: 1.0.0-rc.5(@types/node@26.6.10)
+        version: 1.0.0-rc.6(@types/node@26.6.10)
       vitepress:
         specifier: catalog:docs
         version: 2.0.0-alpha.21(@types/node@26.6.10)(esbuild@0.28.2)(jiti@2.7.0)(postcss@8.5.32)(tsx@4.23.15)(yaml@2.9.1)
@@ -1936,8 +1936,8 @@ packages:
     engines: {node: ^22.23.0 || ^24.22.0 || ^26.12.0}
     hasBin: true
 
-  cf@1.0.0-rc.5:
-    resolution: {integrity: sha512-p+dWu7YK40uQBXlJQ12xR3oYZPxSHZwr+hUaesq+Cy61p8nj0Mfk2XH/+s2AC/Vis96GgQExtyZLDbYyIQvFOw==}
+  cf@1.0.0-rc.6:
+    resolution: {integrity: sha512-w/L+DmEPrcOVJ9TrqtVJiZ2htnx+/fctGlDMrUZhuuEJSxayfc9QuEk2k3yaeXHPZIF5srovQLFxwB3YfVuwig==}
     engines: {node: ^22.23.0 || ^24.22.0 || ^26.12.0}
     hasBin: true
 
@@ -4468,7 +4468,7 @@ snapshots:
       - kerberos
       - utf-8-validate
 
-  cf@1.0.0-rc.5(@types/node@26.6.10):
+  cf@1.0.0-rc.6(@types/node@26.6.10):
     dependencies:
       '@cloudflare/build-output-utils': 1.0.0-rc.4
       '@cloudflare/config': 1.0.0-rc.4
